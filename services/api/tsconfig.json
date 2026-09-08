@@ -16,12 +16,6 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false,
-    "paths": {
-      "@kashyap/contracts": ["../../packages/contracts/src"],
-      "@kashyap/localization": ["../../packages/localization/src"],
-      "@kashyap/test-fixtures": ["../../packages/test-fixtures/src"],
-      "@kashyap/design-tokens": ["../../packages/design-tokens/src"]
-    }
+    "noFallthroughCasesInSwitch": false
   }
 }

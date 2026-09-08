@@ -96,6 +96,7 @@ package-lock.json
 # pnpm-lock.yaml is tracked for strict deterministic CI builds
 .next/
 dist/
+*.tsbuildinfo
 .eggs/
 *.egg
 .venv/
