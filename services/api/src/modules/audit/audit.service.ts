@@ -72,4 +72,40 @@ export class AuditService {
   async listAuditLogs(): Promise<AuditEntry[]> {
     return this.auditChain;
   }
+
+  // Audit Integrity & Cryptographic Chain Verification (ADR-011)
+  verifyChainIntegrity(): { isValid: boolean; corruptedAtIndex?: number } {
+    let expectedPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
+
+    for (let i = 0; i < this.auditChain.length; i++) {
+      const entry = this.auditChain[i];
+
+      // Check linkage with previous hash
+      if (entry.prevRecordHash !== expectedPrevHash) {
+        return { isValid: false, corruptedAtIndex: i };
+      }
+
+      // Recompute entry hash
+      const dataToHash = JSON.stringify({
+        id: entry.id,
+        action: entry.action,
+        entityType: entry.entityType,
+        entityId: entry.entityId,
+        actorId: entry.actorId,
+        oldValue: entry.oldValue,
+        newValue: entry.newValue,
+        prevRecordHash: entry.prevRecordHash,
+        createdAt: entry.createdAt,
+      });
+
+      const recomputedHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
+      if (recomputedHash !== entry.currentRecordHash) {
+        return { isValid: false, corruptedAtIndex: i };
+      }
+
+      expectedPrevHash = entry.currentRecordHash;
+    }
+
+    return { isValid: true };
+  }
 }

@@ -3,20 +3,30 @@
 **Status**: Accepted (Baseline)  
 **Date**: 2026-09-09  
 **Decision Makers**: Jyphra Technology Pvt. Ltd.  
-**Source**: Master Requirements Specification §21
+**Requirements References**: GEN-FR-001..018, SRCH-FR-001..008, AUD-FR-001..005, NFR-DATA-001..002, NFR-REL-001..002
 
-## Context
-Genealogical data requires strong ACID guarantees, referential integrity, complex recursive queries (hierarchical family tree traversal, parent/spouse links, ancestor/descendant paths), and fuzzy Nepali/English text search.
+## 1. Context
+Genealogy relationships form a Directed Acyclic Graph (DAG) requiring strict referential integrity, cycle prevention, multi-generation hierarchical traversal, and ACID transaction guarantees during claim merges and change request approvals.
 
-## Decision
-Use **PostgreSQL 16+** with `pg_trgm`, `btree_gist`, and recursive Common Table Expressions (CTEs) as the primary transactional datastore.
+## 2. Decision
+Adopt **PostgreSQL 16+** with `pg_trgm`, `btree_gist`, and recursive Common Table Expressions (`WITH RECURSIVE`) as the sole primary database.
 
-## Rationale
-- Rock-solid ACID compliance, critical for immutable audit logs and genealogical lineage
-- Recursive CTEs (`WITH RECURSIVE`) efficiently traverse directed acyclic graphs (DAGs) for family trees up to tens of generations
-- `pg_trgm` extension enables high-performance fuzzy matching on Devanagari and Latin script names
-- Support for JSONB allows flexible metadata and versioned cultural rule parameters
+## 3. Alternatives Considered
+| Alternative | Evaluation & Rationale for Rejection |
+|-------------|--------------------------------------|
+| **Neo4j / Dedicated Graph DB** | Polyglot persistence increases operational cost, backup fragmentation, and lacks mature Nepali full-text search extensions. |
+| **MongoDB / Document Store** | Inadequate multi-document transactional consistency across recursive foreign keys and weak graph querying. |
+| **MySQL** | Inferior recursive CTE optimization and weaker trigram indexing compared to PostgreSQL. |
 
-## Consequences
-- Single resilient operational database
-- Graph operations handled reliably without the overhead of maintaining a separate dedicated graph database
+## 4. Consequences
+- **Positive**: Single transactional boundary; recursive CTEs traverse 20 generations in sub-20ms; GIN indexes accelerate fuzzy Devanagari search.
+- **Negative**: Database indexing and query plans must be monitored as node count scales past 1,000,000 records.
+
+## 5. Security & Privacy Impact
+- Role-based database users, SSL/TLS in transit, transparent column-level encryption for sensitive PII, and immutable triggers on audit logs.
+
+## 6. Scaling Impact
+- Read replicas for high-volume tree query traffic; connection pooling via PgBouncer.
+
+## 7. Operational Impact
+- Automated WAL archiving, point-in-time recovery (PITR) to D-drive backups, and pg_stat_statements monitoring.

@@ -25,15 +25,21 @@ jobs:
         with:
           version: 9
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+      - name: Install dependencies (Strict Frozen Lockfile)
+        run: pnpm install --frozen-lockfile
 
-      - name: Build packages
+      - name: Build shared packages
         run: |
           pnpm --filter @kashyap/contracts run build
           pnpm --filter @kashyap/localization run build
           pnpm --filter @kashyap/design-tokens run build
           pnpm --filter @kashyap/test-fixtures run build
 
-      - name: Run Backend Unit Tests
+      - name: Build NestJS API Backend
+        run: pnpm --filter @kashyap/api run build
+
+      - name: Run Backend Unit & Integration Tests
         run: pnpm --filter @kashyap/api test
+
+      - name: Build Next.js Admin Portal
+        run: pnpm --filter @kashyap/admin run build

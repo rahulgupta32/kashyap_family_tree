@@ -1,23 +1,34 @@
-# ADR-002: Next.js with TypeScript for Admin Portal
+# ADR-002: Next.js with TypeScript for Administration Portal
 
 **Status**: Accepted (Baseline)  
 **Date**: 2026-09-09  
 **Decision Makers**: Jyphra Technology Pvt. Ltd.  
-**Source**: Master Requirements Specification §21
+**Requirements References**: ADM-FR-001..016, CLAIM-FR-001..012, DUP-FR-001..009, AUD-FR-001..005, NFR-SEC-001..005
 
-## Context
-The platform requires an administrative web portal for community admins, branch verifiers, super admins, content editors, and moderators to manage claims, genealogy corrections, duplicates, cultural content, branch authorities, and audits.
+## 1. Context
+Administrative workflows (profile claim adjudication, genealogy merge conflicts, branch authority governance, cultural content publishing, and immutable audit inspection) require a robust, responsive web application for desktop administrators, verifiers, and historians.
 
-## Decision
-Adopt **Next.js (App Router) with TypeScript, Tailwind CSS, and TanStack Query/Table** for the web-based Administration Portal.
+## 2. Decision
+Use **Next.js 14+ (App Router) with TypeScript, Tailwind CSS, and TanStack Table** for the Administration Web Portal.
 
-## Rationale
-- Standardized, mature enterprise React framework with robust TypeScript support
-- Server-side rendering (SSR) and API routes for secure admin session handling
-- Rich ecosystem of UI components, data tables, and charting libraries
-- High developer productivity with strong type safety across the stack
+## 3. Alternatives Considered
+| Alternative | Evaluation & Rationale for Rejection |
+|-------------|--------------------------------------|
+| **Vite SPA (Pure Client React)** | Lacks server-side session handling and SSR security boundaries; SEO-friendly public landing pages would require separate hosting. |
+| **Remix** | High quality, but Next.js has broader ecosystem support within enterprise web teams and seamless Vercel/Node container deployment. |
+| **Angular** | Higher boilerplate and slower development velocity for rapid admin console prototyping. |
 
-## Consequences
-- Fast, secure internal admin UI
-- Reusable UI component architecture
-- Consistent TypeScript models across backend and frontend packages
+## 4. Consequences
+- **Positive**: Type-safe shared contracts (`@kashyap/contracts`); server actions and SSR for protected admin route gating; rapid UI composition with Tailwind.
+- **Negative**: Node.js runtime required for SSR in container environments.
+
+## 5. Security & Privacy Impact
+- HTTP-only Secure SameSite cookies for admin JWT session management.
+- Multi-factor authentication (MFA) enforcement on all admin routes.
+- Role-based route middleware gating based on branch authority scope.
+
+## 6. Scaling Impact
+- Static generation for public heritage content; server-side rendering for real-time queue dashboards with sub-100ms response.
+
+## 7. Operational Impact
+- Standardized containerized build deployed via Docker container on D-drive infrastructure.
