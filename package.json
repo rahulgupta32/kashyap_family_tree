@@ -1,0 +1,20 @@
+{
+  "name": "kashyap-platform",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kashyap Adhikari Family Tree Platform — Monorepo",
+  "author": "Jyphra Technology Pvt. Ltd.",
+  "license": "SEE LICENSE IN LICENSE_DECISION_REQUIRED.md",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "test:integration": "pnpm --filter @kashyap/api run test:integration",
+    "lint": "pnpm -r run lint",
+    "format": "pnpm -r run format",
+    "clean": "pnpm -r run clean"
+  }
+}

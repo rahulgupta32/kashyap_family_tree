@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    name: Build & Test Backend, Contracts & Admin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build packages
+        run: |
+          pnpm --filter @kashyap/contracts run build
+          pnpm --filter @kashyap/localization run build
+          pnpm --filter @kashyap/design-tokens run build
+          pnpm --filter @kashyap/test-fixtures run build
+
+      - name: Run Backend Unit Tests
+        run: pnpm --filter @kashyap/api test

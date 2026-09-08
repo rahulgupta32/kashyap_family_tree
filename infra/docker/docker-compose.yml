@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kashyap_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kashyap_user
+      POSTGRES_PASSWORD: kashyap_secure_dev_password
+      POSTGRES_DB: kashyap_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/Jyphra/kashyap_family_tree_data/postgres:/var/lib/postgresql/data
+      - ../../database/migrations:/docker-entrypoint-initdb.d
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: kashyap_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - D:/Jyphra/kashyap_family_tree_data/redis:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  minio:
+    image: minio/minio:latest
+    container_name: kashyap_minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: kashyap_minio_admin
+      MINIO_ROOT_PASSWORD: kashyap_minio_secret_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - D:/Jyphra/kashyap_family_tree_data/minio:/data
+    command: server /data --console-address ":9001"
