@@ -2,55 +2,64 @@
 
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
-**Current Phase**: P2 — Engineering Foundations (G2)  
-**Last Updated**: 2026-09-09T02:44:00+05:45
-
-## Current State
-
-### Completed ✅
-- [x] D-drive storage preflight (120.44 GB free) & directory structure
-- [x] Baseline archive verification (all 12 SHA256 checksums PASS)
-- [x] Complete baseline document indexing (`BASELINE_INDEX.md`)
-- [x] Git repository initialized on `main` branch with remote
-- [x] Execution documents created (`IMPLEMENTATION_PLAN.md`, `REQUIREMENTS_TRACEABILITY_MATRIX.md`, `EDGE_CASE_TRACEABILITY_MATRIX.md`, `DECISION_REGISTER.md`, `RISK_REGISTER.md`, `OPEN_GATES.md`)
-- [x] All 12 Architecture Decision Records documented (`ADR-001` through `ADR-012`)
-- [x] Monorepo workspace initialized with pnpm (configured with D-drive cache)
-- [x] Shared Packages created & compiled:
-  - `@kashyap/contracts` (Enums, DTOs, Error codes, API schemas)
-  - `@kashyap/localization` (Bilingual Nepali & English dictionaries, error translations)
-  - `@kashyap/design-tokens` (Adhikari heritage palette: Saffron, Maroon, Gold, Slate)
-  - `@kashyap/test-fixtures` (Sanitized multi-generation lineage and mock users)
-- [x] Database Schema baseline:
-  - `database/migrations/001_initial_schema.sql` (30+ tables, GIN trigram indexes, audit triggers)
-- [x] Local Containerized Infrastructure:
-  - `infra/docker/docker-compose.yml` (PostgreSQL 16, Redis 7, MinIO on D-drive storage)
-- [x] Backend API Service (`@kashyap/api` with NestJS):
-  - `AuthModule` (Nepali mobile validation, OTP session lifecycle, JWT issuance)
-  - `GenealogyModule` (Person details, multi-generation hierarchical family tree traversal)
-  - `ClaimsModule` (Profile claim submission and verification queue)
-  - `ChangeRequestsModule` (Governed genealogy modification workflows)
-  - `CulturalRulesModule` (Nata/Saino computation with Open Gate HG-002 safety checks)
-  - `AuditModule` (Append-only audit trail logging with SHA-256 cryptographic hash chaining)
-- [x] Administration Web Portal (`@kashyap/admin` with Next.js 14):
-  - App Router layout, sidebar, executive metrics dashboard, Open Gates banner
-- [x] CI/CD Pipeline (`.github/workflows/ci.yml`):
-  - Monorepo package build and automated test execution
-- [x] Unit Test Suite (4 test suites, 9 unit tests — 100% passing)
-
-### In Progress 🔄
-- [/] Mobile App Scaffolding (Flutter Android/iOS) — pending Flutter SDK setup on D: drive
-- [/] Database migration runner integration
-- [/] WebSocket real-time gateway service (`services/realtime`)
-
-## Current Branch / Commit
-- **Branch**: `main`
-- **Remote**: `https://github.com/rahulgupta32/kashyap_family_tree.git`
-
-## Automated Test Results
-- **Test Suites**: 4 passed, 4 total
-- **Tests**: 9 passed, 9 total
-- **Coverage**: Auth, Genealogy Tree, Cultural Kinship (HG-002), Append-Only Audit Hash Chaining
+**Current Phase**: Transitioning from P2 (G2 Foundation Verified) to P3 (G3 Core Genealogy)  
+**Last Updated**: 2026-09-09T03:31:00+05:45  
+**Active Branch**: `develop`  
+**Latest Verified Commit**: `1868fd4e1b9295c0a71062f6964a5cc82337d723`  
+**Pull Request for G2**: [https://github.com/rahulgupta32/kashyap_family_tree/compare/main...develop](https://github.com/rahulgupta32/kashyap_family_tree/compare/main...develop)
 
 ---
 
-*Next milestone: G3 — Core Genealogy & Governance Workflows*
+## 1. Multi-Dimensional Readiness Assessment
+
+| Dimension | Status | Notes |
+|-----------|--------|-------|
+| **Foundation Readiness** | ✅ **PASSED (G2)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD, and Next.js/NestJS scaffolds verified in clean checkout. |
+| **Feature Completeness** | 🔄 **IN PROGRESS** | Foundation domain modules in place. Full database-backed business logic scheduled for Phase G3 (Core Genealogy). |
+| **Test Completeness** | 🔄 **BASELINE VERIFIED** | 37 tests across 7 test suites covering graph cycles, OTP state, claim recusal, audit hash chains, and localization. Real PostgreSQL database integration tests scheduled for G3. |
+| **Security Readiness** | 🔄 **G2 BASELINE** | JWT sessions, OTP attempt limits (5 max), append-only cryptographic audit chaining, immutable database triggers implemented. Full DPIA and pen-testing scheduled for G5. |
+| **Operational Readiness** | 🔄 **CONTAINER BASELINE** | Docker Compose and D-drive volume layout documented; production cloud provisioning pending Executive Cloud Gate (HG-008). |
+| **UAT Readiness** | ⬜ **NOT STARTED** | Scheduled for Phase G6. |
+| **Production Readiness** | ⬜ **NOT READY** | Platform is in active development (Phase P2 -> P3). |
+
+---
+
+## 2. Completed Milestones ✅
+
+- [x] D-drive storage layout verified (`D:\Jyphra\kashyap_family_tree` + 6 support directories on D: with ~120 GB free).
+- [x] Baseline archive verified (all 12 SHA256 checksums PASS) and indexed in `BASELINE_INDEX.md`.
+- [x] Architecture Decision Records (ADR-001 through ADR-012) fully documented with 8-dimensional rigor.
+- [x] Shared packages created, exported, and typechecked:
+  - `@kashyap/contracts`
+  - `@kashyap/localization`
+  - `@kashyap/design-tokens`
+  - `@kashyap/test-fixtures` (with `IS_SYNTHETIC` markers and runtime production guards)
+- [x] Database Schema & Migrations:
+  - `000_schema_migrations.sql` (idempotent tracking)
+  - `001_initial_schema.sql` (30+ tables, GIN trigram indexes, audit triggers)
+  - `001_initial_schema.down.sql` (reversible rollback)
+- [x] NestJS Backend Service (`services/api/`):
+  - `AuthModule` (OTP request, phone validation, attempt limits, JWT session issuance)
+  - `GenealogyModule` (Person profile, cycle detection, Account-Person separation)
+  - `ClaimsModule` (Claim submission, statement of truth, self-verification prohibition)
+  - `ChangeRequestsModule` (Genealogy change request workflow)
+  - `CulturalRulesModule` (Kinship Nata/Saino calculator with HG-002 safety checks)
+  - `AuditModule` (Append-only audit trail with SHA-256 cryptographic hash chaining & tamper detection)
+- [x] Next.js Admin Portal (`apps/admin/`):
+  - App Router layout, sidebar, executive metrics dashboard, Open Gates banner.
+- [x] Strict Frozen Lockfile CI (`.github/workflows/ci.yml`):
+  - Enforces `pnpm install --frozen-lockfile`.
+- [x] Clean-Checkout Reproducibility Test:
+  - Verified on fresh clone at `D:\Jyphra\temp\kashyap_family_tree\clean-test-20260909-032800\repo` with 100% PASS (7 test suites, 37 tests).
+- [x] Phase G2 Verification Report created (`PHASE_G2_VERIFICATION_REPORT.md`).
+- [x] Phase G2 Pull Request prepared (`PULL_REQUEST_G2_FOUNDATION.md`).
+
+---
+
+## 3. Active Next Work: Phase G3 Core Genealogy (W2) 🔄
+
+1. Connect NestJS repository interfaces to real PostgreSQL connection pool / query runner.
+2. Implement full database migrations runner on startup.
+3. Build search endpoint (`GET /search/people`) using PostgreSQL `pg_trgm` GIN indexes.
+4. Implement recursive CTE tree queries in PostgreSQL.
+5. Create duplicate detection engine and merge transactions.
