@@ -1,0 +1,11 @@
+﻿Detailed Edge-Case & Negative-Test Catalogue							
+Frozen baseline v1.0 | Owner: Jyphra Technology Pvt. Ltd. | 8 September 2026							
+Control	Rule
+Purpose	Executable implementation and QA catalogue for all defined Release 1.0 modules.
+Authority	Supplements BRD v1.0, Master Specification v1.1 and Final SDLC Baseline v1.0; does not alter scope.
+Case count	260
+Use	Developers implement Expected Behaviour; QA converts Given/When/Then to evidence; owners update Test Status and Evidence Ref.
+Cultural safety	Unapproved Nata/Saino, Jutho, Tithi/Shraddha and ritual rules remain disabled or neutral.
+Privacy safety	Server-side authorization, field visibility, minors and consent apply to every case.
+New cases	Add only through controlled versioning and traceability; never overwrite frozen history.
+Production	Existing cultural, legal, named-role, data, assurance, operational and store gates remain binding.

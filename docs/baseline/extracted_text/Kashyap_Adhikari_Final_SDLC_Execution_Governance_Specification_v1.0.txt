@@ -1,0 +1,952 @@
+﻿KASHYAP ADHIKARIGENEALOGY & COMMUNITY PLATFORM
+Final SDLC Execution & Governance Specification
+Frozen Development Execution Baseline v1.0
+
+Document control
+Approved value
+Owner and approving organization
+Jyphra Technology Pvt. Ltd.
+Status
+FROZEN FOR DEVELOPMENT EXECUTION
+Effective date
+8 September 2026
+Release
+Complete Release 1.0; no approved feature deferral
+Governing requirements
+BRD v1.0 and Master Requirements & SDLC Specification v1.1
+Delivery model
+Jyphra-led hybrid team; external development agency managed and accepted by Jyphra
+Delivery window
+12–15 months
+Scale baseline
+100,000+ registered users; path to 500,000 without core redesign
+Financial baseline
+Recommended Production-Grade; NPR 43.36m implementation incl. contingency, excl. VAT
+Change authority
+Jyphra Product Owner under formal baseline change control
+
+1. Purpose, authority and use
+This specification converts the frozen product baseline into the mandatory operating model for design, engineering, testing, data migration, deployment and handover. It supplements rather than replaces the Master Specification v1.1. If a conflict occurs, the Documentation Baseline & Freeze Record v1.0 and approved change records determine precedence.
+Every epic, story, design, API, database migration, test and release must trace to approved requirement identifiers.
+The agency may propose implementation choices but may not change product scope, cultural authority, privacy controls, acceptance criteria or Jyphra ownership.
+Pending cultural, legal and named-authority decisions are implemented behind controlled configuration or neutral fallback until approved.
+Production deployment is prohibited until all applicable release gates have objective evidence.
+2. Frozen delivery principles
+ID
+Principle
+Mandatory interpretation
+SDLC-P01
+Complete Release 1.0
+No feature may be silently moved to a later phase. Sequencing within development is allowed; scope removal requires change approval.
+SDLC-P02
+Person is not account
+Genealogy Person records exist independently from login accounts; claiming links them only after verification.
+SDLC-P03
+Evidence before authority
+Genealogy, cultural and administrative decisions must preserve source, reviewer, reason, version and audit trail.
+SDLC-P04
+Privacy by default
+Field-level visibility, consent, minors, approximate map location and least privilege are designed before UI completion.
+SDLC-P05
+Secure delivery
+Security, abuse prevention and auditability are acceptance requirements, not end-stage additions.
+SDLC-P06
+Jyphra control
+Repositories, environments, secrets, cloud billing, app-store accounts and final acceptance remain under Jyphra.
+SDLC-P07
+Automate quality
+Repeatable checks belong in CI/CD; manual evidence supplements but does not replace automation.
+SDLC-P08
+Reversible change
+Migrations, rule versions, feature activation and releases require rollback or compensating procedures.
+3. Delivery governance
+Forum / control
+Cadence
+Chair / owner
+Required output
+Executive steering
+Monthly and at funding gates
+Jyphra Sponsor
+Scope, budget, risk and gate decisions
+Product council
+Weekly
+Jyphra Product Owner
+Priorities, clarifications and accepted stories
+Architecture review
+Biweekly / decision-triggered
+Jyphra Technology Lead
+Approved ADRs, NFR impacts and technical debt decisions
+Cultural/genealogy review
+Weekly while active
+Authorized domain leads
+Rule/evidence decisions and unresolved-case log
+Delivery review
+Weekly
+Program Manager
+Progress, forecast, blockers, dependencies and actions
+Sprint ceremonies
+Two-week sprint
+Scrum/Delivery Lead
+Goal, committed backlog, demo and retrospective actions
+Security/privacy review
+Each epic and release
+Security Lead + DPO
+Threat/privacy findings and acceptance evidence
+Release readiness
+Per candidate
+Release Manager
+Go/no-go recommendation and rollback readiness
+4. Lifecycle and master schedule
+Phase
+Name
+Indicative timing
+Exit deliverables
+Gate
+P0
+Mobilize and baseline
+Weeks 1–4
+Charter, team, repositories, environments, backlog seed, risk register
+G0
+P1
+Discovery, UX and architecture
+Weeks 3–12
+Validated journeys, prototype, architecture, domain models, threat model
+G1
+P2
+Engineering foundations
+Weeks 8–20
+Identity, account/person separation, platform skeleton, CI/CD, audit, localization
+G2
+P3
+Core genealogy and governance
+Weeks 14–34
+Tree, search, claiming, change requests, merge, evidence, admin workflows
+G3
+P4
+Community and cultural capabilities
+Weeks 24–44
+Content, calendar, notifications, invitations, posts, map, chat, rule engines
+G4
+P5
+Integration, migration and hardening
+Weeks 38–56
+Migration rehearsal, E2E, accessibility, performance, security, resilience
+G5
+P6
+UAT, stores and launch
+Weeks 52–64
+Accepted UAT, store approval, production deployment, training
+G6
+P7
+Stabilization and handover
+First 8–12 weeks post-launch
+Warranty fixes, KPI review, operational acceptance and closure
+G7
+Phases intentionally overlap. A later phase may start only when its dependencies are accepted; overlap does not waive entry criteria. Dates are reforecast after team appointment and vendor contracting without changing the 12–15-month baseline unless Jyphra approves a schedule change.
+5. Stage gates
+Gate
+Decision
+Minimum evidence
+G0
+Mobilization authorized
+Named product/technology/delivery owners; agency contract controls; repositories and access; baseline acknowledged
+G1
+Design/architecture baseline
+Approved journeys, screen inventory, domain boundaries, ADR set, initial schema/API direction, threat model
+G2
+Foundation accepted
+CI/CD, environments, identity, Person/Account separation, audit, permissions, observability skeleton demonstrated
+G3
+Core genealogy accepted
+Tree, search, claim, verification, disputes, duplicate/merge, evidence and admin flows pass reference tests
+G4
+Feature complete
+All Release 1.0 modules integrated; unapproved cultural outputs safely disabled or neutral; no omitted features
+G5
+Release candidate
+Traceability complete; zero open blocker/critical defects; security, performance, accessibility, migration and DR evidence accepted
+G6
+Production go-live
+UAT sign-off, store approval, operations/handover, rollback, support and executive go/no-go complete
+G7
+Operational acceptance
+Stabilization KPIs achieved; residual defects governed; documentation and knowledge transfer accepted
+6. Workstream structure and ownership
+ID
+Workstream
+Accountable lead
+Primary outputs
+WS01
+Product & governance
+Product Owner
+Requirements, backlog, decisions, traceability, acceptance
+WS02
+UX, content & localization
+UX Lead
+Journeys, screens, design system, bilingual content, accessibility
+WS03
+Identity, profile & privacy
+Backend/Mobile Leads
+OTP, sessions, person/account, consent, visibility, minors
+WS04
+Genealogy & cultural rules
+Domain Lead
+Graph, claims, verification, merge, Nata/Saino, Jutho, Tithi
+WS05
+Community & communication
+Product/Engineering
+Posts, moderation, invitations, RSVP, chat, notifications
+WS06
+Administration & governance
+Admin Lead
+Dashboards, queues, role scope, evidence, audit and configuration
+WS07
+Platform & integrations
+Technology Lead
+APIs, events, storage, maps, SMS, push, calendar providers
+WS08
+Data migration
+Data Lead
+Inventory, mapping, cleansing, dry runs, reconciliation and rollback
+WS09
+Quality engineering
+QA Lead
+Automation, E2E, performance, accessibility, security coordination
+WS10
+DevSecOps & operations
+Platform Lead
+Environments, CI/CD, observability, backup, DR, release and handover
+7. Responsibility rules
+Jyphra Product Owner accepts business functionality; agency delivery does not constitute acceptance.
+Technology Lead approves architecture and production technical readiness.
+QA Lead owns independent quality evidence and may reject a release candidate.
+Cultural Reviewer and separate Senior Community/Religious Authority approve authoritative terminology/rules; no self-approval.
+Branch/Genealogy Authorities approve only within defined scope and recuse from conflicted cases.
+DPO/Privacy Lead reviews sensitive processing, minors, deletion, retention and incident handling.
+Release Manager coordinates evidence but cannot waive missing approvals.
+8. Repository and asset control
+Repository / system
+Contents
+Control
+mobile-app
+Flutter/Dart or approved cross-platform client
+Protected main; mandatory review and CI
+admin-portal
+Web administration application
+Protected main; privileged-feature security review
+backend-services
+APIs, workers and event consumers
+Contract tests, migrations and security scans
+infrastructure
+Infrastructure-as-code, policies and environment definitions
+Jyphra-owned; two-person production approval
+documentation
+ADRs, OpenAPI, models, runbooks, traceability and decisions
+Versioned with code; reviewed in change workflow
+design
+Design source, components and export assets
+Jyphra-controlled project; versioned handoff
+data-migration
+Schemas, mappings, validators and reconciliation scripts
+No production data in source control
+test-automation
+E2E, performance, security and reference datasets
+Release-gate integration
+9. Requirements-to-delivery workflow
+Step
+Required action
+Output
+1. Decompose
+Map Master Specification requirements into epics and capabilities without losing IDs
+Epic map
+2. Specify
+Create user story, rules, UX state, data/API impact, privacy/security impact and acceptance criteria
+Ready story
+3. Design
+Produce screen, sequence, data and API designs; record decisions and alternatives
+Approved design/ADR
+4. Implement
+Code, migrate, instrument, document and feature-control the change
+Reviewable increment
+5. Verify
+Run automated/manual tests against acceptance criteria and negative cases
+Test evidence
+6. Accept
+Product/domain owner reviews demonstrated outcome and evidence
+Accepted/rejected record
+7. Trace
+Update RTM from requirement through code, build and test
+Complete trace
+8. Release
+Include risk, dependency, migration and rollback details
+Release candidate
+10. Definition of Ready
+Requirement and source IDs are identified; business value and user/role are clear.
+Acceptance criteria include success, validation, authorization, privacy, error, audit and localization behaviour.
+Dependencies, domain approvals and unknowns are listed; unresolved items have safe configuration/fallback.
+UX states cover loading, empty, error, offline/retry, denied, pending and success where applicable.
+API/data changes, migration impact, analytics and observability are defined.
+Security/privacy classification and abuse cases are reviewed.
+Test approach and test data are feasible; story is sized and fits the sprint.
+11. Definition of Done
+Code is reviewed by an independent qualified reviewer and all mandatory CI checks pass.
+Acceptance criteria pass on supported platforms; regression, negative and permission tests are included.
+No secrets, sensitive data or prohibited logs are introduced; dependency and static scans meet policy.
+API/schema documentation, ADRs, localization keys, analytics and operational notes are updated.
+Accessibility checks and Nepali/English content checks pass for affected interfaces.
+Database changes are backward compatible where required, rehearsed and rollback-capable.
+Feature flags/default configuration are safe; monitoring and alerts exist for material failure modes.
+Product Owner accepts the story and RTM links requirement, implementation and evidence.
+12. Sprint and release-train operating model
+Event
+Timing
+Mandatory content
+Backlog refinement
+At least weekly
+Readiness, dependencies, authority decisions, size and sequencing
+Sprint planning
+Every 2 weeks
+Sprint goal, capacity, stories meeting DoR, risk and test commitments
+Daily coordination
+Working days
+Progress, blockers, cross-workstream dependency and risk change
+Design/architecture clinic
+At least weekly
+Impacts, ADRs, API/schema consistency and NFRs
+Review/demo
+Sprint end
+Running software, acceptance evidence and stakeholder feedback
+Retrospective
+Sprint end
+Measurable improvements with owners and due dates
+Release train
+Every 2–4 sprints as suitable
+Integrated candidate through staging; production only through G6
+Quarterly baseline review
+Quarterly
+Forecast, capacity, security posture, quality trends and approved changes
+13. Branching, review and versioning
+Short-lived feature branches from protected main; no direct production commits.
+Pull requests identify requirement/story IDs, risk, testing, screenshots where relevant, migration and rollback impact.
+At least one independent review; two approvals for security-, privacy-, infrastructure- or irreversible-data changes.
+Conventional, traceable commits; signed release tags and immutable build artifacts.
+Semantic versioning for public APIs/apps; database migrations and rule catalogues have independent ordered versions.
+Hotfixes follow expedited review but never bypass test evidence, audit or post-incident review.
+14. CI/CD quality gates
+Pipeline stage
+Mandatory controls
+Failure action
+Pre-commit
+Formatting, lint, unit tests, secret scan
+Block commit/PR
+Pull request
+Build, unit/component tests, static analysis, dependency/license scan, API/schema compatibility
+Block merge
+Integration
+Service integration, contract, migration and selected E2E tests
+Block candidate
+Staging
+Full E2E, accessibility, localization, security dynamic checks and observability verification
+Block release
+Release candidate
+Performance, resilience, backup/restore, signed build, SBOM and evidence bundle
+Block G5/G6
+Production
+Approved deployment window, canary/controlled rollout, health gates and rollback trigger
+Pause or rollback
+Post-deploy
+Smoke tests, telemetry, business transaction checks and incident watch
+Rollback/escalate
+15. Environment strategy
+Environment
+Purpose
+Data
+Access / promotion
+Local
+Developer implementation and unit testing
+Synthetic only
+Individual; no shared secrets
+Development
+Continuous integration and early integration
+Synthetic/anonymized
+Engineering; automated deployments
+Test
+QA integration and regression
+Controlled synthetic/reference
+QA and engineering; stable test configuration
+Staging
+Production-like UAT, performance rehearsal and release proof
+Masked/synthetic plus approved migration rehearsal
+Restricted; release-managed
+Production
+Live member service
+Real personal/genealogy data
+Least privilege, MFA, audited and time-bound
+DR
+Recovery capability
+Encrypted replicated backups
+Emergency roles; tested restoration
+16. Architecture delivery controls
+Use modular boundaries for identity/profile, genealogy, cultural rules, content/community, communication, notifications, administration and audit.
+Use a transactional system of record for authoritative data and purpose-built indexes/caches for discovery; indexes are rebuildable, not authoritative.
+APIs are versioned and contract-first; idempotency is required for retryable writes and imports.
+Asynchronous work uses durable queues, retry limits, dead-letter handling and correlation IDs.
+Genealogy graph operations preserve provenance, effective state, disputes and immutable change history.
+Cultural calculations are versioned by approved rule set and return explanation/provenance; unapproved rules never masquerade as authoritative.
+Critical managed services are isolated across availability zones where the selected scenario supports it; backups are encrypted and restore-tested.
+17. Architecture Decision Records
+ADR field
+Required content
+Decision ID / title
+Stable identifier and concise decision
+Status
+Proposed, accepted, superseded or rejected
+Context
+Problem, constraints, quality attributes and affected requirements
+Options
+Viable alternatives with cost, security, data and operational implications
+Decision
+Selected option and explicit rationale
+Consequences
+Benefits, trade-offs, risks, migrations and reversibility
+Approval
+Technology Lead plus relevant Product/Security/Privacy/Data authority
+Traceability
+Related requirements, APIs, schemas, code and tests
+18. API, event and data-contract standard
+Area
+Frozen engineering rule
+API style
+Versioned HTTPS JSON APIs unless an approved ADR selects another protocol; OpenAPI is authoritative.
+Authentication
+OTP-backed account authentication with secure session/token lifecycle; privileged users require MFA.
+Authorization
+Server-side RBAC plus branch/resource scope and field-level privacy checks; UI hiding is never sufficient.
+Errors
+Stable machine code, safe user message, correlation ID and retry guidance; no sensitive internals.
+Idempotency
+Required for imports, approvals, merges, invitations, notifications and externally retryable writes.
+Pagination/search
+Stable cursor-based pagination for large mutable sets; documented filters and limits.
+Events
+Versioned schema, producer, consumer, ordering/idempotency expectations, retry and dead-letter policy.
+Compatibility
+Backward-compatible changes by default; breaking changes require version, migration and client rollout plan.
+Data migrations
+Ordered, repeatable, observable, backup-aware and tested against rollback/forward-fix procedure.
+Audit
+Actor, role, scope, action, target, before/after or delta, reason, timestamp and correlation preserved.
+19. Security and privacy engineering
+Control domain
+Minimum implementation evidence
+Identity/session
+OTP abuse protection, secure tokens, revocation, device/session visibility and privileged MFA
+Authorization
+Permission tests for role, branch, relationship, object ownership and sensitive fields
+Data protection
+TLS, encryption at rest, managed secrets, key rotation, backup encryption and environment separation
+Application security
+Validation, parameterization, CSRF/XSS/SSRF protections as applicable, file scanning and safe rendering
+Mobile security
+Secure storage, certificate/network controls, tamper-aware logging, no secrets in app package
+Privacy
+Purpose/consent, minimization, field visibility, minors, account deletion, retention and rights workflow
+Abuse/moderation
+Rate limits, reporting, blocking, moderation evidence, spam/media controls and escalation
+Supply chain
+Locked dependencies, SBOM, provenance, vulnerability SLAs and signed release artifacts
+Monitoring
+Security events, privileged changes, anomalous OTP/access, data exports and integrity failures
+Assurance
+Threat model updated per epic; independent test before production and after material change
+20. Data classification
+Class
+Examples
+Default treatment
+Public
+Approved cultural/history content and public announcements
+Publish only through governed workflow
+Member
+Basic verified member-facing community information
+Authenticated access; no indexing outside service
+Sensitive
+Contact, precise location, relationships, claims, messages, evidence
+Field-level access, audit and restricted export
+Highly restricted
+Minors, disputed parentage, adoption/guardianship evidence, security secrets
+Need-to-know, enhanced approval, strong encryption and minimal retention
+Audit/operational
+Security logs, approval history, telemetry
+Integrity protection, access restrictions and retention schedule
+21. Genealogy and cultural-rule engineering
+Store persons, parent-child edges, spouse/union history, aliases, sources, claims, disputes and effective status as separately governed records.
+Validate impossible cycles, conflicting parentage, date inconsistencies, duplicates and self-relationships before approval.
+Merges preserve canonical identity, all source references, prior identifiers, decisions and rollback/compensation evidence.
+Nata/Saino returns primary and alternative valid paths under versioned priority rules; unsupported terminology uses neutral path wording.
+Adopted, step, half, guardian, former-spouse, unknown and disputed states remain explicit and privacy-aware.
+Jutho, Tithi and Shraddha calculators activate only with approved versioned rule tables, timezone/calendar source and reference tests.
+Every calculated cultural output displays rule version, explanation, authority status and correction route.
+22. Data migration lifecycle
+Stage
+Mandatory work
+Exit evidence
+Inventory
+Identify source books/files, custodians, formats, consent, quality and scope
+Signed inventory and risk classification
+Mapping
+Map source fields to controlled IDs, values, calendars, evidence and privacy fields
+Approved mapping workbook
+Cleanse
+Normalize spelling/calendar values; flag rather than erase uncertainty/disputes
+Quality report and exception queue
+Deduplicate
+Deterministic/fuzzy candidates; human decision for merges
+Candidate and decision log
+Dry run
+Import into isolated environment using repeatable scripts
+Counts, errors, performance and rollback result
+Sample verification
+Branch/genealogy authorities inspect representative records and edges
+Signed sample result
+Reconciliation
+Compare source, staged and target totals plus relationship integrity
+Reconciliation report
+Production import
+Approved window, backup, controlled batch, monitoring and halt thresholds
+Batch evidence and audit
+Post-import
+User/authority correction workflow, metrics and unresolved queue
+Closure/remaining exceptions
+23. Migration acceptance thresholds
+100% of imported records receive immutable source and target identifiers.
+100% of relationships pass structural validation or enter an explicit exception state.
+No critical unresolved cycle or destructive overwrite is accepted.
+Source-to-target counts reconcile within documented, approved exceptions.
+Sample accuracy and duplicate thresholds meet Master Specification targets.
+Rollback or forward-fix procedure is rehearsed before production import.
+24. Test strategy and ownership
+Test layer
+Owner
+Coverage
+Minimum cadence
+Unit
+Developers
+Rules, validation, transformations and edge cases
+Every change
+Component/widget
+Mobile/web engineers
+UI behaviour, states, accessibility semantics
+Every component/change
+API integration
+Backend + QA
+Database, queues, storage and external adapters
+Continuous
+Contract
+Service owners
+OpenAPI/event/client compatibility
+Every contract change
+End-to-end
+QA
+Critical member/admin journeys and failures
+Daily/staging and candidate
+Domain reference
+QA + authorities
+Genealogy paths and approved cultural examples
+Every rule version
+Migration
+Data + QA
+Mapping, repeatability, volume, exceptions and rollback
+Every rehearsal/import
+Security
+Security + independent assessor
+Threat scenarios, OWASP/mobile/API, privilege and data exposure
+Continuous + pre-release
+Performance
+Performance engineer
+Normal, peak, burst, soak and recovery targets
+Before G5 and major change
+Accessibility/localization
+QA + language reviewers
+WCAG-targeted flows, Nepali/English, layouts and date/number formats
+Each epic and candidate
+Resilience/DR
+Platform + QA
+Dependency failure, retry, backup restore, failover and recovery
+Before G6; scheduled after launch
+UAT
+Business/domain representatives
+Realistic approved scenarios and acceptance criteria
+Before G6
+25. Critical acceptance journeys
+Register by phone, manage session and complete verified profile.
+Claim an existing Person safely without creating a duplicate.
+Propose new person/relationship, attach evidence, route review and audit decision.
+Search and navigate large trees with privacy and branch scope enforced.
+Calculate Nata/Saino across approved direct, collateral, marital and alternative paths.
+Handle a death record and rule-gated Jutho/Tithi/Shraddha outputs without inventing authority.
+Create event/invitation, calculate audience, deliver notification, RSVP and group communication.
+Publish/report/moderate a community post with evidence and appeal trail.
+Use household map with approximate location and consent controls.
+Import, reconcile, detect duplicates, stop/rollback and resume safely.
+Exercise access/deletion/correction and minor/guardian workflows.
+26. Defect severity and exit policy
+Severity
+Definition
+Release rule
+Blocker
+Prevents essential testing/use, data corruption, security/privacy exposure or no safe workaround
+Zero open
+Critical
+Major business/security/data failure affecting many users or authoritative decisions
+Zero open
+High
+Material feature failure or unreliable workaround
+Zero open unless Jyphra accepts documented exceptional risk
+Medium
+Limited impact with practical workaround
+Bounded by approved threshold and owner/date
+Low
+Cosmetic/minor usability issue
+May defer only through backlog and acceptance
+27. Performance, reliability and capacity verification
+Area
+Baseline test obligation
+Users
+Model 100,000 registered, 20,000 MAU, 5,000 DAU and 1,000 normal-peak concurrent users
+Burst
+Exercise at least 3x normal peak for announcement/event scenarios where architecture permits
+Latency
+Validate Master Specification percentile targets for authentication, search, tree navigation, messaging and admin queues
+Soak
+Sustained workload sufficient to reveal leaks, queue growth, connection exhaustion and storage/log pressure
+Data volume
+Representative genealogy nodes/edges, messages, posts, notifications and media metadata
+Failure
+Degraded external SMS/push/maps/storage, delayed jobs and partial dependency loss
+Recovery
+Backup restore, service restart, queue replay/dead-letter handling and database recovery
+Cost
+Capture unit-cost indicators and autoscaling behaviour; prevent runaway OTP/media/resource use
+28. Observability and operational readiness
+Structured logs use correlation IDs and exclude OTPs, tokens, message bodies and unnecessary personal data.
+Metrics cover traffic, latency, errors, saturation, queue lag, database health, notification delivery, moderation/verification backlogs and cost drivers.
+Distributed traces connect client/API/background work for critical journeys.
+Alerts are actionable, severity-classified, owned and tested; every alert links to a runbook.
+Dashboards separate service health, security/privacy signals, business workflows and vendor usage/cost.
+Synthetic checks exercise authentication, search, tree, notifications and admin availability.
+29. Backup, recovery and disaster recovery
+Control
+Required evidence
+Backup policy
+Automated encrypted backups with retention by approved policy and separate failure domain
+RPO/RTO
+Tier-specific objectives defined and tested for core data, media, audit and supporting services
+Restore test
+At least twice yearly and before launch; records completeness, integrity, duration and issues
+Application recovery
+Infrastructure recreation, secret restoration, dependency validation and smoke tests
+Data consistency
+Reconcile genealogy, accounts, messages, indexes, storage references and audit after recovery
+DR authority
+Incident Commander and authorized technical/security roles; all emergency access audited
+Communication
+Internal/external incident communications approved by Jyphra and privacy/legal authority as required
+30. Release-candidate evidence bundle
+Evidence group
+Required contents
+Scope/traceability
+Release notes, requirement/story/test links, approved changes and known limitations
+Build/provenance
+Commit/tag, pipeline, signed binaries, dependency lock and SBOM
+Quality
+Automated results, E2E, device/browser matrix, defect summary and regression statement
+Domain
+Genealogy/cultural reference results and active rule/configuration versions
+Security/privacy
+Threat model delta, scans, independent findings, DPIA/privacy checklist and residual risk
+Performance/resilience
+Load/soak results, capacity conclusion, failure tests and recovery evidence
+Migration
+Scripts/version, dry-run evidence, reconciliation, backup and rollback/forward-fix plan
+Operations
+Dashboards, alerts, runbooks, support contacts, incident and backup/DR readiness
+Distribution
+Store metadata, privacy disclosures, deletion path, signing and approval status
+Approval
+Product, QA, Technology, Security/Privacy, domain and Executive go/no-go records
+31. Production deployment procedure
+Step
+Control
+1. Freeze candidate
+Immutable tag/build, evidence bundle and approved change window
+2. Verify readiness
+G5 complete; G6 decision participants confirm roles and rollback
+3. Protect data
+Current backup/snapshot and restore confidence; migration prechecks pass
+4. Deploy safely
+Automated pipeline, controlled rollout/canary and no manual undocumented mutation
+5. Validate
+Technical smoke checks and critical business transactions
+6. Observe
+Enhanced monitoring for defined stabilization window and clear halt thresholds
+7. Decide
+Continue, pause or rollback using objective health/business criteria
+8. Record
+Deployment, actors, versions, migrations, findings and final status audited
+9. Communicate
+Stakeholder/member communications follow approved templates
+10. Review
+Post-release review captures incidents, defects, metrics and actions
+32. Rollback and forward-fix rules
+Rollback triggers are defined before release and include security/privacy exposure, data corruption, severe availability loss and failed critical journeys.
+Schema changes use expand/migrate/contract or another approved backward-compatible method; irreversible operations require explicit executive risk acceptance.
+Feature flags can disable risky behaviour without removing audit or data integrity.
+Rollback never discards accepted member data; reconciliation and compensating actions are documented.
+Any emergency forward-fix receives expedited independent review and complete after-action evidence.
+33. Support, incident and maintenance model
+Area
+Frozen operating rule
+Support hours
+Business-hours user support and monitoring; emergency contact outside hours without guaranteed 24/7 user-support SLA
+Severity
+SEV-1 critical security/outage/data risk; SEV-2 serious degradation/privacy; SEV-3 normal defect/local issue
+Incident command
+One accountable Incident Commander; technical, security, privacy and communications roles assigned
+Evidence
+Timeline, decisions, access, commands/changes, communications and recovery verification retained
+Post-incident
+Root cause and corrective actions for material incidents; owners/dates tracked to closure
+Patching
+Risk-based dependency/platform/security updates with testing and rollback
+Maintenance
+Daily/continuous health; weekly queues; monthly access/cost/backup; quarterly DR/security/capacity reviews
+Problem management
+Recurring incidents and defects become governed root-cause work, not repeated workarounds
+34. Agency contract and handover controls
+All work products, source code, designs, documentation, configurations and deliverables are assigned to Jyphra under the signed contract.
+Agency access is named, least-privilege, MFA-protected, time-bound and revoked promptly at role end.
+No supplier-owned repository, cloud account, signing key or undocumented paid dependency may become a production prerequisite.
+Invoices/funding milestones align to accepted gate evidence, not effort claims alone.
+Handover includes architecture, source/build, environments, secrets custody, data models, APIs, tests, monitoring, incidents, known risks and operational training.
+Warranty terms define severity response, defect correction, exclusions and transition support.
+Exit assistance and replaceability are tested before final payment.
+35. Training and operational handover
+Audience
+Required training / evidence
+Members/support
+Account, privacy, correction, reporting and support scripts
+Genealogy verifiers
+Evidence, duplicates, conflicts, recusal, privacy and approval workflow
+Cultural authorities
+Rule proposal, evidence, two-person approval, versioning and publication
+Moderators
+Community rules, severity, safeguarding, evidence, appeal and escalation
+Administrators
+Role scope, queues, configuration, audit and break-glass limits
+Technical operations
+Deploy, rollback, monitoring, incidents, backup, restore, DR and vendor management
+Jyphra owners
+Product/configuration authority, reporting, contracts, costs and change control
+36. SDLC metrics and reporting
+Category
+Required reporting
+Scope
+Requirements with owner/trace; approved change rate; backlog readiness
+Flow
+Lead/cycle time; blocked work; sprint predictability; review time
+Quality
+Escaped defects; defect aging; automation pass rate; regression stability
+Security
+Open vulnerabilities by severity/age; secret/dependency findings; privileged-access review
+Product
+Registration completion; verified profiles; search success; notification delivery; engagement
+Genealogy
+Coverage; duplicate rate; verification turnaround; relationship reference accuracy
+Operations
+Availability; latency/error; crash-free sessions; incident MTTA/MTTR; restore success
+Governance
+Moderator response; cultural approval; unresolved disputes; authority vacancies
+Cost
+Forecast variance; cloud/OTP/storage unit costs; agency milestone acceptance
+37. Risk and dependency control
+Risk
+Trigger / indicator
+Response owner / control
+Cultural rules unavailable
+Approval overdue or disputed
+Use neutral/disabled production configuration; Cultural Authority owns decision
+Genealogy data quality
+High duplicates/missing provenance
+Data Lead pilots, samples, reconciles and pauses unsafe import
+Named roles vacant
+Mandatory role/deputy absent
+Sponsor fills before related production gate
+Legal position unresolved
+Counsel approval pending
+DPO restricts activation/publication and maintains decision log
+Agency lock-in
+Assets outside Jyphra control
+Technology Lead enforces repository/account/handover controls
+Scope pressure
+Feature omission or informal change
+Product Owner invokes baseline change process
+Capacity/cost variance
+Load or vendor use exceeds forecast
+Platform/Finance tune, cap, reforecast or procure
+Quality compression
+Testing reduced to protect date
+QA rejects gate; Sponsor decides schedule/budget change, not test waiver
+38. Change control after freeze
+Required field
+Content
+Change ID and proposer
+Unique identifier, date, role and accountable sponsor
+Reason
+Defect, legal/cultural correction, security, dependency, user value or operational need
+Impact
+Requirements, UX, data, APIs, security/privacy, tests, schedule, cost and operations
+Options
+Do nothing, configuration, implementation alternatives and recommendation
+Approvals
+Product Owner plus all affected domain authorities; executive/budget approval where material
+Versioning
+New document/rule/API/schema/build version; prior version retained
+Traceability
+Updated RTM, backlog, design, tests, release notes and manifest
+Communication
+Affected Jyphra, agency, governance, operations and users as applicable
+39. Production gates that remain intentionally open
+ID
+Gate
+Closure condition
+OG-01
+Authoritative cultural approval
+Nata/Saino and ritual-sensitive rules receive required independent review/final approval
+OG-02
+Named governance appointments
+Mandatory roles, deputies, branch scopes and recusal coverage are active
+OG-03
+Legal/privacy validation
+Nepal-qualified counsel validates policies, retention, minors, deletion and processors
+OG-04
+Real-data readiness
+Genealogy inventory, provenance/consent, pilot, reconciliation and sampling pass
+OG-05
+Commercial readiness
+Live quotations, VAT/withholding, agency and vendor contracts approved
+OG-06
+Assurance evidence
+UAT, security, performance, accessibility, migration and DR evidence accepted
+OG-07
+Operational readiness
+Support, monitoring, incidents, backup/restore, training and handover complete
+OG-08
+Store readiness
+Apple/Google requirements, signing, listings, privacy and deletion flows accepted
+OG-09
+Executive go-live
+Jyphra signs final go/no-go and residual risk acceptance
+40. Freeze statement
+Jyphra Technology Pvt. Ltd. approves and freezes this Final SDLC Execution & Governance Specification as Development Execution Baseline v1.0, effective 8 September 2026. It authorizes the development lifecycle for the complete Release 1.0 scope. Any deviation requires formal change control. This document does not authorize production until every applicable open gate is closed.
+Approval field
+Frozen value
+Owner
+Jyphra Technology Pvt. Ltd.
+Approving organization
+Jyphra Technology Pvt. Ltd.
+Decision
+Approve and freeze Final SDLC Execution Baseline v1.0
+Development
+Authorized under this lifecycle and the frozen requirements baseline
+Production
+Withheld pending Section 39 and release-gate evidence
+Change policy
+No silent amendment; approved versioned change only
+Appendix A — Mandatory artifact catalogue
+ID
+Artifact
+Accountable owner
+Required by
+A01
+Product backlog and RTM
+Product Owner
+Continuous
+A02
+Screen designs, prototype and design system
+UX Lead
+G1; maintained
+A03
+Domain model, ERD, schema and migrations
+Data/Backend Lead
+G1/G2; every change
+A04
+OpenAPI and event contracts
+Backend Lead
+Before dependent implementation
+A05
+ADRs and architecture views
+Technology Lead
+Decision-triggered
+A06
+Threat model and DPIA
+Security/DPO
+G1; epic/release delta
+A07
+Test plan, cases, automation and reports
+QA Lead
+Continuous/G5
+A08
+Migration mapping, scripts and reconciliation
+Data Lead
+Before imports
+A09
+CI/CD and infrastructure-as-code
+Platform Lead
+G2; maintained
+A10
+Release evidence and go/no-go
+Release Manager
+Every production release
+A11
+Monitoring, alerts and runbooks
+Operations Lead
+Before G6
+A12
+Backup/restore and DR evidence
+Platform Lead
+Before G6; recurring
+A13
+Training and handover pack
+Program/Ops Lead
+G6/G7
+A14
+Cultural rule versions and approvals
+Cultural Authority
+Before activation
+A15
+Privacy/legal approvals and processor register
+DPO
+Before production
+Appendix B — Sprint-ready story template
+Story ID, epic and governing requirement IDs
+User/role, objective and business value
+Preconditions, permissions and branch/resource scope
+Main, alternate, validation, denial and failure behaviours
+UX states and Nepali/English content keys
+Data/API/event/migration impact
+Privacy classification, consent and audit events
+Threat/abuse cases and mitigations
+Analytics, logs, metrics and alerts
+Acceptance criteria and test evidence
+Dependencies, authority decisions, feature flag and rollback
+Definition-of-Ready approval and final acceptance
+Appendix C — Release go/no-go checklist
+Baseline scope and approved changes reconciled
+RTM complete; requirements have passing evidence
+Zero blocker/critical defects and governed residual issues
+Cultural, genealogy, privacy and legal configurations authorized
+Security, performance, accessibility, resilience and migration evidence accepted
+Stores/signing/listings/deletion disclosures ready
+Monitoring, alerts, support, incidents, backups, restore and rollback ready
+Agency/Jyphra handover and access review complete
+Executive decision, release window and communications recorded

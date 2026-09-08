@@ -1,0 +1,30 @@
+# CODEOWNERS for Kashyap Adhikari Family Tree
+# Owner: Jyphra Technology Pvt. Ltd.
+#
+# This file defines code ownership for pull request review routing.
+# All changes require Jyphra approval.
+
+# Default owner for everything
+* @rahulgupta32
+
+# Frozen baseline documents - changes require explicit Jyphra approval
+docs/baseline/ @rahulgupta32
+
+# Security-sensitive files
+SECURITY.md @rahulgupta32
+.github/workflows/ @rahulgupta32
+
+# Infrastructure and deployment
+infra/ @rahulgupta32
+docker-compose*.yml @rahulgupta32
+Dockerfile* @rahulgupta32
+
+# API contracts
+docs/api/ @rahulgupta32
+
+# Privacy and data policies
+docs/privacy/ @rahulgupta32
+
+# Cultural rules and Nata/Saino configuration
+**/nata_saino/ @rahulgupta32
+**/cultural/ @rahulgupta32

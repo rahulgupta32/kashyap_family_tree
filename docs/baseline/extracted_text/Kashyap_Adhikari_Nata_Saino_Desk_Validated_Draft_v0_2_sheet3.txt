@@ -1,0 +1,24 @@
+﻿Relationship Path Code Legend						
+Canonical path notation for deterministic rule matching; direction is always Ego → relative.						
+Code	Meaning	Example	Interpretation	Safety rule
+E	Ego/viewing person	E	The person for whom a relationship is calculated	Required start
+F	Father	E-F	Ego's recorded father	Edge type must be known
+M	Mother	E-M	Ego's recorded mother	Edge type must be known
+B	Brother	E-B(o) / E-B(y)	Older/younger brother	Use (o)/(y) only with reliable age/order
+Z	Sister	E-Z(o) / E-Z(y)	Older/younger sister	Use (o)/(y) only with reliable age/order
+S	Son	E-S	Son	Do not infer biological subtype
+D	Daughter	E-D	Daughter	Do not infer biological subtype
+H	Husband	E-H	Husband	Marriage status/dates are separate
+W	Wife	E-W	Wife	Marriage status/dates are separate
+SP	Spouse, gender-neutral	E-SP-F	Spouse's father	Resolver expands to H or W when known
+CHILD	Child, gender-neutral	E-CHILD-SP	Child's spouse	Resolver expands to S or D when known
+AP	Adoptive parent	E-AP(F)	Adoptive father	Explicit adoptive edge
+AC	Adopted child	E-AC(D)	Adopted daughter	Explicit adoptive edge
+STP	Step-parent	E-STP(M)	Stepmother	Explicit step edge
+STB/STZ	Step-sibling	E-STB	Stepbrother	Explicit step edge
+HB/HZ	Half-sibling	E-HB	Half-brother	Shared parent identifier required
+GUARD	Guardian	E-GUARD	Legal/customary guardian	Never counted as blood
+XSP	Former spouse	E-XSP	Divorced/separated spouse	Historical, status-aware
+?	Unknown path	E-?	Unconfirmed relationship	Never guess
+!	Disputed path	E-!	Contested relationship	Restricted and auditable
+*	Any one edge	E-*-*-S	Great-grandson pattern	Use only in reviewed generalized rules

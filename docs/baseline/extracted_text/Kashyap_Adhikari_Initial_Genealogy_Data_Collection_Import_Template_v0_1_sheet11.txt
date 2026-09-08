@@ -1,0 +1,15 @@
+﻿Data Dictionary & API Contract Notes									
+Field-level definitions for implementation, migration and test-case design.									
+Entity	Field	Required?	Data Type	Example Format	Definition	Validation	Sensitivity	API/Migration Rule	Owner
+Person	Person ID	Yes	String	PER-00000001	Immutable internal person identifier	Unique; pattern match	Internal	Server-generated in production	Data governance
+Person	Names (Nepali)	Given + family	Unicode string	काश्यप अधिकारी	Name as supported by source	No forced transliteration	Personal	Preserve exact source spelling; aliases separate	Branch steward
+Person	Gender	Yes	Enum	Male	Self-reported or source-supported gender field	Controlled value	Sensitive	Unknown allowed; never infer from name	Privacy owner
+Person	Living Status	Yes	Enum	Living	Living/deceased/unknown	Death date requires Deceased	Sensitive	Controls privacy defaults	Privacy owner
+Person	Birth/Death Date	Conditional	Date/text + metadata	2080-01-01 + BS	Date with calendar and precision	No false conversion	Sensitive	Canonical derived instant stored separately by backend	Calendar owner
+ParentChild	Parent/Child IDs	Yes	Foreign keys	PER-…	Directed relationship edge	IDs must exist; parent ≠ child	Highly sensitive	Cycle and duplicate checks required	Genealogy authority
+ParentChild	Relationship Type	Yes	Enum	Biological	Nature of parent-child link	Explicit controlled value	Highly sensitive	Never default to Biological	Genealogy authority
+Union	Partner IDs	Yes	Foreign keys	PER-…	Two participants in union history	Both IDs exist and differ	Highly sensitive	Status-aware; do not hard-delete history	Privacy/legal
+Residence	Coordinates	Optional	Decimal	27.7172, 85.3240	Location coordinates	Range check; purpose required	Highly sensitive	Store coarse/obfuscated coordinates for map	Privacy/security
+Contact	Contact Value	Yes	String	+977…	Phone/email contact	Format + verification	Restricted	Encrypt at rest; never public export	Security
+Source	Source ID	Yes for verified facts	Foreign key	SRC-…	Evidence provenance	Must exist and be accessible to reviewer	Variable	Hash/version uploaded files	Records owner
+Dispute	Case ID	Yes	String	DSP-…	Auditable conflict container	Authorized assignment required	Restricted	No automated resolution	Governance

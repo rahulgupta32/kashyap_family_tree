@@ -1,0 +1,18 @@
+﻿Scale & Financial Assumptions					
+Kashyap Adhikari platform | Version 0.1 | 8 September 2026 | Owner: Jyphra Technology Pvt. Ltd.					
+Assumption	Value	Unit / treatment	Minimum	Recommended	Enterprise
+Model owner	Jyphra Technology Pvt. Ltd.				
+Delivery model	Jyphra-led hybrid team with externally contracted agency capacity				
+Development period	12–15 months				
+Registered-user launch capacity	100000	users			
+Scale-without-redesign target	500000	users			
+Monthly active users baseline	20000	users			
+Daily active users baseline	5000	users			
+Normal peak concurrent users	1000	users			
+Support model	Business-hours monitoring and user support; emergency contact outside hours without 24/7 SLA				
+Cloud model	Managed critical services plus cost-efficient compute/containers				
+Contingency rate	0.15	applied to implementation subtotal			
+Illustrative VAT rate	0.13	shown separately; confirm tax treatment before contracting			
+USD/NPR planning rate	151.48	NRB selling rate on 2026-09-08			
+Planning horizon	3	post-launch operating years			
+Budget disclosure	Workstream/phase totals only; no individual compensation				

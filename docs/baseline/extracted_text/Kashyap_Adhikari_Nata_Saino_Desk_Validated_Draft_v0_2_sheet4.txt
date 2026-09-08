@@ -1,0 +1,15 @@
+﻿Minimum Acceptance Test Cases											
+Expected outputs remain provisional until their linked rule is final-approved.											
+Test ID	Viewer Context	Path	Input Conditions	Expected Nepali Output	Alternative / Detail	Expected Status	Negative Safety Check	Linked Rule	Reviewer Result	Evidence Link	Notes
+TC-001	Any	E-F	Biological father edge	बुबा	बुवा; पिता	Draft	Must not label adoptive father as biological	NS-002	Pending		
+TC-002	Any	E-M-B	Biological mother + brother	मामा	Show source/applicability in Other terms	Draft	Must distinguish father's brother	NS-026	Pending		
+TC-003	Any	E-F-B(y)	Father's younger brother; order known	काका	कान्छाबुबा may appear as variant	Draft	Do not use elder-uncle rule	NS-020	Pending		
+TC-004	Any	E-F-B	Sibling order unknown	Terminology awaiting approval	Show neutral path: father's brother	Draft	Must not guess काका/ठूलोबुबा		Pending		
+TC-005	Any	E-M-Z(o)	Mother's older sister	आमाकी दिदी	ठूलीआमा only after validation	Draft	Avoid ambiguous automatic label	NS-028	Pending		
+TC-006	Female spouse	E-H-B(y)	Active marriage	देवर	Respect privacy permissions	Draft	Do not return सालो	NS-044	Pending		
+TC-007	Any	E-AP(F)	Explicit adoptive edge	धर्मपिता	Show adoptive badge	Draft	Must not silently show बुबा as biological	NS-058	Pending		
+TC-008	Any	E-HB	Shared exactly one parent	आधा-दाजु/भाइ	Age-specific term only if order known	Draft	Must not merge with full sibling	NS-064	Pending		
+TC-009	Any	E-?	Insufficient parent/path data	सम्बन्ध पुष्टि हुन बाँकी	Display neutral path	Draft	Must not infer a cultural term	NS-068	Pending		
+TC-010	Any	E-!	Dispute flag active	विवादित सम्बन्ध	Restrict visibility and log access	Draft	Must not publish as verified	NS-069	Pending		
+TC-011	Any	Two valid graph paths	Both paths final-approved	Primary approved term	Expandable alternative terms/paths	Draft	Must not hide conflicting valid path		Pending		
+TC-012	Any	Version transition	Old and new rule versions exist	Term for effective date	Audit old result; notify/recalculate as configured	Draft	Must not overwrite prior rule history		Pending		

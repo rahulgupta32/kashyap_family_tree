@@ -1,0 +1,16 @@
+﻿Initial Dataset Readiness Dashboard							
+Formula-driven staging readiness. Blank template counts are expected until real records are collected.							
+Metric	Count	Production import gate				
+Branches entered	0	BLOCKED UNTIL REAL DATA IS COLLECTED AND APPROVED
+
+Required: approved branches, verified persons, accepted evidence, referential-integrity checks, duplicate resolution, privacy/consent review, branch-authority sign-off and a tested rollback plan.				
+Approved branches	0					
+Persons entered	0					
+Verified persons	0					
+Parent-child links	0					
+Approved parent-child links	0					
+Unions entered	0
+Evidence sources	0
+Accepted evidence sources	0
+Open disputes	0
+Private contacts	0

@@ -1,0 +1,10 @@
+﻿Sources, Limitations and Refresh Rules							
+External prices are volatile; validate quotations before procurement or contract signature.							
+Input	Value	As of	Source	URL	Use / limitation	Owner
+USD/NPR selling rate	151.48 NPR/USD	2026-09-08	Nepal Rastra Bank	https://www.nrb.org.np/forex/	Official daily rate; model values are NPR	Jyphra Finance/Procurement
+Firebase pricing	Pay-as-you-go / usage based	2026-09-08	Google Firebase	https://firebase.google.com/pricing	Use current calculator and Nepal SMS rate at procurement	Jyphra Finance/Procurement
+AWS compute pricing	Usage and region dependent	2026-09-08	Amazon Web Services	https://aws.amazon.com/ec2/pricing/	Hybrid-cloud benchmark; architecture is vendor-neutral	Jyphra Finance/Procurement
+AWS managed database pricing	Usage and region dependent	2026-09-08	Amazon Web Services	https://aws.amazon.com/rds/pricing/	Confirm selected region, HA, backups and transfer	Jyphra Finance/Procurement
+Nepal software engineer compensation	Published range NPR 526k–1.397m annual; broad market signal only	2026-09-08	Levels.fyi	https://www.levels.fyi/t/software-engineer/locations/nepal	Not used to disclose individual rates	Jyphra Finance/Procurement
+Nepal outsourcing benchmark	USD 20–40/hour indicative	2026-09-08	Bytecode Developers	https://bytecodedevelopers.com/blog/why-outsourcing-to-nepal-saves-big	Commercial source; triangulation only	Jyphra Finance/Procurement
+VAT/tax treatment	13% illustrative model assumption	2026-09-08	Jyphra planning assumption	https://ird.gov.np/	Tax adviser must confirm taxable base, withholding and exemptions	Jyphra Finance/Procurement

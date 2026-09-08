@@ -1,0 +1,20 @@
+﻿Implementation Budget by Workstream				
+All amounts NPR millions; consolidated totals intentionally avoid individual salary disclosure.				
+Workstream	Minimum	Recommended	Enterprise	Scope note
+Product discovery, program governance and business analysis	1.4	2.8	4.5	Core delivery
+UX research, UI design, accessibility and prototype	1	2	3.2	Core delivery
+Android and iOS mobile applications	3.4	6.2	9.5	Core delivery
+Backend APIs, database and integration services	3.6	6.8	10.5	Product capability
+Web administration and moderation portal	1.5	2.8	4.5	Product capability
+Genealogy graph, Nata/Saino and cultural-rule framework	1.8	3.6	5.8	Product capability
+Chat, notifications, media and maps	1.4	2.8	4.8	Product capability
+QA automation, devices, performance testing and UAT	1.5	3.2	5.2	Product capability
+Security, privacy engineering and independent assessment	0.8	2	3.8	Assurance/platform
+DevOps, environments, monitoring and release automation	0.9	1.8	3	Assurance/platform
+Genealogy migration tooling and controlled pilot import	1	2.2	3.8	Assurance/platform
+Training, store readiness, launch and stabilization	0.7	1.5	2.5	Launch readiness
+Implementation subtotal	19	37.7	61.099999999999994	
+Contingency (15%)	2.85	5.655	9.165	
+Implementation incl. contingency, excl. VAT	21.85	43.355000000000004	70.26499999999999	
+Illustrative VAT (13%)	2.8405000000000005	5.636150000000001	9.13445	
+Implementation incl. contingency and illustrative VAT	24.6905	48.991150000000005	79.39944999999999	

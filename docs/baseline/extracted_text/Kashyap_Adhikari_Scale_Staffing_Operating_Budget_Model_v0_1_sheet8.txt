@@ -1,0 +1,9 @@
+﻿Model Checks				
+PASS means structural arithmetic controls reconcile; it does not convert estimates into supplier quotations.				
+Check	Result	Delta	Where to fix	Notes
+Funding allocation equals 100%	PASS	0	Funding Gates	Must equal zero
+Recommended TCO exceeds minimum	PASS		TCO Summary	Scenario ordering
+Enterprise TCO exceeds recommended	PASS		TCO Summary	Scenario ordering
+Contingency rate equals approved 15%	PASS		Assumptions	Approved decision
+Planning horizon equals 3 years	PASS		Assumptions	Approved decision
+MODEL STATUS	PASS			

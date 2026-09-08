@@ -1,0 +1,14 @@
+﻿Staffing and Delivery Capacity						
+No individual salary rates. Capacity is shown as indicative concurrent FTE ranges and sourcing model.						
+Capability	Primary source	Min low	Min high	Rec low	Rec high	Enterprise high
+Executive sponsorship and product ownership	Jyphra	1	2	1	2	2
+Program management and business analysis	Jyphra-led hybrid	2	3	3	4	6
+UX/UI and accessibility	Hybrid	1	2	2	3	4
+Mobile engineering	Hybrid	3	4	5	7	10
+Backend/platform engineering	Hybrid	3	4	5	7	11
+Admin web engineering	Hybrid	1	2	2	3	5
+QA and test automation	Hybrid/independent	2	3	3	5	7
+DevOps/SRE and security	Hybrid/specialist	1	2	2	3	5
+Data migration/genealogy operations	Jyphra/community-led	2	4	4	7	12
+Content/localization/moderation preparation	Jyphra/community-led	2	3	3	5	8
+Indicative concurrent delivery capacity		18	29	30	46	70

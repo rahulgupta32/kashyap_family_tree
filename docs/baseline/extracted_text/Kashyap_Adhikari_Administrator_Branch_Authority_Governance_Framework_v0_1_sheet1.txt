@@ -1,0 +1,15 @@
+﻿Administrator & Branch Authority Governance Framework							
+Kashyap Gotra Adhikari Genealogy & Community Platform | SDLC governance baseline v0.1 | Named appointments pending							
+Control	Rule	Implementation requirement
+Current status	ROLE STRUCTURE APPROVED FOR PLANNING; NAMES PENDING	System design and access-control development may use provisional Role IDs. Production authority cannot activate until named appointments are approved.
+Operating principle	Least privilege	Every account receives only the minimum permissions necessary for its assigned duties and geographic/branch scope.
+Separation of duties	Mandatory	Proposer, cultural reviewer and final approver must be different where specified. System administrators cannot alter audit evidence.
+Branch autonomy	Scoped	Branch authorities act only within assigned branches unless formally delegated by the central authority.
+Recusal	Mandatory	A reviewer must recuse when a decision concerns their own record, household, direct family, financial interest or active dispute.
+Delegation	Time-bound and explicit	Delegations require start/end dates, written scope, delegator, delegate, reason and audit record. Privileges expire automatically.
+Emergency access	Break-glass only	Emergency elevation requires incident ID, justification, monitoring, automatic expiry and independent post-event review.
+Shared accounts	Prohibited	Every privileged action must be attributable to one verified individual using MFA.
+Vacancy handling	No silent substitution	An acting appointee must be formally recorded. High-risk approvals pause if the required independent authority is vacant.
+Appointment evidence	Required	Each appointment requires identity verification, conflict declaration, confidentiality commitment, training completion and approving resolution.
+Review cycle	At least annually	Appointments and permissions are reviewed annually and immediately upon resignation, removal, inactivity, dispute or security incident.
+Production gate	Named roles required	The mandatory roles identified in the Role Catalogue must be filled and tested before production launch.

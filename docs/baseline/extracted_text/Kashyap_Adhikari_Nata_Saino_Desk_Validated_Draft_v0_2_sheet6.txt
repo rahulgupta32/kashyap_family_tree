@@ -1,0 +1,18 @@
+﻿Rule Proposal & Approval Log													
+One row per review action. Reviewer and final approver must be different named individuals.													
+Action ID	Rule ID	Rule Version	Action	Proposed Value / Change	Reason	Evidence ID	Proposed By	Proposed At	Cultural Reviewer	Review Decision	Senior Final Approver	Final Decision	Audit Notes
+ACT-001		0.1	Proposal							Pending		Pending	
+ACT-002		0.1	Proposal							Pending		Pending	
+ACT-003		0.1	Proposal							Pending		Pending	
+ACT-004		0.1	Proposal							Pending		Pending	
+ACT-005		0.1	Proposal							Pending		Pending	
+ACT-006		0.1	Proposal							Pending		Pending	
+ACT-007		0.1	Proposal							Pending		Pending	
+ACT-008		0.1	Proposal							Pending		Pending	
+ACT-009		0.1	Proposal							Pending		Pending	
+ACT-010		0.1	Proposal							Pending		Pending	
+ACT-011		0.1	Proposal							Pending		Pending	
+ACT-012		0.1	Proposal							Pending		Pending	
+ACT-013		0.1	Proposal							Pending		Pending	
+ACT-014		0.1	Proposal							Pending		Pending	
+ACT-015		0.1	Proposal							Pending		Pending	

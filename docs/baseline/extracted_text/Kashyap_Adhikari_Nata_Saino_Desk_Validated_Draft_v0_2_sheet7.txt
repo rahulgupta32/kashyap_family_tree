@@ -1,0 +1,11 @@
+﻿Expert Validation Dashboard							
+Live counts are formula-driven from the catalogue.							
+Metric	Count	Release gate				
+Total candidate rules	71	NOT READY FOR PRODUCTION
+
+All candidate terms require expert validation. Publication requires documentary/customary evidence, a cultural review decision, and separate senior final approval. Unsupported paths must remain neutral.				
+Expert validation required	71					
+Reviewer validated	0					
+Final-approved	0					
+Rejected	0
+Authority evidence missing/inadequate	71	Completion rule: Final-approved = Total candidate rules, and authority evidence missing/inadequate = 0				

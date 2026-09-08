@@ -1,0 +1,13 @@
+﻿Governance Readiness Dashboard							
+Formula-driven status for role appointment and authority readiness.							
+Readiness metric	Count	Production governance gate				
+Mandatory roles designed	18	BLOCKED — NAMED APPOINTMENTS PENDING
+
+Before launch: fill all mandatory roles, provide deputies for critical roles, staff each branch, verify identity/conflicts/training/MFA, approve scopes, test access controls and confirm escalation contacts.				
+Active named appointments	0					
+Vacant appointments	0					
+Fully staffed branches	0					
+Partially staffed branches	0					
+Critical/high coverage risks	0					
+Active delegations	0
+Open break-glass records	0

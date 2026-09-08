@@ -1,0 +1,14 @@
+﻿Nata/Saino Rule Catalogue — Desk-Validated Draft							
+Kashyap Gotra Adhikari Genealogy & Community Platform | Working draft v0.2 | AI-assisted desk review 2026-09-08							
+Control	Decision	Implementation rule
+Document status	DESK-VALIDATED DRAFT — NOT CULTURALLY AUTHORITATIVE	Terminology has received an AI-assisted linguistic/genealogical safety review. No term may be culturally published until two-person human approval is complete.
+Purpose	Validation catalogue	Provides standard-Nepali candidate terms, unambiguous path codes, variants, reciprocal relationships, governance fields, and test cases.
+Path direction	Ego → relative	Every path begins at the viewing person (E). Example: E-F-B(y) means the viewer's father's younger brother.
+Publication gate	Two-person approval	Cultural Reviewer validates; a different Senior Community/Religious Authority final-approves. Self-approval is prohibited.
+Evidence requirement	Mandatory	Each approved rule requires a source/evidence record and at least one example path. Research references are leads, not project authority.
+Versioning	Immutable history	Changes create a new rule version with effective date and reason. Earlier versions remain available for audit, recalculation, notification, and rollback.
+Multiple valid paths	Primary + alternatives	Display one approved primary term and expose other valid terms/paths with source and applicability.
+Unsupported path	Never guess	Display the neutral relationship path and “Terminology awaiting approval.”
+Non-biological links	Explicitly distinguished	Adoptive, step, half-sibling, guardian, remarriage, divorced/separated spouse, unknown-parentage, and disputed links must not be silently treated as biological.
+Variant handling	Separate fields	Standard Nepali is primary. Regional, family, honorific, spelling, and community variants remain separately searchable.
+Required next action	Expert review	Review every catalogue row; correct terminology/applicability; identify reviewer and final approver; attach evidence; then mark approval status.

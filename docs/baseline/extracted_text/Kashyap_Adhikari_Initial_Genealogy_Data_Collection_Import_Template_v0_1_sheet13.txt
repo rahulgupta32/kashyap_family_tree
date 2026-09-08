@@ -1,0 +1,11 @@
+﻿Fictional Example Records — DO NOT IMPORT							
+Training examples only. Names and identifiers below are fictitious and do not represent real people.							
+Example Type	ID	Related ID	Name / Description	Type/Status	Source ID	Expected Validation	Notes
+Branch	BR-0001		नमुना शाखा	Draft	SRC-00000001	Not importable	Fictional
+Person	PER-00000001	BR-0001	नमुना अधिकारी एक	Living	SRC-00000001	Valid structure	Fictional
+Person	PER-00000002	BR-0001	नमुना अधिकारी दुई	Living	SRC-00000001	Valid structure	Fictional
+Person	PER-00000003	BR-0001	नमुना अधिकारी तीन	Unknown	SRC-00000002	Valid structure	Fictional
+Parent-child	PCR-00000001	PER-00000001 → PER-00000003	Directed edge	Biological / Proposed	SRC-00000002	Needs authority review	Fictional
+Parent-child	PCR-00000002	PER-00000002 → PER-00000003	Directed edge	Biological / Proposed	SRC-00000002	Needs authority review	Fictional
+Union	UNI-00000001	PER-00000001 + PER-00000002	Union history	Active	SRC-00000001	Needs consent/review	Fictional
+Dispute	DSP-00000001	PCR-00000001	Competing parentage claim	Open	SRC-00000003	Restricted workflow	Fictional
