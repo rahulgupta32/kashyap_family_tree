@@ -161,6 +161,15 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Conversation not found.',
     ne: 'कुराकानी फेला परेन।'
   },
+  [ErrorCode.POST_NOT_FOUND]: {
+    en: 'Community post not found.',
+    ne: 'सामुदायिक पोस्ट फेला परेन।'
+  },
+  [ErrorCode.EVENT_NOT_FOUND]: {
+    en: 'Event not found.',
+    ne: 'कार्यक्रम फेला परेन।'
+  },
+
   [ErrorCode.INTERNAL_SERVER_ERROR]: {
     en: 'An internal error occurred. Please try again later.',
     ne: 'आन्तरिक त्रुटि भयो। कृपया पछि पुनः प्रयास गर्नुहोस्।'
