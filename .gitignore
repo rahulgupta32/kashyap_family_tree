@@ -93,14 +93,8 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-store/
 package-lock.json
-pnpm-lock.yaml
-
-# --- Python ---
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
+# pnpm-lock.yaml is tracked for strict deterministic CI builds
+.next/
 dist/
 .eggs/
 *.egg
