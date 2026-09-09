@@ -146,4 +146,27 @@ describe('AuthService (Comprehensive Unit & Security Tests)', () => {
       expect(session.user.personId).toBeNull();
     });
   });
+
+  describe('Production Security Enforcement', () => {
+    const originalEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should reject OTP verification in production mode until persistent auth exists', async () => {
+      // Request in non-prod
+      const initRes = await authService.requestOtp({ phoneNumber: '9841000001' });
+
+      // Switch to production
+      process.env.NODE_ENV = 'production';
+
+      await expect(
+        authService.verifyOtp({
+          otpSessionId: initRes.otpSessionId,
+          code: '123456',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
 });

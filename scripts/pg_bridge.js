@@ -4,27 +4,24 @@ const { spawn } = require('child_process');
 const LOCAL_PORT = 5432;
 
 const server = net.createServer((clientSocket) => {
-  console.log('[Bridge] Client connected from Node/Windows application');
+  clientSocket.setNoDelay(true);
+  clientSocket.setKeepAlive(true, 1000);
 
-  // Spawn nc inside WSL connecting to PostgreSQL on localhost:5432
-  const wslProc = spawn('wsl', ['-u', 'root', '-d', 'Ubuntu', '--', 'nc', '127.0.0.1', '5432']);
+  // Spawn socat inside WSL bridging stdio directly to PostgreSQL on localhost:5432
+  const wslProc = spawn('wsl', ['-u', 'root', '-d', 'Ubuntu', '--', 'socat', 'STDIO', 'TCP:127.0.0.1:5432']);
 
   clientSocket.pipe(wslProc.stdin);
   wslProc.stdout.pipe(clientSocket);
 
-  clientSocket.on('error', (err) => {
-    console.error('[Bridge] Client socket error:', err.message);
-    wslProc.kill();
-  });
+  const cleanup = () => {
+    try { wslProc.kill(); } catch (e) {}
+    try { clientSocket.destroy(); } catch (e) {}
+  };
 
-  wslProc.on('error', (err) => {
-    console.error('[Bridge] WSL process error:', err.message);
-    clientSocket.destroy();
-  });
-
-  wslProc.on('close', (code) => {
-    clientSocket.end();
-  });
+  clientSocket.on('error', cleanup);
+  wslProc.on('error', cleanup);
+  wslProc.on('close', () => clientSocket.end());
+  clientSocket.on('close', cleanup);
 });
 
 server.listen(LOCAL_PORT, '127.0.0.1', () => {

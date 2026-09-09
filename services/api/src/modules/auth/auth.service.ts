@@ -99,28 +99,23 @@ export class AuthService {
     // OTP Verified! Consume session
     this.otpStore.delete(dto.otpSessionId);
 
-    // SECURITY CONTROL: Phone-based role assignment is strictly prohibited in production
-    let userId: string;
-    let roles: Role[];
-    let personId: string | null;
-    let isClaimed: boolean;
-
+    // SECURITY CONTROL: Until persistent database-backed authentication exists,
+    // production authentication is strictly rejected. Fabricated timestamp users are forbidden.
     if (this.isProduction()) {
-      // Production must query database user_accounts and user_roles tables
-      // Real database user mapping for production
-      userId = `u-${Date.now()}`;
-      roles = [Role.REGISTERED_USER];
-      personId = null;
-      isClaimed = false;
-    } else {
-      // Test/development shortcut
-      const isAdmin = session.phoneNumber === '9841000099' || session.phoneNumber.endsWith('000099');
-      userId = isAdmin ? 'u-admin' : 'u-401';
-      roles = isAdmin ? [Role.SUPER_ADMIN, Role.BRANCH_ADMIN] : [Role.VERIFIED_MEMBER];
-      personId = isAdmin ? null : 'p-401';
-      isClaimed = !isAdmin;
-      this.logger.warn(`TEST MODE: Auth shortcut assigned identity ${userId} with roles [${roles.join(', ')}]`);
+      this.logger.error('CRITICAL SECURITY: Production authentication rejected. Persistent database authentication is pending implementation.');
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.UNAUTHORIZED,
+        message: 'Production authentication is disabled until persistent database authentication is fully implemented.',
+      });
     }
+
+    // Test/development shortcut (Permitted only in non-production environments)
+    const isAdmin = session.phoneNumber === '9841000099' || session.phoneNumber.endsWith('000099');
+    const userId = isAdmin ? 'u-admin' : 'u-401';
+    const roles = isAdmin ? [Role.SUPER_ADMIN, Role.BRANCH_ADMIN] : [Role.VERIFIED_MEMBER];
+    const personId = isAdmin ? null : 'p-401';
+    const isClaimed = !isAdmin;
+    this.logger.warn(`TEST MODE: Auth shortcut assigned identity ${userId} with roles [${roles.join(', ')}]`);
 
     const payload = {
       sub: userId,

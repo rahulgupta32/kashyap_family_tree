@@ -16,7 +16,7 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
     // Configure environment for real PostgreSQL
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
-    process.env.DB_HOST = 'localhost';
+    process.env.DB_HOST = '127.0.0.1';
     process.env.DB_PORT = '5432';
     process.env.DB_USER = 'kashyap_user';
     process.env.DB_PASSWORD = 'kashyap_secure_dev_password';
@@ -154,5 +154,32 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
 
     delete process.env.NODE_ENV;
     delete process.env.USE_PG_MEM;
+  });
+
+  it('should reject missing production database configuration', async () => {
+    process.env.NODE_ENV = 'production';
+    const oldUrl = process.env.DATABASE_URL;
+    const oldPass = process.env.DB_PASSWORD;
+    delete process.env.DATABASE_URL;
+    delete process.env.DB_PASSWORD;
+
+    const prodDb = new DatabaseService();
+    await expect(prodDb.onModuleInit()).rejects.toThrow('Missing required production database configuration');
+
+    if (oldUrl) process.env.DATABASE_URL = oldUrl;
+    if (oldPass) process.env.DB_PASSWORD = oldPass;
+    delete process.env.NODE_ENV;
+  });
+
+  it('should hard fail and refuse automatic pg-mem fallback when real PostgreSQL fails to connect', async () => {
+    const badDb = new DatabaseService();
+    const oldPort = process.env.DB_PORT;
+    process.env.DB_PORT = '59999'; // invalid port
+
+    await expect(badDb.onModuleInit()).rejects.toThrow('Database connection failed');
+    expect(badDb.getIsMemoryDb()).toBe(false);
+
+    if (oldPort) process.env.DB_PORT = oldPort;
+    else delete process.env.DB_PORT;
   });
 });

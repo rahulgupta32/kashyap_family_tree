@@ -27,23 +27,40 @@ import { DatabaseService } from '../../database/database.service';
 export class GenealogyService {
   private readonly logger = new Logger(GenealogyService.name);
 
-  // In-memory fallback structures for isolated test environments (e.g. unit tests without DB)
+  // In-memory structures for isolated unit test configuration only (when explicit test fixtures mode is enabled)
   private persons = new Map<string, any>();
   private parentLinks = new Map<string, Set<string>>();
   private childLinks = new Map<string, Set<string>>();
   private spouseLinks = new Map<string, Set<{ spouseId: string; status: SpouseStatus }>>();
+  private isTestFixtureMode = false;
 
   constructor(
     @Optional() private readonly personRepo?: PersonRepository,
     @Optional() private readonly linkRepo?: GenealogyLinkRepository,
     @Optional() private readonly db?: DatabaseService,
   ) {
-    // Seed in-memory structures for fallback/test fixture use
-    this.resetToFixtures();
+    // If repositories or db are not provided (e.g. isolated unit tests), enable test fixture mode explicitly
+    if (!this.personRepo || !this.linkRepo || !this.db) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('FATAL CONFIGURATION: GenealogyService requires PersonRepository, GenealogyLinkRepository, and DatabaseService in production.');
+      }
+      this.isTestFixtureMode = true;
+      this.resetToFixtures();
+    }
+  }
+
+  private checkDatabaseReady(): void {
+    if (this.isTestFixtureMode) return;
+    if (!this.personRepo || !this.linkRepo || !this.db) {
+      throw new Error('GenealogyService dependencies are missing. Database repositories are required.');
+    }
+    if (!this.db.isReady()) {
+      throw new Error('Database is not connected or ready. Automatic in-memory fallback is disabled.');
+    }
   }
 
   private get isDatabaseAvailable(): boolean {
-    return !!(this.personRepo && this.linkRepo && this.db && this.db.isReady());
+    return !this.isTestFixtureMode;
   }
 
   public resetToFixtures() {
@@ -532,19 +549,19 @@ export class GenealogyService {
 
   async listBranches() {
     if (this.isDatabaseAvailable) {
+      this.checkDatabaseReady();
       const res = await this.db!.query(
         'SELECT id, name_nepali, name_english, code, mool_ghar, kuldevata FROM branches ORDER BY name_nepali',
       );
-      if (res.rows.length > 0) {
-        return res.rows.map((r) => ({
-          id: r.id,
-          nameNepali: r.name_nepali,
-          nameEnglish: r.name_english,
-          code: r.code,
-          moolGhar: r.mool_ghar,
-          kuldevata: r.kuldevata,
-        }));
-      }
+      // Empty database results must remain empty; never fall back to mock fixtures
+      return res.rows.map((r) => ({
+        id: r.id,
+        nameNepali: r.name_nepali,
+        nameEnglish: r.name_english,
+        code: r.code,
+        moolGhar: r.mool_ghar,
+        kuldevata: r.kuldevata,
+      }));
     }
 
     return mockBranches;

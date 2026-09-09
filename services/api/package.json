@@ -11,10 +11,9 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
+    "test:unit": "jest --testPathIgnorePatterns=\"integration\"",
     "test:integration": "jest --config ./test/jest-integration.json",
+    "test": "jest --testPathIgnorePatterns=\"integration\"",
     "seed": "ts-node src/database/seed.command.ts"
   },
   "dependencies": {

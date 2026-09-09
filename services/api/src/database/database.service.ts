@@ -12,64 +12,68 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     const dbUrl = process.env.DATABASE_URL;
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isExplicitMemory = process.env.USE_PG_MEM === 'true';
+
+    // 1. In production, pg-mem is strictly forbidden
+    if (isProduction && isExplicitMemory) {
+      throw new Error('FATAL SECURITY CONFIGURATION: USE_PG_MEM is strictly prohibited in production mode.');
+    }
+
+    // 2. Reject missing production database configuration rather than using dev defaults
+    if (isProduction) {
+      const requiredEnvVars = ['DATABASE_URL', 'DB_PASSWORD'];
+      const hasUrl = !!process.env.DATABASE_URL;
+      const hasExplicitConfig = !!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME);
+
+      if (!hasUrl && !hasExplicitConfig) {
+        throw new Error(
+          'FATAL CONFIGURATION: Missing required production database configuration. Either DATABASE_URL or (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME) must be explicitly provided in production.',
+        );
+      }
+    }
+
+    // 3. Fallback to pg-mem is PERMITTED ONLY when explicitly configured (USE_PG_MEM=true) in non-production.
+    // Automatic fallback from real PostgreSQL failure to pg-mem is strictly removed from normal runtime.
+    if (isExplicitMemory) {
+      this.logger.log('Initializing in-process PostgreSQL SQL engine (pg-mem) for automated testing (USE_PG_MEM=true)...');
+      this.initMemoryDb();
+      return;
+    }
+
+    // Normal runtime always targets real PostgreSQL
     const dbHost = process.env.DB_HOST || '127.0.0.1';
     const dbPort = parseInt(process.env.DB_PORT || '5432', 10);
     const dbUser = process.env.DB_USER || 'kashyap_user';
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     const dbName = process.env.DB_NAME || 'kashyap_db';
 
-    const isProduction = process.env.NODE_ENV === 'production';
-    const isExplicitRealPg = process.env.USE_REAL_POSTGRES === 'true';
-    const isExplicitMemory = process.env.USE_PG_MEM === 'true';
+    this.logger.log(`Connecting to real PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
+    this.pool = new Pool({
+      connectionString: dbUrl,
+      host: dbHost,
+      port: dbPort,
+      user: dbUser,
+      password: dbPassword,
+      database: dbName,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
 
-    // In production, pg-mem is strictly forbidden
-    if (isProduction && isExplicitMemory) {
-      throw new Error('FATAL SECURITY CONFIGURATION: USE_PG_MEM is strictly prohibited in production mode.');
-    }
-
-    // Determine whether to use real PostgreSQL:
-    const shouldUseRealPg = isProduction || isExplicitRealPg || !isExplicitMemory;
-
-    if (shouldUseRealPg) {
-      this.logger.log(`Connecting to real PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
-      this.pool = new Pool({
-        connectionString: dbUrl,
-        host: dbHost,
-        port: dbPort,
-        user: dbUser,
-        password: dbPassword,
-        database: dbName,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 5000,
-      });
-
-      try {
-        const client = await this.pool.connect();
-        this.logger.log(`Connected to real PostgreSQL database successfully at ${dbHost}:${dbPort}/${dbName}.`);
-        client.release();
-        this.isMemoryDb = false;
-        this.isConnected = true;
-      } catch (err: any) {
-        this.isConnected = false;
-        // Strict failure policy: NEVER silently fallback to in-memory DB in production or when real PG is requested!
-        if (isProduction || isExplicitRealPg) {
-          this.logger.error(
-            `FATAL: Failed to connect to required PostgreSQL database at ${dbHost}:${dbPort}/${dbName}: ${err.message}. Startup aborted.`,
-            err.stack,
-          );
-          throw new Error(`Database connection failed: ${err.message}`);
-        }
-
-        // If in test/dev mode without explicit USE_REAL_POSTGRES, log explicit warning and only then fall back
-        this.logger.warn(
-          `Live PostgreSQL connection failed (${err.message}). Falling back to in-process SQL engine (pg-mem) for test environment only.`,
-        );
-        this.initMemoryDb();
-      }
-    } else {
-      this.logger.log('Initializing in-process PostgreSQL SQL engine (pg-mem) for automated testing (USE_PG_MEM=true)...');
-      this.initMemoryDb();
+    try {
+      const client = await this.pool.connect();
+      this.logger.log(`Connected to real PostgreSQL database successfully at ${dbHost}:${dbPort}/${dbName}.`);
+      client.release();
+      this.isMemoryDb = false;
+      this.isConnected = true;
+    } catch (err: any) {
+      this.isConnected = false;
+      this.logger.error(
+        `FATAL: Failed to connect to required PostgreSQL database at ${dbHost}:${dbPort}/${dbName}: ${err.message}. Automatic in-memory fallback is disabled.`,
+        err.stack,
+      );
+      throw new Error(`Database connection failed: ${err.message}`);
     }
   }
 
