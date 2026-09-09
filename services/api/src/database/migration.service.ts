@@ -14,6 +14,24 @@ export class MigrationService implements OnModuleInit {
     await this.runMigrations();
   }
 
+  private resolveMigrationsDir(): string | null {
+    const candidates = [
+      path.resolve(process.cwd(), 'database/migrations'),
+      path.resolve(process.cwd(), '../../database/migrations'),
+      path.resolve(__dirname, '../../../../database/migrations'),
+      path.resolve(__dirname, '../../../database/migrations'),
+      path.resolve(__dirname, '../../database/migrations'),
+    ];
+
+    for (const dir of candidates) {
+      if (fs.existsSync(dir)) {
+        return dir;
+      }
+    }
+
+    return null;
+  }
+
   async runMigrations() {
     this.logger.log('Checking database migrations status...');
 
@@ -29,64 +47,88 @@ export class MigrationService implements OnModuleInit {
     `);
 
     // 2. Discover migration files
-    const migrationsDir = path.resolve(__dirname, '../../../../database/migrations');
-    if (!fs.existsSync(migrationsDir)) {
-      this.logger.warn(`Migrations directory not found at ${migrationsDir}`);
+    const migrationsDir = this.resolveMigrationsDir();
+    if (!migrationsDir) {
+      const msg = 'Migrations directory not found in any candidate path.';
+      if (process.env.NODE_ENV === 'production' || process.env.USE_REAL_POSTGRES === 'true') {
+        throw new Error(`FATAL: ${msg}`);
+      }
+      this.logger.warn(msg);
       return;
     }
+
+    this.logger.log(`Resolved migrations directory: ${migrationsDir}`);
 
     const files = fs
       .readdirSync(migrationsDir)
       .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
       .sort();
 
-    for (const file of files) {
-      const version = file.split('_')[0];
-      const filePath = path.join(migrationsDir, file);
-      const sqlContent = fs.readFileSync(filePath, 'utf8');
-      const checksum = crypto.createHash('sha256').update(sqlContent).digest('hex');
+    // 3. Acquire migration advisory lock in real PG mode (ADR-004 concurrency guard)
+    const isRealPg = !this.db.getIsMemoryDb();
+    const MIGRATION_LOCK_ID = 2026090901;
 
-      // Check if migration already applied
-      const existing = await this.db.query(
-        'SELECT version, checksum FROM schema_migrations WHERE version = $1',
-        [version],
-      );
+    let client: any = null;
+    if (isRealPg) {
+      client = await this.db.getClient();
+      await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
+      this.logger.log('Acquired PostgreSQL advisory lock for migration execution.');
+    }
 
-      if (existing.rows.length > 0) {
-        if (existing.rows[0].checksum !== checksum) {
-          this.logger.warn(
-            `Migration ${file} checksum mismatch! Expected ${existing.rows[0].checksum}, got ${checksum}.`,
-          );
+    try {
+      for (const file of files) {
+        const version = file.split('_')[0];
+        const filePath = path.join(migrationsDir, file);
+        const sqlContent = fs.readFileSync(filePath, 'utf8');
+        const checksum = crypto.createHash('sha256').update(sqlContent).digest('hex');
+
+        // Check if migration already applied
+        const existing = await this.db.query(
+          'SELECT version, checksum FROM schema_migrations WHERE version = $1',
+          [version],
+        );
+
+        if (existing.rows.length > 0) {
+          if (existing.rows[0].checksum !== checksum) {
+            const mismatchMsg = `FATAL: Migration ${file} checksum mismatch! Recorded: ${existing.rows[0].checksum}, Computed: ${checksum}. Tampering detected or migration altered after execution.`;
+            this.logger.error(mismatchMsg);
+            throw new Error(mismatchMsg);
+          }
+          this.logger.debug(`Migration ${file} already applied (version ${version}).`);
+          continue;
         }
-        continue;
+
+        this.logger.log(`Applying migration ${file}...`);
+        const start = Date.now();
+
+        try {
+          // Execute migration inside transaction
+          await this.db.transaction(async (txClient) => {
+            await txClient.query(sqlContent);
+            const duration = Date.now() - start;
+            await txClient.query(
+              'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)',
+              [version, file, checksum, duration],
+            );
+          });
+          this.logger.log(`Migration ${file} applied successfully in ${Date.now() - start}ms.`);
+        } catch (err: any) {
+          this.logger.error(`Migration ${file} failed: ${err.message}`, err.stack);
+          // Never swallow migration failures — always propagate to halt startup!
+          throw new Error(`Migration ${file} failed: ${err.message}`);
+        }
       }
-
-      this.logger.log(`Applying migration ${file}...`);
-      const start = Date.now();
-
-      try {
-        // Execute migration inside transaction
-        await this.db.transaction(async (client) => {
-          // Split by semicolon statements if necessary or execute whole script
-          await client.query(sqlContent);
-          const duration = Date.now() - start;
-          await client.query(
-            'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)',
-            [version, file, checksum, duration],
-          );
-        });
-        this.logger.log(` Migration ${file} applied successfully in ${Date.now() - start}ms.`);
-      } catch (err: any) {
-        this.logger.error(`Migration ${file} failed: ${err.message}`);
-        // In in-process SQL mode (pg-mem), some PG extensions/triggers might need custom handling
-        if (this.db.getIsMemoryDb()) {
-          this.logger.warn('Skipping unsupported extension/trigger DDL in in-process memory mode.');
-        } else {
-          throw err;
+    } finally {
+      if (isRealPg && client) {
+        try {
+          await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
+          this.logger.log('Released PostgreSQL advisory lock for migration execution.');
+        } finally {
+          client.release();
         }
       }
     }
 
-    this.logger.log('All migrations checked and up to date.');
+    this.logger.log('All database migrations verified and up to date.');
   }
 }

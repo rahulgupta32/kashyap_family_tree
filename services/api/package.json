@@ -14,7 +14,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:integration": "jest --config ./test/jest-integration.json"
+    "test:integration": "jest --config ./test/jest-integration.json",
+    "seed": "ts-node src/database/seed.command.ts"
   },
   "dependencies": {
     "@kashyap/contracts": "workspace:*",

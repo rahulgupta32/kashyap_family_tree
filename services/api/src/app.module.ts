@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database/database.module';
+import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { GenealogyModule } from './modules/genealogy/genealogy.module';
 import { ClaimsModule } from './modules/claims/claims.module';
@@ -25,6 +26,7 @@ import { ChatModule } from './modules/chat/chat.module';
       },
     ]),
     DatabaseModule,
+    HealthModule,
     AuthModule,
     GenealogyModule,
     ClaimsModule,
@@ -37,5 +39,3 @@ import { ChatModule } from './modules/chat/chat.module';
   ],
 })
 export class AppModule {}
-
-

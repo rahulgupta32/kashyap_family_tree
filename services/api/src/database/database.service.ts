@@ -1,8 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { newDb, IMemoryDb } from 'pg-mem';
-import * as fs from 'fs';
-import * as path from 'path';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
@@ -10,17 +8,30 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private pool: Pool | null = null;
   private memDb: IMemoryDb | null = null;
   private isMemoryDb = false;
+  private isConnected = false;
 
   async onModuleInit() {
     const dbUrl = process.env.DATABASE_URL;
-    const dbHost = process.env.DB_HOST || 'localhost';
+    const dbHost = process.env.DB_HOST || '127.0.0.1';
     const dbPort = parseInt(process.env.DB_PORT || '5432', 10);
     const dbUser = process.env.DB_USER || 'kashyap_user';
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     const dbName = process.env.DB_NAME || 'kashyap_db';
 
-    if (process.env.USE_REAL_POSTGRES === 'true' || process.env.NODE_ENV === 'production') {
-      this.logger.log(`Connecting to PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isExplicitRealPg = process.env.USE_REAL_POSTGRES === 'true';
+    const isExplicitMemory = process.env.USE_PG_MEM === 'true';
+
+    // In production, pg-mem is strictly forbidden
+    if (isProduction && isExplicitMemory) {
+      throw new Error('FATAL SECURITY CONFIGURATION: USE_PG_MEM is strictly prohibited in production mode.');
+    }
+
+    // Determine whether to use real PostgreSQL:
+    const shouldUseRealPg = isProduction || isExplicitRealPg || !isExplicitMemory;
+
+    if (shouldUseRealPg) {
+      this.logger.log(`Connecting to real PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
       this.pool = new Pool({
         connectionString: dbUrl,
         host: dbHost,
@@ -35,15 +46,29 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
       try {
         const client = await this.pool.connect();
-        this.logger.log(' Connected to PostgreSQL database successfully.');
+        this.logger.log(`Connected to real PostgreSQL database successfully at ${dbHost}:${dbPort}/${dbName}.`);
         client.release();
         this.isMemoryDb = false;
+        this.isConnected = true;
       } catch (err: any) {
-        this.logger.warn(`Could not connect to live PostgreSQL (${err.message}). Falling back to in-process SQL engine.`);
+        this.isConnected = false;
+        // Strict failure policy: NEVER silently fallback to in-memory DB in production or when real PG is requested!
+        if (isProduction || isExplicitRealPg) {
+          this.logger.error(
+            `FATAL: Failed to connect to required PostgreSQL database at ${dbHost}:${dbPort}/${dbName}: ${err.message}. Startup aborted.`,
+            err.stack,
+          );
+          throw new Error(`Database connection failed: ${err.message}`);
+        }
+
+        // If in test/dev mode without explicit USE_REAL_POSTGRES, log explicit warning and only then fall back
+        this.logger.warn(
+          `Live PostgreSQL connection failed (${err.message}). Falling back to in-process SQL engine (pg-mem) for test environment only.`,
+        );
         this.initMemoryDb();
       }
     } else {
-      this.logger.log('Initializing in-process PostgreSQL SQL engine (pg-mem) for automated testing...');
+      this.logger.log('Initializing in-process PostgreSQL SQL engine (pg-mem) for automated testing (USE_PG_MEM=true)...');
       this.initMemoryDb();
     }
   }
@@ -61,12 +86,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     const pgAdapter = this.memDb.adapters.createPg();
     this.pool = new pgAdapter.Pool() as unknown as Pool;
+    this.isConnected = true;
     this.logger.log('In-process PostgreSQL SQL engine initialized.');
   }
 
   async onModuleDestroy() {
     if (this.pool) {
       await this.pool.end();
+      this.isConnected = false;
       this.logger.log('Database pool disconnected.');
     }
   }
@@ -116,5 +143,28 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   getIsMemoryDb(): boolean {
     return this.isMemoryDb;
+  }
+
+  isReady(): boolean {
+    return this.isConnected && this.pool !== null;
+  }
+
+  async checkHealth(): Promise<{ status: 'up' | 'down'; latencyMs: number; isMemoryDb: boolean; error?: string }> {
+    const start = Date.now();
+    try {
+      await this.query('SELECT 1');
+      return {
+        status: 'up',
+        latencyMs: Date.now() - start,
+        isMemoryDb: this.isMemoryDb,
+      };
+    } catch (err: any) {
+      return {
+        status: 'down',
+        latencyMs: Date.now() - start,
+        isMemoryDb: this.isMemoryDb,
+        error: err.message,
+      };
+    }
   }
 }

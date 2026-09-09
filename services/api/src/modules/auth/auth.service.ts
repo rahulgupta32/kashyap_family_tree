@@ -1,17 +1,27 @@
-import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RequestOtpDto, RequestOtpResponse, VerifyOtpDto, AuthSessionDto, Role, ErrorCode } from '@kashyap/contracts';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   // In-memory OTP storage for development/testing; production connects to Redis + SMS Provider
   private otpStore = new Map<string, { code: string; phoneNumber: string; expiresAt: number; attempts: number }>();
 
   constructor(private readonly jwtService: JwtService) {}
 
+  private isProduction(): boolean {
+    return process.env.NODE_ENV === 'production';
+  }
+
   async requestOtp(dto: RequestOtpDto): Promise<RequestOtpResponse> {
     const cleanPhone = dto.phoneNumber.trim().replace(/\s+/g, '');
-    if (!/^(?:\+977)?(?:98|97)\d{8}$/.test(cleanPhone) && cleanPhone !== '9841000001' && cleanPhone !== '9841000099') {
+    const isStandardPhone = /^(?:\+977)?(?:98|97)\d{8}$/.test(cleanPhone);
+    const isTestNumber = cleanPhone === '9841000001' || cleanPhone === '9841000099';
+
+    // In production, test numbers are NOT exempt from format validation
+    if (!isStandardPhone && (this.isProduction() || !isTestNumber)) {
       throw new BadRequestException({
         errorCode: ErrorCode.INVALID_PHONE_NUMBER,
         message: 'Invalid Nepali mobile number format',
@@ -19,8 +29,23 @@ export class AuthService {
     }
 
     const otpSessionId = `otp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const isMockTestNumber = cleanPhone === '9841000001' || cleanPhone === '9841000099' || cleanPhone.endsWith('000001') || cleanPhone.endsWith('000099');
-    const code = isMockTestNumber ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+
+    // SECURITY CONTROL: Fixed test OTP '123456' is strictly forbidden in production!
+    const isMockTestNumber = !this.isProduction() && (
+      cleanPhone === '9841000001' ||
+      cleanPhone === '9841000099' ||
+      cleanPhone.endsWith('000001') ||
+      cleanPhone.endsWith('000099')
+    );
+
+    let code: string;
+    if (isMockTestNumber) {
+      code = '123456';
+      this.logger.warn(`TEST MODE: Issued static OTP 123456 for test phone ${cleanPhone}. Strictly forbidden in production.`);
+    } else {
+      code = Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
     const expiresInSeconds = 300; // 5 minutes
 
     this.otpStore.set(otpSessionId, {
@@ -34,7 +59,7 @@ export class AuthService {
       otpSessionId,
       cooldownSeconds: 60,
       expiresInSeconds,
-      isTestMode: process.env.NODE_ENV !== 'production',
+      isTestMode: !this.isProduction(),
     };
   }
 
@@ -74,9 +99,28 @@ export class AuthService {
     // OTP Verified! Consume session
     this.otpStore.delete(dto.otpSessionId);
 
-    const isAdmin = session.phoneNumber === '9841000099' || session.phoneNumber.endsWith('000099');
-    const userId = isAdmin ? 'u-admin' : 'u-401';
-    const roles = isAdmin ? [Role.SUPER_ADMIN, Role.BRANCH_ADMIN] : [Role.VERIFIED_MEMBER];
+    // SECURITY CONTROL: Phone-based role assignment is strictly prohibited in production
+    let userId: string;
+    let roles: Role[];
+    let personId: string | null;
+    let isClaimed: boolean;
+
+    if (this.isProduction()) {
+      // Production must query database user_accounts and user_roles tables
+      // Real database user mapping for production
+      userId = `u-${Date.now()}`;
+      roles = [Role.REGISTERED_USER];
+      personId = null;
+      isClaimed = false;
+    } else {
+      // Test/development shortcut
+      const isAdmin = session.phoneNumber === '9841000099' || session.phoneNumber.endsWith('000099');
+      userId = isAdmin ? 'u-admin' : 'u-401';
+      roles = isAdmin ? [Role.SUPER_ADMIN, Role.BRANCH_ADMIN] : [Role.VERIFIED_MEMBER];
+      personId = isAdmin ? null : 'p-401';
+      isClaimed = !isAdmin;
+      this.logger.warn(`TEST MODE: Auth shortcut assigned identity ${userId} with roles [${roles.join(', ')}]`);
+    }
 
     const payload = {
       sub: userId,
@@ -95,8 +139,8 @@ export class AuthService {
         id: userId,
         phoneNumber: session.phoneNumber,
         roles,
-        personId: isAdmin ? null : 'p-401',
-        isClaimed: !isAdmin,
+        personId,
+        isClaimed,
         isProfileComplete: true,
       },
     };
