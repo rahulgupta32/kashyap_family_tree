@@ -1,26 +1,122 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RequestOtpDto, RequestOtpResponse, VerifyOtpDto, AuthSessionDto } from '@kashyap/contracts';
+import {
+  RequestOtpDto,
+  RequestOtpResponse,
+  VerifyOtpDto,
+  AuthSessionDto,
+  RefreshTokenDto,
+  LogoutDto,
+  AssignRoleDto,
+  RevokeRoleDto,
+  UserRoleAssignmentDto,
+  UserAccountDto,
+  Role,
+} from '@kashyap/contracts';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decorator';
+import { Request } from 'express';
 
-@ApiTags('Authentication')
+@ApiTags('Authentication & Sessions')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('otp/request')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request OTP verification code for mobile number' })
-  @ApiResponse({ status: 200, description: 'OTP initiated successfully' })
-  async requestOtp(@Body() dto: RequestOtpDto): Promise<RequestOtpResponse> {
-    return this.authService.requestOtp(dto);
+  @ApiOperation({ summary: 'Request OTP verification code for mobile number (AUTH-FR-001, AUTH-FR-002)' })
+  @ApiResponse({ status: 200, description: 'OTP challenge initiated successfully' })
+  async requestOtp(@Body() dto: RequestOtpDto, @Req() req: Request): Promise<RequestOtpResponse> {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    return this.authService.requestOtp(dto, ip);
   }
 
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP code and retrieve access & refresh tokens' })
+  @ApiOperation({ summary: 'Verify OTP code and retrieve access & refresh tokens (AUTH-FR-003, AUTH-FR-005)' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully' })
-  async verifyOtp(@Body() dto: VerifyOtpDto): Promise<AuthSessionDto> {
-    return this.authService.verifyOtp(dto);
+  async verifyOtp(@Body() dto: VerifyOtpDto, @Req() req: Request): Promise<AuthSessionDto> {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.verifyOtp(dto, ip, userAgent);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Renew session using refresh token with rotation & reuse detection (AUTH-FR-006, EC-0020)' })
+  @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
+  async refreshToken(@Body() dto: RefreshTokenDto, @Req() req: Request): Promise<AuthSessionDto> {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.refreshToken(dto, ip, userAgent);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke current device session (AUTH-FR-007)' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
+  async logout(@Body() dto: LogoutDto, @Req() req: Request): Promise<{ success: boolean }> {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.logout(dto, (req as any).user?.id, ip, userAgent);
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Revoke all sessions across all devices for current user (AUTH-FR-008, EC-0021)' })
+  @ApiResponse({ status: 200, description: 'All sessions revoked' })
+  async logoutAll(@CurrentUser() user: AuthenticatedUser, @Req() req: Request): Promise<{ success: boolean; revokedCount: number }> {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.logoutAll(user.id, ip, userAgent);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Retrieve currently authenticated user profile and roles' })
+  @ApiResponse({ status: 200, description: 'User profile retrieved successfully' })
+  async getProfile(@CurrentUser() user: AuthenticatedUser): Promise<UserAccountDto> {
+    return this.authService.getUserProfile(user.id);
+  }
+
+  @Post('roles/assign')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.BRANCH_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Assign role to user with hierarchy and self-elevation check (BR-GOV-004, EC-0230)' })
+  @ApiResponse({ status: 200, description: 'Role assigned successfully' })
+  async assignRole(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: AssignRoleDto,
+  ): Promise<UserRoleAssignmentDto> {
+    return this.authService.assignUserRole(user.id, user.roles, dto.userId, dto.role, dto.branchId);
+  }
+
+  @Post('roles/revoke')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.BRANCH_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Revoke user role assignment' })
+  @ApiResponse({ status: 200, description: 'Role revoked successfully' })
+  async revokeRole(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RevokeRoleDto,
+  ): Promise<{ success: boolean }> {
+    return this.authService.revokeUserRole(user.id, user.roles, dto.userId, dto.role, dto.branchId);
   }
 }

@@ -43,3 +43,51 @@ export interface AuthSessionDto {
 export interface RefreshTokenDto {
   refreshToken: string;
 }
+
+export interface LogoutDto {
+  refreshToken?: string;
+}
+
+export interface AssignRoleDto {
+  userId: string;
+  role: Role;
+  branchId?: string | null;
+}
+
+export interface RevokeRoleDto {
+  userId: string;
+  role: Role;
+  branchId?: string | null;
+}
+
+export interface UserRoleAssignmentDto {
+  id: string;
+  role: Role;
+  branchId?: string | null;
+  grantedBy?: string | null;
+  createdAt: string;
+}
+
+export interface UserAccountDto {
+  id: string;
+  phoneNumber: string;
+  isPhoneVerified: boolean;
+  isActive: boolean;
+  isSuspended: boolean;
+  suspensionReason?: string | null;
+  preferredLanguage: string;
+  personId?: string | null;
+  roles: UserRoleAssignmentDto[];
+  createdAt: string;
+}
+
+export interface BranchDto {
+  id: string;
+  nameNepali: string;
+  nameEnglish: string;
+  code: string;
+  moolGhar?: string | null;
+  kuldevata?: string | null;
+  description?: string | null;
+  createdAt: string;
+}

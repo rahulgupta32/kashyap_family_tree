@@ -2,11 +2,11 @@
 
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
-**Current Phase**: Milestone 1 (Local Application Foundation with Real PostgreSQL Persistence) - VERIFIED  
-**Last Updated**: 2026-09-11T01:38:00+05:45  
-**Active Branch**: `feat/m1-local-foundation`  
-**Latest Verified Commit**: `b786663806a72e811c05d762f0f8a84617be3450`  
-**Pull Request for M1**: [https://github.com/rahulgupta32/kashyap_family_tree/compare/develop...feat/m1-local-foundation?expand=1](https://github.com/rahulgupta32/kashyap_family_tree/compare/develop...feat/m1-local-foundation?expand=1)
+**Current Phase**: Milestone 2 (Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions) - VERIFIED  
+**Last Updated**: 2026-09-11T02:20:00+05:45  
+**Active Branch**: `feat/m2-auth-permissions`  
+**Base Branch**: `develop`  
+**Verified M1 Merge Commit**: `7c56094`
 
 ---
 
@@ -26,6 +26,16 @@
 
 ## 2. Completed Milestones ✅
 
+- [x] **Milestone 2: Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions**:
+  - Replaced synthetic user IDs and phone-suffix privileges with PostgreSQL-backed accounts (`user_accounts`, `user_roles`, `user_sessions`, `branches`).
+  - Identity / Person separation: account creation strictly leaves `person_id = NULL` (`BR-GOV-001`, `EC-0023`).
+  - Cryptographic OTP verification with Redis persistence on D: drive (`/mnt/kashyap_pg/redis/`), 300s TTL, 60s resend cooldown (`AUTH-FR-004`), 5-attempt limit, and atomic consumption (`EC-0013`).
+  - Multi-device concurrent session management with SHA-256 hashed refresh token rotation (`AUTH-FR-006`) and reuse detection (`EC-0020`) revoking all sessions across all devices on replay.
+  - Server-enforced permissions (`JwtAuthGuard`, `RolesGuard`, `BranchGuard`) preventing self-elevation (`BR-GOV-004`, `EC-0230`) and enforcing branch boundary isolation (`BR-GOV-005`).
+  - Pluggable `SmsProvider` interface with `TestSmsProviderAdapter` for dev/test and `SparrowSmsProviderAdapter` enforcing production credentials gate `HG-007`.
+  - Next.js Admin portal (`apps/admin`) with bilingual Nepali/English OTP login flow, cooldown countdown timer, dynamic role header, and Access Denied screen for unapproved accounts.
+  - CI/CD workflow updated with native `redis:7-alpine` and `postgres:16-alpine` service containers.
+  - Delivery and verification report published (`docs/execution/MILESTONE_2_DELIVERY_REPORT.md`).
 - [x] **Milestone 1: Local Application Foundation with Real PostgreSQL Persistence**:
   - D: Drive storage backing verified (`D:\Jyphra\pg_data\kashyap_pg.img` mounted to `/mnt/kashyap_pg` via `/dev/loop0`).
   - Automated reproducible script (`scripts/ensure-kashyap-pg.sh`) and systemd unit (`scripts/kashyap-pg.service`).
@@ -44,8 +54,8 @@
 
 ---
 
-## 3. Active Next Work: Awaiting Milestone 2 Authorization 🛑
+## 3. Active Next Work: Awaiting Milestone 3 Authorization 🛑
 
-* **Milestone 2 has NOT been authorized and has NOT been started.**
-* Awaiting human review and sign-off on Pull Request `feat/m1-local-foundation` -> `develop`.
+* **Milestone 3 has NOT been authorized and has NOT been started.**
+* Cultural rule execution and real data migration remain strictly untouched until human authorization and PR review.
 
