@@ -1,10 +1,17 @@
 import { Module } from '@nestjs/common';
 import { GenealogyController } from './genealogy.controller';
-import { GenealogyService } from './genealogy.service';
+import { GenealogyService, GENEALOGY_TEST_FIXTURE_MODE } from './genealogy.service';
 
 @Module({
   controllers: [GenealogyController],
-  providers: [GenealogyService],
+  providers: [
+    GenealogyService,
+    {
+      provide: GENEALOGY_TEST_FIXTURE_MODE,
+      useValue: false,
+    },
+  ],
   exports: [GenealogyService],
 })
 export class GenealogyModule {}
+

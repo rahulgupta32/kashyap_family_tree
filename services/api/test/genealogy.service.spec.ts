@@ -5,7 +5,8 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
   let genealogyService: GenealogyService;
 
   beforeEach(() => {
-    genealogyService = new GenealogyService();
+    // Explicit test fixture mode — the ONLY supported way to use in-memory fixtures
+    genealogyService = GenealogyService.createWithTestFixtures();
   });
 
   describe('Person Profiles & Direct Relatives', () => {
@@ -116,6 +117,98 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
           errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
         },
       });
+    });
+  });
+
+  describe('Test Isolation: Missing Dependencies Must Fail (GenealogyService Hardening)', () => {
+    it('should throw when constructed without dependencies (bare constructor)', () => {
+      expect(() => new GenealogyService()).toThrow(
+        /FATAL CONFIGURATION.*Missing runtime dependencies/,
+      );
+    });
+
+    it('should throw when constructed without dependencies even in non-production', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        expect(() => new GenealogyService()).toThrow(
+          /FATAL CONFIGURATION/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should throw when constructed without dependencies in test environment', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'test';
+        expect(() => new GenealogyService()).toThrow(
+          /FATAL CONFIGURATION/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should reject createWithTestFixtures() when NODE_ENV is development', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        expect(() => GenealogyService.createWithTestFixtures()).toThrow(
+          /FATAL SECURITY CONFIGURATION.*strictly prohibited when NODE_ENV is not 'test'/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should reject createWithTestFixtures() when NODE_ENV is production', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        expect(() => GenealogyService.createWithTestFixtures()).toThrow(
+          /FATAL SECURITY CONFIGURATION.*strictly prohibited when NODE_ENV is not 'test'/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should reject direct constructor fixture opt-in when NODE_ENV is development', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        expect(() => new GenealogyService(undefined, undefined, undefined, true)).toThrow(
+          /Direct constructor opt-in rejected/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should reject direct constructor fixture opt-in when NODE_ENV is production', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        expect(() => new GenealogyService(undefined, undefined, undefined, true)).toThrow(
+          /Direct constructor opt-in rejected/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should activate fixtures through createWithTestFixtures() when NODE_ENV is test', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'test';
+        const service = GenealogyService.createWithTestFixtures();
+        expect(service).toBeDefined();
+        return expect(service.getPersonById('p-101')).resolves.toBeDefined();
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
     });
   });
 });

@@ -60,4 +60,30 @@ export interface KinshipResultDto {
   generationsDiff?: number;
   isAuthorityApproved: boolean;
   statusNote?: string; // e.g. "Pending Authority Sign-off"
+  alternativePaths?: KinshipResultDto[];
 }
+
+export interface ProposeRuleDto {
+  ruleType: RuleType;
+  pathCode: string;
+  nepaliTerm: string;
+  englishTerm: string;
+  descriptionNepali?: string;
+  proposedByUserId: string;
+  rationale: string;
+}
+
+export interface ReviewRuleDto {
+  ruleId: string;
+  reviewerUserId: string;
+  reviewerNotes: string;
+  isEndorsed: boolean;
+}
+
+export interface ApproveRuleDto {
+  ruleId: string;
+  seniorAuthorityUserId: string;
+  authorityComments: string;
+  decision: 'APPROVED' | 'REJECTED';
+}
+

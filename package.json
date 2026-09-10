@@ -18,6 +18,7 @@
     "typecheck": "pnpm run build:packages && pnpm run typecheck:packages && pnpm run typecheck:apps",
     "test": "pnpm --filter @kashyap/api test",
     "test:integration": "pnpm --filter @kashyap/api run test:integration",
+    "seed": "pnpm --filter @kashyap/api run seed",
     "lint": "pnpm -r run lint",
     "format": "pnpm -r run format",
     "clean": "pnpm -r run clean"
