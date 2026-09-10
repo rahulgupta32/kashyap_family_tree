@@ -43,7 +43,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     // Normal runtime always targets real PostgreSQL
     const dbHost = process.env.DB_HOST || '127.0.0.1';
-    const dbPort = parseInt(process.env.DB_PORT || '5432', 10);
+    const dbPort = parseInt(process.env.DB_PORT || '5434', 10);
     const dbUser = process.env.DB_USER || 'kashyap_user';
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     const dbName = process.env.DB_NAME || 'kashyap_db';

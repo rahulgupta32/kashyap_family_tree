@@ -34,18 +34,36 @@ export class GenealogyService {
   private spouseLinks = new Map<string, Set<{ spouseId: string; status: SpouseStatus }>>();
   private isTestFixtureMode = false;
 
+  /**
+   * Create an instance with explicit test fixture mode.
+   * This is the ONLY supported way to use in-memory fixtures.
+   * Use this in unit tests instead of `new GenealogyService()`.
+   */
+  static createWithTestFixtures(): GenealogyService {
+    const instance = new GenealogyService(undefined, undefined, undefined, true);
+    return instance;
+  }
+
   constructor(
     @Optional() private readonly personRepo?: PersonRepository,
     @Optional() private readonly linkRepo?: GenealogyLinkRepository,
     @Optional() private readonly db?: DatabaseService,
+    explicitTestFixtureMode?: boolean,
   ) {
-    // If repositories or db are not provided (e.g. isolated unit tests), enable test fixture mode explicitly
-    if (!this.personRepo || !this.linkRepo || !this.db) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error('FATAL CONFIGURATION: GenealogyService requires PersonRepository, GenealogyLinkRepository, and DatabaseService in production.');
-      }
+    if (explicitTestFixtureMode === true) {
+      // Explicit test-only fixture mode — only reachable via createWithTestFixtures()
       this.isTestFixtureMode = true;
       this.resetToFixtures();
+      this.logger.warn('GenealogyService initialized in EXPLICIT TEST FIXTURE mode.');
+      return;
+    }
+
+    // Normal runtime: all dependencies are required regardless of environment
+    if (!this.personRepo || !this.linkRepo || !this.db) {
+      throw new Error(
+        'FATAL CONFIGURATION: GenealogyService requires PersonRepository, GenealogyLinkRepository, and DatabaseService. ' +
+        'Missing runtime dependencies must be resolved. For unit tests, use GenealogyService.createWithTestFixtures().',
+      );
     }
   }
 

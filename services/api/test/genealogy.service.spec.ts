@@ -5,7 +5,8 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
   let genealogyService: GenealogyService;
 
   beforeEach(() => {
-    genealogyService = new GenealogyService();
+    // Explicit test fixture mode — the ONLY supported way to use in-memory fixtures
+    genealogyService = GenealogyService.createWithTestFixtures();
   });
 
   describe('Person Profiles & Direct Relatives', () => {
@@ -116,6 +117,46 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
           errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
         },
       });
+    });
+  });
+
+  describe('Test Isolation: Missing Dependencies Must Fail (GenealogyService Hardening)', () => {
+    it('should throw when constructed without dependencies (bare constructor)', () => {
+      expect(() => new GenealogyService()).toThrow(
+        /FATAL CONFIGURATION.*Missing runtime dependencies/,
+      );
+    });
+
+    it('should throw when constructed without dependencies even in non-production', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'development';
+        expect(() => new GenealogyService()).toThrow(
+          /FATAL CONFIGURATION/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should throw when constructed without dependencies in test environment', () => {
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'test';
+        expect(() => new GenealogyService()).toThrow(
+          /FATAL CONFIGURATION/,
+        );
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
+    });
+
+    it('should only activate fixtures through createWithTestFixtures()', () => {
+      const service = GenealogyService.createWithTestFixtures();
+      // Should work fine — explicit opt-in
+      expect(service).toBeDefined();
+      // Verify fixture data is loaded
+      return expect(service.getPersonById('p-101')).resolves.toBeDefined();
     });
   });
 });

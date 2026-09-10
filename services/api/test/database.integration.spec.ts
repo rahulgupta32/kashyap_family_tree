@@ -16,8 +16,8 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
     // Configure environment for real PostgreSQL
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
-    process.env.DB_HOST = '127.0.0.1';
-    process.env.DB_PORT = '5432';
+    process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
+    process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = 'kashyap_user';
     process.env.DB_PASSWORD = 'kashyap_secure_dev_password';
     process.env.DB_NAME = 'kashyap_db';
