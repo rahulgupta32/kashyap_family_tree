@@ -94,7 +94,7 @@ fi
 echo "[ensure-kashyap-pg] Verified exact canonical backing: $REAL_BACKING_FILE -> $REAL_MOUNT_POINT"
 
 # ------------------------------------------------------------------------------
-# 5. Data Directory Verification (Configured & Running)
+# 5. Mandatory Configured Data Directory Verification (Pre-Cluster Start)
 # ------------------------------------------------------------------------------
 DATA_DIR="$REAL_MOUNT_POINT/pgdata"
 if [ ! -d "$DATA_DIR" ] || [ ! -f "$DATA_DIR/PG_VERSION" ]; then
@@ -103,17 +103,53 @@ if [ ! -d "$DATA_DIR" ] || [ ! -f "$DATA_DIR/PG_VERSION" ]; then
     exit 1
 fi
 
-# Verify configured data_directory in PostgreSQL cluster configuration
-CONFIGURED_DATA_DIR=$(pg_conftool "$PG_VERSION" "$PG_CLUSTER" show data_directory 2>/dev/null | awk -F"'" '{print $2}' || true)
-if [ -n "$CONFIGURED_DATA_DIR" ]; then
-    REAL_CONFIGURED_DATA_DIR=$(realpath -e "$CONFIGURED_DATA_DIR" 2>/dev/null || true)
-    if [ -z "$REAL_CONFIGURED_DATA_DIR" ] || [[ "$REAL_CONFIGURED_DATA_DIR" != "$REAL_MOUNT_POINT/"* && "$REAL_CONFIGURED_DATA_DIR" != "$REAL_MOUNT_POINT" ]]; then
-        echo "FATAL: Configured cluster data_directory '$CONFIGURED_DATA_DIR' (canonical: '$REAL_CONFIGURED_DATA_DIR') does NOT resolve inside verified D: storage mount '$REAL_MOUNT_POINT'." >&2
-        echo "Refusing to start cluster. Data directory must reside strictly within D: mount." >&2
+# Verify configured data_directory in PostgreSQL cluster configuration before starting cluster
+RAW_CONF_OUTPUT=""
+if [ -n "${PG_CONFTOOL_CMD:-}" ]; then
+    if ! RAW_CONF_OUTPUT=$($PG_CONFTOOL_CMD 2>&1); then
+        echo "FATAL: pg_conftool command failed to retrieve data_directory for cluster ${PG_VERSION}/${PG_CLUSTER}:" >&2
+        echo "$RAW_CONF_OUTPUT" >&2
         exit 1
     fi
-    echo "[ensure-kashyap-pg] Verified configured data_directory inside D: mount: $REAL_CONFIGURED_DATA_DIR"
+else
+    if ! RAW_CONF_OUTPUT=$(pg_conftool "$PG_VERSION" "$PG_CLUSTER" show data_directory 2>&1); then
+        echo "FATAL: pg_conftool command failed to retrieve data_directory for cluster ${PG_VERSION}/${PG_CLUSTER}:" >&2
+        echo "$RAW_CONF_OUTPUT" >&2
+        exit 1
+    fi
 fi
+
+if [ -z "$RAW_CONF_OUTPUT" ]; then
+    echo "FATAL: pg_conftool returned empty output when querying data_directory for cluster ${PG_VERSION}/${PG_CLUSTER}." >&2
+    exit 1
+fi
+
+CONFIGURED_DATA_DIR=$(echo "$RAW_CONF_OUTPUT" | sed -nE "s/^[[:space:]]*data_directory[[:space:]]*=[[:space:]]*['\"]?([^'\"]+)['\"]?.*$/\1/p")
+if [ -z "$CONFIGURED_DATA_DIR" ]; then
+    CONFIGURED_DATA_DIR=$(echo "$RAW_CONF_OUTPUT" | awk -F"'" '{print $2}')
+fi
+if [ -z "$CONFIGURED_DATA_DIR" ]; then
+    CONFIGURED_DATA_DIR=$(echo "$RAW_CONF_OUTPUT" | tr -d '[:space:]')
+fi
+
+if [ -z "$CONFIGURED_DATA_DIR" ]; then
+    echo "FATAL: Failed to parse configured data_directory from pg_conftool output: '$RAW_CONF_OUTPUT'" >&2
+    exit 1
+fi
+
+REAL_CONFIGURED_DATA_DIR=$(realpath -e "$CONFIGURED_DATA_DIR" 2>/dev/null || true)
+if [ -z "$REAL_CONFIGURED_DATA_DIR" ]; then
+    echo "FATAL: Configured data_directory path '$CONFIGURED_DATA_DIR' does not exist or cannot be resolved." >&2
+    exit 1
+fi
+
+if [[ "$REAL_CONFIGURED_DATA_DIR" != "$REAL_MOUNT_POINT/"* && "$REAL_CONFIGURED_DATA_DIR" != "$REAL_MOUNT_POINT" ]]; then
+    echo "FATAL: Configured cluster data_directory '$CONFIGURED_DATA_DIR' (canonical: '$REAL_CONFIGURED_DATA_DIR') does NOT resolve inside verified D: storage mount '$REAL_MOUNT_POINT'." >&2
+    echo "Refusing to start cluster. Data directory must reside strictly within D: mount." >&2
+    exit 1
+fi
+
+echo "[ensure-kashyap-pg] Verified configured data_directory inside D: mount: $REAL_CONFIGURED_DATA_DIR"
 
 # ------------------------------------------------------------------------------
 # 6. Effective Project Log Destination Verification
@@ -156,27 +192,62 @@ fi
 echo "[ensure-kashyap-pg] Verified effective log destination on D: storage: $CANONICAL_LOG_PATH"
 
 # ------------------------------------------------------------------------------
-# 7. Cluster Online State & Runtime Data Directory Verification
+# 7. Cluster Online State & Mandatory Runtime Data Directory Verification
 # ------------------------------------------------------------------------------
 if ! pg_lsclusters | grep -q "${PG_VERSION}\s\+${PG_CLUSTER}\s\+${PG_PORT}\s\+online"; then
     echo "[ensure-kashyap-pg] Starting PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER}..."
     pg_ctlcluster "$PG_VERSION" "$PG_CLUSTER" start
 fi
 
-if ! pg_lsclusters | grep -q "${PG_VERSION}\s\+${PG_CLUSTER}\s\+${PG_PORT}\s\+online"; then
-    echo "FATAL: PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER} failed to come online." >&2
+# Wait up to 10 seconds for cluster to accept connections
+CLUSTER_READY=false
+for i in {1..10}; do
+    if pg_isready -p "$PG_PORT" -q 2>/dev/null; then
+        CLUSTER_READY=true
+        break
+    fi
+    sleep 1
+done
+
+if [ "$CLUSTER_READY" != "true" ]; then
+    echo "FATAL: PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER} failed to accept connections on port ${PG_PORT}." >&2
     exit 1
 fi
 
-# Verify active running data_directory via SQL
-RUNNING_DATA_DIR=$(su - postgres -c "psql -p $PG_PORT -d postgres -tAc 'SHOW data_directory;'" 2>/dev/null || true)
-if [ -n "$RUNNING_DATA_DIR" ]; then
-    REAL_RUNNING_DATA_DIR=$(realpath -e "$RUNNING_DATA_DIR" 2>/dev/null || true)
-    if [ -z "$REAL_RUNNING_DATA_DIR" ] || [[ "$REAL_RUNNING_DATA_DIR" != "$REAL_MOUNT_POINT/"* && "$REAL_RUNNING_DATA_DIR" != "$REAL_MOUNT_POINT" ]]; then
-        echo "FATAL: Active running cluster data_directory '$REAL_RUNNING_DATA_DIR' does NOT reside inside D: mount '$REAL_MOUNT_POINT'." >&2
+# Mandatory runtime data_directory check via SQL
+SQL_OUTPUT=""
+if [ -n "${PSQL_QUERY_CMD:-}" ]; then
+    if ! SQL_OUTPUT=$($PSQL_QUERY_CMD 2>&1); then
+        echo "FATAL: SQL query 'SHOW data_directory;' failed on cluster port $PG_PORT:" >&2
+        echo "$SQL_OUTPUT" >&2
         exit 1
     fi
-    echo "[ensure-kashyap-pg] Verified active running data_directory: $REAL_RUNNING_DATA_DIR"
+else
+    if ! SQL_OUTPUT=$(su - postgres -c "psql -p $PG_PORT -d postgres -tAc 'SHOW data_directory;'" 2>&1); then
+        echo "FATAL: SQL query 'SHOW data_directory;' failed on cluster port $PG_PORT:" >&2
+        echo "$SQL_OUTPUT" >&2
+        exit 1
+    fi
 fi
 
+RUNNING_DATA_DIR=$(echo "$SQL_OUTPUT" | tr -d '[:space:]')
+if [ -z "$RUNNING_DATA_DIR" ]; then
+    echo "FATAL: SQL query 'SHOW data_directory;' returned empty output on cluster port $PG_PORT." >&2
+    exit 1
+fi
+
+REAL_RUNNING_DATA_DIR=$(realpath -e "$RUNNING_DATA_DIR" 2>/dev/null || true)
+if [ -z "$REAL_RUNNING_DATA_DIR" ]; then
+    echo "FATAL: Running cluster data_directory '$RUNNING_DATA_DIR' cannot be resolved on filesystem." >&2
+    exit 1
+fi
+
+if [[ "$REAL_RUNNING_DATA_DIR" != "$REAL_MOUNT_POINT/"* && "$REAL_RUNNING_DATA_DIR" != "$REAL_MOUNT_POINT" ]]; then
+    echo "FATAL: Active running cluster data_directory '$REAL_RUNNING_DATA_DIR' does NOT reside inside D: mount '$REAL_MOUNT_POINT'." >&2
+    exit 1
+fi
+
+echo "[ensure-kashyap-pg] Verified active running data_directory inside D: mount: $REAL_RUNNING_DATA_DIR"
+
+# Require successful running-directory verification before reporting SUCCESS
 echo "[ensure-kashyap-pg] SUCCESS: PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER} online on port ${PG_PORT} backed by D: drive storage."

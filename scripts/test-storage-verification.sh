@@ -3,8 +3,9 @@
 # Kashyap Adhikari Family Tree Platform
 # Script: test-storage-verification.sh
 # Purpose: Regression suite verifying that invalid backing paths, images outside D:,
-#          symlinks resolving outside D:, regular files on C:, and backing mismatches
-#          are strictly rejected with exit code 1.
+#          symlinks resolving outside D:, regular files on C:, backing mismatches,
+#          failed/empty/invalid pg_conftool results, and failed/empty/invalid SQL
+#          data_directory results are strictly rejected with exit code 1.
 # Authority: Jyphra Technology Pvt. Ltd.
 # ==============================================================================
 set -uo pipefail
@@ -153,10 +154,82 @@ if [ -n "$SAVED_LOG_SYMLINK" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# Test 7: Genuine, correct D: storage configuration
+# Test 7: Reject when pg_conftool command fails
 # ------------------------------------------------------------------------------
 run_test \
-    "Test 7: Valid D: drive backing image and configuration succeeds" \
+    "Test 7: Reject when pg_conftool command fails (nonzero exit)" \
+    1 \
+    "pg_conftool command failed to retrieve data_directory" \
+    env PG_CONFTOOL_CMD="false" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 8: Reject when pg_conftool returns empty output
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 8: Reject when pg_conftool returns empty output" \
+    1 \
+    "pg_conftool returned empty output|Failed to parse configured data_directory" \
+    env PG_CONFTOOL_CMD="echo" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 9: Reject when pg_conftool configured path does not exist / cannot resolve
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 9: Reject when configured data_directory cannot be resolved" \
+    1 \
+    "does not exist or cannot be resolved" \
+    env PG_CONFTOOL_CMD="echo data_directory = '/mnt/kashyap_pg/nonexistent_subpath_xyz'" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 10: Reject when pg_conftool configured path resolves outside D: mount
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 10: Reject when configured data_directory resolves outside D: mount" \
+    1 \
+    "does NOT resolve inside verified D: storage mount" \
+    env PG_CONFTOOL_CMD="echo data_directory = '/var/lib/postgresql/16/main'" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 11: Reject when SQL query command fails (nonzero exit)
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 11: Reject when SQL query command fails (nonzero exit)" \
+    1 \
+    "SQL query 'SHOW data_directory;' failed" \
+    env PSQL_QUERY_CMD="false" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 12: Reject when SQL query returns empty output
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 12: Reject when SQL query returns empty output" \
+    1 \
+    "SQL query 'SHOW data_directory;' returned empty output" \
+    env PSQL_QUERY_CMD="echo" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 13: Reject when SQL query returns unresolvable path
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 13: Reject when SQL query returns unresolvable path" \
+    1 \
+    "cannot be resolved on filesystem" \
+    env PSQL_QUERY_CMD="echo /mnt/kashyap_pg/nonexistent_runtime_xyz" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 14: Reject when SQL query returns path outside D: mount
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 14: Reject when running data_directory resolves outside D: mount" \
+    1 \
+    "does NOT reside inside D: mount" \
+    env PSQL_QUERY_CMD="echo /var/lib/postgresql/16/main" "$ENSURE_SCRIPT"
+
+# ------------------------------------------------------------------------------
+# Test 15: Valid D: drive backing image, configuration, and SQL query succeeds
+# ------------------------------------------------------------------------------
+run_test \
+    "Test 15: Valid D: drive backing image, configuration, and SQL query succeeds" \
     0 \
     "SUCCESS: PostgreSQL cluster 16/kashyap online on port 5433 backed by D: drive storage" \
     "$ENSURE_SCRIPT"
