@@ -43,14 +43,19 @@ Milestone 1 establishes a fully reproducible, database-backed local application 
   - Direct constructor invocation with `explicitTestFixtureMode === true` also checks `NODE_ENV === 'test'` and throws immediately if executed in `development` or `production`.
   - In normal runtime (`NODE_ENV === 'development' | 'production'`), missing dependencies remain fatal; empty database queries return empty arrays without falling back to synthetic fixtures.
 
-### 2.2. D: Drive Storage Architecture
+### 2.2. D: Drive Storage Architecture & Exact Canonical Verification
 * **Backing Image**: `D:\Jyphra\pg_data\kashyap_pg.img` (2.0 GB ext4 virtual disk).
 * **WSL Mount Point**: `/mnt/kashyap_pg` (loop device `/dev/loop0`).
 * **Cluster Version & Name**: PostgreSQL 16 (`kashyap`), port `5433`.
 * **Data Directory**: `/mnt/kashyap_pg/pgdata` (strictly on D: ext4 filesystem).
 * **Database Logs**: `/mnt/kashyap_pg/logs/postgresql-16-kashyap.log` (redirected via symlink from `/var/log/postgresql/postgresql-16-kashyap.log`).
-* **Automated Script**: [`scripts/ensure-kashyap-pg.sh`](../../scripts/ensure-kashyap-pg.sh) validates backing file via `findmnt` and `losetup`, checks for `PG_VERSION`, creates logs directory, and starts cluster. Refuses to initialize on C: if unmounted.
-* **Systemd Service**: [`scripts/kashyap-pg.service`](../../scripts/kashyap-pg.service) configures automatic mounting and cluster launch on WSL boot.
+* **Automated Script**: [`scripts/ensure-kashyap-pg.sh`](../../scripts/ensure-kashyap-pg.sh) has been hardened with:
+  - **Exact Canonical Backing Verification**: Substring matching (`*kashyap_pg.img*`) has been completely replaced with exact string comparison of canonical paths resolved via `realpath -e` and device backing from `losetup -O BACK-FILE`.
+  - **D: Mount Verification**: Confirms via `findmnt -T` that the canonical backing image resolves under `/mnt/d` (source `D:\`). Rejects any image path outside D:, including a symlink on D: resolving outside D:.
+  - **Data Directory Verification**: Verifies both configured (`pg_conftool 16 kashyap show data_directory`) and live active (`SHOW data_directory;`) paths resolve strictly inside `/mnt/kashyap_pg`.
+  - **Effective Log Destination Verification**: Verifies `/var/log/postgresql/postgresql-16-kashyap.log` is a symlink resolving inside `/mnt/kashyap_pg/logs/` on D:. Rejects existing regular files on C: with fatal exit code `1`, refusing to silently accept or write logs to C:.
+* **Provisioning & Setup Guide**: [`docs/storage-setup.md`](../storage-setup.md) updated with complete, reproducible first-time provisioning instructions, strict separation from normal startup and recovery, refusal to overwrite existing data, and zero credentials in Git.
+* **Storage Regression Suite**: [`scripts/test-storage-verification.sh`](../../scripts/test-storage-verification.sh) added to verify all failure cases and successful startup.
 
 ### 2.3. Fail-Fast Bridge (`scripts/pg_bridge.js`)
 * Strict pre-flight checks:
@@ -94,9 +99,10 @@ All commands executed locally with their observed exit codes, outputs, and valid
 
 | Step / Test Category | Command Line | Exit Code | Result / Output Summary |
 |---|---|:---:|---|
-| **Storage Verification** | `wsl -d Ubuntu -u root -- /usr/local/bin/ensure-kashyap-pg.sh` | `0` | Verified mount `/mnt/kashyap_pg` backed by `/mnt/d/Jyphra/pg_data/kashyap_pg.img`. Cluster `16/kashyap` online on port 5433. |
+| **Storage Verification** | `wsl -d Ubuntu -u root -- /usr/local/bin/ensure-kashyap-pg.sh` | `0` | Verified canonical mount `/mnt/kashyap_pg` backed by `/mnt/d/Jyphra/pg_data/kashyap_pg.img`. Configured & runtime data_directory verified in D: mount. Effective log destination verified on D:. Cluster `16/kashyap` online on port 5433. |
 | **Mount & Device Inspection** | `wsl -d Ubuntu -u root -- bash -c "findmnt /mnt/kashyap_pg; losetup -a; df -h /mnt/kashyap_pg"` | `0` | `/dev/loop0` on `/mnt/kashyap_pg` (ext4, rw). Backing: `D:\Jyphra\pg_data\kashyap_pg.img`. Capacity: 2.0 GB, Used: 48 MB, Avail: 1.8 GB (3% use). |
 | **Log Placement Inspection** | `wsl -d Ubuntu -u root -- bash -c "ls -la /var/log/postgresql/postgresql-16-kashyap.log; ls -la /mnt/kashyap_pg/logs/"` | `0` | Symlink `/var/log/postgresql/postgresql-16-kashyap.log` -> `/mnt/kashyap_pg/logs/postgresql-16-kashyap.log` on D: drive image. |
+| **Storage Regression Suite** | `wsl -d Ubuntu -u root -- /mnt/d/Jyphra/kashyap_family_tree/scripts/test-storage-verification.sh` | `0` | **7 passed, 0 failed**:<br>1. Non-existent image path rejected (exit 1)<br>2. Same-named image outside D: on C: rejected (exit 1)<br>3. Symlink on D: resolving outside D: rejected (exit 1)<br>4. Loop device backing mismatch rejected (exit 1)<br>5. Existing regular file on C: for logs rejected (exit 1)<br>6. Log symlink resolving outside D: rejected (exit 1)<br>7. Genuine D: storage configuration succeeds (exit 0) |
 | **Cluster Restart Check** | `wsl -d Ubuntu -u root -- bash -c "pg_ctlcluster 16 kashyap restart; pg_lsclusters"` | `0` | Cluster `16/kashyap` cleanly stopped and restarted on port 5433. Cluster `16/main` (port 5432) remained online and unaffected. |
 | **Unit & Regression Tests** | `pnpm run test` | `0` | **11 passed, 11 total suites; 64 passed, 64 total tests**. Passed `cultural-rules`, `auth`, `chat`, `change-requests`, `claims`, `genealogy`, `audit`, `map`, `localization`, `community`, and `nest-startup`. |
 | **Nest DI Startup Regression** | `services/api/test/nest-startup.spec.ts` (included in `pnpm run test`) | `0` | AppModule compiles without DI errors. `GenealogyService`, `PersonRepository`, `GenealogyLinkRepository`, `DatabaseService` resolved cleanly with `isTestFixtureMode === false`. |
