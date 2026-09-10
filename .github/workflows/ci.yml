@@ -2,14 +2,29 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, 'feat/*']
   pull_request:
     branches: [main, develop]
 
 jobs:
   build-and-test:
-    name: Build & Test Backend, Contracts & Admin
+    name: Build & Verify Platform (PostgreSQL Service, Typecheck, Build, Unit & Integration Tests)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: kashyap_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -29,17 +44,30 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared packages
-        run: |
-          pnpm --filter @kashyap/contracts run build
-          pnpm --filter @kashyap/localization run build
-          pnpm --filter @kashyap/design-tokens run build
-          pnpm --filter @kashyap/test-fixtures run build
+        run: pnpm run build:packages
+
+      - name: Workspace Typecheck
+        run: pnpm run typecheck
 
       - name: Build NestJS API Backend
         run: pnpm --filter @kashyap/api run build
 
-      - name: Run Backend Unit & Integration Tests
-        run: pnpm --filter @kashyap/api test
-
       - name: Build Next.js Admin Portal
         run: pnpm --filter @kashyap/admin run build
+
+      - name: Run Unit Tests & Nest Startup Regression
+        run: pnpm --filter @kashyap/api run test:unit
+        env:
+          NODE_ENV: test
+
+      - name: Run Real PostgreSQL Integration Tests (Dedicated Service Database)
+        run: pnpm --filter @kashyap/api run test:integration
+        env:
+          NODE_ENV: test
+          USE_REAL_POSTGRES: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+          DB_NAME: kashyap_test_db
+

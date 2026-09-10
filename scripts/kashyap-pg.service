@@ -1,0 +1,13 @@
+[Unit]
+Description=Ensure Kashyap PostgreSQL Loop Mount and Cluster on D: Drive
+Documentation=https://github.com/rahulgupta32/kashyap_family_tree
+After=local-fs.target
+Before=postgresql.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/ensure-kashyap-pg.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Logger,
   Optional,
+  Inject,
 } from '@nestjs/common';
 import {
   PersonSummaryDto,
@@ -23,6 +24,8 @@ import { PersonRepository, PersonRecord, PersonNameRecord } from '../../database
 import { GenealogyLinkRepository } from '../../database/repositories/genealogy-link.repository';
 import { DatabaseService } from '../../database/database.service';
 
+export const GENEALOGY_TEST_FIXTURE_MODE = 'GENEALOGY_TEST_FIXTURE_MODE';
+
 @Injectable()
 export class GenealogyService {
   private readonly logger = new Logger(GenealogyService.name);
@@ -37,9 +40,16 @@ export class GenealogyService {
   /**
    * Create an instance with explicit test fixture mode.
    * This is the ONLY supported way to use in-memory fixtures.
+   * Strictly restricted to NODE_ENV='test'.
    * Use this in unit tests instead of `new GenealogyService()`.
    */
   static createWithTestFixtures(): GenealogyService {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        `FATAL SECURITY CONFIGURATION: Test fixture mode is strictly prohibited when NODE_ENV is not 'test'. ` +
+        `Current NODE_ENV='${process.env.NODE_ENV}'. Fixture creation rejected.`,
+      );
+    }
     const instance = new GenealogyService(undefined, undefined, undefined, true);
     return instance;
   }
@@ -48,10 +58,16 @@ export class GenealogyService {
     @Optional() private readonly personRepo?: PersonRepository,
     @Optional() private readonly linkRepo?: GenealogyLinkRepository,
     @Optional() private readonly db?: DatabaseService,
-    explicitTestFixtureMode?: boolean,
+    @Optional() @Inject(GENEALOGY_TEST_FIXTURE_MODE) explicitTestFixtureMode?: boolean,
   ) {
     if (explicitTestFixtureMode === true) {
-      // Explicit test-only fixture mode — only reachable via createWithTestFixtures()
+      if (process.env.NODE_ENV !== 'test') {
+        throw new Error(
+          `FATAL SECURITY CONFIGURATION: Test fixture mode is strictly prohibited when NODE_ENV is not 'test'. ` +
+          `Current NODE_ENV='${process.env.NODE_ENV}'. Direct constructor opt-in rejected.`,
+        );
+      }
+      // Explicit test-only fixture mode — only reachable in NODE_ENV='test'
       this.isTestFixtureMode = true;
       this.resetToFixtures();
       this.logger.warn('GenealogyService initialized in EXPLICIT TEST FIXTURE mode.');
