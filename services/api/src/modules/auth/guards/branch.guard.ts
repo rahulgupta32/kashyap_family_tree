@@ -1,9 +1,18 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Role, ErrorCode } from '@kashyap/contracts';
+import { PersonRepository } from '../../../database/repositories/person.repository';
 
 @Injectable()
 export class BranchGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+  constructor(private readonly personRepo: PersonRepository) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
@@ -19,18 +28,36 @@ export class BranchGuard implements CanActivate {
       return true;
     }
 
-    const targetBranchId =
+    let targetBranchId: string | undefined =
       request.params?.branchId ||
       request.body?.branchId ||
       request.query?.branchId;
 
+    // If branchId is not directly in params/body, resolve from target person in PostgreSQL
     if (!targetBranchId) {
-      // If no branch is explicitly targeted, allow if user has general member role, or require explicit branch for verifiers
-      return true;
+      const personId = request.params?.id || request.params?.childId || request.params?.personId;
+      if (personId) {
+        const person = await this.personRepo.findById(personId);
+        if (person && person.branch_id) {
+          targetBranchId = person.branch_id;
+        }
+      }
     }
 
-    const userBranches: string[] = user.branchIds || [];
-    const isAuthorizedForBranch = userBranches.includes(targetBranchId);
+    if (!targetBranchId) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.BRANCH_MISMATCH,
+        message: 'Branch identifier cannot be determined or is missing for branch-scoped operation.',
+      });
+    }
+
+    // Enforce strict role-branch pairing: verify user has BRANCH_ADMIN or BRANCH_VERIFIER specifically for targetBranchId
+    const roleAssignments = user.roleAssignments || [];
+    const isAuthorizedForBranch = roleAssignments.some(
+      (ra: { role: Role; branchId: string | null }) =>
+        ra.branchId === targetBranchId &&
+        (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER),
+    );
 
     if (!isAuthorizedForBranch) {
       throw new ForbiddenException({

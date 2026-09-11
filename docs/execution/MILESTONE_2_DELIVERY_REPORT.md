@@ -12,16 +12,35 @@
 
 ## 1. Executive Summary
 
-Milestone 2 delivers production-grade, persistent user accounts, cryptographic OTP authentication, multi-device session management with reuse detection, and server-enforced role-based access control (RBAC). All synthetic user ID generation and phone-suffix privileges have been completely eliminated and replaced with persistent PostgreSQL storage, real Redis challenge storage on **D:** drive ext4 storage, and NestJS server guards.
+Milestone 2 delivers production-grade, persistent user accounts, cryptographic OTP authentication, multi-device session management with reuse detection, server-enforced role-based and branch-based access control (RBAC & Branch Governance), and automated browser testing. All synthetic user ID generation, phone-suffix privileges, and in-memory fallbacks have been completely eliminated and replaced with persistent PostgreSQL storage, real Redis challenge storage on **D:** drive ext4 storage, NestJS server guards, and Playwright end-to-end browser automation.
 
 Key accomplishments include:
-1. **PostgreSQL Persistence & Identity Separation**: User accounts (`user_accounts`), roles (`user_roles`), sessions (`user_sessions`), and branches (`branches`) persist in the real PostgreSQL cluster on D: drive storage. In accordance with `BR-GOV-001` and `EC-0023`, account creation strictly leaves `person_id` as `NULL`; registration never fabricates or auto-claims a person in the family tree.
-2. **Cryptographic OTP & Redis Persistence on D: Drive**: Implemented cryptographic 6-digit OTP generation with SHA-256 salting, 300-second TTL, 60-second resend cooldown (`EC-0014`), and a 5-attempt lockout threshold (`EC-0012`). Redis 7 was configured with systemd drop-in sandboxing to store its RDB snapshots and logs strictly on the D: drive mount (`/mnt/kashyap_pg/redis/`). Challenges are atomically consumed upon successful verification (`EC-0013`).
-3. **Multi-Device Session Management & Replay Detection**: Sessions persist in PostgreSQL with SHA-256 hashed refresh tokens and metadata (device platform, app version, IP, user agent). Implemented refresh token rotation (`AUTH-FR-006`). In accordance with `EC-0020`, any attempt to replay a previously revoked refresh token triggers instant security escalation, immediately revoking all active sessions for that user across all devices.
-4. **Server-Enforced Access Control & Governance Guards**: Replaced client-side trust with NestJS guards (`JwtAuthGuard`, `RolesGuard`, `BranchGuard`). Prohibited self-elevation (`BR-GOV-004`, `EC-0230`), and enforced branch-level authorization boundaries (`BR-GOV-005`). Protected all sensitive administrative and genealogy mutation endpoints (`/audit`, `/claims`, `/change-requests`, `/genealogy`).
-5. **SMS Provider Adapter & Production Gate HG-007**: Designed the pluggable `SmsProvider` interface. In development and test environments, `TestSmsProviderAdapter` captures OTPs in-memory and simulates delivery. In production, `SparrowSmsProviderAdapter` enforces gate `HG-007`, requiring valid Sparrow SMS API credentials (`SPARROW_SMS_TOKEN`, `SPARROW_SMS_FROM`) and refusing synthetic fallbacks.
-6. **Bilingual Admin Application Flow**: Implemented a responsive, accessible Next.js admin login UI (`apps/admin/src/app/login/page.tsx`) with 60-second cooldown timer, bilingual Nepali/English instructions, automatic session restoration, dynamic header displaying role/phone, and a clear "Access Denied / Pending Approval" screen for non-admin accounts.
-7. **CI/CD Service Integration**: Updated `.github/workflows/ci.yml` with native `redis:7-alpine` and `postgres:16-alpine` service containers, verifying strict frozen lockfile installation, package builds, typecheck, unit tests, and real PostgreSQL/Redis integration tests.
+1. **Secure Token Configuration & Real-Time Revocation**:
+   - Validates signing configuration at startup via `getJwtSecret()`, rejecting missing or weak keys in non-test modes.
+   - Enforces `HS256`, issuer `kashyap-platform`, audience `kashyap-api`, 15-minute access token expiry, and explicit `tokenType: 'access'`.
+   - Binds access tokens to persistent database sessions via `sid` claim. Every authenticated request validates session state against PostgreSQL `user_sessions`, instantly rejecting revoked sessions, logged-out sessions, and suspended users (`is_suspended: true`).
+   - Permissions are strictly derived from live database records via `UserRepository.getUserRoles()`; empty role assignments never fall back to JWT claims.
+2. **Branch & Record Authority Governance**:
+   - Strictly enforces role-branch pairing rules (`SUPER_ADMIN` system-wide, `BRANCH_ADMIN` and `BRANCH_VERIFIER` strictly bound to valid `branch_id`).
+   - Mutating endpoints (`/claims`, `/change-requests`, `/genealogy`) dynamically resolve the target resource's branch from PostgreSQL and reject spoofed or mismatched branch IDs.
+   - List endpoints (`GET /claims`, `GET /change-requests`) automatically filter returned records by the caller's authorized branch scope.
+3. **Concurrency-Safe OTP & Transactional Refresh Rotation**:
+   - Cryptographic 6-digit OTP verification uses an atomic Redis Lua script ensuring single-winner consumption (`EC-0013`).
+   - Resending OTP invalidates prior active challenges and enforces a 60-second cooldown (`EC-0014`).
+   - Redis offline state fails fast with `503 Service Unavailable` (`SYS_9001`) in non-test modes, rejecting silent memory fallbacks.
+   - Refresh token rotation executes inside a PostgreSQL transaction using `SELECT ... FOR UPDATE` row locking. Under `EC-0020`, replaying an invalidated refresh token triggers universal session revocation across all devices.
+4. **SMS Provider & Bootstrap Hardening**:
+   - `TestSmsProviderAdapter` is strictly excluded from production environments via factory providers and constructor guards.
+   - `SparrowSmsProviderAdapter` validates `SPARROW_SMS_TOKEN` on module initialization (`OnModuleInit`) and enforces HTTPS (`https://api.sparrowsms.com/v2/sms/`).
+   - Fictional administrator seeding is gated behind `SEED_ADMINS=true` (disabled by default) and throws a fatal security exception if attempted in production mode.
+5. **Complete Browser Session Flow & Automated Playwright Testing**:
+   - Next.js Admin portal manages refresh tokens exclusively via `HttpOnly`, `Secure` (in prod), `SameSite=Strict` cookies (never stored in `localStorage`).
+   - Requests include credentials (`credentials: 'include'`). In-flight refresh promises are deduplicated to avoid race conditions.
+   - Automatic session restoration on app load via the refresh cookie.
+   - Bilingual Access Denied screen for regular verified accounts lacking administrative roles.
+   - Playwright end-to-end browser test (`e2e/login-flow.spec.ts`) verifies the entire browser session lifecycle and is integrated into GitHub Actions CI.
+6. **D: Drive Storage & Verification**:
+   - Storage verification script [`scripts/ensure-kashyap-redis.sh`](../scripts/ensure-kashyap-redis.sh) validates Redis working directory `/mnt/kashyap_pg/redis` inside the D: loop mount (`D:\Jyphra\pg_data\kashyap_pg.img`).
 
 ---
 
@@ -31,23 +50,23 @@ Key accomplishments include:
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **AUTH-FR-001** | Section 4.1 | Nepali Mobile Number Registration (+977 98/97XXXXXXXX, E.164 normalization) | `services/api/src/common/utils/phone.util.ts` | `test/phone.util.spec.ts` | **VERIFIED** |
 | **AUTH-FR-002** | Section 4.1 | OTP Challenge Generation (Cryptographic random, SHA-256 salt/hash in Redis, 300s expiry) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts`, `test/auth.integration.spec.ts` | **VERIFIED** |
-| **AUTH-FR-003** | Section 4.1 | OTP Verification & Account Activation (Atomic consumption, phone verification flag) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
-| **AUTH-FR-004** | Section 4.1 | Anti-Abuse Rate Limiting (60s cooldown, 15 req/10m IP threshold, 5 attempts max) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
+| **AUTH-FR-003** | Section 4.1 | OTP Verification & Atomic Single-Use Consumption (Redis Lua script, single winner) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
+| **AUTH-FR-004** | Section 4.1 | Anti-Abuse Rate Limiting (60s cooldown, 5 attempts max, resend invalidation) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts`, `test/auth.integration.spec.ts` | **VERIFIED** |
 | **AUTH-FR-005** | Section 4.2 | Multi-Device Session Management (PG `user_sessions`, device tracking) | `services/api/src/database/repositories/session.repository.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
-| **AUTH-FR-006** | Section 4.2 | Refresh Token Rotation (One-time use tokens, hash verification, prior revocation) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
-| **AUTH-FR-007** | Section 4.2 | Explicit Logout & Session Invalidation (Single-device and all-device revocation) | `services/api/src/modules/auth/auth.service.ts` | `test/auth-flow.integration.spec.ts` | **VERIFIED** |
+| **AUTH-FR-006** | Section 4.2 | Refresh Token Rotation (`SELECT ... FOR UPDATE` row locking, new session generation) | `services/api/src/modules/auth/auth.service.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
+| **AUTH-FR-007** | Section 4.2 | Explicit Logout & Session Invalidation (Instant server-side revocation) | `services/api/src/modules/auth/auth.service.ts` | `test/auth-flow.integration.spec.ts`, `e2e/login-flow.spec.ts` | **VERIFIED** |
 | **AUTH-FR-008** | Section 4.3 | Role-Based Access Control (Super Admin, Branch Admin, Branch Verifier, Member) | `services/api/src/modules/auth/guards/roles.guard.ts` | `test/auth-flow.integration.spec.ts` | **VERIFIED** |
-| **AUTH-FR-009** | Section 4.3 | Branch Authority Scope (Branch isolation on mutations) | `services/api/src/modules/auth/guards/branch.guard.ts` | `services/api/src/modules/claims/claims.controller.ts` | **VERIFIED** |
-| **AUTH-FR-010** | Section 4.3 | Instant Suspension Enforcement (Blocks refresh and active token verification) | `services/api/src/database/repositories/user.repository.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
+| **AUTH-FR-009** | Section 4.3 | Branch Authority Scope & Resource Resolution (Branch isolation on mutations) | `services/api/src/modules/auth/guards/branch.guard.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
+| **AUTH-FR-010** | Section 4.3 | Instant Suspension Enforcement (Session invalidated, access blocked in real time) | `services/api/src/database/repositories/user.repository.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
 | **AUTH-FR-011** | Section 4.1 | Pluggable SMS Provider Adapter Interface | `services/api/src/modules/auth/sms/sms-provider.interface.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
-| **AUTH-FR-012 / HG-007** | Section 4.1 | Honest Gateway Gate (Production Sparrow SMS API credentials requirement) | `services/api/src/modules/auth/sms/sparrow-sms-provider.adapter.ts` | Code inspection & production configuration | **VERIFIED** |
+| **AUTH-FR-012 / HG-007** | Section 4.1 | Honest Gateway Gate (Production Sparrow SMS API credentials check on startup) | `services/api/src/modules/auth/sms/sparrow-sms-provider.adapter.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
 | **BR-GOV-001** | Section 6.1 | Identity / Person Separation (Account creation NEVER creates person record) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
 | **BR-GOV-004** | Section 6.1 | Self-Elevation Prohibited (Admins cannot elevate themselves or grant unauthorized roles) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts`, `test/auth.integration.spec.ts` | **VERIFIED** |
-| **BR-GOV-005** | Section 6.1 | Branch Authority Limitation (Branch admins cannot verify outside assigned branch) | `services/api/src/modules/auth/guards/branch.guard.ts` | `services/api/src/modules/claims/claims.controller.ts` | **VERIFIED** |
+| **BR-GOV-005** | Section 6.1 | Branch Authority Limitation (Branch admins cannot verify outside assigned branch) | `services/api/src/modules/auth/guards/branch.guard.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
 | **BR-GOV-008** | Section 6.1 | Tamper-Evident Audit Logging (SHA-256 chain, immutable trigger) | `services/api/src/database/repositories/audit.repository.ts` | `test/audit.service.spec.ts`, `test/database.integration.spec.ts` | **VERIFIED** |
 | **EC-0011** | Section 11 | Expired OTP Challenge Rejection (`AUTH_1002`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
 | **EC-0012** | Section 11 | Exceeded OTP Verification Attempts Lockout (`AUTH_1003`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
-| **EC-0013** | Section 11 | Atomic OTP Challenge Deletion on Verification | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
+| **EC-0013** | Section 11 | Atomic Single-Use OTP Consumption via Lua Script | `services/api/src/modules/auth/auth.service.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
 | **EC-0014** | Section 11 | Resend Cooldown Enforcement (`AUTH_1004`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
 | **EC-0020** | Section 11 | Refresh Token Reuse Detection & Universal Revocation (`AUTH_1011`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
 | **EC-0023** | Section 11 | Unclaimed Account Registration (`person_id = NULL`) | `services/api/src/database/repositories/user.repository.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
@@ -60,29 +79,33 @@ Key accomplishments include:
 
 Both database engines adhere strictly to the enterprise D: drive storage boundary:
 1. **PostgreSQL 16**:
-   - Cluster Name: `kashyap` on port `5433` (bridged to `127.0.0.1:5434` for Windows host services).
+   - Cluster Name: `kashyap` on port `5433` (bridged to `127.0.0.1:5434` for Windows host development).
    - Data Directory: `/mnt/kashyap_pg/pgdata` backed by `D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`.
    - Logging: `/mnt/kashyap_pg/logs/postgresql-16-kashyap.log`.
 2. **Redis 7**:
    - Port: `6379` (bound to `0.0.0.0` inside WSL).
-   - Persistence Directory: `/mnt/kashyap_pg/redis` (`dump.rdb` and `redis.log`).
-   - Systemd Sandboxing Override: `/etc/systemd/system/redis-server.service.d/override.conf` granting explicit `ReadWritePaths=-/mnt/kashyap_pg/redis`.
+   - Persistence Directory: `/mnt/kashyap_pg/redis` (`dump.rdb` and `appendonly.aof`).
+   - Verification Script: [`scripts/ensure-kashyap-redis.sh`](../scripts/ensure-kashyap-redis.sh) enforces exact canonical D: backing mount and runtime `dir` configuration.
 
 ---
 
-## 4. Administrative Portal Implementation (`apps/admin`)
+## 4. Administrative Portal & Playwright Browser Automation (`apps/admin`, `e2e`)
 
-The Next.js administration portal includes:
-- **API Client** (`apps/admin/src/lib/api-client.ts`): Fully typed wrapper for requesting OTP, verifying OTP, rotating refresh tokens, logging out, and retrieving user profiles.
-- **Authentication Context** (`apps/admin/src/context/auth-context.tsx`): React Context providing `login`, `logout`, token persistence in `localStorage`, and proactive role evaluation (`isAdmin`, `isSuperAdmin`, `isBranchAdmin`).
+The Next.js administration portal and automated browser testing cover:
+- **API Client** (`apps/admin/src/lib/api-client.ts`): Fully typed wrapper with `credentials: 'include'` on all endpoints.
+- **Authentication Context** (`apps/admin/src/context/auth-context.tsx`):
+  - Refresh tokens handled strictly via `HttpOnly; SameSite=Strict` cookies (never stored in `localStorage`).
+  - In-flight refresh promise coordination to prevent race conditions during token rotation.
+  - Automatic session restoration on app load from the server cookie.
 - **Bilingual Login Page** (`apps/admin/src/app/login/page.tsx`):
   - Form validation for Nepali mobile numbers (`98XXXXXXXX` / `97XXXXXXXX`).
   - Cooldown timer countdown showing remaining seconds before allowing resend.
   - 6-digit OTP entry with automated numeric sanitization.
-  - Clear Access Denied screen for verified users lacking administrative roles (`SUPER_ADMIN` or `BRANCH_ADMIN`), instructing them to contact the central administrator.
-- **Dynamic Header** (`apps/admin/src/components/AdminHeader.tsx`):
-  - Displays authenticated phone number and active role badge (e.g., `Super Admin`, `Branch Admin`).
-  - Interactive Logout button triggering server session revocation and clearing local client state.
+  - Clear bilingual Access Denied screen for verified users lacking administrative roles.
+- **Playwright End-to-End Test Suite** (`e2e/login-flow.spec.ts`):
+  1. Regular user gets bilingual Access Denied state (BR-GOV-004).
+  2. Super Admin login, dashboard redirection, cookie verification (`HttpOnly; SameSite=Strict`), absence of refresh tokens in `localStorage`, session restoration across page reload, and logout with server-side revocation.
+  - Automated execution integrated into GitHub Actions CI (`.github/workflows/ci.yml`).
 
 ---
 
@@ -90,16 +113,19 @@ The Next.js administration portal includes:
 
 | Test Suite | File | Tests | Result | Execution Time |
 | :--- | :--- | :---: | :---: | :---: |
-| **Auth Unit Tests** | `services/api/test/auth.service.spec.ts` | 13 | **PASS** | ~29.5s |
+| **Auth Unit Tests** | `services/api/test/auth.service.spec.ts` | 13 | **PASS** | ~14.6s |
 | **Phone Util Unit Tests** | `services/api/test/phone.util.spec.ts` | 5 | **PASS** | ~1.2s |
-| **Localization Tests** | `services/api/test/localization.spec.ts` | 12 | **PASS** | ~25.2s |
-| **Nest Graph Startup** | `services/api/test/nest-startup.spec.ts` | 2 | **PASS** | ~30.8s |
-| **Core Services Unit Tests** | `services/api/test/*.spec.ts` (12 suites total) | 78 | **PASS** | ~33.4s |
-| **Real PG Integration** | `services/api/test/database.integration.spec.ts` | 12 | **PASS** | ~7.8s |
-| **Real PG/Redis Auth Integration** | `services/api/test/auth.integration.spec.ts` | 6 | **PASS** | ~11.7s |
-| **E2E HTTP Auth & Permissions Flow** | `services/api/test/auth-flow.integration.spec.ts` | 8 | **PASS** | ~15.3s |
+| **Localization Tests** | `services/api/test/localization.spec.ts` | 12 | **PASS** | ~7.1s |
+| **Nest Graph Startup** | `services/api/test/nest-startup.spec.ts` | 2 | **PASS** | ~13.8s |
+| **Core Services Unit Tests** | `services/api/test/*.spec.ts` (12 suites total) | 78 | **PASS** | ~16.1s |
+| **Real PG Integration** | `services/api/test/database.integration.spec.ts` | 12 | **PASS** | ~6.9s |
+| **Real PG/Redis Auth Integration** | `services/api/test/auth.integration.spec.ts` | 6 | **PASS** | ~7.3s |
+| **Auth Security Regressions** | `services/api/test/auth-security-regressions.integration.spec.ts` | 12 | **PASS** | ~10.2s |
+| **E2E HTTP Auth & Permissions Flow** | `services/api/test/auth-flow.integration.spec.ts` | 8 | **PASS** | ~11.1s |
+| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (4 suites total) | 38 | **PASS** | ~12.3s |
+| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 2 | **PASS** | ~5.8s |
 | **Next.js Admin Build** | `apps/admin` (`pnpm run build`) | N/A | **PASS** | ~8.4s |
-| **Workspace Typecheck** | `pnpm run typecheck` | N/A | **PASS** | ~6.1s |
+| **Workspace Typecheck** | `pnpm run typecheck` | N/A | **PASS** | ~4.5s |
 
 ---
 
@@ -112,5 +138,5 @@ To activate live SMS delivery via Sparrow SMS in production:
 2. Set the following environment variables in production:
    - `SPARROW_SMS_TOKEN`: Enterprise API authorization token.
    - `SPARROW_SMS_FROM`: Approved Sender ID / Identity (e.g., `KashyapOrg`).
-   - `SPARROW_SMS_API_URL`: (Optional, defaults to `http://api.sparrowsms.com/v2/sms/`).
+   - `SPARROW_SMS_API_URL`: (Defaults to HTTPS `https://api.sparrowsms.com/v2/sms/`).
 3. If credentials are unset in production, `SparrowSmsProviderAdapter` throws a fatal configuration error during startup, preventing unauthenticated deployment.

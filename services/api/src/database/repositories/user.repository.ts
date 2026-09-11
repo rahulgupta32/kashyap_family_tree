@@ -80,6 +80,14 @@ export class UserRepository {
       WHERE id = $1;
     `;
     await this.db.query(query, [id, isSuspended, reason || null]);
+
+    if (isSuspended) {
+      // Invalidate active sessions immediately upon account suspension (AUTH-FR-010)
+      await this.db.query(
+        `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL;`,
+        [id],
+      );
+    }
   }
 
   async setActive(id: string, isActive: boolean): Promise<void> {

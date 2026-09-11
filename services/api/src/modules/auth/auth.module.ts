@@ -10,16 +10,35 @@ import { BranchGuard } from './guards/branch.guard';
 import { SMS_PROVIDER } from './sms/sms-provider.interface';
 import { TestSmsProviderAdapter } from './sms/test-sms-provider.adapter';
 import { SparrowSmsProviderAdapter } from './sms/sparrow-sms-provider.adapter';
+import {
+  getJwtSecret,
+  JWT_ACCESS_EXPIRY,
+  JWT_ISSUER,
+  JWT_AUDIENCE,
+  JWT_ALGORITHM,
+} from './auth.constants';
 
-import { JWT_SECRET } from './auth.constants';
+const isProd = process.env.NODE_ENV === 'production';
 
 @Global()
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: JWT_SECRET,
-      signOptions: { expiresIn: '15m' },
+    JwtModule.registerAsync({
+      useFactory: () => ({
+        secret: getJwtSecret(),
+        signOptions: {
+          expiresIn: JWT_ACCESS_EXPIRY,
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithm: JWT_ALGORITHM,
+        },
+        verifyOptions: {
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithms: [JWT_ALGORITHM],
+        },
+      }),
     }),
   ],
   controllers: [AuthController],
@@ -29,14 +48,11 @@ import { JWT_SECRET } from './auth.constants';
     JwtAuthGuard,
     RolesGuard,
     BranchGuard,
-    TestSmsProviderAdapter,
     SparrowSmsProviderAdapter,
+    ...(isProd ? [] : [TestSmsProviderAdapter]),
     {
       provide: SMS_PROVIDER,
-      useExisting:
-        process.env.NODE_ENV === 'production'
-          ? SparrowSmsProviderAdapter
-          : TestSmsProviderAdapter,
+      useExisting: isProd ? SparrowSmsProviderAdapter : TestSmsProviderAdapter,
     },
   ],
   exports: [
@@ -47,7 +63,7 @@ import { JWT_SECRET } from './auth.constants';
     RolesGuard,
     BranchGuard,
     SMS_PROVIDER,
-    TestSmsProviderAdapter,
+    ...(isProd ? [] : [TestSmsProviderAdapter]),
   ],
 })
 export class AuthModule {}

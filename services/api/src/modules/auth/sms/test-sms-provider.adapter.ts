@@ -10,7 +10,7 @@ interface SentMessageRecord {
 @Injectable()
 export class TestSmsProviderAdapter implements ISmsProvider {
   private readonly logger = new Logger(TestSmsProviderAdapter.name);
-  private sentMessages: SentMessageRecord[] = [];
+  private static sentMessages: SentMessageRecord[] = [];
 
   constructor() {
     if (process.env.NODE_ENV === 'production') {
@@ -30,9 +30,9 @@ export class TestSmsProviderAdapter implements ISmsProvider {
     };
 
     // Keep up to 100 recent messages for test inspection
-    this.sentMessages.push(record);
-    if (this.sentMessages.length > 100) {
-      this.sentMessages.shift();
+    TestSmsProviderAdapter.sentMessages.push(record);
+    if (TestSmsProviderAdapter.sentMessages.length > 100) {
+      TestSmsProviderAdapter.sentMessages.shift();
     }
 
     // Do NOT log the OTP value in production; in test mode, debug log without exposing plain credentials in high-level logs
@@ -50,15 +50,19 @@ export class TestSmsProviderAdapter implements ISmsProvider {
    * Never exposed to external HTTP callers or normal API payloads.
    */
   getLastOtp(phoneNumber: string): string | null {
+    return TestSmsProviderAdapter.getLastOtpStatic(phoneNumber);
+  }
+
+  static getLastOtpStatic(phoneNumber: string): string | null {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('Test OTP extraction is forbidden in production');
     }
-    const matching = this.sentMessages.filter((m) => m.phoneNumber === phoneNumber);
+    const matching = TestSmsProviderAdapter.sentMessages.filter((m) => m.phoneNumber === phoneNumber);
     if (matching.length === 0) return null;
     return matching[matching.length - 1].otp;
   }
 
   clear(): void {
-    this.sentMessages = [];
+    TestSmsProviderAdapter.sentMessages = [];
   }
 }

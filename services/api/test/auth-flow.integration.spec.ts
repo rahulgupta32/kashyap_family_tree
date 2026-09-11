@@ -207,10 +207,31 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
   });
 
   it('7. Server-enforced permissions: regular user cannot access protected admin endpoints (BR-GOV-004)', async () => {
+    // Re-authenticate regular user because EC-0020 in test 6 revoked all sessions on replay
+    await redisService.del(`otp:cooldown:${TEST_PHONE}`, `otp:ratelimit:phone:${TEST_PHONE}`);
+    const reqRes = await fetch(`${baseUrl}/auth/otp/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: TEST_PHONE_RAW }),
+    });
+    expect(reqRes.status).toBe(200);
+    const reqBody = await reqRes.json();
+    const otp = smsAdapter.getLastOtp(TEST_PHONE);
+    const verifyRes = await fetch(`${baseUrl}/auth/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        otpSessionId: reqBody.otpSessionId,
+        code: otp,
+      }),
+    });
+    expect(verifyRes.status).toBe(200);
+    const activeSession = await verifyRes.json();
+
     // Attempt to access audit logs as regular registered user
     const res = await fetch(`${baseUrl}/audit`, {
       headers: {
-        Authorization: `Bearer ${userTokens.accessToken}`,
+        Authorization: `Bearer ${activeSession.accessToken}`,
       },
     });
 

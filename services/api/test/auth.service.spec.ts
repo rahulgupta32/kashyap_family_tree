@@ -79,6 +79,47 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         if (!item.expiresAt) return -1;
         return Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 1000));
       }),
+      eval: jest.fn(async (script: string, numKeys: number, ...args: any[]) => {
+        const challengeKey = args[0];
+        const sessionKey = args[1];
+        const activeKey = args[2];
+        const computedHash = args[3];
+        const maxAttempts = Number(args[4]);
+        const nowMs = Number(args[5]);
+
+        const dataStrItem = mockRedisData.get(challengeKey);
+        if (!dataStrItem) {
+          return [-1, 'EXPIRED'];
+        }
+        const c = JSON.parse(dataStrItem.value);
+        if (nowMs > c.expiresAt) {
+          mockRedisData.delete(challengeKey);
+          mockRedisData.delete(sessionKey);
+          mockRedisData.delete(activeKey);
+          return [-1, 'EXPIRED'];
+        }
+        if (c.attempts >= maxAttempts) {
+          mockRedisData.delete(challengeKey);
+          mockRedisData.delete(sessionKey);
+          mockRedisData.delete(activeKey);
+          return [-2, 'MAX_ATTEMPTS'];
+        }
+        if (c.codeHash !== computedHash) {
+          c.attempts = (c.attempts || 0) + 1;
+          mockRedisData.set(challengeKey, { value: JSON.stringify(c), expiresAt: dataStrItem.expiresAt });
+          if (c.attempts >= maxAttempts) {
+            mockRedisData.delete(challengeKey);
+            mockRedisData.delete(sessionKey);
+            mockRedisData.delete(activeKey);
+            return [-2, 'MAX_ATTEMPTS'];
+          }
+          return [-3, 'MISMATCH'];
+        }
+        mockRedisData.delete(challengeKey);
+        mockRedisData.delete(sessionKey);
+        mockRedisData.delete(activeKey);
+        return [1, 'OK'];
+      }),
     };
 
     mockUserRepo = {
@@ -161,6 +202,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       findByTokenHash: jest.fn(async (hash: string) =>
         Array.from(mockSessions.values()).find((s) => s.refresh_token_hash === hash) || null,
       ),
+      findById: jest.fn(async (id: string) => mockSessions.get(id) || null),
       revokeSession: jest.fn(async (id: string) => {
         const s = mockSessions.get(id);
         if (s) s.revoked_at = new Date();
@@ -175,11 +217,47 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         }
         return count;
       }),
+      rotateSessionTransactional: jest.fn(async (tokenHash: string, data: any) => {
+        const oldSession = Array.from(mockSessions.values()).find(
+          (s) => s.refresh_token_hash === tokenHash,
+        );
+        if (!oldSession) {
+          return { status: 'NOT_FOUND' };
+        }
+        if (oldSession.revoked_at) {
+          for (const s of mockSessions.values()) {
+            if (s.user_id === oldSession.user_id) {
+              s.revoked_at = new Date();
+            }
+          }
+          return { status: 'REUSED', oldSession };
+        }
+        if (new Date(oldSession.expires_at).getTime() < Date.now()) {
+          return { status: 'EXPIRED' };
+        }
+
+        oldSession.revoked_at = new Date();
+        const newSession = {
+          id: `sess_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          user_id: oldSession.user_id,
+          refresh_token_hash: data.newRefreshTokenHash,
+          device_platform: data.devicePlatform || 'web',
+          device_id: data.deviceId || null,
+          device_name: data.deviceName || null,
+          ip_address: data.ipAddress || null,
+          user_agent: data.userAgent || null,
+          expires_at: data.expiresAt,
+          revoked_at: null,
+          created_at: new Date(),
+        };
+        mockSessions.set(newSession.id, newSession);
+        return { status: 'SUCCESS', newSession, oldSession };
+      }),
     };
 
     mockBranchRepo = {
-      findAll: jest.fn(async () => []),
-      findById: jest.fn(async () => null),
+      findAll: jest.fn(async () => [{ id: 'b-kaski', name: 'Kaski' }]),
+      findById: jest.fn(async (id: string) => ({ id, name: `Branch ${id}` })),
     };
 
     mockAuditRepo = {
@@ -409,6 +487,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     it('should prevent non-super-admin from assigning SUPER_ADMIN role', async () => {
       const operatorId = 'u-branch-admin';
       const targetUserId = 'u-target-01';
+      await mockUserRepo.assignRole(operatorId, Role.BRANCH_ADMIN, 'b-kaski');
 
       await expect(
         authService.assignUserRole(operatorId, [Role.BRANCH_ADMIN], targetUserId, Role.SUPER_ADMIN),
@@ -422,6 +501,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     it('should allow Super Admin to assign roles to other users', async () => {
       const operatorId = 'u-super-admin';
       const targetUserId = 'u-target-01';
+      await mockUserRepo.assignRole(operatorId, Role.SUPER_ADMIN);
 
       const result = await authService.assignUserRole(
         operatorId,

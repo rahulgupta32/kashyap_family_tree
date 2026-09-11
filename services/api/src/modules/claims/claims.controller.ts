@@ -28,8 +28,8 @@ export class ClaimsController {
   @Roles(Role.SUPER_ADMIN, Role.BRANCH_ADMIN, Role.BRANCH_VERIFIER)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all verification claims (Admin/Verifier)' })
-  async listClaims(): Promise<ClaimDetailDto[]> {
-    return this.claimsService.listClaims();
+  async listClaims(@CurrentUser() user: AuthenticatedUser): Promise<ClaimDetailDto[]> {
+    return this.claimsService.listClaims(user);
   }
 
   @Patch(':id/review')
@@ -42,6 +42,6 @@ export class ClaimsController {
     @Param('id') id: string,
     @Body() dto: ReviewClaimDto,
   ): Promise<ClaimDetailDto> {
-    return this.claimsService.reviewClaim(id, user.id, dto);
+    return this.claimsService.reviewClaim(id, user, dto);
   }
 }

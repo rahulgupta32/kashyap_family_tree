@@ -257,8 +257,34 @@ pnpm --filter @kashyap/api run test:integration
 
 ---
 
-## 7. System & Workload Safety Assurances
+## 7. Redis Storage Architecture & Operations (D: Drive)
 
-1. **WSL2 Virtual Disk Preservation**: The C: drive WSL root virtual disk (`ext4.vhdx`) remains unmodified. No heavy database writes or transaction logs occur on C:.
+To ensure caching, rate limiting, and atomic OTP challenges also adhere strictly to the D: drive heavy runtime storage constraint, Redis persistence (RDB snapshots and AOF logs) is co-located inside the verified D: loop filesystem.
+
+* **Backing Mount Target**: `/mnt/kashyap_pg` (`D:\Jyphra\pg_data\kashyap_pg.img`)
+* **Redis Working & Data Directory**: `/mnt/kashyap_pg/redis`
+* **Redis Port**: `6379` (standard internal loopback)
+* **Configuration Target**: `/etc/redis/redis.conf` (`dir /mnt/kashyap_pg/redis`)
+* **Persistence Mechanisms**: RDB (`dump.rdb`) & AOF (`appendonly.aof`) saved directly to D: storage
+* **Startup & Verification Script**: [`scripts/ensure-kashyap-redis.sh`](../scripts/ensure-kashyap-redis.sh)
+
+### Redis Verification Script (`scripts/ensure-kashyap-redis.sh`)
+The automated verification script enforces:
+1. **Prerequisite Mount Check**: Requires `/mnt/kashyap_pg` to be actively mounted from `D:\Jyphra\pg_data\kashyap_pg.img`.
+2. **Directory & Ownership Verification**: Creates `/mnt/kashyap_pg/redis` if missing with ownership `redis:redis` and permissions `0750`.
+3. **Configuration Audit**: Checks `/etc/redis/redis.conf` to confirm `dir` is set to `/mnt/kashyap_pg/redis`.
+4. **Service Health & Port Probe**: Starts `redis-server` if stopped and tests connectivity via `redis-cli ping`.
+5. **Runtime Data Directory Probe**: Runs `redis-cli config get dir` against the live running server, confirming output matches `/mnt/kashyap_pg/redis` exactly. Non-matching or C: locations trigger fatal non-zero exits.
+
+Invocation:
+```bash
+sudo /mnt/d/Jyphra/kashyap_family_tree/scripts/ensure-kashyap-redis.sh
+```
+
+---
+
+## 8. System & Workload Safety Assurances
+
+1. **WSL2 Virtual Disk Preservation**: The C: drive WSL root virtual disk (`ext4.vhdx`) remains unmodified. Neither PostgreSQL transactions nor Redis persistence logs occur on C:.
 2. **Shared Cluster Preservation**: The default PostgreSQL cluster `16/main` housing `vidyarthi` and `mala_chem` remains isolated on port `5432`.
 3. **Reboot Verification Distinction**: Local cluster restart was verified (`pg_ctlcluster 16 kashyap restart`, exit code 0). Full system/WSL reboot was deliberately not executed during verification to prevent disrupting running background workloads.

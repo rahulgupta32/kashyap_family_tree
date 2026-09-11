@@ -2,8 +2,8 @@
 
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
-**Current Phase**: Milestone 2 (Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions) - VERIFIED  
-**Last Updated**: 2026-09-11T02:20:00+05:45  
+**Current Phase**: Milestone 2 (Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions) - COMPLETED & FULLY VERIFIED  
+**Last Updated**: 2026-09-11T17:15:00+05:45  
 **Active Branch**: `feat/m2-auth-permissions`  
 **Base Branch**: `develop`  
 **Verified M1 Merge Commit**: `7c56094`
@@ -14,11 +14,11 @@
 
 | Dimension | Status | Notes |
 |-----------|--------|-------|
-| **Foundation Readiness** | ✅ **PASSED (M1)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD with PostgreSQL 16 container, and NestJS/Next.js builds verified. |
-| **Persistence Readiness** | ✅ **PASSED (M1)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Automatic in-memory fallback rejected. Migration runner with advisory lock verified. |
-| **Test Completeness** | ✅ **PASSED (M1)** | 64 unit/regression tests across 11 test suites + 10 real PostgreSQL integration tests (100% PASS). Nest DI compilation regression test added. |
-| **Security Readiness** | ✅ **HARDENED** | Synthetic fixtures strictly rejected in dev/prod (`NODE_ENV !== 'test'`). Production authentication rejected without persistent users. In-memory DB rejected in production. |
-| **Operational Readiness** | ✅ **D: STORAGE VERIFIED** | Loop-mounted ext4 image on D: drive verified via `findmnt` and `losetup`. Logs redirected to D: drive. Fail-fast bridge on 5434. Unrelated workloads preserved. |
+| **Foundation Readiness** | ✅ **PASSED (M1)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD with PostgreSQL 16 & Redis 7 containers, and NestJS/Next.js builds verified. |
+| **Persistence Readiness** | ✅ **PASSED (M1 & M2)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Real Redis 7 persistence on D: (`/mnt/kashyap_pg/redis`). Automatic in-memory fallbacks strictly rejected outside tests. |
+| **Test Completeness** | ✅ **PASSED (M2)** | 78 unit tests across 12 suites, 38 real PostgreSQL/Redis integration tests across 4 suites, and 2 Playwright end-to-end browser tests (100% PASS). |
+| **Security Readiness** | ✅ **HARDENED** | HS256 tokens bound to database sessions, real-time revocation on logout/suspension, transactional refresh rotation (`SELECT ... FOR UPDATE`), atomic Lua OTP verification, production gate HG-007 for Sparrow SMS, and bootstrap admin seeding disabled by default. |
+| **Operational Readiness** | ✅ **D: STORAGE VERIFIED** | PostgreSQL (`ensure-kashyap-pg.sh`) and Redis (`ensure-kashyap-redis.sh`) verified on D: drive ext4 mount. Unrelated WSL workloads (`vidyarthi`, `mala_chem`) strictly preserved. |
 | **UAT Readiness** | ⬜ **NOT STARTED** | Scheduled for Phase G6. |
 | **Production Readiness** | ⬜ **NOT READY** | Platform is in active development. |
 
@@ -26,15 +26,18 @@
 
 ## 2. Completed Milestones ✅
 
-- [x] **Milestone 2: Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions**:
+- [x] **Milestone 2: Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions (Fully Corrected & Verified)**:
   - Replaced synthetic user IDs and phone-suffix privileges with PostgreSQL-backed accounts (`user_accounts`, `user_roles`, `user_sessions`, `branches`).
   - Identity / Person separation: account creation strictly leaves `person_id = NULL` (`BR-GOV-001`, `EC-0023`).
-  - Cryptographic OTP verification with Redis persistence on D: drive (`/mnt/kashyap_pg/redis/`), 300s TTL, 60s resend cooldown (`AUTH-FR-004`), 5-attempt limit, and atomic consumption (`EC-0013`).
-  - Multi-device concurrent session management with SHA-256 hashed refresh token rotation (`AUTH-FR-006`) and reuse detection (`EC-0020`) revoking all sessions across all devices on replay.
-  - Server-enforced permissions (`JwtAuthGuard`, `RolesGuard`, `BranchGuard`) preventing self-elevation (`BR-GOV-004`, `EC-0230`) and enforcing branch boundary isolation (`BR-GOV-005`).
-  - Pluggable `SmsProvider` interface with `TestSmsProviderAdapter` for dev/test and `SparrowSmsProviderAdapter` enforcing production credentials gate `HG-007`.
-  - Next.js Admin portal (`apps/admin`) with bilingual Nepali/English OTP login flow, cooldown countdown timer, dynamic role header, and Access Denied screen for unapproved accounts.
-  - CI/CD workflow updated with native `redis:7-alpine` and `postgres:16-alpine` service containers.
+  - Secure token configuration: enforced `HS256`, issuer `kashyap-platform`, audience `kashyap-api`, 15m access expiry, and persistent session `sid` binding with real-time database validation and revocation on logout/suspension.
+  - Permissions strictly derived from live database records without fallback to JWT claims.
+  - Role-branch pairing and server-side resource branch resolution from PostgreSQL for Claims, Change Requests, and Genealogy mutations, rejecting missing or spoofed branch IDs.
+  - Concurrency-safe OTP verification with atomic Redis Lua script single-winner consumption (`EC-0013`), resend invalidation, 60s cooldown (`EC-0014`), and 503 fail-fast on Redis offline.
+  - Transactional refresh rotation with `SELECT ... FOR UPDATE` row locking and `EC-0020` universal session revocation on replay.
+  - SMS & bootstrap hardening: `TestSmsProviderAdapter` excluded from production; `SparrowSmsProviderAdapter` validates credentials at startup and enforces HTTPS; fictional admin seeding gated behind `SEED_ADMINS=true` and fatal in production.
+  - Complete browser session flow: `HttpOnly; SameSite=Strict` cookies for refresh tokens (no refresh tokens in `localStorage`), in-flight refresh promise coordination, automatic session restoration, and bilingual Access Denied screen.
+  - Automated browser test with Playwright (`e2e/login-flow.spec.ts`) verifying full session lifecycle in CI.
+  - Storage verification script (`scripts/ensure-kashyap-redis.sh`) and documentation (`docs/storage-setup.md`).
   - Delivery and verification report published (`docs/execution/MILESTONE_2_DELIVERY_REPORT.md`).
 - [x] **Milestone 1: Local Application Foundation with Real PostgreSQL Persistence**:
   - D: Drive storage backing verified (`D:\Jyphra\pg_data\kashyap_pg.img` mounted to `/mnt/kashyap_pg` via `/dev/loop0`).
@@ -58,4 +61,3 @@
 
 * **Milestone 3 has NOT been authorized and has NOT been started.**
 * Cultural rule execution and real data migration remain strictly untouched until human authorization and PR review.
-

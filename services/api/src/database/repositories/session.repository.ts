@@ -53,6 +53,16 @@ export class SessionRepository {
     return res.rows[0];
   }
 
+  async findById(sessionId: string): Promise<UserSessionRecord | null> {
+    const query = `
+      SELECT * FROM user_sessions
+      WHERE id = $1
+      LIMIT 1;
+    `;
+    const res = await this.db.query<UserSessionRecord>(query, [sessionId]);
+    return res.rows[0] || null;
+  }
+
   async findByTokenHash(refreshTokenHash: string): Promise<UserSessionRecord | null> {
     const query = `
       SELECT * FROM user_sessions
@@ -62,6 +72,87 @@ export class SessionRepository {
     `;
     const res = await this.db.query<UserSessionRecord>(query, [refreshTokenHash]);
     return res.rows[0] || null;
+  }
+
+  async rotateSessionTransactional(
+    oldTokenHash: string,
+    newSessionData: {
+      newRefreshTokenHash: string;
+      expiresAt: Date;
+      devicePlatform: string;
+      deviceId?: string | null;
+      deviceName?: string | null;
+      ipAddress?: string | null;
+      userAgent?: string | null;
+    },
+  ): Promise<{
+    status: 'SUCCESS' | 'REUSED' | 'EXPIRED' | 'NOT_FOUND';
+    oldSession?: UserSessionRecord;
+    newSession?: UserSessionRecord;
+  }> {
+    return this.db.transaction(async (client) => {
+      // 1. Lock the session row with SELECT ... FOR UPDATE (prevents concurrent duplicate successor creation)
+      const lockRes = await client.query<UserSessionRecord>(
+        `SELECT * FROM user_sessions WHERE refresh_token_hash = $1 FOR UPDATE;`,
+        [oldTokenHash],
+      );
+
+      if (lockRes.rows.length === 0) {
+        return { status: 'NOT_FOUND' };
+      }
+
+      const session = lockRes.rows[0];
+
+      // 2. Token reuse / replay check: if already revoked, trigger universal user session revocation (EC-0020)
+      if (session.revoked_at !== null) {
+        await client.query(
+          `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL;`,
+          [session.user_id],
+        );
+        return { status: 'REUSED', oldSession: session };
+      }
+
+      // 3. Expiry check
+      if (new Date() > session.expires_at) {
+        await client.query(
+          `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1;`,
+          [session.id],
+        );
+        return { status: 'EXPIRED', oldSession: session };
+      }
+
+      // 4. Revoke the old session
+      await client.query(
+        `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1;`,
+        [session.id],
+      );
+
+      // 5. Create successor session in same transaction
+      const insertRes = await client.query<UserSessionRecord>(
+        `INSERT INTO user_sessions (
+          user_id, refresh_token_hash, device_platform, device_id, device_name,
+          ip_address, user_agent, expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *;`,
+        [
+          session.user_id,
+          newSessionData.newRefreshTokenHash,
+          newSessionData.devicePlatform || session.device_platform,
+          newSessionData.deviceId !== undefined ? newSessionData.deviceId : session.device_id,
+          newSessionData.deviceName !== undefined ? newSessionData.deviceName : session.device_name,
+          newSessionData.ipAddress !== undefined ? newSessionData.ipAddress : session.ip_address,
+          newSessionData.userAgent !== undefined ? newSessionData.userAgent : session.user_agent,
+          newSessionData.expiresAt,
+        ],
+      );
+
+      return {
+        status: 'SUCCESS',
+        oldSession: session,
+        newSession: insertRes.rows[0],
+      };
+    });
   }
 
   async revokeSession(sessionId: string): Promise<void> {

@@ -82,3 +82,24 @@ jobs:
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: 6379
 
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright End-to-End Browser Tests
+        run: pnpm run test:e2e
+        env:
+          NODE_ENV: test
+          USE_REAL_POSTGRES: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+          DB_NAME: kashyap_test_db
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          SEED_ADMINS: 'true'
+          JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
+          SPARROW_SMS_TOKEN: test_sparrow_token
+          API_PORT: '3000'
+          ADMIN_PORT: '3002'
+

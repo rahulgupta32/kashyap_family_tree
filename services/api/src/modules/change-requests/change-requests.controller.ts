@@ -28,8 +28,8 @@ export class ChangeRequestsController {
   @Roles(Role.SUPER_ADMIN, Role.BRANCH_ADMIN, Role.BRANCH_VERIFIER)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List change requests (Admin/Verifier)' })
-  async listRequests(): Promise<ChangeRequestDetailDto[]> {
-    return this.changeRequestsService.listRequests();
+  async listRequests(@CurrentUser() user: AuthenticatedUser): Promise<ChangeRequestDetailDto[]> {
+    return this.changeRequestsService.listRequests(user);
   }
 
   @Patch(':id/review')
@@ -42,6 +42,6 @@ export class ChangeRequestsController {
     @Param('id') id: string,
     @Body() dto: ReviewChangeRequestDto,
   ): Promise<ChangeRequestDetailDto> {
-    return this.changeRequestsService.reviewRequest(id, user.id, dto);
+    return this.changeRequestsService.reviewRequest(id, user, dto);
   }
 }

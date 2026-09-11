@@ -14,6 +14,7 @@ export class ApiClient {
   static async requestOtp(dto: RequestOtpDto): Promise<RequestOtpResponse> {
     const res = await fetch(`${API_BASE}/auth/otp/request`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(dto),
     });
@@ -28,6 +29,7 @@ export class ApiClient {
   static async verifyOtp(dto: VerifyOtpDto): Promise<AuthSessionDto> {
     const res = await fetch(`${API_BASE}/auth/otp/verify`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(dto),
     });
@@ -39,11 +41,12 @@ export class ApiClient {
     return data;
   }
 
-  static async refreshToken(dto: RefreshTokenDto): Promise<AuthSessionDto> {
+  static async refreshToken(dto?: RefreshTokenDto): Promise<AuthSessionDto> {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dto),
+      body: JSON.stringify(dto || {}),
     });
 
     const data = await res.json();
@@ -53,15 +56,16 @@ export class ApiClient {
     return data;
   }
 
-  static async logout(dto: LogoutDto, token?: string): Promise<void> {
+  static async logout(dto?: LogoutDto, token?: string): Promise<void> {
     try {
       await fetch(`${API_BASE}/auth/logout`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(dto),
+        body: JSON.stringify(dto || {}),
       });
     } catch {
       // Best effort logout
@@ -70,6 +74,7 @@ export class ApiClient {
 
   static async getMe(token: string): Promise<UserAccountDto> {
     const res = await fetch(`${API_BASE}/auth/me`, {
+      credentials: 'include',
       headers: { Authorization: `Bearer ${token}` },
     });
 

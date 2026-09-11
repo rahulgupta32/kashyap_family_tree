@@ -1,9 +1,24 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException, OnModuleInit } from '@nestjs/common';
 import { ISmsProvider, SmsSendResult } from './sms-provider.interface';
 
 @Injectable()
-export class SparrowSmsProviderAdapter implements ISmsProvider {
+export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
   private readonly logger = new Logger(SparrowSmsProviderAdapter.name);
+
+  async onModuleInit() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isExplicitSparrow = process.env.USE_SPARROW_SMS === 'true';
+
+    if (isProduction || isExplicitSparrow) {
+      const token = process.env.SPARROW_SMS_TOKEN;
+      if (!token || token.trim() === '') {
+        const blockerMsg =
+          'FATAL CONFIGURATION: SPARROW_SMS_TOKEN is required and must be configured for SparrowSmsProviderAdapter in production mode (HG-007 Gate).';
+        this.logger.error(blockerMsg);
+        throw new Error(blockerMsg);
+      }
+    }
+  }
 
   async sendOtp(phoneNumber: string, otp: string): Promise<SmsSendResult> {
     const token = process.env.SPARROW_SMS_TOKEN;
@@ -35,7 +50,8 @@ export class SparrowSmsProviderAdapter implements ISmsProvider {
         text: messageText,
       });
 
-      const response = await fetch('http://api.sparrowsms.com/v2/sms/', {
+      // Strictly use official HTTPS endpoint per security baseline
+      const response = await fetch('https://api.sparrowsms.com/v2/sms/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

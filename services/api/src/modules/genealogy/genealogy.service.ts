@@ -256,6 +256,21 @@ export class GenealogyService {
 
   async createPerson(dto: CreatePersonDto): Promise<PersonDetailDto> {
     if (this.isDatabaseAvailable) {
+      if (!dto.branchId) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch identifier (branchId) is required for creating a person record',
+        });
+      }
+
+      const branchRes = await this.db!.query('SELECT id FROM branches WHERE id = $1', [dto.branchId]);
+      if (branchRes.rows.length === 0) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: `Branch with ID ${dto.branchId} does not exist`,
+        });
+      }
+
       const created = await this.personRepo!.createPerson(
         {
           branch_id: dto.branchId,
