@@ -43,6 +43,7 @@ describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', (
     // 2. Configure real Redis environment
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
+    process.env.SEED_ADMINS = 'true';
 
     db = new DatabaseService();
     await db.onModuleInit();

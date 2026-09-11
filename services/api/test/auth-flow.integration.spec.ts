@@ -26,6 +26,7 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
     process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
+    process.env.SEED_ADMINS = 'true';
 
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],

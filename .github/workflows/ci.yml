@@ -81,6 +81,7 @@ jobs:
           DB_NAME: kashyap_test_db
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: 6379
+          SEED_ADMINS: 'true'
           JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
           SPARROW_SMS_TOKEN: test_sparrow_token
 
