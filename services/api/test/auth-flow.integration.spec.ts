@@ -150,16 +150,22 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.accessToken).toBeDefined();
-    expect(body.refreshToken).toBeDefined();
+    // Browser endpoint omits refreshToken from JSON body
+    expect(body.refreshToken).toBeUndefined();
     expect(body.user.phoneNumber).toBe(TEST_PHONE);
 
     // CRITICAL: Person record separation
     expect(body.user.personId).toBeNull();
     expect(body.user.isClaimed).toBe(false);
 
+    const setCookie = res.headers.get('set-cookie') || '';
+    const cookieMatch = setCookie.match(/refreshToken=([^;]+)/);
+    const initialRefreshToken = cookieMatch ? cookieMatch[1] : '';
+    expect(initialRefreshToken).toBeTruthy();
+
     userTokens = {
       accessToken: body.accessToken,
-      refreshToken: body.refreshToken,
+      refreshToken: initialRefreshToken,
     };
   });
 
@@ -176,30 +182,42 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
     expect(body.roles.some((r: any) => r.role === Role.REGISTERED_USER)).toBe(true);
   });
 
-  it('5. POST /auth/refresh: should rotate refresh token and issue new session (AUTH-FR-006)', async () => {
+  it('5. POST /auth/refresh: should rotate refresh token via cookie and issue new session (AUTH-FR-006)', async () => {
     const res = await fetch(`${baseUrl}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: userTokens.refreshToken }),
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `refreshToken=${userTokens.refreshToken}`,
+      },
+      body: JSON.stringify({}),
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.accessToken).toBeDefined();
-    expect(body.refreshToken).not.toBe(userTokens.refreshToken);
+    expect(body.refreshToken).toBeUndefined(); // Omitted in browser JSON
+
+    const refreshCookie = res.headers.get('set-cookie') || '';
+    const newRefreshMatch = refreshCookie.match(/refreshToken=([^;]+)/);
+    const newRefreshToken = newRefreshMatch ? newRefreshMatch[1] : '';
+    expect(newRefreshToken).toBeTruthy();
+    expect(newRefreshToken).not.toBe(userTokens.refreshToken);
 
     // Save previous token to test replay attack
     const oldRefreshToken = userTokens.refreshToken;
     userTokens = {
       accessToken: body.accessToken,
-      refreshToken: body.refreshToken,
+      refreshToken: newRefreshToken,
     };
 
     // 6. EC-0020: Replay old refresh token -> must be rejected with 401 REFRESH_TOKEN_REUSED
     const replayRes = await fetch(`${baseUrl}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: oldRefreshToken }),
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `refreshToken=${oldRefreshToken}`,
+      },
+      body: JSON.stringify({}),
     });
 
     expect(replayRes.status).toBe(401);

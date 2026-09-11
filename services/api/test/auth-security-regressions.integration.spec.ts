@@ -127,10 +127,17 @@ describe('Milestone 2 Security & Authority Hardening Regressions (Real PG & Redi
       }),
     });
     const verifyData = (await verifyRes.json()) as any;
+    const setCookie = verifyRes.headers.get('set-cookie');
+    let cookieRefreshToken = '';
+    if (setCookie) {
+      const match = setCookie.match(/refreshToken=([^;]+)/);
+      if (match) cookieRefreshToken = match[1];
+    }
+
     return {
       accessToken: verifyData.accessToken,
-      refreshToken: verifyData.refreshToken,
-      userId: verifyData.user.id,
+      refreshToken: verifyData.refreshToken || cookieRefreshToken || '',
+      userId: verifyData.user?.id,
       sessionId: (verifyData as any).sessionId || '',
     };
   }

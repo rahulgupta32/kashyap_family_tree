@@ -104,12 +104,14 @@ export class UserRepository {
     role: Role,
     branchId: string | null = null,
     grantedBy: string | null = null,
+    client?: any,
   ): Promise<UserRoleRecord> {
     // Check if role assignment already exists (handling NULL branch_id correctly with IS NOT DISTINCT FROM)
-    const existing = await this.db.query<UserRoleRecord>(
-      `SELECT * FROM user_roles WHERE user_id = $1 AND role = $2 AND branch_id IS NOT DISTINCT FROM $3;`,
-      [userId, role, branchId],
-    );
+    const checkSql = `SELECT * FROM user_roles WHERE user_id = $1 AND role = $2 AND branch_id IS NOT DISTINCT FROM $3;`;
+    const checkParams = [userId, role, branchId];
+    const existing = client
+      ? await client.query(checkSql, checkParams)
+      : await this.db.query<UserRoleRecord>(checkSql, checkParams);
     if (existing.rows.length > 0) {
       return existing.rows[0];
     }
@@ -119,16 +121,26 @@ export class UserRepository {
       VALUES ($1, $2, $3, $4)
       RETURNING *;
     `;
-    const res = await this.db.query<UserRoleRecord>(query, [userId, role, branchId, grantedBy]);
+    const insertParams = [userId, role, branchId, grantedBy];
+    const res = client
+      ? await client.query(query, insertParams)
+      : await this.db.query<UserRoleRecord>(query, insertParams);
     return res.rows[0];
   }
 
-  async revokeRole(userId: string, role: Role, branchId: string | null = null): Promise<boolean> {
+  async revokeRole(
+    userId: string,
+    role: Role,
+    branchId: string | null = null,
+    client?: any,
+  ): Promise<boolean> {
     const query = `
       DELETE FROM user_roles
       WHERE user_id = $1 AND role = $2 AND branch_id IS NOT DISTINCT FROM $3;
     `;
-    const res = await this.db.query(query, [userId, role, branchId]);
+    const res = client
+      ? await client.query(query, [userId, role, branchId])
+      : await this.db.query(query, [userId, role, branchId]);
     return (res.rowCount ?? 0) > 0;
   }
 

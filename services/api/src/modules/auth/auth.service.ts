@@ -6,6 +6,7 @@ import {
   ServiceUnavailableException,
   Logger,
   Inject,
+  Optional,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -27,6 +28,8 @@ import { UserRepository } from '../../database/repositories/user.repository';
 import { SessionRepository } from '../../database/repositories/session.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditRepository } from '../../database/repositories/audit.repository';
+import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
+import { DatabaseService } from '../../database/database.service';
 import { ISmsProvider, SMS_PROVIDER } from './sms/sms-provider.interface';
 import { normalizeNepaliPhone } from '../../common/utils/phone.util';
 import {
@@ -56,6 +59,8 @@ export class AuthService {
     private readonly branchRepo: BranchRepository,
     private readonly auditRepo: AuditRepository,
     @Inject(SMS_PROVIDER) private readonly smsProvider: ISmsProvider,
+    @Optional() private readonly db?: DatabaseService,
+    @Optional() private readonly auditOutboxRepo?: AuditOutboxRepository,
   ) {}
 
   private isProduction(): boolean {
@@ -98,40 +103,6 @@ export class AuthService {
           messageNepali: 'धेरै पटक अनुरोध गरिएको छ। कृपया १० मिनेट पर्खनुहोस्।',
         });
       }
-
-      // Phone cooldown (60 seconds)
-      const cooldownKey = `otp:cooldown:${phone}`;
-      const inCooldown = await this.redisService.get(cooldownKey);
-      if (inCooldown) {
-        const remainingTtl = await this.redisService.ttl(cooldownKey);
-        throw new BadRequestException({
-          errorCode: ErrorCode.OTP_RESEND_COOLDOWN,
-          message: `Please wait ${remainingTtl > 0 ? remainingTtl : 60} seconds before requesting a new OTP.`,
-          messageNepali: 'कृपया नयाँ कोड अनुरोध गर्न ६० सेकेन्ड पर्खनुहोस्।',
-        });
-      }
-
-      // Phone rate limit (5 requests per 10 mins)
-      const phoneLimitKey = `otp:ratelimit:phone:${phone}`;
-      const phoneAttempts = await this.redisService.incr(phoneLimitKey);
-      if (phoneAttempts === 1) {
-        await this.redisService.expire(phoneLimitKey, 600);
-      }
-      if (phoneAttempts > 5) {
-        throw new BadRequestException({
-          errorCode: ErrorCode.RATE_LIMIT_EXCEEDED,
-          message: 'Maximum OTP requests exceeded for this mobile number. Please wait.',
-          messageNepali: 'यो नम्बरको लागि अधिकतम सीमा नाघेको छ। केही समयपछि प्रयास गर्नुहोस्।',
-        });
-      }
-    }
-
-    // Invalidate prior challenge session for this phone on resend
-    if (isRedisLive) {
-      const priorSessionId = await this.redisService.get(`otp:active_session:${phone}`);
-      if (priorSessionId) {
-        await this.redisService.del(`otp:session:${priorSessionId}`);
-      }
     }
 
     // 3. Cryptographically Secure OTP Generation (AUTH-FR-002)
@@ -155,18 +126,134 @@ export class AuthService {
     };
 
     if (isRedisLive) {
-      await this.redisService.set(`otp:challenge:${phone}`, JSON.stringify(challengeData), expiresInSeconds);
-      await this.redisService.set(`otp:session:${otpSessionId}`, phone, expiresInSeconds);
-      await this.redisService.set(`otp:active_session:${phone}`, otpSessionId, expiresInSeconds);
-      await this.redisService.set(`otp:cooldown:${phone}`, '1', 60);
+      // Atomic Lua script for reserving cooldown and replacing active session atomically
+      const reserveScript = `
+        local cooldownKey = KEYS[1]
+        local rateLimitPhoneKey = KEYS[2]
+        local activeSessionKey = KEYS[3]
+        local challengeKey = KEYS[4]
+        local sessionKey = KEYS[5]
+
+        local otpSessionId = ARGV[1]
+        local challengeJson = ARGV[2]
+        local expiresInSeconds = tonumber(ARGV[3])
+        local cooldownSeconds = tonumber(ARGV[4])
+        local maxPhoneAttempts = tonumber(ARGV[5])
+        local phoneRateLimitTtl = tonumber(ARGV[6])
+        local phone = ARGV[7]
+
+        -- Check cooldown
+        local inCooldown = redis.call('GET', cooldownKey)
+        if inCooldown then
+          local remainingTtl = redis.call('TTL', cooldownKey)
+          return { -1, tostring(remainingTtl) }
+        end
+
+        -- Check phone rate limit
+        local phoneAttempts = redis.call('INCR', rateLimitPhoneKey)
+        if phoneAttempts == 1 then
+          redis.call('EXPIRE', rateLimitPhoneKey, phoneRateLimitTtl)
+        end
+        if phoneAttempts > maxPhoneAttempts then
+          return { -2, "RATE_LIMIT" }
+        end
+
+        -- Invalidate prior challenge session for this phone on resend
+        local priorSessionId = redis.call('GET', activeSessionKey)
+        if priorSessionId then
+          redis.call('DEL', 'otp:session:' .. priorSessionId)
+        end
+
+        -- Store new challenge and active session atomically
+        redis.call('SET', challengeKey, challengeJson, 'EX', expiresInSeconds)
+        redis.call('SET', sessionKey, phone, 'EX', expiresInSeconds)
+        redis.call('SET', activeSessionKey, otpSessionId, 'EX', expiresInSeconds)
+        redis.call('SET', cooldownKey, '1', 'EX', cooldownSeconds)
+
+        return { 1, "OK" }
+      `;
+
+      const result = (await this.redisService.eval(
+        reserveScript,
+        5,
+        `otp:cooldown:${phone}`,
+        `otp:ratelimit:phone:${phone}`,
+        `otp:active_session:${phone}`,
+        `otp:challenge:${phone}`,
+        `otp:session:${otpSessionId}`,
+        otpSessionId,
+        JSON.stringify(challengeData),
+        expiresInSeconds,
+        60,
+        5,
+        600,
+        phone,
+      )) as [number, string];
+
+      const status = result[0];
+      if (status === -1) {
+        const remainingTtl = parseInt(result[1], 10);
+        throw new BadRequestException({
+          errorCode: ErrorCode.OTP_RESEND_COOLDOWN,
+          message: `Please wait ${remainingTtl > 0 ? remainingTtl : 60} seconds before requesting a new OTP.`,
+          messageNepali: 'कृपया नयाँ कोड अनुरोध गर्न ६० सेकेन्ड पर्खनुहोस्।',
+        });
+      }
+      if (status === -2) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.RATE_LIMIT_EXCEEDED,
+          message: 'Maximum OTP requests exceeded for this mobile number. Please wait.',
+          messageNepali: 'यो नम्बरको लागि अधिकतम सीमा नाघेको छ। केही समयपछि प्रयास गर्नुहोस्।',
+        });
+      }
     } else {
       this.fallbackMemoryStore.set(otpSessionId, challengeData);
     }
 
     // 5. Dispatch OTP via configured SMS Provider (AUTH-FR-002)
     const smsResult = await this.smsProvider.sendOtp(phone, otpCode);
-    if (!smsResult.success && this.isProduction()) {
-      this.logger.error(`SMS dispatch failed: ${smsResult.error}`);
+    if (!smsResult.success) {
+      this.logger.error(`SMS dispatch failed for phone ${phone}: ${smsResult.error}`);
+      // Atomic SMS failure cleanup:
+      // Clean up ONLY the failed challenge using atomic identity check without deleting newer challenges
+      if (isRedisLive) {
+        const cleanupLua = `
+          local activeKey = KEYS[1]
+          local challengeKey = KEYS[2]
+          local sessionKey = KEYS[3]
+          local cooldownKey = KEYS[4]
+          local failedSessionId = ARGV[1]
+          local retryBackoffSeconds = tonumber(ARGV[2])
+
+          local currentActive = redis.call('GET', activeKey)
+          if currentActive == failedSessionId then
+            redis.call('DEL', challengeKey, sessionKey, activeKey)
+            redis.call('SET', cooldownKey, '1', 'EX', retryBackoffSeconds)
+            return 1
+          else
+            redis.call('DEL', sessionKey)
+            return 0
+          end
+        `;
+        await this.redisService.eval(
+          cleanupLua,
+          4,
+          `otp:active_session:${phone}`,
+          `otp:challenge:${phone}`,
+          `otp:session:${otpSessionId}`,
+          `otp:cooldown:${phone}`,
+          otpSessionId,
+          5, // 5 seconds retry backoff
+        );
+      } else {
+        this.fallbackMemoryStore.delete(otpSessionId);
+      }
+
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.EXTERNAL_PROVIDER_ERROR,
+        message: 'SMS delivery failed. Please try again in a few moments.',
+        messageNepali: 'एसएमएस पठाउन सकिएन। कृपया केही क्षणपछि पुनः प्रयास गर्नुहोस्।',
+      });
     }
 
     return {
@@ -226,9 +313,16 @@ export class AuthService {
         local challengeKey = KEYS[1]
         local sessionKey = KEYS[2]
         local activeKey = KEYS[3]
-        local computedHash = ARGV[1]
-        local maxAttempts = tonumber(ARGV[2])
-        local nowMs = tonumber(ARGV[3])
+        local suppliedSessionId = ARGV[1]
+        local computedHash = ARGV[2]
+        local maxAttempts = tonumber(ARGV[3])
+        local nowMs = tonumber(ARGV[4])
+
+        -- Atomically validate active_session === suppliedSessionId
+        local activeSession = redis.call('GET', activeKey)
+        if activeSession ~= suppliedSessionId then
+          return { -4, "STALE_SESSION" }
+        end
 
         local dataStr = redis.call('GET', challengeKey)
         if not dataStr then
@@ -271,12 +365,21 @@ export class AuthService {
         `otp:challenge:${phone}`,
         `otp:session:${dto.otpSessionId}`,
         `otp:active_session:${phone}`,
+        dto.otpSessionId,
         computedHash,
         challenge.maxAttempts || 5,
         Date.now(),
       )) as [number, string];
 
       const status = result[0];
+
+      if (status === -4) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.OTP_EXPIRED,
+          message: 'OTP session has been superseded by a newer request',
+          messageNepali: 'यो ओटिपी सत्र नयाँ अनुरोधद्वारा प्रतिस्थापित भइसकेको छ।',
+        });
+      }
 
       if (status === -1) {
         throw new BadRequestException({
@@ -577,30 +680,61 @@ export class AuthService {
     clientIp = '127.0.0.1',
     userAgent = 'unknown',
   ): Promise<{ success: boolean }> {
+    let targetUserId = userId;
+    let targetSessionId = sessionId;
+
     if (dto.refreshToken) {
       const tokenHash = crypto.createHash('sha256').update(dto.refreshToken).digest('hex');
       const session = await this.sessionRepo.findByTokenHash(tokenHash);
       if (session) {
+        targetUserId = session.user_id;
+        targetSessionId = session.id;
         await this.sessionRepo.revokeSession(session.id);
+      } else if (!targetSessionId) {
+        throw new UnauthorizedException({
+          errorCode: ErrorCode.UNAUTHORIZED,
+          message: 'Session not found for provided refresh token',
+        });
       }
-    } else if (sessionId) {
-      await this.sessionRepo.revokeSession(sessionId);
+    } else if (targetSessionId) {
+      await this.sessionRepo.revokeSession(targetSessionId);
     }
 
-    if (userId) {
-      try {
-        await this.auditRepo.appendAuditLog(
-          AuditAction.LOGOUT,
-          'user_sessions',
-          userId,
-          userId,
-          'USER',
-          null,
-          null,
-          clientIp,
-          userAgent,
-        );
-      } catch {}
+    if (targetUserId) {
+      if (this.auditOutboxRepo) {
+        try {
+          await this.auditOutboxRepo.recordAuditIntent({
+            action: AuditAction.LOGOUT,
+            entityType: 'user_sessions',
+            entityId: targetSessionId || targetUserId,
+            actorId: targetUserId,
+            actorRole: 'USER',
+            oldValue: null,
+            newValue: null,
+            ipAddress: clientIp,
+            userAgent,
+          });
+          await this.auditOutboxRepo.drainOutbox(this.auditRepo);
+        } catch (err: any) {
+          this.logger.warn(`Audit outbox write/drain failed during logout for user ${targetUserId}: ${err.message}`);
+        }
+      } else {
+        try {
+          await this.auditRepo.appendAuditLog(
+            AuditAction.LOGOUT,
+            'user_sessions',
+            targetUserId,
+            targetUserId,
+            'USER',
+            null,
+            null,
+            clientIp,
+            userAgent,
+          );
+        } catch (err: any) {
+          this.logger.warn(`Audit logging failed during logout for user ${targetUserId}: ${err.message}`);
+        }
+      }
     }
 
     return { success: true };
@@ -616,19 +750,38 @@ export class AuthService {
   ): Promise<{ success: boolean; revokedCount: number }> {
     const revokedCount = await this.sessionRepo.revokeAllForUser(userId);
 
-    try {
-      await this.auditRepo.appendAuditLog(
-        AuditAction.LOGOUT,
-        'user_sessions',
-        userId,
-        userId,
-        'USER',
-        null,
-        { scope: 'ALL_DEVICES', revokedCount },
-        clientIp,
-        userAgent,
-      );
-    } catch {}
+    if (this.auditOutboxRepo) {
+      try {
+        await this.auditOutboxRepo.recordAuditIntent({
+          action: AuditAction.LOGOUT,
+          entityType: 'user_sessions',
+          entityId: userId,
+          actorId: userId,
+          actorRole: 'USER',
+          oldValue: null,
+          newValue: { scope: 'ALL_DEVICES', revokedCount },
+          ipAddress: clientIp,
+          userAgent,
+        });
+        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
+      } catch (err: any) {
+        this.logger.warn(`Audit outbox write/drain failed during logoutAll for user ${userId}: ${err.message}`);
+      }
+    } else {
+      try {
+        await this.auditRepo.appendAuditLog(
+          AuditAction.LOGOUT,
+          'user_sessions',
+          userId,
+          userId,
+          'USER',
+          null,
+          { scope: 'ALL_DEVICES', revokedCount },
+          clientIp,
+          userAgent,
+        );
+      } catch {}
+    }
 
     return { success: true, revokedCount };
   }
@@ -738,9 +891,16 @@ export class AuthService {
       }
     }
 
-    const assigned = await this.userRepo.assignRole(targetUserId, role, branchId, operatorId);
+    const runInTx = async <T>(fn: (client?: any) => Promise<T>): Promise<T> => {
+      if (this.db) {
+        return this.db.transaction(fn);
+      }
+      return fn();
+    };
 
-    try {
+    return await runInTx(async (txClient) => {
+      const assigned = await this.userRepo.assignRole(targetUserId, role, branchId, operatorId, txClient);
+
       await this.auditRepo.appendAuditLog(
         AuditAction.ROLE_ASSIGN,
         'user_roles',
@@ -749,16 +909,19 @@ export class AuthService {
         isSuperAdmin ? 'SUPER_ADMIN' : 'BRANCH_ADMIN',
         null,
         { targetUserId, role, branchId },
+        undefined,
+        undefined,
+        txClient,
       );
-    } catch {}
 
-    return {
-      id: assigned.id,
-      role: assigned.role,
-      branchId: assigned.branch_id,
-      grantedBy: assigned.granted_by,
-      createdAt: assigned.created_at.toISOString(),
-    };
+      return {
+        id: assigned.id,
+        role: assigned.role,
+        branchId: assigned.branch_id,
+        grantedBy: assigned.granted_by,
+        createdAt: assigned.created_at.toISOString(),
+      };
+    });
   }
 
   /**
@@ -809,21 +972,33 @@ export class AuthService {
       }
     }
 
-    const revoked = await this.userRepo.revokeRole(targetUserId, role, branchId);
+    const runInTx = async <T>(fn: (client?: any) => Promise<T>): Promise<T> => {
+      if (this.db) {
+        return this.db.transaction(fn);
+      }
+      return fn();
+    };
 
-    try {
-      await this.auditRepo.appendAuditLog(
-        AuditAction.ROLE_REVOKE,
-        'user_roles',
-        targetUserId,
-        operatorId,
-        isSuperAdmin ? 'SUPER_ADMIN' : 'BRANCH_ADMIN',
-        null,
-        { targetUserId, role, branchId },
-      );
-    } catch {}
+    return await runInTx(async (txClient) => {
+      const revoked = await this.userRepo.revokeRole(targetUserId, role, branchId, txClient);
 
-    return { success: revoked };
+      if (revoked) {
+        await this.auditRepo.appendAuditLog(
+          AuditAction.ROLE_REVOKE,
+          'user_roles',
+          targetUserId,
+          operatorId,
+          isSuperAdmin ? 'SUPER_ADMIN' : 'BRANCH_ADMIN',
+          null,
+          { targetUserId, role, branchId },
+          undefined,
+          undefined,
+          txClient,
+        );
+      }
+
+      return { success: revoked };
+    });
   }
 
   async clearCooldownForTest(phone: string): Promise<void> {

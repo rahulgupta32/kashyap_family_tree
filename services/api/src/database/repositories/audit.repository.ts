@@ -25,10 +25,11 @@ export class AuditRepository {
 
   constructor(private readonly db: DatabaseService) {}
 
-  async getLatestRecord(): Promise<AuditRecord | null> {
-    const res = await this.db.query<AuditRecord>(
-      'SELECT * FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT 1',
-    );
+  async getLatestRecord(client?: any): Promise<AuditRecord | null> {
+    const query = 'SELECT * FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT 1';
+    const res = client
+      ? await client.query(query)
+      : await this.db.query<AuditRecord>(query);
     return res.rows[0] || null;
   }
 
@@ -42,8 +43,9 @@ export class AuditRepository {
     newValue?: any,
     ipAddress?: string,
     userAgent?: string,
+    client?: any,
   ): Promise<AuditRecord> {
-    const latest = await this.getLatestRecord();
+    const latest = await this.getLatestRecord(client);
     const prevHash = latest ? latest.current_record_hash : '0000000000000000000000000000000000000000000000000000000000000000';
     const createdAt = new Date().toISOString();
 
@@ -60,27 +62,29 @@ export class AuditRepository {
 
     const currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
 
-    const res = await this.db.query<AuditRecord>(
-      `INSERT INTO audit_logs (
+    const sql = `INSERT INTO audit_logs (
         actor_id, actor_role, ip_address, user_agent, action, entity_type, entity_id,
         old_value, new_value, prev_record_hash, current_record_hash, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *`,
-      [
-        actorId || null,
-        actorRole || null,
-        ipAddress || null,
-        userAgent || null,
-        action,
-        entityType,
-        entityId,
-        oldValue ? JSON.stringify(oldValue) : null,
-        newValue ? JSON.stringify(newValue) : null,
-        prevHash,
-        currentHash,
-        createdAt,
-      ],
-    );
+      RETURNING *`;
+    const params = [
+      actorId || null,
+      actorRole || null,
+      ipAddress || null,
+      userAgent || null,
+      action,
+      entityType,
+      entityId,
+      oldValue ? JSON.stringify(oldValue) : null,
+      newValue ? JSON.stringify(newValue) : null,
+      prevHash,
+      currentHash,
+      createdAt,
+    ];
+
+    const res = client
+      ? await client.query(sql, params)
+      : await this.db.query<AuditRecord>(sql, params);
 
     this.logger.log(`[SQL AUDIT] Logged ${action} on ${entityType}:${entityId} (Hash: ${currentHash.substring(0, 8)}...)`);
     return res.rows[0];

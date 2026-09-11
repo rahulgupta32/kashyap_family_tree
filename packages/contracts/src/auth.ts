@@ -28,7 +28,7 @@ export interface VerifyOtpDto {
 
 export interface AuthSessionDto {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   expiresIn: number;
   user: {
     id: string;

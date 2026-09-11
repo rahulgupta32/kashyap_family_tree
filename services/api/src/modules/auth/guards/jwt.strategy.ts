@@ -90,6 +90,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       });
     }
 
+    if (session.user_id !== payload.sub) {
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.UNAUTHORIZED,
+        message: 'Token subject does not match persistent session owner.',
+      });
+    }
+
     // 3. Derive permissions STRICTLY from current database assignments.
     // An empty role result must NEVER fall back to old JWT claims!
     const roleRecords = await this.userRepo.getUserRoles(user.id);

@@ -17,9 +17,9 @@
 | Dimension | Status | Notes |
 |-----------|--------|-------|
 | **Foundation Readiness** | ✅ **PASSED (M1)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD with PostgreSQL 16 & Redis 7 containers, and NestJS/Next.js builds verified. |
-| **Persistence Readiness** | ✅ **PASSED (M1 & M2)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Real Redis 7 persistence on D: (`/mnt/kashyap_pg/redis`). Automatic in-memory fallbacks strictly rejected outside tests. |
-| **Test Completeness** | ✅ **PASSED (M2)** | 78 unit tests across 12 suites, 38 real PostgreSQL/Redis integration tests across 4 suites, and 2 Playwright end-to-end browser tests (100% PASS). |
-| **Security Readiness** | ✅ **HARDENED** | HS256 tokens bound to database sessions, real-time revocation on logout/suspension, transactional refresh rotation (`SELECT ... FOR UPDATE`), atomic Lua OTP verification, production gate HG-007 for Sparrow SMS, and bootstrap admin seeding disabled by default. |
+| **Persistence Readiness** | ✅ **PASSED (M1 & M2)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Real Redis 7 persistence on D: (`/mnt/kashyap_pg/redis`). Automatic in-memory fallbacks strictly rejected outside tests. Durable `audit_outbox` table ensures audit evidence survives transient failures. Note: `ClaimsService` operates on an in-memory Map pending future milestone persistence. |
+| **Test Completeness** | ✅ **PASSED (M2)** | 78 unit tests across 12 suites, 50 real PostgreSQL/Redis integration tests across 5 suites (including `auth-m2-hardening.integration.spec.ts`), and 3 Playwright end-to-end browser test cases (100% PASS). |
+| **Security Readiness** | ✅ **HARDENED** | HS256 tokens bound to database sessions, real-time revocation on logout/suspension, transactional refresh rotation (`SELECT ... FOR UPDATE`), atomic Lua OTP verification and challenge reservation, server-authoritative branch resolution (`GEN-002`), browser credential isolation (HttpOnly cookies, native transport separation with origin blocking), cross-tab Web Locks refresh coordination, production gate HG-007 for Sparrow SMS, and bootstrap admin seeding disabled by default. |
 | **Operational Readiness** | ✅ **D: STORAGE VERIFIED** | PostgreSQL (`ensure-kashyap-pg.sh`) and Redis (`ensure-kashyap-redis.sh`) verified on D: drive ext4 mount. Unrelated WSL workloads (`vidyarthi`, `mala_chem`) strictly preserved. |
 | **UAT Readiness** | ⬜ **NOT STARTED** | Scheduled for Phase G6. |
 | **Production Readiness** | ⬜ **NOT READY** | Platform is in active development. |
@@ -31,14 +31,15 @@
 - [x] **Milestone 2: Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions (Fully Corrected & Verified)**:
   - Replaced synthetic user IDs and phone-suffix privileges with PostgreSQL-backed accounts (`user_accounts`, `user_roles`, `user_sessions`, `branches`).
   - Identity / Person separation: account creation strictly leaves `person_id = NULL` (`BR-GOV-001`, `EC-0023`).
-  - Secure token configuration: enforced `HS256`, issuer `kashyap-platform`, audience `kashyap-api`, 15m access expiry, and persistent session `sid` binding with real-time database validation and revocation on logout/suspension.
-  - Permissions strictly derived from live database records without fallback to JWT claims.
-  - Role-branch pairing and server-side resource branch resolution from PostgreSQL for Claims, Change Requests, and Genealogy mutations, rejecting missing or spoofed branch IDs.
-  - Concurrency-safe OTP verification with atomic Redis Lua script single-winner consumption (`EC-0013`), resend invalidation, 60s cooldown (`EC-0014`), and 503 fail-fast on Redis offline.
-  - Transactional refresh rotation with `SELECT ... FOR UPDATE` row locking and `EC-0020` universal session revocation on replay.
-  - SMS & bootstrap hardening: `TestSmsProviderAdapter` excluded from production; `SparrowSmsProviderAdapter` validates credentials at startup and enforces HTTPS; fictional admin seeding gated behind `SEED_ADMINS=true` and fatal in production.
-  - Complete browser session flow: `HttpOnly; SameSite=Strict` cookies for refresh tokens (no refresh tokens in `localStorage`), in-flight refresh promise coordination, automatic session restoration, and bilingual Access Denied screen.
-  - Automated browser test with Playwright (`e2e/login-flow.spec.ts`) verifying full session lifecycle in CI.
+  - Cryptographic token configuration: enforced `HS256`, issuer `kashyap-platform`, audience `kashyap-api`, 15m access expiry, explicit `tokenType: 'access'`, and persistent session `sid` binding with real-time database validation and revocation on logout/suspension. In `JwtStrategy`, `session.user_id === payload.sub` is strictly required.
+  - Cryptographic logout: Bearer logout verifies signature, algorithm, issuer, audience, token type, expiry, and session ownership via the authentication layer. Refresh-token logout derives identity from the matched database session.
+  - Server-side branch authorization: for existing records, authoritative branch is always resolved from PostgreSQL; client body/query `branchId` overrides are rejected (`403 BRANCH_MISMATCH`). Parent and spouse mutations check both people for dual-branch authority or `SUPER_ADMIN` per `GEN-002`.
+  - Browser credential isolation: refresh tokens are delivered via `HttpOnly; SameSite=Strict; Secure; Path=/` cookies and strictly omitted from browser JSON responses. Native token transport is separated into `/auth/native/verify` and `/auth/native/refresh` without cookies, rejecting browser `Origin` or `Referer` with `403 FORBIDDEN_BROWSER_ORIGIN`. Strict CORS allowlist and CSRF Origin checks are enforced.
+  - Multi-tab refresh coordination: browser tabs coordinate token rotation via Web Locks API (`navigator.locks.request`), `BroadcastChannel`, and `localStorage` state propagation, preventing race conditions under strict single-use rotation without artificial grace windows.
+  - Concurrency-safe atomic OTP: atomic 5-key Redis Lua script reserves challenge and replaces active sessions (`EC-0013`, `EC-0014`). Verification script checks `active_session === suppliedSessionId` before incrementing attempts or consuming. Failed SMS delivery triggers atomic session cleanup while preserving abuse counters with a 5s retry backoff.
+  - Mandatory audit evidence & durable outbox: PostgreSQL `audit_outbox` table guarantees session revocation persists even if downstream audit writes fail. Role assignment and revocation execute transactionally with audit logging, rolling back if audit logging fails.
+  - Pluggable SMS provider: `TestSmsProviderAdapter` excluded from production; `SparrowSmsProviderAdapter` validates credentials at startup and enforces HTTPS; fictional admin seeding gated behind `SEED_ADMINS=true` and fatal in production.
+  - Honesty note: `ClaimsService` uses an in-memory `Map<string, ClaimRecord>` and is not yet persisted to PostgreSQL (scheduled for future claim verification milestones).
   - Storage verification script (`scripts/ensure-kashyap-redis.sh`) and documentation (`docs/storage-setup.md`).
   - Delivery and verification report published (`docs/execution/MILESTONE_2_DELIVERY_REPORT.md`).
 - [x] **Milestone 1: Local Application Foundation with Real PostgreSQL Persistence**:
@@ -63,3 +64,4 @@
 
 * **Milestone 3 has NOT been authorized and has NOT been started.**
 * Cultural rule execution and real data migration remain strictly untouched until human authorization and PR review.
+

@@ -10,6 +10,7 @@ import { CalendarEventRepository } from './repositories/calendar-event.repositor
 import { UserRepository } from './repositories/user.repository';
 import { SessionRepository } from './repositories/session.repository';
 import { BranchRepository } from './repositories/branch.repository';
+import { AuditOutboxRepository } from './repositories/audit-outbox.repository';
 import { BootstrapService } from './bootstrap.service';
 
 @Global()
@@ -21,6 +22,7 @@ import { BootstrapService } from './bootstrap.service';
     GenealogyLinkRepository,
     ClaimRepository,
     AuditRepository,
+    AuditOutboxRepository,
     CulturalArticleRepository,
     CalendarEventRepository,
     UserRepository,
@@ -35,6 +37,7 @@ import { BootstrapService } from './bootstrap.service';
     GenealogyLinkRepository,
     ClaimRepository,
     AuditRepository,
+    AuditOutboxRepository,
     CulturalArticleRepository,
     CalendarEventRepository,
     UserRepository,

@@ -80,12 +80,78 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         return Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 1000));
       }),
       eval: jest.fn(async (script: string, numKeys: number, ...args: any[]) => {
+        if (numKeys === 5) {
+          // Atomic OTP reservation script
+          const cooldownKey = args[0];
+          const rateLimitPhoneKey = args[1];
+          const activeSessionKey = args[2];
+          const challengeKey = args[3];
+          const sessionKey = args[4];
+          const otpSessionId = args[5];
+          const challengeJson = args[6];
+          const expiresInSeconds = Number(args[7]);
+          const cooldownSeconds = Number(args[8]);
+          const maxPhoneAttempts = Number(args[9]);
+          const phone = args[11];
+
+          const inCooldown = mockRedisData.get(cooldownKey);
+          if (inCooldown && (!inCooldown.expiresAt || inCooldown.expiresAt > Date.now())) {
+            const remaining = Math.max(1, Math.ceil((inCooldown.expiresAt! - Date.now()) / 1000));
+            return [-1, remaining.toString()];
+          }
+
+          const phoneItem = mockRedisData.get(rateLimitPhoneKey);
+          const phoneAttempts = (phoneItem ? parseInt(phoneItem.value, 10) : 0) + 1;
+          mockRedisData.set(rateLimitPhoneKey, { value: phoneAttempts.toString(), expiresAt: Date.now() + 600000 });
+          if (phoneAttempts > maxPhoneAttempts) {
+            return [-2, 'RATE_LIMIT'];
+          }
+
+          const priorSession = mockRedisData.get(activeSessionKey);
+          if (priorSession) {
+            mockRedisData.delete(`otp:session:${priorSession.value}`);
+          }
+
+          mockRedisData.set(challengeKey, { value: challengeJson, expiresAt: Date.now() + expiresInSeconds * 1000 });
+          mockRedisData.set(sessionKey, { value: phone, expiresAt: Date.now() + expiresInSeconds * 1000 });
+          mockRedisData.set(activeSessionKey, { value: otpSessionId, expiresAt: Date.now() + expiresInSeconds * 1000 });
+          mockRedisData.set(cooldownKey, { value: '1', expiresAt: Date.now() + cooldownSeconds * 1000 });
+          return [1, 'OK'];
+        }
+
+        if (numKeys === 4) {
+          // SMS cleanup script
+          const activeKey = args[0];
+          const challengeKey = args[1];
+          const sessionKey = args[2];
+          const cooldownKey = args[3];
+          const failedSessionId = args[4];
+          const currentActive = mockRedisData.get(activeKey);
+          if (currentActive && currentActive.value === failedSessionId) {
+            mockRedisData.delete(challengeKey);
+            mockRedisData.delete(sessionKey);
+            mockRedisData.delete(activeKey);
+            mockRedisData.set(cooldownKey, { value: '1', expiresAt: Date.now() + 5000 });
+            return 1;
+          } else {
+            mockRedisData.delete(sessionKey);
+            return 0;
+          }
+        }
+
+        // 3-key OTP verification script
         const challengeKey = args[0];
         const sessionKey = args[1];
         const activeKey = args[2];
-        const computedHash = args[3];
-        const maxAttempts = Number(args[4]);
-        const nowMs = Number(args[5]);
+        const suppliedSessionId = args[3];
+        const computedHash = args[4];
+        const maxAttempts = Number(args[5]);
+        const nowMs = Number(args[6]);
+
+        const activeSessionItem = mockRedisData.get(activeKey);
+        if (!activeSessionItem || activeSessionItem.value !== suppliedSessionId) {
+          return [-4, 'STALE_SESSION'];
+        }
 
         const dataStrItem = mockRedisData.get(challengeKey);
         if (!dataStrItem) {

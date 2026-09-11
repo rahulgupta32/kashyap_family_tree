@@ -53,6 +53,10 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Self-elevation is prohibited. Users cannot grant or modify their own administrative roles.',
     ne: 'आफैंलाई भूमिका प्रदान गर्न निषेध गरिएको छ। आफ्नै भूमिका परिमार्जन गर्न मिल्दैन।'
   },
+  [ErrorCode.FORBIDDEN_BROWSER_ORIGIN]: {
+    en: 'Native transport endpoint rejected request bearing browser Origin or Referer header.',
+    ne: 'ब्राउजरबाट नेटिभ इन्डपोइन्ट प्रयोग गर्न अनुमति छैन।'
+  },
   [ErrorCode.PROFILE_NOT_FOUND]: {
     en: 'Profile not found.',
     ne: 'प्रोफाइल फेला परेन।'

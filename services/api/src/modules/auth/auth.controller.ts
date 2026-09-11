@@ -11,6 +11,7 @@ import {
   UseGuards,
   UnauthorizedException,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
@@ -36,6 +37,9 @@ import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decora
 import { Request, Response } from 'express';
 import { normalizeNepaliPhone } from '../../common/utils/phone.util';
 import { TestSmsProviderAdapter } from './sms/test-sms-provider.adapter';
+import { SessionRepository } from '../../database/repositories/session.repository';
+import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from './auth.constants';
+import { JwtPayload } from './guards/jwt.strategy';
 
 function getRefreshTokenFromReq(req: Request, dto?: { refreshToken?: string }): string | undefined {
   if (dto?.refreshToken && dto.refreshToken.trim()) return dto.refreshToken.trim();
@@ -75,6 +79,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService,
+    private readonly sessionRepo: SessionRepository,
   ) {}
 
   @Post('otp/request')
@@ -88,7 +93,7 @@ export class AuthController {
 
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP code and retrieve access & refresh tokens (AUTH-FR-003, AUTH-FR-005)' })
+  @ApiOperation({ summary: 'Verify OTP code and retrieve access token with HttpOnly refresh cookie (AUTH-FR-003, AUTH-FR-005)' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully' })
   async verifyOtp(
     @Body() dto: VerifyOtpDto,
@@ -100,14 +105,18 @@ export class AuthController {
     const session = await this.authService.verifyOtp(dto, ip, userAgent);
 
     // Set secure HttpOnly cookie for refresh token credentials
-    setRefreshTokenCookie(res, session.refreshToken);
+    if (session.refreshToken) {
+      setRefreshTokenCookie(res, session.refreshToken);
+    }
 
-    return session;
+    // Browser cookie login must always omit refresh credentials from JSON
+    const { refreshToken, ...browserSession } = session;
+    return browserSession;
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Renew session using refresh token with rotation & reuse detection (AUTH-FR-006, EC-0020)' })
+  @ApiOperation({ summary: 'Renew session using HttpOnly cookie with rotation & reuse detection (AUTH-FR-006, EC-0020)' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
   async refreshToken(
     @Body() dto: RefreshTokenDto,
@@ -128,9 +137,62 @@ export class AuthController {
     const session = await this.authService.refreshToken({ refreshToken: rawRefreshToken }, ip, userAgent);
 
     // Update HttpOnly cookie with rotated token
-    setRefreshTokenCookie(res, session.refreshToken);
+    if (session.refreshToken) {
+      setRefreshTokenCookie(res, session.refreshToken);
+    }
 
-    return session;
+    // Browser cookie refresh must always omit refresh credentials from JSON
+    const { refreshToken, ...browserSession } = session;
+    return browserSession;
+  }
+
+  @Post('native/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Native platform OTP verification with token body transport' })
+  @ApiResponse({ status: 200, description: 'Authenticated successfully with token body transport' })
+  async verifyOtpNative(
+    @Body() dto: VerifyOtpDto,
+    @Req() req: Request,
+  ): Promise<AuthSessionDto> {
+    if (req.headers.origin || req.headers.referer) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.FORBIDDEN_BROWSER_ORIGIN,
+        message: 'Native transport endpoint rejected request bearing browser Origin or Referer header.',
+        messageNepali: 'ब्राउजरबाट नेटिभ इन्डपोइन्ट प्रयोग गर्न अनुमति छैन।',
+      });
+    }
+
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.verifyOtp(dto, ip, userAgent);
+  }
+
+  @Post('native/refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Native platform token rotation with token body transport' })
+  @ApiResponse({ status: 200, description: 'Token rotated successfully with token body transport' })
+  async refreshTokenNative(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+  ): Promise<AuthSessionDto> {
+    if (req.headers.origin || req.headers.referer) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.FORBIDDEN_BROWSER_ORIGIN,
+        message: 'Native transport endpoint rejected request bearing browser Origin or Referer header.',
+        messageNepali: 'ब्राउजरबाट नेटिभ इन्डपोइन्ट प्रयोग गर्न अनुमति छैन।',
+      });
+    }
+
+    if (!dto?.refreshToken || !dto.refreshToken.trim()) {
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.UNAUTHORIZED,
+        message: 'Refresh token is required in request body for native transport',
+      });
+    }
+
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    return this.authService.refreshToken({ refreshToken: dto.refreshToken.trim() }, ip, userAgent);
   }
 
   @Post('logout')
@@ -146,25 +208,57 @@ export class AuthController {
     const userAgent = req.headers['user-agent'] || 'unknown';
     const rawRefreshToken = getRefreshTokenFromReq(req, dto);
 
-    let userId = (req as any).user?.id;
-    let sessionId = (req as any).user?.sessionId;
+    let verifiedUserId: string | undefined = (req as any).user?.id;
+    let verifiedSessionId: string | undefined = (req as any).user?.sessionId;
 
     const authHeader = req.headers.authorization;
-    if ((!userId || !sessionId) && authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      let payload: JwtPayload;
       try {
-        const token = authHeader.substring(7).trim();
-        const decoded = this.jwtService.decode(token) as any;
-        if (decoded) {
-          userId = userId || decoded.sub;
-          sessionId = sessionId || decoded.sid;
-        }
-      } catch {}
+        payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+          secret: getJwtSecret(),
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithms: [JWT_ALGORITHM],
+        });
+      } catch (err: any) {
+        throw new UnauthorizedException({
+          errorCode: ErrorCode.UNAUTHORIZED,
+          message: `Authentication required for logout: invalid or expired Bearer token (${err.message})`,
+        });
+      }
+
+      if (payload.tokenType !== 'access' || !payload.sid || !payload.sub) {
+        throw new UnauthorizedException({
+          errorCode: ErrorCode.UNAUTHORIZED,
+          message: 'Malformed access token supplied for logout',
+        });
+      }
+
+      const session = await this.sessionRepo.findById(payload.sid);
+      if (!session || session.user_id !== payload.sub) {
+        throw new UnauthorizedException({
+          errorCode: ErrorCode.UNAUTHORIZED,
+          message: 'Token subject does not match persistent session owner',
+        });
+      }
+
+      verifiedUserId = payload.sub;
+      verifiedSessionId = payload.sid;
+    }
+
+    if (!verifiedSessionId && !rawRefreshToken) {
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.UNAUTHORIZED,
+        message: 'Authentication required for logout: valid Bearer token or refresh token must be provided',
+      });
     }
 
     await this.authService.logout(
       { refreshToken: rawRefreshToken },
-      userId,
-      sessionId,
+      verifiedUserId,
+      verifiedSessionId,
       ip,
       userAgent,
     );

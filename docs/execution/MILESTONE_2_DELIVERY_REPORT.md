@@ -17,31 +17,36 @@
 Milestone 2 delivers production-grade, persistent user accounts, cryptographic OTP authentication, multi-device session management with reuse detection, server-enforced role-based and branch-based access control (RBAC & Branch Governance), and automated browser testing. All synthetic user ID generation, phone-suffix privileges, and in-memory fallbacks have been completely eliminated and replaced with persistent PostgreSQL storage, real Redis challenge storage on **D:** drive ext4 storage, NestJS server guards, and Playwright end-to-end browser automation.
 
 Key accomplishments include:
-1. **Secure Token Configuration & Real-Time Revocation**:
+1. **Secure Token Configuration, Cryptographic Logout & Real-Time Revocation**:
    - Validates signing configuration at startup via `getJwtSecret()`, rejecting missing or weak keys in non-test modes.
    - Enforces `HS256`, issuer `kashyap-platform`, audience `kashyap-api`, 15-minute access token expiry, and explicit `tokenType: 'access'`.
-   - Binds access tokens to persistent database sessions via `sid` claim. Every authenticated request validates session state against PostgreSQL `user_sessions`, instantly rejecting revoked sessions, logged-out sessions, and suspended users (`is_suspended: true`).
+   - Binds access tokens to persistent database sessions via `sid` claim. In `JwtStrategy`, `session.user_id === payload.sub` is strictly validated.
+   - Cryptographic Bearer logout verifies signature, algorithm, issuer, audience, token type, expiry, and session ownership through the authentication layer before revoking anything. Refresh-token logout matches database session and revokes ownership.
    - Permissions are strictly derived from live database records via `UserRepository.getUserRoles()`; empty role assignments never fall back to JWT claims.
-2. **Branch & Record Authority Governance**:
-   - Strictly enforces role-branch pairing rules (`SUPER_ADMIN` system-wide, `BRANCH_ADMIN` and `BRANCH_VERIFIER` strictly bound to valid `branch_id`).
-   - Mutating endpoints (`/claims`, `/change-requests`, `/genealogy`) dynamically resolve the target resource's branch from PostgreSQL and reject spoofed or mismatched branch IDs.
+2. **Authoritative Server-Side Branch & Resource Governance (`GEN-002`)**:
+   - Mutating endpoints dynamically resolve the target record's authoritative branch from PostgreSQL; client body/query `branchId` overrides are rejected with `403 BRANCH_MISMATCH`.
+   - Parent and spouse genealogy mutations inspect both affected individuals from PostgreSQL and require `SUPER_ADMIN` or dual-branch authority (`GEN-002`).
    - List endpoints (`GET /claims`, `GET /change-requests`) automatically filter returned records by the caller's authorized branch scope.
-3. **Concurrency-Safe OTP & Transactional Refresh Rotation**:
-   - Cryptographic 6-digit OTP verification uses an atomic Redis Lua script ensuring single-winner consumption (`EC-0013`).
-   - Resending OTP invalidates prior active challenges and enforces a 60-second cooldown (`EC-0014`).
-   - Redis offline state fails fast with `503 Service Unavailable` (`SYS_9001`) in non-test modes, rejecting silent memory fallbacks.
+3. **Browser Credential Isolation & Multi-Tab Web Locks Refresh Coordination**:
+   - Refresh tokens are transmitted exclusively via `HttpOnly; SameSite=Strict; Secure; Path=/` cookies on web routes (`/auth/otp/verify`, `/auth/refresh`). Response JSON strictly omits `refreshToken`.
+   - Native clients are served by dedicated endpoints (`/auth/native/verify`, `/auth/native/refresh`) delivering tokens in JSON without cookies; browser requests with `Origin` or `Referer` are rejected with `403 FORBIDDEN_BROWSER_ORIGIN`.
+   - Strict CORS allowlist and CSRF Origin validation on mutating cookie-authenticated endpoints.
+   - Multi-tab token refresh coordination using Web Locks API (`navigator.locks.request`), `BroadcastChannel`, and `localStorage`, ensuring single-use token rotation without race conditions or artificial grace windows.
+4. **Concurrency-Safe Atomic OTP & SMS Failure Handling**:
+   - Cryptographic 6-digit OTP reservation and verification execute via atomic Redis Lua scripts (`EC-0013`, `EC-0014`), reserving challenge and replacing active sessions atomically.
+   - Verification script confirms `active_session === suppliedSessionId` before incrementing attempts or consuming.
+   - Downstream SMS delivery failures trigger atomic Redis cleanup of only the failed session challenge while preserving rate-limiting abuse counters with a 5s retry backoff.
    - Refresh token rotation executes inside a PostgreSQL transaction using `SELECT ... FOR UPDATE` row locking. Under `EC-0020`, replaying an invalidated refresh token triggers universal session revocation across all devices.
-4. **SMS Provider & Bootstrap Hardening**:
+5. **Mandatory Audit Evidence & Durable Outbox**:
+   - PostgreSQL `audit_outbox` table (`database/migrations/002_audit_outbox.sql`) guarantees session revocation persists even if downstream audit writes fail, with persistent entries surviving application restarts.
+   - Role assignment (`assignUserRole`) and revocation (`revokeUserRole`) are executed in a PostgreSQL transaction with audit logging; failure of audit logging rolls back the role mutation.
+6. **Transparent Architectural Status**:
+   - `ClaimsService` currently operates on an in-memory `Map<string, ClaimRecord>` and is not persisted to PostgreSQL (scheduled for future claim verification milestones).
+7. **SMS Provider & Bootstrap Hardening**:
    - `TestSmsProviderAdapter` is strictly excluded from production environments via factory providers and constructor guards.
    - `SparrowSmsProviderAdapter` validates `SPARROW_SMS_TOKEN` on module initialization (`OnModuleInit`) and enforces HTTPS (`https://api.sparrowsms.com/v2/sms/`).
    - Fictional administrator seeding is gated behind `SEED_ADMINS=true` (disabled by default) and throws a fatal security exception if attempted in production mode.
-5. **Complete Browser Session Flow & Automated Playwright Testing**:
-   - Next.js Admin portal manages refresh tokens exclusively via `HttpOnly`, `Secure` (in prod), `SameSite=Strict` cookies (never stored in `localStorage`).
-   - Requests include credentials (`credentials: 'include'`). In-flight refresh promises are deduplicated to avoid race conditions.
-   - Automatic session restoration on app load via the refresh cookie.
-   - Bilingual Access Denied screen for regular verified accounts lacking administrative roles.
-   - Playwright end-to-end browser test (`e2e/login-flow.spec.ts`) verifies the entire browser session lifecycle and is integrated into GitHub Actions CI.
-6. **D: Drive Storage & Verification**:
+8. **D: Drive Storage & Verification**:
    - Storage verification script [`scripts/ensure-kashyap-redis.sh`](../scripts/ensure-kashyap-redis.sh) validates Redis working directory `/mnt/kashyap_pg/redis` inside the D: loop mount (`D:\Jyphra\pg_data\kashyap_pg.img`).
 
 ---
@@ -124,8 +129,9 @@ The Next.js administration portal and automated browser testing cover:
 | **Real PG/Redis Auth Integration** | `services/api/test/auth.integration.spec.ts` | 6 | **PASS** | ~7.3s |
 | **Auth Security Regressions** | `services/api/test/auth-security-regressions.integration.spec.ts` | 12 | **PASS** | ~10.2s |
 | **E2E HTTP Auth & Permissions Flow** | `services/api/test/auth-flow.integration.spec.ts` | 8 | **PASS** | ~11.1s |
-| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (4 suites total) | 38 | **PASS** | ~12.3s |
-| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 2 | **PASS** | ~5.8s |
+| **M2 Security & Authority Hardening** | `services/api/test/auth-m2-hardening.integration.spec.ts` | 12 | **PASS** | ~11.8s |
+| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (5 suites total) | 50 | **PASS** | ~23.5s |
+| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 3 | **PASS** | ~7.2s |
 | **Next.js Admin Build** | `apps/admin` (`pnpm run build`) | N/A | **PASS** | ~8.4s |
 | **Workspace Typecheck** | `pnpm run typecheck` | N/A | **PASS** | ~4.5s |
 
