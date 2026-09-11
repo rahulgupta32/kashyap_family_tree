@@ -3,11 +3,11 @@
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
 **Current Phase**: Milestone 2 (Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions) - COMPLETED & FULLY VERIFIED  
-**Last Updated**: 2026-09-11T17:35:00+05:45  
+**Last Updated**: 2026-09-11T18:18:00+05:45  
 **Active Branch**: `feat/m2-auth-permissions`  
 **Base Branch**: `develop`  
-**Verified M2 Commit**: `6d8b1db`  
-**GitHub Actions CI Run**: `34595724771` (Status: `completed`, Conclusion: `success`)  
+**Verified M2 Commit**: `da3ffdc`  
+**GitHub Actions CI Run**: `34599240005` (Status: `completed`, Conclusion: `success`)  
 **Verified M1 Merge Commit**: `7c56094`
 
 ---
