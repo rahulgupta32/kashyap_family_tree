@@ -13,6 +13,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import {
   RequestOtpDto,
@@ -71,7 +72,10 @@ function clearRefreshTokenCookie(res: Response) {
 @ApiTags('Authentication & Sessions')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   @Post('otp/request')
   @HttpCode(HttpStatus.OK)
@@ -142,10 +146,25 @@ export class AuthController {
     const userAgent = req.headers['user-agent'] || 'unknown';
     const rawRefreshToken = getRefreshTokenFromReq(req, dto);
 
+    let userId = (req as any).user?.id;
+    let sessionId = (req as any).user?.sessionId;
+
+    const authHeader = req.headers.authorization;
+    if ((!userId || !sessionId) && authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7).trim();
+        const decoded = this.jwtService.decode(token) as any;
+        if (decoded) {
+          userId = userId || decoded.sub;
+          sessionId = sessionId || decoded.sid;
+        }
+      } catch {}
+    }
+
     await this.authService.logout(
       { refreshToken: rawRefreshToken },
-      (req as any).user?.id,
-      (req as any).user?.sessionId,
+      userId,
+      sessionId,
       ip,
       userAgent,
     );

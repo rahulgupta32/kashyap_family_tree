@@ -1,4 +1,31 @@
+'use client';
+
+import React, { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '../context/auth-context';
+
 export default function AdminDashboard() {
+  const router = useRouter();
+  const { user, isLoading, isAdmin } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && (!user || !isAdmin)) {
+      router.push('/login');
+    }
+  }, [isLoading, user, isAdmin, router]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12 text-slate-500 text-sm">
+        लोड हुँदैछ (Loading)...
+      </div>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return null;
+  }
+
   return (
     <div className="space-y-6">
       <div>

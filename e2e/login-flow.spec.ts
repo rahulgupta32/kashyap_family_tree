@@ -90,8 +90,9 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await page.click('button:has-text("लगआउट (Logout)")');
     await expect(page).toHaveURL(/\/login/);
 
-    // 9. Confirm session invalidated
+    // 9. Confirm session invalidated (unauthenticated user visiting / is redirected to /login)
     await page.goto('/');
-    await expect(page.locator('text=लगइन गर्नुहोस् (Login)').or(page.locator('input[type="tel"]'))).toBeVisible();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.locator('input[type="tel"]')).toBeVisible();
   });
 });
