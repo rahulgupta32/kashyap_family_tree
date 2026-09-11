@@ -37,8 +37,10 @@ Key accomplishments include:
    - Verification script confirms `active_session === suppliedSessionId` before incrementing attempts or consuming.
    - Downstream SMS delivery failures trigger atomic Redis cleanup of only the failed session challenge while preserving rate-limiting abuse counters with a 5s retry backoff.
    - Refresh token rotation executes inside a PostgreSQL transaction using `SELECT ... FOR UPDATE` row locking. Under `EC-0020`, replaying an invalidated refresh token triggers universal session revocation across all devices.
-5. **Mandatory Audit Evidence & Durable Outbox**:
-   - PostgreSQL `audit_outbox` table (`database/migrations/002_audit_outbox.sql`) guarantees session revocation persists even if downstream audit writes fail, with persistent entries surviving application restarts.
+5. **Mandatory Audit Evidence, Durable Outbox & Concurrency-Safe Draining**:
+   - PostgreSQL `audit_outbox` table (`database/migrations/002_audit_outbox.sql`) and database-enforced unique constraint `uq_audit_logs_outbox_id` (`database/migrations/003_audit_outbox_unique_event.sql`) guarantee audit intent survives application restarts and prevents duplicate records.
+   - Concurrency-safe draining locks each outbox row with `SELECT ... FOR UPDATE`, rechecks status, verifies idempotency, and atomically inserts the audit log and marks the outbox entry processed in the same transaction.
+   - Deliberately overlapping drain transactions on the same pending event tested against real PostgreSQL, proving exactly one audit record and processed outbox entry.
    - Role assignment (`assignUserRole`) and revocation (`revokeUserRole`) are executed in a PostgreSQL transaction with audit logging; failure of audit logging rolls back the role mutation.
 6. **Transparent Architectural Status**:
    - `ClaimsService` currently operates on an in-memory `Map<string, ClaimRecord>` and is not persisted to PostgreSQL (scheduled for future claim verification milestones).
@@ -68,35 +70,28 @@ Key accomplishments include:
 | **AUTH-FR-011** | Section 4.1 | Pluggable SMS Provider Adapter Interface | `services/api/src/modules/auth/sms/sms-provider.interface.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
 | **AUTH-FR-012 / HG-007** | Section 4.1 | Honest Gateway Gate (Production Sparrow SMS API credentials check on startup) | `services/api/src/modules/auth/sms/sparrow-sms-provider.adapter.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
 | **BR-GOV-001** | Section 6.1 | Identity / Person Separation (Account creation NEVER creates person record) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
-| **BR-GOV-004** | Section 6.1 | Self-Elevation Prohibited (Admins cannot elevate themselves or grant unauthorized roles) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts`, `test/auth.integration.spec.ts` | **VERIFIED** |
-| **BR-GOV-005** | Section 6.1 | Branch Authority Limitation (Branch admins cannot verify outside assigned branch) | `services/api/src/modules/auth/guards/branch.guard.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
-| **BR-GOV-008** | Section 6.1 | Tamper-Evident Audit Logging (SHA-256 chain, immutable trigger) | `services/api/src/database/repositories/audit.repository.ts` | `test/audit.service.spec.ts`, `test/database.integration.spec.ts` | **VERIFIED** |
-| **EC-0011** | Section 11 | Expired OTP Challenge Rejection (`AUTH_1002`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
-| **EC-0012** | Section 11 | Exceeded OTP Verification Attempts Lockout (`AUTH_1003`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
-| **EC-0013** | Section 11 | Atomic Single-Use OTP Consumption via Lua Script | `services/api/src/modules/auth/auth.service.ts` | `test/auth-security-regressions.integration.spec.ts` | **VERIFIED** |
-| **EC-0014** | Section 11 | Resend Cooldown Enforcement (`AUTH_1004`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
-| **EC-0020** | Section 11 | Refresh Token Reuse Detection & Universal Revocation (`AUTH_1011`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts`, `test/auth-flow.integration.spec.ts` | **VERIFIED** |
-| **EC-0023** | Section 11 | Unclaimed Account Registration (`person_id = NULL`) | `services/api/src/database/repositories/user.repository.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
-| **EC-0225** | Section 11 | Rate Limit Exceeded on OTP Request (`SYS_9003`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.service.spec.ts` | **VERIFIED** |
-| **EC-0230** | Section 11 | Self-Elevation Attempt Rejection (`AUTH_1013`) | `services/api/src/modules/auth/auth.service.ts` | `test/auth.integration.spec.ts` | **VERIFIED** |
+| **GEN-002** | Section 5.3 | Server-Authoritative Branch Governance & Cross-Branch Dual-Authority | `services/api/src/modules/auth/guards/branch.guard.ts`, `genealogy.service.ts` | `test/auth-m2-hardening.integration.spec.ts` | **VERIFIED** |
 
 ---
 
-## 3. Storage Architecture: D: Drive Persistence
+## 3. Security Architecture & Threat Verification
 
-Both database engines adhere strictly to the enterprise D: drive storage boundary:
-1. **PostgreSQL 16**:
-   - Cluster Name: `kashyap` on port `5433` (bridged to `127.0.0.1:5434` for Windows host development).
-   - Data Directory: `/mnt/kashyap_pg/pgdata` backed by `D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`.
-   - Logging: `/mnt/kashyap_pg/logs/postgresql-16-kashyap.log`.
-2. **Redis 7**:
-   - Port: `6379` (bound to `0.0.0.0` inside WSL).
-   - Persistence Directory: `/mnt/kashyap_pg/redis` (`dump.rdb` and `appendonly.aof`).
-   - Verification Script: [`scripts/ensure-kashyap-redis.sh`](../scripts/ensure-kashyap-redis.sh) enforces exact canonical D: backing mount and runtime `dir` configuration.
+| Threat Vector / Boundary | Attack Model | Enforced Countermeasure | Verification Artifact |
+| :--- | :--- | :--- | :--- |
+| **Weak Token Signing** | Forged signature, None alg, short secret | Non-test secret validation (`getJwtSecret`), enforced `HS256`, explicit issuer/audience/expiry | `test/auth-m2-hardening.integration.spec.ts` |
+| **Stolen Access Token** | Replaying Bearer token after user logout or suspension | Database session check (`sid` claim in `JwtStrategy`), instant invalidation | `test/auth-m2-hardening.integration.spec.ts` |
+| **Role Elevation via Stale Token** | User stripped of role in DB, presents old token with elevated claim | Real-time database role assignment derivation via `UserRepository.getUserRoles()` | `test/auth-m2-hardening.integration.spec.ts` |
+| **Branch Overrides via Body/Query** | Attacker tampers `branchId` in request to bypass branch checks | Server-authoritative branch lookup from target DB record (`GEN-002`) | `test/auth-m2-hardening.integration.spec.ts` |
+| **Cross-Branch Mutation Tampering** | Branch Admin links Person from foreign branch | Both parties checked; requires `SUPER_ADMIN` or dual authority (`GEN-002`) | `test/auth-m2-hardening.integration.spec.ts` |
+| **Refresh Credential Leakage in Browser** | XSS accessing `localStorage` | HttpOnly, SameSite=Strict cookies; JSON body strictly omits `refreshToken` | `test/auth-m2-hardening.integration.spec.ts`, `e2e/login-flow.spec.ts` |
+| **CSRF on Mutation Endpoints** | Cross-origin form post | CORS allowlist + CSRF Origin validation on mutating cookie endpoints | `test/auth-m2-hardening.integration.spec.ts` |
+| **Native Transport Exploitation** | Browser client calls `/native/verify` to steal tokens in JSON | `Origin` / `Referer` headers rejected with `403 FORBIDDEN_BROWSER_ORIGIN` | `test/auth-m2-hardening.integration.spec.ts` |
+| **Concurrent Refresh Race Condition** | Multiple browser tabs rotating token concurrently | Web Locks API (`navigator.locks.request`) ensures single coordinated rotation | `e2e/login-flow.spec.ts` |
+| **Audit Evidence Loss on Failure** | Database failure during audit log write | PostgreSQL transactional outbox (`audit_outbox`) survives restarts | `test/auth-m2-hardening.integration.spec.ts` |
 
 ---
 
-## 4. Administrative Portal & Playwright Browser Automation (`apps/admin`, `e2e`)
+## 4. User Experience & Browser Automation Verification
 
 The Next.js administration portal and automated browser testing cover:
 - **API Client** (`apps/admin/src/lib/api-client.ts`): Fully typed wrapper with `credentials: 'include'` on all endpoints.
@@ -112,6 +107,9 @@ The Next.js administration portal and automated browser testing cover:
 - **Playwright End-to-End Test Suite** (`e2e/login-flow.spec.ts`):
   1. Regular user gets bilingual Access Denied state (BR-GOV-004).
   2. Super Admin login, dashboard redirection, cookie verification (`HttpOnly; SameSite=Strict`), absence of refresh tokens in `localStorage`, session restoration across page reload, and logout with server-side revocation.
+  3. Real two-tab concurrent refresh coordination: exactly one network request counted across tabs, synchronized access tokens, and automatic cross-tab logout without reload.
+  4. Strict refresh-token replay detection: captured consumed credential replay triggers `REFRESH_TOKEN_REUSED` and universal session revocation (`EC-0020`).
+  5. Missing refresh cookie or credentials rejected with `UNAUTHORIZED`.
   - Automated execution integrated into GitHub Actions CI (`.github/workflows/ci.yml`).
 
 ---
@@ -129,9 +127,9 @@ The Next.js administration portal and automated browser testing cover:
 | **Real PG/Redis Auth Integration** | `services/api/test/auth.integration.spec.ts` | 6 | **PASS** | ~7.3s |
 | **Auth Security Regressions** | `services/api/test/auth-security-regressions.integration.spec.ts` | 12 | **PASS** | ~10.2s |
 | **E2E HTTP Auth & Permissions Flow** | `services/api/test/auth-flow.integration.spec.ts` | 8 | **PASS** | ~11.1s |
-| **M2 Security & Authority Hardening** | `services/api/test/auth-m2-hardening.integration.spec.ts` | 17 | **PASS** | ~5.7s |
-| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (5 suites total) | 55 | **PASS** | ~8.5s |
-| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 3 | **PASS** | ~6.9s |
+| **M2 Security & Authority Hardening** | `services/api/test/auth-m2-hardening.integration.spec.ts` | 19 | **PASS** | ~5.7s |
+| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (5 suites total) | 57 | **PASS** | ~7.1s |
+| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 5 | **PASS** | ~7.5s |
 | **Next.js Admin Build** | `apps/admin` (`pnpm run build`) | N/A | **PASS** | ~8.4s |
 | **Workspace Typecheck** | `pnpm run typecheck` | N/A | **PASS** | ~4.5s |
 

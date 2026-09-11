@@ -106,9 +106,81 @@ export class AuditOutboxRepository {
   }
 
   /**
+   * Process a single outbox entry inside an atomic transaction.
+   * Locks the outbox row with SELECT ... FOR UPDATE, rechecks status to prevent
+   * concurrent workers from double-processing, inserts into audit_logs, and marks
+   * the entry PROCESSED within the same transaction.
+   */
+  async processOutboxEntry(
+    entryId: string,
+    auditRepo: AuditRepository,
+    clientOverride?: any,
+  ): Promise<boolean> {
+    const runInTx = async (client: any): Promise<boolean> => {
+      // 1. Lock and recheck the outbox row inside its processing transaction
+      const lockRes = await client.query(
+        `SELECT * FROM audit_outbox WHERE id = $1 FOR UPDATE;`,
+        [entryId],
+      );
+
+      if (lockRes.rows.length === 0) {
+        return false;
+      }
+
+      const lockedRow = lockRes.rows[0];
+
+      // Recheck status: if another concurrent transaction already committed, skip cleanly
+      if (lockedRow.status === 'PROCESSED') {
+        this.logger.log(`Outbox entry ${entryId} already processed by concurrent transaction.`);
+        return false;
+      }
+
+      // 2. Idempotency check: verify if an audit log for this outbox ID already exists
+      const existing = await client.query(
+        `SELECT id FROM audit_logs WHERE new_value->>'outboxId' = $1 LIMIT 1;`,
+        [lockedRow.id],
+      );
+
+      if (existing.rows.length === 0) {
+        const enrichedNewValue = {
+          ...(typeof lockedRow.new_value === 'object' && lockedRow.new_value !== null ? lockedRow.new_value : {}),
+          outboxId: lockedRow.id,
+        };
+
+        await auditRepo.appendAuditLog(
+          lockedRow.action as AuditAction,
+          lockedRow.entity_type,
+          lockedRow.entity_id,
+          lockedRow.actor_id || undefined,
+          lockedRow.actor_role || undefined,
+          lockedRow.old_value,
+          enrichedNewValue,
+          lockedRow.ip_address || undefined,
+          lockedRow.user_agent || undefined,
+          client,
+        );
+      } else {
+        this.logger.log(`Skipping duplicate audit log for already processed outbox ID: ${lockedRow.id}`);
+      }
+
+      // 3. Atomically mark the outbox entry processed within the same transaction
+      await this.markProcessed(lockedRow.id, client);
+      return true;
+    };
+
+    if (clientOverride) {
+      return runInTx(clientOverride);
+    }
+    return this.db.transaction(runInTx);
+  }
+
+  /**
    * Drain pending audit outbox entries into the immutable audit_logs table.
-   * Uses transactional execution and idempotency check (outboxId in new_value)
-   * to guarantee retries cannot create duplicate audit records.
+   * Concurrency-safe:
+   * - Locks each outbox row with SELECT ... FOR UPDATE inside its processing transaction.
+   * - Rechecks the locked row status to prevent concurrent workers from double-processing.
+   * - Checks idempotency and atomically appends to audit_logs and marks the entry PROCESSED.
+   * - Backed by database-enforced uniqueness on audit_logs(new_value->>'outboxId').
    */
   async drainOutbox(auditRepo: AuditRepository): Promise<{ processed: number; failed: number }> {
     let processed = 0;
@@ -118,38 +190,10 @@ export class AuditOutboxRepository {
       const pending = await this.getPendingEntries(100);
       for (const entry of pending) {
         try {
-          await this.db.transaction(async (client) => {
-            // Idempotency check: verify if an audit log for this outbox ID already exists
-            const existing = await client.query(
-              `SELECT id FROM audit_logs WHERE new_value->>'outboxId' = $1 LIMIT 1;`,
-              [entry.id],
-            );
-
-            if (existing.rows.length === 0) {
-              const enrichedNewValue = {
-                ...(typeof entry.new_value === 'object' && entry.new_value !== null ? entry.new_value : {}),
-                outboxId: entry.id,
-              };
-
-              await auditRepo.appendAuditLog(
-                entry.action as AuditAction,
-                entry.entity_type,
-                entry.entity_id,
-                entry.actor_id || undefined,
-                entry.actor_role || undefined,
-                entry.old_value,
-                enrichedNewValue,
-                entry.ip_address || undefined,
-                entry.user_agent || undefined,
-                client,
-              );
-            } else {
-              this.logger.log(`Skipping duplicate audit log for already processed outbox ID: ${entry.id}`);
-            }
-
-            await this.markProcessed(entry.id, client);
-          });
-          processed++;
+          const didProcess = await this.processOutboxEntry(entry.id, auditRepo);
+          if (didProcess) {
+            processed++;
+          }
         } catch (err: any) {
           failed++;
           this.logger.warn(`Failed to drain audit outbox entry ${entry.id}: ${err.message}`);

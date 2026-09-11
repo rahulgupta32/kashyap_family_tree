@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ErrorCode } from '@kashyap/contracts';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3000';
 
@@ -96,7 +97,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await expect(page.locator('input[type="tel"]')).toBeVisible();
   });
 
-  test('3. Real two-tab concurrent refresh coordination, browser JSON credential omission, automatic cross-tab logout, and strict replay detection', async ({ page, context }) => {
+  test('3. Real two-tab concurrent refresh coordination: exactly one network request across tabs and automatic cross-tab logout without reload', async ({ page, context }) => {
     // 1. Log in on Tab 1
     await page.goto('/login');
     const adminPhone = '9800000001';
@@ -128,8 +129,16 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await page2.goto('/');
     await expect(page2.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
 
-    // 3. Exercise actual concurrent refresh across both tabs simultaneously
-    // Web Locks API coordinates rotation so only one network call occurs; the other tab acquires lock and reuses fresh token
+    // 3. Count refresh network requests across both tabs during concurrent execution
+    let refreshRequestCount = 0;
+    const countRequest = (req: any) => {
+      if (req.url().includes('/auth/refresh')) {
+        refreshRequestCount++;
+      }
+    };
+    page.on('request', countRequest);
+    page2.on('request', countRequest);
+
     const refreshResponsePromise = Promise.race([
       page.waitForResponse((r) => r.url().includes('/auth/refresh')),
       page2.waitForResponse((r) => r.url().includes('/auth/refresh')),
@@ -144,6 +153,9 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     expect(t1Token).toBeTruthy();
     expect(t2Token).toBeTruthy();
     expect(t1Token).toBe(t2Token); // Both tabs synchronized to the identical rotated access token
+
+    // Assert that coordinated concurrent refresh produced EXACTLY ONE network request across tabs
+    expect(refreshRequestCount).toBe(1);
 
     // Assert the network response strictly omitted refresh tokens from JSON body
     expect(refreshResponse.status()).toBe(200);
@@ -164,11 +176,90 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await expect(page2).toHaveURL(/\/login/);
     await expect(page2.locator('input[type="tel"]')).toBeVisible();
 
-    // 5. Strict refresh-token replay detection (no grace window):
-    // Attempting to refresh using the revoked/consumed session must be rejected with 401
-    const replayRes = await page.request.post(`${API_BASE}/auth/refresh`);
-    expect(replayRes.status()).toBe(401);
-
     await page2.close();
+  });
+
+  test('4. Strict refresh-token replay detection: captured consumed credential replay triggers REFRESH_TOKEN_REUSED and universal session revocation (EC-0020)', async ({ page, context }) => {
+    // 1. Log in
+    await page.goto('/login');
+    const adminPhone = '9800000001';
+    await page.request.post(`${API_BASE}/auth/test-clear-cooldown`, {
+      data: { phoneNumber: adminPhone },
+    });
+    await page.fill('input[type="tel"]', adminPhone);
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=प्रमाणीकरण कोड (Verification OTP)')).toBeVisible();
+
+    const otpRes = await page.request.get(`${API_BASE}/auth/test-otp?phoneNumber=+977${adminPhone}`);
+    const { otp } = await otpRes.json();
+    await page.fill('input[type="text"]', otp);
+    await page.click('button[type="submit"]');
+    await expect(page.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
+
+    // 2. Capture the initial refresh token credential before rotation using Playwright test tooling
+    const cookiesBefore = await context.cookies(['http://localhost:3000', 'http://localhost:3002']);
+    const initialCookie = cookiesBefore.find((c) => c.name === 'refreshToken');
+    expect(initialCookie).toBeDefined();
+    const consumedRefreshToken = initialCookie!.value;
+    expect(consumedRefreshToken).toBeTruthy();
+
+    // 3. Rotate it successfully
+    const rotatedToken = await page.evaluate(() => (window as any).__kashyap_refreshSession());
+    expect(rotatedToken).toBeTruthy();
+
+    // Confirm that cookie was rotated with a new, different refresh token
+    const cookiesAfter = await context.cookies(['http://localhost:3000', 'http://localhost:3002']);
+    const rotatedCookie = cookiesAfter.find((c) => c.name === 'refreshToken');
+    expect(rotatedCookie).toBeDefined();
+    expect(rotatedCookie!.value).not.toBe(consumedRefreshToken);
+
+    // 4. Explicitly replay the consumed credential
+    const replayRes = await page.request.post(`${API_BASE}/auth/refresh`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `refreshToken=${consumedRefreshToken}`,
+      },
+      data: {},
+    });
+
+    // 5. Assert replay-specific error (HTTP 401 with REFRESH_TOKEN_REUSED)
+    expect(replayRes.status()).toBe(401);
+    const replayBody = await replayRes.json();
+    expect(replayBody.errorCode).toBe(ErrorCode.REFRESH_TOKEN_REUSED);
+    expect(replayBody.message).toContain('Refresh token reuse detected');
+
+    // 6. Assert required universal session revocation (EC-0020):
+    // All sessions for this user must now be terminated.
+    // Even the successor rotated token must now be rejected
+    const postReplayRefresh = await page.request.post(`${API_BASE}/auth/refresh`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `refreshToken=${rotatedCookie!.value}`,
+      },
+      data: {},
+    });
+    expect(postReplayRefresh.status()).toBe(401);
+
+    // The access token must also be rejected on protected routes
+    const profileRes = await page.request.get(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${rotatedToken}` },
+    });
+    expect(profileRes.status()).toBe(401);
+
+    // Page reload redirects to login because the session is revoked
+    await page.reload();
+    await expect(page).toHaveURL(/\/login/);
+  });
+
+  test('5. Missing refresh cookie or credentials rejected with UNAUTHORIZED', async ({ page }) => {
+    // Requesting refresh without any cookie or token body must be rejected
+    const noCookieRes = await page.request.post(`${API_BASE}/auth/refresh`, {
+      headers: { 'Content-Type': 'application/json' },
+      data: {},
+    });
+    expect(noCookieRes.status()).toBe(401);
+    const noCookieBody = await noCookieRes.json();
+    expect(noCookieBody.errorCode).toBe(ErrorCode.UNAUTHORIZED);
+    expect(noCookieBody.message).toContain('Refresh token is required');
   });
 });

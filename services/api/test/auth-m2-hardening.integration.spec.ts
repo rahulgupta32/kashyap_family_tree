@@ -742,6 +742,113 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       );
       expect(logs2.rows.length).toBe(1); // STILL exactly 1, no duplicate created!
     });
+
+    it('should safely coordinate deliberately overlapping drain transactions on the same pending event, asserting exactly one audit record and processed status', async () => {
+      const user = await loginUser(`+9779885${Math.floor(100000 + Math.random() * 900000)}`);
+
+      // 1. Create a single pending outbox record
+      const outboxRecord = await auditOutboxRepo.recordAuditIntent({
+        action: AuditAction.LOGOUT,
+        entityType: 'user_sessions',
+        entityId: `session_overlap_${Date.now()}`,
+        actorId: user.userId,
+        actorRole: 'USER',
+        newValue: { test: 'deliberate_overlap_test' },
+      });
+
+      // 2. Worker 1 acquires dedicated database client and locks the row with SELECT ... FOR UPDATE
+      const client1 = await dbService.getClient();
+      await client1.query('BEGIN');
+      const lockRes = await client1.query(
+        `SELECT * FROM audit_outbox WHERE id = $1 FOR UPDATE;`,
+        [outboxRecord.id],
+      );
+      expect(lockRes.rows.length).toBe(1);
+      expect(lockRes.rows[0].status).toBe('PENDING');
+
+      // 3. Worker 2 starts processing the same pending entry concurrently
+      // Because Worker 1 holds the row lock, Worker 2 will block in PostgreSQL on SELECT ... FOR UPDATE
+      const worker2Promise = auditOutboxRepo.processOutboxEntry(outboxRecord.id, auditRepo);
+
+      // Brief delay to ensure Worker 2 is waiting on the row lock
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      // 4. Worker 1 completes the processing: appends audit log, marks processed, and commits
+      await auditRepo.appendAuditLog(
+        lockRes.rows[0].action as AuditAction,
+        lockRes.rows[0].entity_type,
+        lockRes.rows[0].entity_id,
+        lockRes.rows[0].actor_id || undefined,
+        lockRes.rows[0].actor_role || undefined,
+        lockRes.rows[0].old_value,
+        {
+          ...(lockRes.rows[0].new_value || {}),
+          outboxId: lockRes.rows[0].id,
+        },
+        undefined,
+        undefined,
+        client1,
+      );
+      await auditOutboxRepo.markProcessed(lockRes.rows[0].id, client1);
+      await client1.query('COMMIT');
+      client1.release();
+
+      // 5. Worker 2 unblocks, rechecks row status (now PROCESSED), and skips duplicate processing
+      const worker2Processed = await worker2Promise;
+      expect(worker2Processed).toBe(false);
+
+      // 6. Assertions:
+      // Exactly ONE audit log record exists for this outbox event
+      const logs = await dbService.query(
+        `SELECT * FROM audit_logs WHERE new_value->>'outboxId' = $1`,
+        [outboxRecord.id],
+      );
+      expect(logs.rows.length).toBe(1);
+
+      // Outbox row is marked PROCESSED
+      const updatedOutbox = await dbService.query(
+        `SELECT * FROM audit_outbox WHERE id = $1`,
+        [outboxRecord.id],
+      );
+      expect(updatedOutbox.rows[0].status).toBe('PROCESSED');
+      expect(updatedOutbox.rows[0].processed_at).not.toBeNull();
+    });
+
+    it('should enforce database-level uniqueness on audit_logs(outboxId) and reject duplicate insert attempts', async () => {
+      const user = await loginUser(`+9779885${Math.floor(100000 + Math.random() * 900000)}`);
+      const syntheticOutboxId = `outbox-uuid-${Date.now()}`;
+
+      // Insert first audit log with this outboxId
+      await auditRepo.appendAuditLog(
+        AuditAction.LOGOUT,
+        'user_sessions',
+        'session-1',
+        user.userId,
+        'USER',
+        null,
+        { outboxId: syntheticOutboxId, note: 'first' },
+      );
+
+      // Attempting to insert a duplicate audit log with the same outboxId must be rejected by PostgreSQL unique index
+      let errorThrown: any = null;
+      try {
+        await auditRepo.appendAuditLog(
+          AuditAction.LOGOUT,
+          'user_sessions',
+          'session-2',
+          user.userId,
+          'USER',
+          null,
+          { outboxId: syntheticOutboxId, note: 'duplicate_attempt' },
+        );
+      } catch (err: any) {
+        errorThrown = err;
+      }
+
+      expect(errorThrown).not.toBeNull();
+      // Code 23505 is PostgreSQL unique_violation
+      expect(errorThrown.code || errorThrown.message).toMatch(/(23505|unique|duplicate)/i);
+    });
   });
 
   // ==========================================================================
