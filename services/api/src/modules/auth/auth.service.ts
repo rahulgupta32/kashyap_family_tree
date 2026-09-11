@@ -681,59 +681,102 @@ export class AuthService {
     userAgent = 'unknown',
   ): Promise<{ success: boolean }> {
     let targetUserId = userId;
-    let targetSessionId = sessionId;
+    const sessionsToRevoke: string[] = [];
 
-    if (dto.refreshToken) {
-      const tokenHash = crypto.createHash('sha256').update(dto.refreshToken).digest('hex');
-      const session = await this.sessionRepo.findByTokenHash(tokenHash);
-      if (session) {
-        targetUserId = session.user_id;
-        targetSessionId = session.id;
-        await this.sessionRepo.revokeSession(session.id);
-      } else if (!targetSessionId) {
-        throw new UnauthorizedException({
-          errorCode: ErrorCode.UNAUTHORIZED,
-          message: 'Session not found for provided refresh token',
-        });
-      }
-    } else if (targetSessionId) {
-      await this.sessionRepo.revokeSession(targetSessionId);
+    if (sessionId) {
+      sessionsToRevoke.push(sessionId);
     }
 
-    if (targetUserId) {
-      if (this.auditOutboxRepo) {
-        try {
-          await this.auditOutboxRepo.recordAuditIntent({
-            action: AuditAction.LOGOUT,
-            entityType: 'user_sessions',
-            entityId: targetSessionId || targetUserId,
-            actorId: targetUserId,
-            actorRole: 'USER',
-            oldValue: null,
-            newValue: null,
-            ipAddress: clientIp,
-            userAgent,
+    if (dto.refreshToken) {
+      const tokenHash = crypto.createHash('sha256').update(dto.refreshToken.trim()).digest('hex');
+      const session = await this.sessionRepo.findByTokenHash(tokenHash);
+
+      if (!session) {
+        // If no verified bearer session was provided, an invalid refresh token must be rejected
+        if (!sessionId) {
+          throw new UnauthorizedException({
+            errorCode: ErrorCode.UNAUTHORIZED,
+            message: 'Session not found for provided refresh token',
           });
-          await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-        } catch (err: any) {
-          this.logger.warn(`Audit outbox write/drain failed during logout for user ${targetUserId}: ${err.message}`);
         }
+        // When an invalid refresh token accompanies a valid, verified bearer session,
+        // we revoke that verified session so we never return success while leaving the intended session active.
       } else {
-        try {
+        // Conflicting credentials check:
+        // If both a verified bearer session and a valid refresh token are provided,
+        // they must belong to the same user.
+        if (targetUserId && session.user_id !== targetUserId) {
+          throw new UnauthorizedException({
+            errorCode: ErrorCode.UNAUTHORIZED,
+            message: 'Conflicting credentials: Bearer session and refresh token belong to different users',
+          });
+        }
+
+        targetUserId = session.user_id;
+        sessionsToRevoke.push(session.id);
+      }
+    } else if (!sessionId) {
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.UNAUTHORIZED,
+        message: 'Authentication required for logout: valid Bearer token or refresh token must be provided',
+      });
+    }
+
+    const uniqueSessions = Array.from(new Set(sessionsToRevoke));
+
+    // Execute session revocation and audit outbox recording in the same PostgreSQL transaction
+    const executeRevocation = async (client?: any) => {
+      for (const sId of uniqueSessions) {
+        await this.sessionRepo.revokeSession(sId, client);
+      }
+
+      if (targetUserId) {
+        if (this.auditOutboxRepo) {
+          await this.auditOutboxRepo.recordAuditIntent(
+            {
+              action: AuditAction.LOGOUT,
+              entityType: 'user_sessions',
+              entityId: uniqueSessions[0] || targetUserId,
+              actorId: targetUserId,
+              actorRole: 'USER',
+              oldValue: null,
+              newValue: { revokedSessions: uniqueSessions },
+              ipAddress: clientIp,
+              userAgent,
+            },
+            client,
+          );
+        } else {
           await this.auditRepo.appendAuditLog(
             AuditAction.LOGOUT,
             'user_sessions',
-            targetUserId,
+            uniqueSessions[0] || targetUserId,
             targetUserId,
             'USER',
             null,
-            null,
+            { revokedSessions: uniqueSessions },
             clientIp,
             userAgent,
+            client,
           );
-        } catch (err: any) {
-          this.logger.warn(`Audit logging failed during logout for user ${targetUserId}: ${err.message}`);
         }
+      }
+    };
+
+    if (this.db) {
+      await this.db.transaction(async (client) => {
+        await executeRevocation(client);
+      });
+    } else {
+      await executeRevocation();
+    }
+
+    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
+    if (this.auditOutboxRepo) {
+      try {
+        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
+      } catch (err: any) {
+        this.logger.warn(`Audit outbox drain failed post-commit during logout: ${err.message}`);
       }
     }
 
@@ -748,27 +791,27 @@ export class AuthService {
     clientIp = '127.0.0.1',
     userAgent = 'unknown',
   ): Promise<{ success: boolean; revokedCount: number }> {
-    const revokedCount = await this.sessionRepo.revokeAllForUser(userId);
+    let revokedCount = 0;
 
-    if (this.auditOutboxRepo) {
-      try {
-        await this.auditOutboxRepo.recordAuditIntent({
-          action: AuditAction.LOGOUT,
-          entityType: 'user_sessions',
-          entityId: userId,
-          actorId: userId,
-          actorRole: 'USER',
-          oldValue: null,
-          newValue: { scope: 'ALL_DEVICES', revokedCount },
-          ipAddress: clientIp,
-          userAgent,
-        });
-        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-      } catch (err: any) {
-        this.logger.warn(`Audit outbox write/drain failed during logoutAll for user ${userId}: ${err.message}`);
-      }
-    } else {
-      try {
+    const executeRevocationAll = async (client?: any) => {
+      revokedCount = await this.sessionRepo.revokeAllForUser(userId, client);
+
+      if (this.auditOutboxRepo) {
+        await this.auditOutboxRepo.recordAuditIntent(
+          {
+            action: AuditAction.LOGOUT,
+            entityType: 'user_sessions',
+            entityId: userId,
+            actorId: userId,
+            actorRole: 'USER',
+            oldValue: null,
+            newValue: { scope: 'ALL_DEVICES', revokedCount },
+            ipAddress: clientIp,
+            userAgent,
+          },
+          client,
+        );
+      } else {
         await this.auditRepo.appendAuditLog(
           AuditAction.LOGOUT,
           'user_sessions',
@@ -779,8 +822,26 @@ export class AuthService {
           { scope: 'ALL_DEVICES', revokedCount },
           clientIp,
           userAgent,
+          client,
         );
-      } catch {}
+      }
+    };
+
+    if (this.db) {
+      await this.db.transaction(async (client) => {
+        await executeRevocationAll(client);
+      });
+    } else {
+      await executeRevocationAll();
+    }
+
+    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
+    if (this.auditOutboxRepo) {
+      try {
+        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
+      } catch (err: any) {
+        this.logger.warn(`Audit outbox drain failed post-commit during logoutAll: ${err.message}`);
+      }
     }
 
     return { success: true, revokedCount };

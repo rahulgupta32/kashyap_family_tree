@@ -96,7 +96,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await expect(page.locator('input[type="tel"]')).toBeVisible();
   });
 
-  test('3. Multi-tab concurrent refresh coordination, response body validation, and cross-tab logout', async ({ page, context }) => {
+  test('3. Real two-tab concurrent refresh coordination, browser JSON credential omission, automatic cross-tab logout, and strict replay detection', async ({ page, context }) => {
     // 1. Log in on Tab 1
     await page.goto('/login');
     const adminPhone = '9800000001';
@@ -111,7 +111,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     const { otp } = await otpRes.json();
     await page.fill('input[type="text"]', otp);
 
-    // Intercept /auth/otp/verify response to verify JSON body omits refreshToken
+    // Intercept /auth/otp/verify response to verify JSON body strictly omits refreshToken
     const [verifyResponse] = await Promise.all([
       page.waitForResponse((r) => r.url().includes('/auth/otp/verify')),
       page.click('button[type="submit"]'),
@@ -128,21 +128,47 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await page2.goto('/');
     await expect(page2.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
 
-    // 3. Confirm Web Locks API is available in browser for cross-tab coordination
-    const [hasLocks1, hasLocks2] = await Promise.all([
-      page.evaluate(() => typeof navigator.locks?.request === 'function'),
-      page2.evaluate(() => typeof navigator.locks?.request === 'function'),
+    // 3. Exercise actual concurrent refresh across both tabs simultaneously
+    // Web Locks API coordinates rotation so only one network call occurs; the other tab acquires lock and reuses fresh token
+    const refreshResponsePromise = Promise.race([
+      page.waitForResponse((r) => r.url().includes('/auth/refresh')),
+      page2.waitForResponse((r) => r.url().includes('/auth/refresh')),
     ]);
-    expect(hasLocks1).toBe(true);
-    expect(hasLocks2).toBe(true);
 
-    // 4. Logout from Tab 1
+    const [t1Token, t2Token, refreshResponse] = await Promise.all([
+      page.evaluate(() => (window as any).__kashyap_refreshSession()),
+      page2.evaluate(() => (window as any).__kashyap_refreshSession()),
+      refreshResponsePromise,
+    ]);
+
+    expect(t1Token).toBeTruthy();
+    expect(t2Token).toBeTruthy();
+    expect(t1Token).toBe(t2Token); // Both tabs synchronized to the identical rotated access token
+
+    // Assert the network response strictly omitted refresh tokens from JSON body
+    expect(refreshResponse.status()).toBe(200);
+    const refreshJson = await refreshResponse.json();
+    expect(refreshJson.accessToken).toBe(t1Token);
+    expect(refreshJson.refreshToken).toBeUndefined();
+
+    // Assert session continuity on both tabs
+    await expect(page.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
+    await expect(page2.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
+
+    // 4. Test cross-tab logout WITHOUT requiring a manual reload
+    // Tab 1 initiates logout -> BroadcastChannel/storage event notifies Tab 2 -> Tab 2 automatically navigates to /login
     await page.click('button:has-text("लगआउट (Logout)")');
     await expect(page).toHaveURL(/\/login/);
 
-    // Tab 2 reload should now be unauthenticated
-    await page2.reload();
+    // Tab 2 must redirect to /login automatically without calling page2.reload()
     await expect(page2).toHaveURL(/\/login/);
+    await expect(page2.locator('input[type="tel"]')).toBeVisible();
+
+    // 5. Strict refresh-token replay detection (no grace window):
+    // Attempting to refresh using the revoked/consumed session must be rejected with 401
+    const replayRes = await page.request.post(`${API_BASE}/auth/refresh`);
+    expect(replayRes.status()).toBe(401);
+
     await page2.close();
   });
 });

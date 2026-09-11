@@ -155,22 +155,28 @@ export class SessionRepository {
     });
   }
 
-  async revokeSession(sessionId: string): Promise<void> {
+  async revokeSession(sessionId: string, client?: any): Promise<void> {
     const query = `
       UPDATE user_sessions
       SET revoked_at = CURRENT_TIMESTAMP
       WHERE id = $1 AND revoked_at IS NULL;
     `;
-    await this.db.query(query, [sessionId]);
+    if (client) {
+      await client.query(query, [sessionId]);
+    } else {
+      await this.db.query(query, [sessionId]);
+    }
   }
 
-  async revokeAllForUser(userId: string): Promise<number> {
+  async revokeAllForUser(userId: string, client?: any): Promise<number> {
     const query = `
       UPDATE user_sessions
       SET revoked_at = CURRENT_TIMESTAMP
       WHERE user_id = $1 AND revoked_at IS NULL;
     `;
-    const res = await this.db.query(query, [userId]);
+    const res = client
+      ? await client.query(query, [userId])
+      : await this.db.query(query, [userId]);
     return res.rowCount ?? 0;
   }
 

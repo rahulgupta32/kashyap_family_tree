@@ -87,22 +87,28 @@ export class AuditOutboxRepository {
     return res.rows;
   }
 
-  async markProcessed(id: string): Promise<void> {
-    await this.db.query(
-      `UPDATE audit_outbox SET status = 'PROCESSED', processed_at = CURRENT_TIMESTAMP WHERE id = $1;`,
-      [id],
-    );
+  async markProcessed(id: string, client?: any): Promise<void> {
+    const query = `UPDATE audit_outbox SET status = 'PROCESSED', processed_at = CURRENT_TIMESTAMP WHERE id = $1;`;
+    if (client) {
+      await client.query(query, [id]);
+    } else {
+      await this.db.query(query, [id]);
+    }
   }
 
-  async markFailed(id: string, errorMessage: string): Promise<void> {
-    await this.db.query(
-      `UPDATE audit_outbox SET status = 'FAILED', retry_count = retry_count + 1, last_error = $2 WHERE id = $1;`,
-      [id, errorMessage],
-    );
+  async markFailed(id: string, errorMessage: string, client?: any): Promise<void> {
+    const query = `UPDATE audit_outbox SET status = 'FAILED', retry_count = retry_count + 1, last_error = $2 WHERE id = $1;`;
+    if (client) {
+      await client.query(query, [id, errorMessage]);
+    } else {
+      await this.db.query(query, [id, errorMessage]);
+    }
   }
 
   /**
    * Drain pending audit outbox entries into the immutable audit_logs table.
+   * Uses transactional execution and idempotency check (outboxId in new_value)
+   * to guarantee retries cannot create duplicate audit records.
    */
   async drainOutbox(auditRepo: AuditRepository): Promise<{ processed: number; failed: number }> {
     let processed = 0;
@@ -112,18 +118,37 @@ export class AuditOutboxRepository {
       const pending = await this.getPendingEntries(100);
       for (const entry of pending) {
         try {
-          await auditRepo.appendAuditLog(
-            entry.action as AuditAction,
-            entry.entity_type,
-            entry.entity_id,
-            entry.actor_id || undefined,
-            entry.actor_role || undefined,
-            entry.old_value,
-            entry.new_value,
-            entry.ip_address || undefined,
-            entry.user_agent || undefined,
-          );
-          await this.markProcessed(entry.id);
+          await this.db.transaction(async (client) => {
+            // Idempotency check: verify if an audit log for this outbox ID already exists
+            const existing = await client.query(
+              `SELECT id FROM audit_logs WHERE new_value->>'outboxId' = $1 LIMIT 1;`,
+              [entry.id],
+            );
+
+            if (existing.rows.length === 0) {
+              const enrichedNewValue = {
+                ...(typeof entry.new_value === 'object' && entry.new_value !== null ? entry.new_value : {}),
+                outboxId: entry.id,
+              };
+
+              await auditRepo.appendAuditLog(
+                entry.action as AuditAction,
+                entry.entity_type,
+                entry.entity_id,
+                entry.actor_id || undefined,
+                entry.actor_role || undefined,
+                entry.old_value,
+                enrichedNewValue,
+                entry.ip_address || undefined,
+                entry.user_agent || undefined,
+                client,
+              );
+            } else {
+              this.logger.log(`Skipping duplicate audit log for already processed outbox ID: ${entry.id}`);
+            }
+
+            await this.markProcessed(entry.id, client);
+          });
           processed++;
         } catch (err: any) {
           failed++;

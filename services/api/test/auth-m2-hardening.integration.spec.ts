@@ -670,5 +670,175 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect(updatedEntry.status).toBe('PROCESSED');
       expect(updatedEntry.processed_at).not.toBeNull();
     });
+
+    it('should roll back session revocation if outbox insertion fails', async () => {
+      const user = await loginUser(`+9779884${Math.floor(100000 + Math.random() * 900000)}`);
+
+      // Mock auditOutboxRepo.recordAuditIntent to fail inside transaction
+      const originalRecord = auditOutboxRepo.recordAuditIntent;
+      jest.spyOn(auditOutboxRepo, 'recordAuditIntent').mockImplementationOnce(async () => {
+        throw new Error('Simulated Outbox Disk/Constraint Failure');
+      });
+
+      try {
+        const res = await fetch(`${baseUrl}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${user.accessToken}`,
+          },
+          body: JSON.stringify({}),
+        });
+        expect(res.status).toBe(500);
+      } finally {
+        auditOutboxRepo.recordAuditIntent = originalRecord;
+      }
+
+      // Crucial: Session in PostgreSQL MUST remain active (NOT revoked) because the transaction rolled back
+      const session = await sessionRepo.findById(user.sessionId);
+      expect(session?.revoked_at).toBeNull();
+
+      // Access token must still be valid and active
+      const profileRes = await fetch(`${baseUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
+      });
+      expect(profileRes.status).toBe(200);
+    });
+
+    it('should prevent duplicate audit logs on repeated outbox drains (deduplication)', async () => {
+      const user = await loginUser(`+9779885${Math.floor(100000 + Math.random() * 900000)}`);
+
+      // Create an outbox record directly
+      const outboxRecord = await auditOutboxRepo.recordAuditIntent({
+        action: AuditAction.LOGOUT,
+        entityType: 'user_sessions',
+        entityId: user.sessionId,
+        actorId: user.userId,
+        actorRole: 'USER',
+        newValue: { test: 'dedup_verification' },
+      });
+
+      // Drain 1: processes the record
+      const drain1 = await auditOutboxRepo.drainOutbox(auditRepo);
+      expect(drain1.processed).toBeGreaterThanOrEqual(1);
+
+      // Verify exactly 1 audit log exists for this outboxId
+      const logs1 = await dbService.query(
+        `SELECT * FROM audit_logs WHERE new_value->>'outboxId' = $1`,
+        [outboxRecord.id],
+      );
+      expect(logs1.rows.length).toBe(1);
+
+      // Reset outbox record to PENDING to simulate retry after restart
+      await dbService.query(`UPDATE audit_outbox SET status = 'PENDING' WHERE id = $1`, [outboxRecord.id]);
+
+      // Drain 2: retry should NOT create a duplicate audit log
+      const drain2 = await auditOutboxRepo.drainOutbox(auditRepo);
+      expect(drain2.processed).toBeGreaterThanOrEqual(1);
+
+      const logs2 = await dbService.query(
+        `SELECT * FROM audit_logs WHERE new_value->>'outboxId' = $1`,
+        [outboxRecord.id],
+      );
+      expect(logs2.rows.length).toBe(1); // STILL exactly 1, no duplicate created!
+    });
+  });
+
+  // ==========================================================================
+  // Item 6: Logout Credential Handling & Conflicting Credentials Regressions
+  // ==========================================================================
+  describe('6. Logout Credential Conflict Handling & Revocation Guarantees', () => {
+    it('should revoke verified bearer session when invalid refresh token accompanies it (never leaves session active)', async () => {
+      const user = await loginUser(`+9779886${Math.floor(100000 + Math.random() * 900000)}`);
+
+      const res = await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.accessToken}`,
+        },
+        body: JSON.stringify({ refreshToken: 'completely_invalid_and_nonexistent_refresh_token' }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+
+      // Verify the intended session was revoked in PostgreSQL
+      const session = await sessionRepo.findById(user.sessionId);
+      expect(session?.revoked_at).not.toBeNull();
+
+      // Verify access token is subsequently rejected
+      const profileRes = await fetch(`${baseUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
+      });
+      expect(profileRes.status).toBe(401);
+    });
+
+    it('should reject logout with 401 when Bearer session and refresh token belong to different users (conflicting credentials)', async () => {
+      const userA = await loginUser(`+9779887${Math.floor(100000 + Math.random() * 900000)}`);
+      const userB = await loginUser(`+9779888${Math.floor(100000 + Math.random() * 900000)}`);
+
+      // User A attempts to log out presenting User B's refresh token
+      const res = await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${userA.accessToken}`,
+        },
+        body: JSON.stringify({ refreshToken: userB.refreshToken }),
+      });
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.message).toContain('Conflicting credentials');
+
+      // Neither session should be revoked because of conflicting credentials
+      const sessionA = await sessionRepo.findById(userA.sessionId);
+      const sessionB = await sessionRepo.findById(userB.sessionId);
+      expect(sessionA?.revoked_at).toBeNull();
+      expect(sessionB?.revoked_at).toBeNull();
+
+      // Both access tokens must remain active
+      const profA = await fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${userA.accessToken}` } });
+      const profB = await fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${userB.accessToken}` } });
+      expect(profA.status).toBe(200);
+      expect(profB.status).toBe(200);
+    });
+
+    it('should revoke both sessions when Bearer session and refresh token belong to the same user (multi-device logout)', async () => {
+      const phone = `+9779889${Math.floor(100000 + Math.random() * 900000)}`;
+      // Session 1 for user
+      const s1 = await loginUser(phone);
+      // Session 2 for same user
+      const s2 = await loginUser(phone);
+
+      expect(s1.userId).toBe(s2.userId);
+      expect(s1.sessionId).not.toBe(s2.sessionId);
+
+      // Present Bearer for Session 1, and refresh token for Session 2
+      const res = await fetch(`${baseUrl}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${s1.accessToken}`,
+        },
+        body: JSON.stringify({ refreshToken: s2.refreshToken }),
+      });
+
+      expect(res.status).toBe(200);
+
+      // Both sessions must be revoked in PostgreSQL
+      const session1 = await sessionRepo.findById(s1.sessionId);
+      const session2 = await sessionRepo.findById(s2.sessionId);
+      expect(session1?.revoked_at).not.toBeNull();
+      expect(session2?.revoked_at).not.toBeNull();
+
+      // Both access tokens must be rejected
+      const p1 = await fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${s1.accessToken}` } });
+      const p2 = await fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${s2.accessToken}` } });
+      expect(p1.status).toBe(401);
+      expect(p2.status).toBe(401);
+    });
   });
 });

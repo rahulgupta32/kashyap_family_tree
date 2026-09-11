@@ -129,9 +129,9 @@ The Next.js administration portal and automated browser testing cover:
 | **Real PG/Redis Auth Integration** | `services/api/test/auth.integration.spec.ts` | 6 | **PASS** | ~7.3s |
 | **Auth Security Regressions** | `services/api/test/auth-security-regressions.integration.spec.ts` | 12 | **PASS** | ~10.2s |
 | **E2E HTTP Auth & Permissions Flow** | `services/api/test/auth-flow.integration.spec.ts` | 8 | **PASS** | ~11.1s |
-| **M2 Security & Authority Hardening** | `services/api/test/auth-m2-hardening.integration.spec.ts` | 12 | **PASS** | ~11.8s |
-| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (5 suites total) | 50 | **PASS** | ~23.5s |
-| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 3 | **PASS** | ~7.2s |
+| **M2 Security & Authority Hardening** | `services/api/test/auth-m2-hardening.integration.spec.ts` | 17 | **PASS** | ~5.7s |
+| **Integration Test Total** | `pnpm --filter @kashyap/api run test:integration` (5 suites total) | 55 | **PASS** | ~8.5s |
+| **Playwright Browser E2E Tests** | `e2e/login-flow.spec.ts` (`pnpm run test:e2e`) | 3 | **PASS** | ~6.9s |
 | **Next.js Admin Build** | `apps/admin` (`pnpm run build`) | N/A | **PASS** | ~8.4s |
 | **Workspace Typecheck** | `pnpm run typecheck` | N/A | **PASS** | ~4.5s |
 

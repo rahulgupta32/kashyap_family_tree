@@ -47,6 +47,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else if (event.data?.type === 'SESSION_EXPIRED') {
             setAccessToken(null);
             setUser(null);
+            if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+              window.location.href = '/login';
+            }
           }
         };
       } catch {}
@@ -55,6 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === TOKEN_KEY) {
         setAccessToken(e.newValue);
+        if (!e.newValue && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
       } else if (e.key === USER_KEY) {
         setUser(e.newValue ? JSON.parse(e.newValue) : null);
       }
@@ -111,10 +117,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
 
       if (typeof window !== 'undefined' && 'locks' in navigator && navigator.locks) {
+        const waitStartedAt = Date.now();
         return await navigator.locks.request(REFRESH_LOCK_NAME, async () => {
           const storedToken = localStorage.getItem(TOKEN_KEY);
           const lastRefresh = Number(localStorage.getItem(TOKEN_TIMESTAMP_KEY) || '0');
-          if (storedToken && Date.now() - lastRefresh < 4000) {
+          // If another concurrent tab refreshed the token while we were waiting for the lock, reuse that fresh token
+          if (storedToken && lastRefresh >= waitStartedAt) {
             setAccessToken(storedToken);
             const storedUser = localStorage.getItem(USER_KEY);
             if (storedUser) setUser(JSON.parse(storedUser));
@@ -133,6 +141,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return refreshPromiseRef.current;
   }, []);
+
+  // Expose refreshSession on window for automated multi-tab E2E testing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__kashyap_refreshSession = refreshSession;
+    }
+  }, [refreshSession]);
 
   // Initialize session: restore from server via HttpOnly cookie
   useEffect(() => {
