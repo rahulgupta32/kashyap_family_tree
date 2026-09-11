@@ -7,6 +7,11 @@ import { ClaimRepository } from './repositories/claim.repository';
 import { AuditRepository } from './repositories/audit.repository';
 import { CulturalArticleRepository } from './repositories/cultural-article.repository';
 import { CalendarEventRepository } from './repositories/calendar-event.repository';
+import { UserRepository } from './repositories/user.repository';
+import { SessionRepository } from './repositories/session.repository';
+import { BranchRepository } from './repositories/branch.repository';
+import { AuditOutboxRepository } from './repositories/audit-outbox.repository';
+import { BootstrapService } from './bootstrap.service';
 
 @Global()
 @Module({
@@ -17,8 +22,13 @@ import { CalendarEventRepository } from './repositories/calendar-event.repositor
     GenealogyLinkRepository,
     ClaimRepository,
     AuditRepository,
+    AuditOutboxRepository,
     CulturalArticleRepository,
     CalendarEventRepository,
+    UserRepository,
+    SessionRepository,
+    BranchRepository,
+    BootstrapService,
   ],
   exports: [
     DatabaseService,
@@ -27,8 +37,13 @@ import { CalendarEventRepository } from './repositories/calendar-event.repositor
     GenealogyLinkRepository,
     ClaimRepository,
     AuditRepository,
+    AuditOutboxRepository,
     CulturalArticleRepository,
     CalendarEventRepository,
+    UserRepository,
+    SessionRepository,
+    BranchRepository,
+    BootstrapService,
   ],
 })
 export class DatabaseModule {}

@@ -146,29 +146,35 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
   });
 
   it('should refuse pg-mem in production mode', async () => {
-    process.env.NODE_ENV = 'production';
-    process.env.USE_PG_MEM = 'true';
+    const prevEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.USE_PG_MEM = 'true';
 
-    const prodDb = new DatabaseService();
-    await expect(prodDb.onModuleInit()).rejects.toThrow('USE_PG_MEM is strictly prohibited in production mode');
-
-    delete process.env.NODE_ENV;
-    delete process.env.USE_PG_MEM;
+      const prodDb = new DatabaseService();
+      await expect(prodDb.onModuleInit()).rejects.toThrow('USE_PG_MEM is strictly prohibited in production mode');
+    } finally {
+      process.env.NODE_ENV = prevEnv || 'test';
+      delete process.env.USE_PG_MEM;
+    }
   });
 
   it('should reject missing production database configuration', async () => {
-    process.env.NODE_ENV = 'production';
+    const prevEnv = process.env.NODE_ENV;
     const oldUrl = process.env.DATABASE_URL;
     const oldPass = process.env.DB_PASSWORD;
-    delete process.env.DATABASE_URL;
-    delete process.env.DB_PASSWORD;
+    try {
+      process.env.NODE_ENV = 'production';
+      delete process.env.DATABASE_URL;
+      delete process.env.DB_PASSWORD;
 
-    const prodDb = new DatabaseService();
-    await expect(prodDb.onModuleInit()).rejects.toThrow('Missing required production database configuration');
-
-    if (oldUrl) process.env.DATABASE_URL = oldUrl;
-    if (oldPass) process.env.DB_PASSWORD = oldPass;
-    delete process.env.NODE_ENV;
+      const prodDb = new DatabaseService();
+      await expect(prodDb.onModuleInit()).rejects.toThrow('Missing required production database configuration');
+    } finally {
+      if (oldUrl) process.env.DATABASE_URL = oldUrl;
+      if (oldPass) process.env.DB_PASSWORD = oldPass;
+      process.env.NODE_ENV = prevEnv || 'test';
+    }
   });
 
   it('should hard fail and refuse automatic pg-mem fallback when real PostgreSQL fails to connect', async () => {

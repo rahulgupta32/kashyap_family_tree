@@ -7,5 +7,7 @@
   },
   "collectCoverageFrom": ["src/**/*.(t|j)s"],
   "coverageDirectory": "./coverage-integration",
-  "testEnvironment": "node"
+  "testEnvironment": "node",
+  "testTimeout": 45000,
+  "maxWorkers": 1
 }

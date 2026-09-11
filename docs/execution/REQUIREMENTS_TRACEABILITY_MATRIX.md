@@ -16,18 +16,18 @@
 
 | Req ID | Description | Module | Screen(s) | API Endpoint(s) | DB Table(s) | Test Type | Status |
 |--------|-------------|--------|-----------|-----------------|-------------|-----------|--------|
-| AUTH-FR-001 | Registration with mobile number | auth | MOB-003 | POST /auth/otp/request | user_accounts | Unit, Integration, E2E | ⬜ |
-| AUTH-FR-002 | OTP issuance via provider | auth | MOB-003 | POST /auth/otp/request | - | Unit, Integration | ⬜ |
-| AUTH-FR-003 | OTP verification with expiry/attempts | auth | MOB-004 | POST /auth/otp/verify | user_sessions | Unit, Integration, E2E | ⬜ |
-| AUTH-FR-004 | OTP resend with cooldown/abuse limits | auth | MOB-004 | POST /auth/otp/request | - | Unit, Integration, Security | ⬜ |
-| AUTH-FR-005 | Secure session after verification | auth | - | POST /auth/otp/verify | user_sessions | Unit, Integration | ⬜ |
-| AUTH-FR-006 | Session renewal without OTP | auth | - | POST /auth/refresh | user_sessions | Unit, Integration | ⬜ |
-| AUTH-FR-007 | Logout current device | auth | MOB-040 | POST /auth/logout | user_sessions | Unit, Integration | ⬜ |
-| AUTH-FR-008 | Logout all devices | auth | MOB-040 | POST /auth/logout-all | user_sessions | Unit, Integration, E2E | ⬜ |
-| AUTH-FR-009 | Device metadata and push tokens | auth | MOB-040 | GET /me/sessions | devices | Unit, Integration | ⬜ |
-| AUTH-FR-010 | Blocked account cannot authenticate | auth | MOB-003 | POST /auth/otp/verify | user_accounts | Unit, Integration, Security | ⬜ |
-| AUTH-FR-011 | Security-relevant auth events audited | auth | - | - | audit_logs | Unit, Integration | ⬜ |
-| AUTH-FR-012 | Admin MFA/stronger session controls | auth | ADM-UI-001 | POST /auth/otp/verify | user_sessions | Unit, Security | ⬜ |
+| AUTH-FR-001 | Registration with mobile number | auth | MOB-003, ADM-LOGIN | POST /auth/otp/request | user_accounts | Unit, Integration, E2E | ✅ 🧪 |
+| AUTH-FR-002 | OTP issuance via provider | auth | MOB-003, ADM-LOGIN | POST /auth/otp/request | Redis (D:) | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-003 | OTP verification with expiry/attempts | auth | MOB-004, ADM-LOGIN | POST /auth/otp/verify | user_sessions | Unit, Integration, E2E | ✅ 🧪 |
+| AUTH-FR-004 | OTP resend with cooldown/abuse limits | auth | MOB-004, ADM-LOGIN | POST /auth/otp/request | Redis (D:) | Unit, Integration, Security | ✅ 🧪 |
+| AUTH-FR-005 | Secure session after verification | auth | ADM-UI-001 | POST /auth/otp/verify | user_sessions | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-006 | Session renewal without OTP | auth | - | POST /auth/refresh | user_sessions | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-007 | Logout current device | auth | MOB-040, ADM-UI | POST /auth/logout | user_sessions | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-008 | Logout all devices | auth | MOB-040 | POST /auth/logout-all | user_sessions | Unit, Integration, E2E | ✅ 🧪 |
+| AUTH-FR-009 | Branch Authority Scope & Isolation | auth | ADM-UI | - | user_roles, branches | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-010 | Blocked/Suspended account cannot authenticate | auth | MOB-003, ADM-LOGIN | POST /auth/otp/verify | user_accounts | Unit, Integration, Security | ✅ 🧪 |
+| AUTH-FR-011 | Security-relevant auth events audited | auth | - | - | audit_logs | Unit, Integration | ✅ 🧪 |
+| AUTH-FR-012 | Honest Gateway Gate (HG-007) & SMS Adapters | auth | ADM-UI-001 | POST /auth/otp/verify | - | Unit, Security | ✅ 🧪 |
 
 ## Profile, Preferences & Privacy (PROF-FR)
 

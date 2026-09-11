@@ -12,7 +12,7 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "test:unit": "jest --testPathIgnorePatterns=\"integration\"",
-    "test:integration": "jest --config ./test/jest-integration.json",
+    "test:integration": "jest --config ./test/jest-integration.json --runInBand",
     "test": "jest --testPathIgnorePatterns=\"integration\"",
     "seed": "ts-node src/database/seed.command.ts"
   },

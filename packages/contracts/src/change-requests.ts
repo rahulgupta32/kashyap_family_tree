@@ -6,6 +6,7 @@ import { ChangeRequestType, ChangeRequestStatus } from './enums.js';
 
 export interface SubmitChangeRequestDto {
   targetPersonId?: string;
+  branchId?: string;
   type: ChangeRequestType;
   proposedChanges: Record<string, any>;
   reason: string;
@@ -17,6 +18,7 @@ export interface ChangeRequestDetailDto {
   type: ChangeRequestType;
   status: ChangeRequestStatus;
   targetPersonId?: string;
+  branchId?: string | null;
   requesterUserId: string;
   proposedChanges: Record<string, any>;
   currentSnapshot?: Record<string, any>;

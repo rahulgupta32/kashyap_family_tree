@@ -41,6 +41,22 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'You do not have permission to perform this action.',
     ne: 'तपाईंसँग यो कार्य गर्ने अनुमति छैन।'
   },
+  [ErrorCode.REFRESH_TOKEN_REUSED]: {
+    en: 'Security alert: Refresh token reuse detected. All sessions have been terminated.',
+    ne: 'सुरक्षा सूचना: टोकन पुन: प्रयोग भएको पाइयो। सबै सत्रहरू बन्द गरिएका छन्।'
+  },
+  [ErrorCode.ROLE_ASSIGNMENT_DENIED]: {
+    en: 'Unauthorized to assign or revoke this administrative role.',
+    ne: 'यो प्रशासनिक भूमिका प्रदान वा खारेज गर्ने अधिकार तपाईंसँग छैन।'
+  },
+  [ErrorCode.SELF_ELEVATION_PROHIBITED]: {
+    en: 'Self-elevation is prohibited. Users cannot grant or modify their own administrative roles.',
+    ne: 'आफैंलाई भूमिका प्रदान गर्न निषेध गरिएको छ। आफ्नै भूमिका परिमार्जन गर्न मिल्दैन।'
+  },
+  [ErrorCode.FORBIDDEN_BROWSER_ORIGIN]: {
+    en: 'Native transport endpoint rejected request bearing browser Origin or Referer header.',
+    ne: 'ब्राउजरबाट नेटिभ इन्डपोइन्ट प्रयोग गर्न अनुमति छैन।'
+  },
   [ErrorCode.PROFILE_NOT_FOUND]: {
     en: 'Profile not found.',
     ne: 'प्रोफाइल फेला परेन।'

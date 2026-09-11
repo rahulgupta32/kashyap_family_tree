@@ -254,6 +254,91 @@ export class GenealogyService {
     this.spouseLinks.get(spouseId)!.add({ spouseId: personId, status });
   }
 
+  async createPerson(dto: CreatePersonDto): Promise<PersonDetailDto> {
+    if (this.isDatabaseAvailable) {
+      if (!dto.branchId) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch identifier (branchId) is required for creating a person record',
+        });
+      }
+
+      const branchRes = await this.db!.query('SELECT id FROM branches WHERE id = $1', [dto.branchId]);
+      if (branchRes.rows.length === 0) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: `Branch with ID ${dto.branchId} does not exist`,
+        });
+      }
+
+      const created = await this.personRepo!.createPerson(
+        {
+          branch_id: dto.branchId,
+          generation: dto.generation,
+          gender: dto.gender,
+          living_status: dto.livingStatus,
+          birth_year_bs: dto.birthYearBs,
+          birth_date_bs: dto.birthDateBs,
+          birth_place: dto.birthPlace,
+          death_year_bs: dto.deathYearBs,
+          death_date_bs: dto.deathDateBs,
+        },
+        dto.names.map((n) => ({
+          language: n.language,
+          first_name: n.firstName,
+          middle_name: n.middleName,
+          last_name: n.lastName,
+          full_name: n.fullName,
+          is_primary: n.isPrimary,
+        })),
+      );
+
+      if (dto.parentPersonIds && dto.parentPersonIds.length > 0) {
+        for (const p of dto.parentPersonIds) {
+          await this.addParentLink(p.personId, created.id, p.parentType);
+        }
+      }
+
+      if (dto.spousePersonIds && dto.spousePersonIds.length > 0) {
+        for (const s of dto.spousePersonIds) {
+          await this.addSpouseLink(created.id, s.personId, s.status);
+        }
+      }
+
+      return this.getPersonById(created.id);
+    }
+
+    // In-memory fallback
+    const id = `p_${Date.now()}`;
+    const primaryName = dto.names.find((n) => n.isPrimary) || dto.names[0];
+    const newPerson: any = {
+      id,
+      primaryNameNepali: primaryName?.fullName || 'नयाँ व्यक्ति',
+      primaryNameEnglish: primaryName?.fullName || 'New Person',
+      gender: dto.gender,
+      livingStatus: dto.livingStatus,
+      generation: dto.generation,
+      branchId: dto.branchId,
+      branchName: 'कास्की शाखा',
+      birthYearBs: dto.birthYearBs,
+      birthDateBs: dto.birthDateBs,
+      birthPlace: dto.birthPlace,
+      names: dto.names,
+      isClaimed: false,
+      privacy: {
+        phoneVisibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+        addressVisibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+        dobVisibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+      },
+      parents: [],
+      children: [],
+      spouses: [],
+    };
+    this.persons.set(id, newPerson);
+    return newPerson;
+  }
+
+
   async deLinkUserAccount(personId: string): Promise<void> {
     if (this.isDatabaseAvailable) {
       const person = await this.personRepo!.findById(personId);
