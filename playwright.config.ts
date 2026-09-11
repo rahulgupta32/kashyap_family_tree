@@ -51,6 +51,7 @@ export default defineConfig({
         JWT_EXPIRY: '15m',
         REFRESH_EXPIRY: '30d',
         SPARROW_SMS_TOKEN: 'test_sparrow_token',
+        CORS_ORIGINS: `http://localhost:${ADMIN_PORT},http://127.0.0.1:${ADMIN_PORT},http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002`,
       },
     },
     {

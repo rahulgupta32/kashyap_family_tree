@@ -7,22 +7,34 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'http://localhost:3002',
+    'http://127.0.0.1:3002',
+  ];
+
   const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-    : [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:3001',
-      ];
+    : defaultOrigins;
+
+  const isOriginAllowed = (origin: string | undefined): boolean => {
+    if (!origin) return true; // Non-browser / server-to-server
+    if (allowedOrigins.includes(origin)) return true;
+    if (process.env.NODE_ENV !== 'production') {
+      // In dev and test environments, allow any localhost or 127.0.0.1 port
+      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow non-browser clients (no origin header)
-      if (!origin) {
-        return callback(null, true);
-      }
-      if (allowedOrigins.includes(origin)) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
       return callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
@@ -39,7 +51,7 @@ async function bootstrap() {
       const hasCookieAuth = cookieHeader && cookieHeader.includes('refreshToken=');
       if (hasCookieAuth) {
         const origin = req.headers.origin;
-        if (!origin || !allowedOrigins.includes(origin)) {
+        if (!isOriginAllowed(origin)) {
           return res.status(403).json({
             success: false,
             errorCode: 'AUTH_1010',
