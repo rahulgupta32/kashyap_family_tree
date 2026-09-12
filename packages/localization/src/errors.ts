@@ -109,6 +109,14 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Requested tree depth exceeds safe rendering limits.',
     ne: 'अनुरोध गरिएको पुस्ता गहिराइ सीमा भन्दा बढी भयो।'
   },
+  [ErrorCode.STALE_UPDATE_DETECTED]: {
+    en: 'Conflict: Record was modified by another user. Please refresh and try again.',
+    ne: 'द्वन्द्व: यो विवरण अर्को प्रयोगकर्ताद्वारा परिमार्जन गरिएको छ। कृपया ताजा गरी पुनः प्रयास गर्नुहोस्।'
+  },
+  [ErrorCode.JUSTIFICATION_REQUIRED]: {
+    en: 'A detailed justification reason is mandatory for administrative mutations.',
+    ne: 'प्रशासनिक परिमार्जनको लागि औचित्यपूर्ण कारण खुलाउनु अनिवार्य छ।'
+  },
   [ErrorCode.ACTIVE_CLAIM_EXISTS]: {
     en: 'An active verification claim already exists for this person.',
     ne: 'यो व्यक्तिको लागि दाबी प्रक्रिया पहिले नै विचाराधीन छ।'
@@ -149,6 +157,14 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Cannot merge two persons that are both claimed by active user accounts.',
     ne: 'सक्रिय खाता भएका दुई व्यक्तिलाई गाभ्न मिल्दैन।'
   },
+  [ErrorCode.DUPLICATE_CANDIDATE_NOT_FOUND]: {
+    en: 'Duplicate candidate record not found.',
+    ne: 'दोहोरो व्यक्ति उम्मेदवार फेला परेन।'
+  },
+  [ErrorCode.CANNOT_MERGE_SAME_PERSON]: {
+    en: 'Cannot merge a person into themselves.',
+    ne: 'एउटै व्यक्तिलाई आफैंसँग गाभ्न मिल्दैन।'
+  },
   [ErrorCode.RULESET_NOT_APPROVED]: {
     en: 'This domain ruleset has not received required cultural authority sign-off.',
     ne: 'यो नियम संग्रहलाई आधिकारिक धार्मिक/सांस्कृतिक स्वीकृति प्राप्त भएको छैन।'
@@ -185,7 +201,6 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Event not found.',
     ne: 'कार्यक्रम फेला परेन।'
   },
-
   [ErrorCode.INTERNAL_SERVER_ERROR]: {
     en: 'An internal error occurred. Please try again later.',
     ne: 'आन्तरिक त्रुटि भयो। कृपया पछि पुनः प्रयास गर्नुहोस्।'

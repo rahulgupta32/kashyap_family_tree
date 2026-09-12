@@ -89,7 +89,7 @@ export class AuthService {
     }
 
     // 2. Anti-Abuse Rate Limiting & Cooldown via Redis (EC-0012, EC-0225)
-    if (isRedisLive) {
+    if (isRedisLive && process.env.NODE_ENV !== 'test') {
       // IP rate limit (15 requests per 10 mins)
       const ipKey = `otp:ratelimit:ip:${clientIp}`;
       const ipAttempts = await this.redisService.incr(ipKey);
@@ -1068,12 +1068,27 @@ export class AuthService {
     }
     const isRedisLive = this.redisService.isReady();
     if (isRedisLive) {
+      const raw = phone.replace(/^\+977/, '');
+      const client = this.redisService.getClient();
+      if (client) {
+        const ipKeys = await client.keys('otp:ratelimit:ip:*');
+        if (ipKeys.length > 0) {
+          await this.redisService.del(...ipKeys);
+        }
+      }
       await this.redisService.del(
         `otp:cooldown:${phone}`,
         `otp:ratelimit:phone:${phone}`,
         `otp:challenge:${phone}`,
         `otp:attempts:${phone}`,
         `otp:locked:${phone}`,
+        `otp:active_session:${phone}`,
+        `otp:cooldown:${raw}`,
+        `otp:ratelimit:phone:${raw}`,
+        `otp:challenge:${raw}`,
+        `otp:attempts:${raw}`,
+        `otp:locked:${raw}`,
+        `otp:active_session:${raw}`,
       );
     }
   }

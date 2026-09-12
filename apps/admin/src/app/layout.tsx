@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import './globals.css';
 import { AuthProvider } from '../context/auth-context';
 import { AdminHeader } from '../components/AdminHeader';
@@ -31,25 +32,25 @@ export default function RootLayout({
                   </div>
                 </div>
                 <nav className="mt-6 space-y-1">
-                  <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg bg-saffron-600 text-white text-sm font-medium">
+                  <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     ड्यासवोर्ड (Dashboard)
-                  </a>
-                  <a href="#claims" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
+                  </Link>
+                  <Link href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    वंशावली सूची (People Directory)
+                  </Link>
+                  <Link href="/tree" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    अन्तरक्रियात्मक वंशावली (Tree Canvas)
+                  </Link>
+                  <Link href="/duplicates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    दोहोरिएको व्यवस्थापन (Duplicates/Merge)
+                  </Link>
+                  <a href="#claims" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
                     दाबी प्रमाणीकरण (Claims Queue)
                   </a>
-                  <a href="#genealogy" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
-                    वंशावली सम्पादन (Genealogy Editor)
-                  </a>
-                  <a href="#changes" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
-                    परिमार्जन अनुरोध (Change Requests)
-                  </a>
-                  <a href="#duplicates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
-                    दोहोरिएको खोज (Duplicates/Merge)
-                  </a>
-                  <a href="#rules" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
+                  <a href="#rules" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
                     नाता/साइनो नियम (Rulesets)
                   </a>
-                  <a href="#audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium">
+                  <a href="#audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
                     अपरिवर्तनीय अडिट (Audit Trail)
                   </a>
                 </nav>

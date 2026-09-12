@@ -50,24 +50,24 @@
 
 | Req ID | Description | Module | Screen(s) | API Endpoint(s) | DB Table(s) | Test Type | Status |
 |--------|-------------|--------|-----------|-----------------|-------------|-----------|--------|
-| GEN-FR-001 | Immutable unique Person ID | genealogy | - | - | persons | Unit | ⬜ |
-| GEN-FR-002 | Living/deceased/child/non-user/historical | genealogy | MOB-011,012 | GET /people/:id | persons | Unit | ⬜ |
-| GEN-FR-003 | Nepali/English name variants | genealogy | MOB-011 | - | person_names | Unit, Integration | ⬜ |
-| GEN-FR-004 | Partial/unknown facts support | genealogy | MOB-011 | - | persons | Unit | ⬜ |
-| GEN-FR-005 | Verified parent-child links | genealogy | MOB-010 | - | parent_links | Unit, Integration | ⬜ |
-| GEN-FR-006 | Verified spouse links | genealogy | MOB-010 | - | spouse_links | Unit, Integration | ⬜ |
-| GEN-FR-007 | Reject self-links | genealogy | - | - | parent_links, spouse_links | Unit | ⬜ |
-| GEN-FR-008 | Detect/reject ancestry cycles | genealogy | - | - | parent_links | Unit, Integration | ⬜ |
-| GEN-FR-009 | Navigable tree display | genealogy | MOB-010 | GET /people/:id/tree | persons, parent_links, spouse_links | Unit, Integration, E2E | ⬜ |
-| GEN-FR-010 | Progressive expansion/lazy loading | genealogy | MOB-010 | GET /people/:id/tree | - | Performance | ⬜ |
-| GEN-FR-011 | Branch/generation support | genealogy | MOB-010 | - | branches, persons | Unit | ⬜ |
-| GEN-FR-012 | Cross-branch connections | genealogy | - | POST /admin/genealogy/links | parent_links, spouse_links | Unit, Integration | ⬜ |
-| GEN-FR-013 | Source/provenance metadata | genealogy | - | - | persons | Unit | ⬜ |
-| GEN-FR-014 | Death recording request | genealogy | MOB-016 | POST /genealogy/requests | genealogy_change_requests | Unit, Integration | ⬜ |
-| GEN-FR-015 | Death triggers dependent workflows | genealogy | - | - | - | Integration, E2E | ⬜ |
-| GEN-FR-016 | Admin direct Person edit with audit | genealogy | ADM-UI-009 | PATCH /admin/people/:id | persons, audit_logs | Unit, Integration | ⬜ |
-| GEN-FR-017 | Archive rather than hard-delete | genealogy | - | - | persons | Unit | ⬜ |
-| GEN-FR-018 | Export with privacy filtering | genealogy | - | - | - | Unit, Security | ⬜ |
+| GEN-FR-001 | Immutable unique Person ID | genealogy | - | - | persons | Unit | ✅ 🧪 |
+| GEN-FR-002 | Living/deceased/child/non-user/historical | genealogy | MOB-011,012 | GET /people/:id | persons | Unit | ✅ 🧪 |
+| GEN-FR-003 | Nepali/English name variants | genealogy | MOB-011 | - | person_names | Unit, Integration | ✅ 🧪 |
+| GEN-FR-004 | Partial/unknown facts support | genealogy | MOB-011 | - | persons | Unit | ✅ 🧪 |
+| GEN-FR-005 | Verified parent-child links | genealogy | MOB-010 | - | parent_links | Unit, Integration | ✅ 🧪 |
+| GEN-FR-006 | Verified spouse links | genealogy | MOB-010 | - | spouse_links | Unit, Integration | ✅ 🧪 |
+| GEN-FR-007 | Reject self-links | genealogy | - | - | parent_links, spouse_links | Unit | ✅ 🧪 |
+| GEN-FR-008 | Detect/reject ancestry cycles | genealogy | - | - | parent_links | Unit, Integration | ✅ 🧪 |
+| GEN-FR-009 | Navigable tree display | genealogy | MOB-010 | GET /people/:id/tree | persons, parent_links, spouse_links | Unit, Integration, E2E | ✅ 🧪 |
+| GEN-FR-010 | Progressive expansion/lazy loading | genealogy | MOB-010 | GET /people/:id/tree | - | Performance | ✅ 🧪 |
+| GEN-FR-011 | Branch/generation support | genealogy | MOB-010 | - | branches, persons | Unit | ✅ 🧪 |
+| GEN-FR-012 | Cross-branch connections | genealogy | - | POST /admin/genealogy/links | parent_links, spouse_links | Unit, Integration | ✅ 🧪 |
+| GEN-FR-013 | Source/provenance metadata | genealogy | - | - | persons | Unit | ✅ 🧪 |
+| GEN-FR-014 | Death recording request | genealogy | MOB-016 | POST /genealogy/requests | genealogy_change_requests | Unit, Integration | ✅ 🧪 |
+| GEN-FR-015 | Death triggers dependent workflows | genealogy | - | - | - | Integration, E2E | ✅ 🧪 |
+| GEN-FR-016 | Admin direct Person edit with audit | genealogy | ADM-UI-009 | PATCH /admin/people/:id | persons, audit_logs | Unit, Integration | ✅ 🧪 |
+| GEN-FR-017 | Archive rather than hard-delete | genealogy | - | - | persons | Unit | ✅ 🧪 |
+| GEN-FR-018 | Export with privacy filtering | genealogy | - | - | - | Unit, Security | ✅ 🧪 |
 
 *(Remaining modules follow the same structure — SRCH-FR, CLAIM-FR, CHG-FR, DUP-FR, REL-FR, CUL-FR, CAL-FR, JUT-FR, NOT-FR, INV-FR, COM-FR, MAP-FR, CHAT-FR, ADM-FR, AUD-FR, PRIV-FR, I18N-FR, MEDIA-FR, NFR-*)*
 
