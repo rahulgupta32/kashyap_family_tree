@@ -179,7 +179,7 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
       const origEnv = process.env.NODE_ENV;
       try {
         process.env.NODE_ENV = 'development';
-        expect(() => new GenealogyService(undefined, undefined, undefined, true)).toThrow(
+        expect(() => new GenealogyService(undefined, undefined, undefined, undefined, undefined, undefined, true)).toThrow(
           /Direct constructor opt-in rejected/,
         );
       } finally {
@@ -191,7 +191,7 @@ describe('GenealogyService (Comprehensive Unit, Graph & Edge Case Tests)', () =>
       const origEnv = process.env.NODE_ENV;
       try {
         process.env.NODE_ENV = 'production';
-        expect(() => new GenealogyService(undefined, undefined, undefined, true)).toThrow(
+        expect(() => new GenealogyService(undefined, undefined, undefined, undefined, undefined, undefined, true)).toThrow(
           /Direct constructor opt-in rejected/,
         );
       } finally {

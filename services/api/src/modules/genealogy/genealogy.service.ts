@@ -25,6 +25,7 @@ import {
   Role,
   GenealogyExportQueryDto,
   GenealogyExportDto,
+  EvaluatePersonDto,
 } from '@kashyap/contracts';
 import { mockPersons, mockBranches } from '@kashyap/test-fixtures';
 import { PersonRepository } from '../../database/repositories/person.repository';
@@ -41,6 +42,7 @@ export interface ActorContext {
   id: string;
   roles: Role[];
   branchId?: string;
+  branchIds?: string[];
   ipAddress?: string;
   userAgent?: string;
 }
@@ -85,7 +87,7 @@ export class GenealogyService {
     @Optional() private readonly personRepo?: PersonRepository,
     @Optional() private readonly linkRepo?: GenealogyLinkRepository,
     @Optional() private readonly db?: DatabaseService,
-    @Optional() private readonly auditOutboxRepo?: any,
+    @Optional() private readonly auditOutboxRepo?: AuditOutboxRepository,
     @Optional() private readonly privacyEngine?: PrivacyEngineService,
     @Optional() private readonly duplicateService?: DuplicateService,
     @Optional() @Inject(GENEALOGY_TEST_FIXTURE_MODE) explicitTestFixtureMode?: boolean,
@@ -107,9 +109,9 @@ export class GenealogyService {
       return;
     }
 
-    if (!this.personRepo || !this.linkRepo || !this.db) {
+    if (!this.personRepo || !this.linkRepo || !this.db || !this.auditOutboxRepo || !this.privacyEngine || !this.duplicateService) {
       throw new Error(
-        'FATAL CONFIGURATION: GenealogyService requires PersonRepository, GenealogyLinkRepository, and DatabaseService. ' +
+        'FATAL CONFIGURATION: GenealogyService requires PersonRepository, GenealogyLinkRepository, DatabaseService, AuditOutboxRepository, PrivacyEngineService, and DuplicateService. ' +
         'Missing runtime dependencies must be resolved. For unit tests, use GenealogyService.createWithTestFixtures().',
       );
     }
@@ -125,12 +127,33 @@ export class GenealogyService {
       return; // Global access
     }
     if (actor.roles.includes(Role.BRANCH_ADMIN) || actor.roles.includes(Role.BRANCH_VERIFIER)) {
-      if (actor.branchId && branchId && actor.branchId !== branchId) {
+      const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+      if (branchId && !actorBranches.includes(branchId)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.BRANCH_MISMATCH,
           message: 'Branch administrator cannot mutate records outside their assigned branch',
         });
       }
+    }
+  }
+
+  private checkDualBranchAuthority(actor?: ActorContext, branchA?: string, branchB?: string): void {
+    if (!actor) return;
+    if (actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN)) {
+      return;
+    }
+    const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+    if (branchA && !actorBranches.includes(branchA)) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.BRANCH_MISMATCH,
+        message: `Branch administrator cannot link records outside their assigned branch (${branchA})`,
+      });
+    }
+    if (branchB && !actorBranches.includes(branchB)) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.BRANCH_MISMATCH,
+        message: `Branch administrator cannot link records outside their assigned branch (${branchB})`,
+      });
     }
   }
 
@@ -188,10 +211,9 @@ export class GenealogyService {
           });
         }
 
-        // Branch check for both persons
+        // Dual-branch check for both persons
         if (actor) {
-          this.checkBranchAuthority(actor, parent.branch_id);
-          this.checkBranchAuthority(actor, child.branch_id);
+          this.checkDualBranchAuthority(actor, parent.branch_id, child.branch_id);
         }
 
         const existingParents = await this.linkRepo!.getParentsByChildId(childId, client);
@@ -261,6 +283,15 @@ export class GenealogyService {
     if (this.isDatabaseAvailable) {
       return this.db!.transaction(async (client: PoolClient) => {
         await this.linkRepo!.acquireGraphMutationLock(client);
+        const [parent, child] = await Promise.all([
+          this.personRepo!.findById(parentId, false, client),
+          this.personRepo!.findById(childId, false, client),
+        ]);
+
+        if (parent && child && actor) {
+          this.checkDualBranchAuthority(actor, parent.branch_id, child.branch_id);
+        }
+
         const removed = await this.linkRepo!.removeParentLink(parentId, childId, client);
         if (!removed) {
           throw new NotFoundException({
@@ -343,8 +374,7 @@ export class GenealogyService {
         }
 
         if (actor) {
-          this.checkBranchAuthority(actor, p1.branch_id);
-          this.checkBranchAuthority(actor, p2.branch_id);
+          this.checkDualBranchAuthority(actor, p1.branch_id, p2.branch_id);
         }
 
         await this.linkRepo!.addSpouseLink(personId, spouseId, status, marriageDateBs, client);
@@ -387,6 +417,16 @@ export class GenealogyService {
     if (this.isDatabaseAvailable) {
       return this.db!.transaction(async (client: PoolClient) => {
         await this.linkRepo!.acquireGraphMutationLock(client);
+
+        const [p1, p2] = await Promise.all([
+          this.personRepo!.findById(personId, false, client),
+          this.personRepo!.findById(spouseId, false, client),
+        ]);
+
+        if (p1 && p2 && actor) {
+          this.checkDualBranchAuthority(actor, p1.branch_id, p2.branch_id);
+        }
+
         const removed = await this.linkRepo!.removeSpouseLink(personId, spouseId, client);
         if (!removed) {
           throw new NotFoundException({
@@ -429,6 +469,15 @@ export class GenealogyService {
   }
 
   async createPerson(dto: CreatePersonDto | AdminCreatePersonDto, actor?: ActorContext): Promise<PersonDetailDto> {
+    // 1. Mandatory Justification Validation (non-empty, non-boilerplate)
+    const justification = (dto as AdminCreatePersonDto).justificationReason?.trim();
+    if (!justification || justification.length < 5 || /^(test|none|n\/a|asdf|created)$/i.test(justification)) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.JUSTIFICATION_REQUIRED,
+        message: 'A meaningful administrative justification reason is mandatory (minimum 5 characters, non-boilerplate)',
+      });
+    }
+
     if (this.isDatabaseAvailable) {
       if (!dto.branchId) {
         throw new BadRequestException({
@@ -447,6 +496,28 @@ export class GenealogyService {
           errorCode: ErrorCode.BRANCH_MISMATCH,
           message: `Branch with ID ${dto.branchId} does not exist`,
         });
+      }
+
+      // 2. Pre-creation Duplicate Candidate Evaluation (DUP-FR-001)
+      const primaryName = dto.names?.find((n) => n.isPrimary) || dto.names?.[0];
+      if (primaryName && primaryName.fullName.trim() && this.duplicateService) {
+        const matches = await this.duplicateService.evaluateProposedPerson(
+          {
+            names: dto.names,
+            branchId: dto.branchId,
+            birthYearBs: dto.birthYearBs,
+          },
+          actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : undefined,
+        );
+
+        const strongMatches = matches.filter((m) => m.score >= 0.70);
+        if (strongMatches.length > 0 && !(dto as AdminCreatePersonDto).allowDuplicateOverride) {
+          throw new BadRequestException({
+            errorCode: ErrorCode.DUPLICATE_CANDIDATE_DETECTED,
+            message: 'Potential duplicate candidate detected. Please review candidates or supply explicit override justification.',
+            details: { candidateMatches: strongMatches },
+          });
+        }
       }
 
       const createdId = await this.db!.transaction(async (client: PoolClient) => {
@@ -527,7 +598,7 @@ export class GenealogyService {
                 names: dto.names,
                 branchId: dto.branchId,
                 generation: dto.generation,
-                justificationReason: (dto as AdminCreatePersonDto).justificationReason || 'Admin creation',
+                justificationReason: justification,
               },
             },
             client,
@@ -551,7 +622,7 @@ export class GenealogyService {
       livingStatus: dto.livingStatus,
       generation: dto.generation,
       branchId: dto.branchId,
-      branchName: 'कास्की शाखा',
+      branchName: undefined,
       birthYearBs: dto.birthYearBs,
       birthDateBs: dto.birthDateBs,
       birthPlace: dto.birthPlace,
@@ -775,7 +846,7 @@ export class GenealogyService {
         || names[0]?.full_name
         || 'Unknown';
 
-      const branchName = branchRes.rows[0]?.name_nepali || 'कास्की शाखा';
+      const branchName = branchRes.rows[0]?.name_nepali || undefined;
 
       const parentSummaries = await Promise.all(
         parentLinks.map(async (pl) => ({
@@ -812,7 +883,7 @@ export class GenealogyService {
         gender: person.gender,
         livingStatus: person.living_status,
         generation: person.generation,
-        branchId: person.branch_id || 'b-001',
+        branchId: person.branch_id || undefined,
         branchName,
         birthYearBs: person.birth_year_bs,
         birthDateBs: person.birth_date_bs,
@@ -902,7 +973,12 @@ export class GenealogyService {
     if (this.isDatabaseAvailable) {
       const p = await this.personRepo!.findById(id, true);
       if (!p) return null;
-      const names = await this.personRepo!.findNamesByPersonId(id);
+      const [names, branchRes] = await Promise.all([
+        this.personRepo!.findNamesByPersonId(id),
+        p.branch_id
+          ? this.db!.query('SELECT name_nepali FROM branches WHERE id = $1', [p.branch_id])
+          : Promise.resolve({ rows: [] }),
+      ]);
       const ne = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name
         || names.find((n) => n.language === 'ne')?.full_name
         || names[0]?.full_name
@@ -919,8 +995,8 @@ export class GenealogyService {
         gender: p.gender,
         livingStatus: p.living_status,
         generation: p.generation,
-        branchId: p.branch_id || 'b-001',
-        branchName: 'कास्की शाखा',
+        branchId: p.branch_id || undefined,
+        branchName: branchRes.rows[0]?.name_nepali || undefined,
         birthYearBs: p.birth_year_bs,
         deathYearBs: p.death_year_bs,
         isClaimed: p.is_claimed,
@@ -941,7 +1017,10 @@ export class GenealogyService {
   }
 
   async getTree(query: TreeQueryDto, viewer?: ViewerContext): Promise<TreeNodeDto> {
-    if ((query.descendantGenerations || 2) > 25 || (query.ancestorGenerations || 2) > 25) {
+    const descDepth = query.descendantGenerations !== undefined ? query.descendantGenerations : 2;
+    const ascDepth = query.ancestorGenerations !== undefined ? query.ancestorGenerations : 2;
+
+    if (descDepth > 25 || ascDepth > 25) {
       throw new BadRequestException({
         errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
         message: 'Requested tree depth exceeds safe rendering limits',
@@ -957,7 +1036,7 @@ export class GenealogyService {
         });
       }
 
-      const rawTree = await this.buildSubtreeFromDb(query.rootPersonId, query.descendantGenerations || 2);
+      const rawTree = await this.buildSubtreeFromDb(query.rootPersonId, descDepth);
       if (this.privacyEngine) {
         return this.privacyEngine.filterTreeNode(rawTree, viewer);
       }
@@ -973,7 +1052,7 @@ export class GenealogyService {
       });
     }
 
-    return this.buildSubtree(query.rootPersonId, query.descendantGenerations || 2);
+    return this.buildSubtree(query.rootPersonId, descDepth);
   }
 
   private async buildSubtreeFromDb(personId: string, depthRemaining: number): Promise<TreeNodeDto> {
@@ -999,23 +1078,25 @@ export class GenealogyService {
     }
 
     const spouseNodes: TreeNodeDto[] = [];
-    for (const sl of spouseLinks) {
-      const sp = await this.personRepo!.findById(sl.spouse_id);
-      if (sp) {
-        const spNames = await this.personRepo!.findNamesByPersonId(sl.spouse_id);
-        spouseNodes.push({
-          id: sp.id,
-          nameNepali: spNames.find((n) => n.language === 'ne')?.full_name || 'अज्ञात',
-          nameEnglish: spNames.find((n) => n.language === 'en')?.full_name || 'Unknown',
-          gender: sp.gender,
-          generation: sp.generation,
-          livingStatus: sp.living_status,
-          isClaimed: sp.is_claimed,
-          spouses: [],
-          children: [],
-          hasMoreAncestors: false,
-          hasMoreDescendants: false,
-        });
+    if (depthRemaining > 0) {
+      for (const sl of spouseLinks) {
+        const sp = await this.personRepo!.findById(sl.spouse_id);
+        if (sp) {
+          const spNames = await this.personRepo!.findNamesByPersonId(sl.spouse_id);
+          spouseNodes.push({
+            id: sp.id,
+            nameNepali: spNames.find((n) => n.language === 'ne')?.full_name || 'अज्ञात',
+            nameEnglish: spNames.find((n) => n.language === 'en')?.full_name || 'Unknown',
+            gender: sp.gender,
+            generation: sp.generation,
+            livingStatus: sp.living_status,
+            isClaimed: sp.is_claimed,
+            spouses: [],
+            children: [],
+            hasMoreAncestors: false,
+            hasMoreDescendants: false,
+          });
+        }
       }
     }
 
@@ -1084,14 +1165,35 @@ export class GenealogyService {
       });
     }
 
-    const branchId = actor.roles.includes(Role.SUPER_ADMIN) ? query.branchId : actor.branchId;
+    const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
+    const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+
+    let targetBranchId: string | undefined = undefined;
+
+    if (isSuperAdmin) {
+      targetBranchId = query.branchId;
+    } else {
+      if (query.branchId && !actorBranches.includes(query.branchId)) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch administrators can only export genealogy data for their assigned branch',
+        });
+      }
+      targetBranchId = query.branchId || actorBranches[0];
+      if (!targetBranchId) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch administrator has no assigned branch for export',
+        });
+      }
+    }
 
     const conditions = ['p.is_archived = FALSE'];
     const params: any[] = [];
     let paramIdx = 1;
 
-    if (branchId) {
-      params.push(branchId);
+    if (targetBranchId) {
+      params.push(targetBranchId);
       conditions.push(`p.branch_id = $${paramIdx++}`);
     }
 
@@ -1119,7 +1221,8 @@ export class GenealogyService {
     const viewerContext: ViewerContext = {
       userId: actor.id,
       roles: actor.roles,
-      branchId: actor.branchId,
+      branchId: targetBranchId,
+      branchIds: actorBranches,
       isVerifiedMember: true,
     };
 
@@ -1131,8 +1234,8 @@ export class GenealogyService {
         gender: r.gender,
         livingStatus: r.living_status,
         generation: r.generation,
-        branchId: r.branch_id,
-        branchName: r.branch_name,
+        branchId: r.branch_id || undefined,
+        branchName: r.branch_name || undefined,
         birthYearBs: r.birth_year_bs,
         deathYearBs: r.death_year_bs,
         isClaimed: r.is_claimed,
@@ -1167,7 +1270,7 @@ export class GenealogyService {
         userAgent: actor.userAgent || 'system',
         action: 'GENEALOGY_EXPORT',
         entityType: 'export',
-        entityId: branchId || 'global',
+        entityId: targetBranchId || 'global',
         oldValue: null,
         newValue: { totalRecords: sanitizedPersons.length, format: query.format || 'json' },
       });
@@ -1177,7 +1280,7 @@ export class GenealogyService {
       exportedAt: new Date().toISOString(),
       exportedBy: actor.id,
       viewerRole: actor.roles[0],
-      branchId,
+      branchId: targetBranchId,
       totalRecords: sanitizedPersons.length,
       persons: sanitizedPersons,
       parentLinks,

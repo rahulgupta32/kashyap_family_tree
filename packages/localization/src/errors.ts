@@ -165,6 +165,14 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'Cannot merge a person into themselves.',
     ne: 'एउटै व्यक्तिलाई आफैंसँग गाभ्न मिल्दैन।'
   },
+  [ErrorCode.DUPLICATE_CANDIDATE_DETECTED]: {
+    en: 'Potential duplicate person detected. Please review existing records or provide explicit creation override justification.',
+    ne: 'सम्भावित दोहोरो व्यक्ति भेटियो। कृपया अवस्थित रेकर्ड समीक्षा गर्नुहोस् वा स्पष्ट कारणसहित दर्ता गर्नुहोस्।'
+  },
+  [ErrorCode.MERGE_CONFLICT_UNRESOLVED]: {
+    en: 'Unresolved material conflict between person records during merge. Explicit field resolution is required.',
+    ne: 'एकीकरण गर्दा विवरणहरू बाझिएका छन्। कृपया बाझिएका विवरणहरूको स्पष्ट चयन गर्नुहोस्।'
+  },
   [ErrorCode.RULESET_NOT_APPROVED]: {
     en: 'This domain ruleset has not received required cultural authority sign-off.',
     ne: 'यो नियम संग्रहलाई आधिकारिक धार्मिक/सांस्कृतिक स्वीकृति प्राप्त भएको छैन।'

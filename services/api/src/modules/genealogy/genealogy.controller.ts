@@ -40,6 +40,7 @@ import {
   GenealogyExportDto,
 } from '@kashyap/contracts';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { BranchGuard } from '../auth/guards/branch.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -56,11 +57,12 @@ export class GenealogyController {
 
   private extractViewer(user?: AuthenticatedUser): ViewerContext | undefined {
     if (!user) return undefined;
-    const branchId = user.branchIds?.[0] || user.roleAssignments?.find((r) => r.branchId)?.branchId || undefined;
+    const branchIds = user.branchIds || (user.roleAssignments?.map((r) => r.branchId).filter(Boolean) as string[]) || [];
     return {
       userId: user.id,
       roles: user.roles as Role[],
-      branchId,
+      branchId: branchIds[0] || undefined,
+      branchIds,
       isVerifiedMember:
         user.roles.includes(Role.VERIFIED_MEMBER) ||
         user.roles.includes(Role.SUPER_ADMIN) ||
@@ -69,17 +71,19 @@ export class GenealogyController {
   }
 
   private extractActor(user: AuthenticatedUser, req?: any): ActorContext {
-    const branchId = user.branchIds?.[0] || user.roleAssignments?.find((r) => r.branchId)?.branchId || undefined;
+    const branchIds = user.branchIds || (user.roleAssignments?.map((r) => r.branchId).filter(Boolean) as string[]) || [];
     return {
       id: user.id,
       roles: user.roles as Role[],
-      branchId,
+      branchId: branchIds[0] || undefined,
+      branchIds,
       ipAddress: req?.ip || '127.0.0.1',
       userAgent: req?.headers ? req.headers['user-agent'] : 'system',
     };
   }
 
   @Get('search')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Bilingual trigram search for persons (SRCH-FR-001..008)' })
   @ApiResponse({ status: 200, description: 'Search results with privacy masking' })
   async searchPersons(
@@ -109,6 +113,7 @@ export class GenealogyController {
   }
 
   @Get('people/:id')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get complete Person profile with relatives (Public read / privacy filtered)' })
   @ApiResponse({ status: 200, description: 'Person details' })
   async getPerson(
@@ -119,6 +124,7 @@ export class GenealogyController {
   }
 
   @Get('people/:id/tree')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get hierarchical genealogy family tree from root Person (GEN-FR-009..010)' })
   @ApiResponse({ status: 200, description: 'Hierarchical tree structure' })
   async getTree(

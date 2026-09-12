@@ -171,10 +171,12 @@ export class GenealogyLinkRepository {
   /**
    * Directed Acyclic Graph Cycle Check:
    * Checks if candidate parentId is already a descendant of childId (or vice versa)
+   * Fail-closed safety: throws MAX_TREE_DEPTH_EXCEEDED when depth exceeds safety bound (100)
    */
   async checkWouldCreateCycle(parentId: string, childId: string, client?: PoolClient): Promise<boolean> {
     if (parentId === childId) return true;
 
+    const MAX_SEARCH_DEPTH = 100;
     const sql = `
       WITH RECURSIVE descendant_search AS (
         -- Anchor: direct children of childId
@@ -188,18 +190,26 @@ export class GenealogyLinkRepository {
         SELECT pl.child_id, ds.depth + 1
         FROM parent_links pl
         JOIN descendant_search ds ON pl.parent_id = ds.current_node
-        WHERE ds.depth < 50
+        WHERE ds.depth <= ${MAX_SEARCH_DEPTH}
       )
-      SELECT COUNT(*) as cycle_count FROM descendant_search WHERE current_node = $2; -- parentId
+      SELECT current_node, depth FROM descendant_search WHERE current_node = $2 OR depth > ${MAX_SEARCH_DEPTH};
     `;
 
     try {
-      const res = await this.executeQuery(sql, [childId, parentId], client);
-      const count = parseInt(res.rows[0]?.cycle_count || '0', 10);
-      return count > 0;
+      const res = await this.executeQuery<{ current_node: string; depth: number }>(sql, [childId, parentId], client);
+      const rows = res.rows;
+      const exceededRow = rows.find((r) => Number(r.depth) > MAX_SEARCH_DEPTH);
+      if (exceededRow) {
+        throw new Error('MAX_TREE_DEPTH_EXCEEDED');
+      }
+      const cycleMatch = rows.find((r) => r.current_node === parentId);
+      return Boolean(cycleMatch);
     } catch (err: any) {
+      if (err.message === 'MAX_TREE_DEPTH_EXCEEDED') {
+        throw err;
+      }
       this.logger.error(`Cycle check failed: ${err.message}`);
-      return true; // Fail-closed on cycle detection error
+      throw err; // Fail-closed on cycle detection error
     }
   }
 

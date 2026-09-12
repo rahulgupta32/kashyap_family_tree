@@ -134,7 +134,8 @@ export class BranchGuard implements CanActivate {
   }
 
   private checkBranchAuthority(user: any, branchId: string): boolean {
-    if (user.roles?.includes(Role.SUPER_ADMIN)) return true;
+    if (user.roles?.includes(Role.SUPER_ADMIN) || user.roles?.includes(Role.CENTRAL_ADMIN)) return true;
+    if (user.branchIds && user.branchIds.includes(branchId)) return true;
     const roleAssignments = user.roleAssignments || [];
     return roleAssignments.some(
       (ra: { role: Role; branchId: string | null }) =>

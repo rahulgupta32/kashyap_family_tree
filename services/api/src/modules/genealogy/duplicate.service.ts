@@ -62,7 +62,12 @@ export class DuplicateService {
       matches.map(async (m) => {
         const person = await this.personRepo.findById(m.person_id);
         if (!person) return null;
-        const names = await this.personRepo.findNamesByPersonId(m.person_id);
+        const [names, branchRes] = await Promise.all([
+          this.personRepo.findNamesByPersonId(m.person_id),
+          person.branch_id
+            ? this.db.query('SELECT name_nepali FROM branches WHERE id = $1', [person.branch_id])
+            : Promise.resolve({ rows: [] }),
+        ]);
         const nameNe = names.find((n) => n.language === 'ne')?.full_name || names[0]?.full_name || 'अज्ञात';
         const nameEn = names.find((n) => n.language === 'en')?.full_name || names[0]?.full_name || 'Unknown';
 
@@ -73,8 +78,8 @@ export class DuplicateService {
           gender: person.gender,
           livingStatus: person.living_status,
           generation: person.generation,
-          branchId: person.branch_id || 'b-001',
-          branchName: 'कास्की शाखा',
+          branchId: person.branch_id || undefined,
+          branchName: branchRes.rows[0]?.name_nepali || undefined,
           birthYearBs: person.birth_year_bs,
           deathYearBs: person.death_year_bs,
           isClaimed: person.is_claimed,
@@ -336,7 +341,7 @@ export class DuplicateService {
    */
   async mergePersons(
     dto: MergePersonsDto,
-    actor: { id: string; roles: Role[]; branchId?: string; ipAddress?: string; userAgent?: string },
+    actor: { id: string; roles: Role[]; branchId?: string; branchIds?: string[]; ipAddress?: string; userAgent?: string },
   ): Promise<MergeResultDto> {
     const { survivingPersonId, mergedPersonId, fieldResolutions, justificationReason } = dto;
 
@@ -354,7 +359,7 @@ export class DuplicateService {
       });
     }
 
-    // Permission check: Super Admin or Branch Admin within branch scope
+    // Permission check: Super Admin or Branch Admin with authority over both records
     const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
 
     return this.db.transaction(async (client: PoolClient) => {
@@ -392,12 +397,19 @@ export class DuplicateService {
         });
       }
 
-      // Branch authorization check
+      // Dual-branch authorization check
       if (!isSuperAdmin) {
-        if (!actor.branchId || survivingRecord.branch_id !== actor.branchId || mergedRecord.branch_id !== actor.branchId) {
+        const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+        if (survivingRecord.branch_id && !actorBranches.includes(survivingRecord.branch_id)) {
           throw new ForbiddenException({
             errorCode: ErrorCode.FORBIDDEN,
-            message: 'Branch Administrators can only merge records within their assigned branch',
+            message: 'Branch Administrators can only merge records within their assigned branch scope',
+          });
+        }
+        if (mergedRecord.branch_id && !actorBranches.includes(mergedRecord.branch_id)) {
+          throw new ForbiddenException({
+            errorCode: ErrorCode.FORBIDDEN,
+            message: 'Branch Administrators can only merge records within their assigned branch scope',
           });
         }
       }
@@ -416,8 +428,25 @@ export class DuplicateService {
         });
       }
 
+      // Material conflict check: if both records have conflicting non-null fields and no resolution is provided
+      const materialConflictFields = [
+        'generation', 'gender', 'living_status', 'birth_year_bs', 'birth_place',
+        'death_year_bs', 'death_place', 'gotra', 'mool_ghar'
+      ];
+      for (const field of materialConflictFields) {
+        const valA = survivingRecord[field];
+        const valB = mergedRecord[field];
+        if (valA !== null && valA !== undefined && valB !== null && valB !== undefined && String(valA) !== String(valB)) {
+          if (!fieldResolutions || fieldResolutions[field] === undefined) {
+            throw new BadRequestException({
+              errorCode: ErrorCode.MERGE_CONFLICT_UNRESOLVED,
+              message: `Unresolved material field conflict on '${field}'. Explicit field resolution is required.`,
+            });
+          }
+        }
+      }
+
       // 4. Check Claim Invariants (DUP-FR-005 / DUP_5005)
-      // Both records cannot be claimed by two distinct active user accounts
       if (survivingRecord.is_claimed && mergedRecord.is_claimed) {
         if (survivingRecord.claimed_user_id && mergedRecord.claimed_user_id && survivingRecord.claimed_user_id !== mergedRecord.claimed_user_id) {
           throw new BadRequestException({
@@ -466,11 +495,13 @@ export class DuplicateService {
       // Update surviving record
       await this.personRepo.updatePerson(survivingPersonId, resolvedFields, undefined, survivingRecord.version, client);
 
+      // Transfer account linkage in user_accounts table
+      await client.query('UPDATE user_accounts SET person_id = $1 WHERE person_id = $2', [survivingPersonId, mergedPersonId]);
+
       // 7. Migrate relationships (parents, children, spouses)
       const linkMigration = await this.linkRepo.migrateLinksForMerge(mergedPersonId, survivingPersonId, client);
 
       // 8. Re-verify graph acyclicity
-      // Ensure that surviving person does not have a cycle with any of its parents
       const survivingParents = await this.linkRepo.getParentsByChildId(survivingPersonId, client);
       for (const sp of survivingParents) {
         const isCycle = await this.linkRepo.checkWouldCreateCycle(sp.parent_id, survivingPersonId, client);
@@ -482,21 +513,15 @@ export class DuplicateService {
         }
       }
 
-      // 9. Preserve merged person names as non-primary aliases on surviving person
+      // 9. Preserve merged person names as non-primary aliases on surviving person (migration 005)
       for (const name of namesB) {
         const existsExact = namesA.some((nA) => nA.language === name.language && nA.full_name === name.full_name);
         if (!existsExact) {
-          const hasNonPrimary = await client.query(
-            'SELECT id FROM person_names WHERE person_id = $1 AND language = $2 AND is_primary = FALSE',
-            [survivingPersonId, name.language],
+          await client.query(
+            `INSERT INTO person_names (person_id, language, first_name, middle_name, last_name, full_name, is_primary)
+             VALUES ($1, $2, $3, $4, $5, $6, FALSE)`,
+            [survivingPersonId, name.language, name.first_name, name.middle_name || null, name.last_name, name.full_name],
           );
-          if (hasNonPrimary.rows.length === 0) {
-            await client.query(
-              `INSERT INTO person_names (person_id, language, first_name, middle_name, last_name, full_name, is_primary)
-               VALUES ($1, $2, $3, $4, $5, $6, FALSE)`,
-              [survivingPersonId, name.language, name.first_name, name.middle_name || null, name.last_name, name.full_name],
-            );
-          }
         }
       }
 
@@ -557,7 +582,12 @@ export class DuplicateService {
   private async loadSummary(personId: string, viewer?: ViewerContext): Promise<PersonSummaryDto | null> {
     const person = await this.personRepo.findById(personId, true);
     if (!person) return null;
-    const names = await this.personRepo.findNamesByPersonId(personId);
+    const [names, branchRes] = await Promise.all([
+      this.personRepo.findNamesByPersonId(personId),
+      person.branch_id
+        ? this.db.query('SELECT name_nepali FROM branches WHERE id = $1', [person.branch_id])
+        : Promise.resolve({ rows: [] }),
+    ]);
     const nameNe = names.find((n) => n.language === 'ne')?.full_name || names[0]?.full_name || 'अज्ञात';
     const nameEn = names.find((n) => n.language === 'en')?.full_name || names[0]?.full_name || 'Unknown';
 
@@ -568,8 +598,8 @@ export class DuplicateService {
       gender: person.gender,
       livingStatus: person.living_status,
       generation: person.generation,
-      branchId: person.branch_id || 'b-001',
-      branchName: 'कास्की शाखा',
+      branchId: person.branch_id || undefined,
+      branchName: branchRes.rows[0]?.name_nepali || undefined,
       birthYearBs: person.birth_year_bs,
       deathYearBs: person.death_year_bs,
       isClaimed: person.is_claimed,
@@ -584,11 +614,14 @@ export class DuplicateService {
     const person = await this.personRepo.findById(personId, true);
     if (!person) return null;
 
-    const [names, parentLinks, childLinks, spouseLinks] = await Promise.all([
+    const [names, parentLinks, childLinks, spouseLinks, branchRes] = await Promise.all([
       this.personRepo.findNamesByPersonId(personId),
       this.linkRepo.getParentsByChildId(personId),
       this.linkRepo.getChildrenByParentId(personId),
       this.linkRepo.getSpousesByPersonId(personId),
+      person.branch_id
+        ? this.db.query('SELECT name_nepali FROM branches WHERE id = $1', [person.branch_id])
+        : Promise.resolve({ rows: [] }),
     ]);
 
     const nameNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name || names[0]?.full_name || 'अज्ञात';
@@ -629,8 +662,8 @@ export class DuplicateService {
       gender: person.gender,
       livingStatus: person.living_status,
       generation: person.generation,
-      branchId: person.branch_id || 'b-001',
-      branchName: 'कास्की शाखा',
+      branchId: person.branch_id || undefined,
+      branchName: branchRes.rows[0]?.name_nepali || undefined,
       birthYearBs: person.birth_year_bs,
       birthDateBs: person.birth_date_bs,
       birthDateAd: person.birth_date_ad,

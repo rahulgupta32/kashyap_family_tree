@@ -128,6 +128,7 @@ export interface CreatePersonDto {
 
 export interface AdminCreatePersonDto extends CreatePersonDto {
   justificationReason: string;
+  allowDuplicateOverride?: boolean;
 }
 
 export interface AdminUpdatePersonDto {

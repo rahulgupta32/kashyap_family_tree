@@ -385,7 +385,7 @@ export class PersonRepository {
         p.version,
         n.full_name as primary_name_nepali,
         COALESCE(en.full_name, n.full_name) as primary_name_english,
-        COALESCE(b.name_nepali, 'कास्की शाखा') as branch_name,
+        b.name_nepali as branch_name,
         ${searchScoreSql}
       FROM persons p
       JOIN person_names n ON p.id = n.person_id AND n.language = 'ne' AND n.is_primary = TRUE
@@ -405,8 +405,8 @@ export class PersonRepository {
       gender: r.gender,
       livingStatus: r.living_status,
       generation: r.generation,
-      branchId: r.branch_id || 'b-001',
-      branchName: r.branch_name,
+      branchId: r.branch_id || undefined,
+      branchName: r.branch_name || undefined,
       birthYearBs: r.birth_year_bs ? Number(r.birth_year_bs) : undefined,
       deathYearBs: r.death_year_bs ? Number(r.death_year_bs) : undefined,
       moolGhar: r.mool_ghar,
