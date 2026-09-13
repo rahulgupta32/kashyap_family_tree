@@ -130,17 +130,71 @@ export class BranchGuard implements CanActivate {
       });
     }
 
+    // Check embedded parent links during creation (GEN-002)
+    if (Array.isArray(request.body?.parentPersonIds)) {
+      for (const p of request.body.parentPersonIds) {
+        const pId = p.personId || p;
+        if (pId && typeof pId === 'string') {
+          const parentPerson = await this.personRepo.findById(pId);
+          if (!parentPerson) {
+            throw new NotFoundException({
+              errorCode: ErrorCode.PERSON_NOT_FOUND,
+              message: `Parent person with id ${pId} not found.`,
+            });
+          }
+          if (parentPerson.branch_id && !this.checkBranchAuthority(user, parentPerson.branch_id)) {
+            throw new ForbiddenException({
+              errorCode: ErrorCode.BRANCH_MISMATCH,
+              message: `Cross-branch relationship mismatch: Caller lacks administrative authority for parent branch ${parentPerson.branch_id} (GEN-002).`,
+              messageNepali: 'अन्तर-शाखा सम्बन्ध बेमेल: तपाईंसँग अभिभावकको शाखाको लागि प्रशासनिक अधिकार छैन।',
+            });
+          }
+        }
+      }
+    }
+
+    // Check embedded spouse links during creation (GEN-002)
+    if (Array.isArray(request.body?.spousePersonIds)) {
+      for (const s of request.body.spousePersonIds) {
+        const sId = s.personId || s.spouseId || s;
+        if (sId && typeof sId === 'string') {
+          const spousePerson = await this.personRepo.findById(sId);
+          if (!spousePerson) {
+            throw new NotFoundException({
+              errorCode: ErrorCode.PERSON_NOT_FOUND,
+              message: `Spouse person with id ${sId} not found.`,
+            });
+          }
+          if (spousePerson.branch_id && !this.checkBranchAuthority(user, spousePerson.branch_id)) {
+            throw new ForbiddenException({
+              errorCode: ErrorCode.BRANCH_MISMATCH,
+              message: `Cross-branch relationship mismatch: Caller lacks administrative authority for spouse branch ${spousePerson.branch_id} (GEN-002).`,
+              messageNepali: 'अन्तर-शाखा सम्बन्ध बेमेल: तपाईंसँग जीवनसाथीको शाखाको लागि प्रशासनिक अधिकार छैन।',
+            });
+          }
+        }
+      }
+    }
+
     return true;
   }
 
   private checkBranchAuthority(user: any, branchId: string): boolean {
     if (user.roles?.includes(Role.SUPER_ADMIN) || user.roles?.includes(Role.CENTRAL_ADMIN)) return true;
-    if (user.branchIds && user.branchIds.includes(branchId)) return true;
     const roleAssignments = user.roleAssignments || [];
-    return roleAssignments.some(
-      (ra: { role: Role; branchId: string | null }) =>
-        ra.branchId === branchId &&
-        (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER),
-    );
+    if (roleAssignments.length > 0) {
+      return roleAssignments.some(
+        (ra: { role: Role; branchId: string | null }) =>
+          ra.branchId === branchId &&
+          (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER),
+      );
+    }
+    if (
+      (user.roles?.includes(Role.BRANCH_ADMIN) || user.roles?.includes(Role.BRANCH_VERIFIER)) &&
+      user.branchIds?.includes(branchId)
+    ) {
+      return true;
+    }
+    return false;
   }
 }

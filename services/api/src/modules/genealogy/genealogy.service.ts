@@ -469,12 +469,12 @@ export class GenealogyService {
   }
 
   async createPerson(dto: CreatePersonDto | AdminCreatePersonDto, actor?: ActorContext): Promise<PersonDetailDto> {
-    // 1. Mandatory Justification Validation (non-empty, non-boilerplate)
+    // 1. Mandatory Justification Validation (minimum 10 characters, non-boilerplate)
     const justification = (dto as AdminCreatePersonDto).justificationReason?.trim();
-    if (!justification || justification.length < 5 || /^(test|none|n\/a|asdf|created)$/i.test(justification)) {
+    if (!justification || justification.length < 10 || /^(test|none|n\/a|asdf|created|person created|admin create)$/i.test(justification)) {
       throw new BadRequestException({
         errorCode: ErrorCode.JUSTIFICATION_REQUIRED,
-        message: 'A meaningful administrative justification reason is mandatory (minimum 5 characters, non-boilerplate)',
+        message: 'A meaningful administrative justification reason is mandatory (minimum 10 characters, non-boilerplate)',
       });
     }
 
@@ -498,29 +498,67 @@ export class GenealogyService {
         });
       }
 
-      // 2. Pre-creation Duplicate Candidate Evaluation (DUP-FR-001)
-      const primaryName = dto.names?.find((n) => n.isPrimary) || dto.names?.[0];
-      if (primaryName && primaryName.fullName.trim() && this.duplicateService) {
-        const matches = await this.duplicateService.evaluateProposedPerson(
-          {
-            names: dto.names,
-            branchId: dto.branchId,
-            birthYearBs: dto.birthYearBs,
-          },
-          actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : undefined,
-        );
-
-        const strongMatches = matches.filter((m) => m.score >= 0.70);
-        if (strongMatches.length > 0 && !(dto as AdminCreatePersonDto).allowDuplicateOverride) {
-          throw new BadRequestException({
-            errorCode: ErrorCode.DUPLICATE_CANDIDATE_DETECTED,
-            message: 'Potential duplicate candidate detected. Please review candidates or supply explicit override justification.',
-            details: { candidateMatches: strongMatches },
-          });
-        }
-      }
-
       const createdId = await this.db!.transaction(async (client: PoolClient) => {
+        // 1. Acquire transaction graph lock to ensure deterministic serialization & concurrency safety
+        await this.linkRepo!.acquireGraphMutationLock(client);
+
+        // 2. Validate dual-branch authority on embedded links before mutation
+        if (dto.parentPersonIds && dto.parentPersonIds.length > 0) {
+          for (const p of dto.parentPersonIds) {
+            const parent = await this.personRepo!.findById(p.personId, false, client);
+            if (!parent) {
+              throw new NotFoundException({
+                errorCode: ErrorCode.PERSON_NOT_FOUND,
+                message: `Parent person record with ID ${p.personId} not found`,
+              });
+            }
+            if (actor) {
+              this.checkDualBranchAuthority(actor, dto.branchId, parent.branch_id);
+            }
+          }
+        }
+
+        if (dto.spousePersonIds && dto.spousePersonIds.length > 0) {
+          for (const s of dto.spousePersonIds) {
+            const spouse = await this.personRepo!.findById(s.personId, false, client);
+            if (!spouse) {
+              throw new NotFoundException({
+                errorCode: ErrorCode.PERSON_NOT_FOUND,
+                message: `Spouse person record with ID ${s.personId} not found`,
+              });
+            }
+            if (actor) {
+              this.checkDualBranchAuthority(actor, dto.branchId, spouse.branch_id);
+            }
+          }
+        }
+
+        // 3. Concurrency-safe authoritative duplicate candidate evaluation inside transaction
+        let matchedCandidates: any[] = [];
+        const primaryName = dto.names?.find((n) => n.isPrimary) || dto.names?.[0];
+        if (primaryName && primaryName.fullName.trim() && this.duplicateService) {
+          const matches = await this.duplicateService.evaluateProposedPerson(
+            {
+              names: dto.names,
+              branchId: dto.branchId,
+              birthYearBs: dto.birthYearBs,
+            },
+            actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : undefined,
+          );
+
+          const strongMatches = matches.filter((m) => m.score >= 0.70);
+          if (strongMatches.length > 0) {
+            if (!(dto as AdminCreatePersonDto).allowDuplicateOverride) {
+              throw new BadRequestException({
+                errorCode: ErrorCode.DUPLICATE_CANDIDATE_DETECTED,
+                message: 'Potential duplicate candidate detected. Please review candidates or supply explicit override justification.',
+                details: { candidateMatches: strongMatches },
+              });
+            }
+            matchedCandidates = strongMatches;
+          }
+        }
+
         const created = await this.personRepo!.createPerson(
           {
             branch_id: dto.branchId,
@@ -561,7 +599,6 @@ export class GenealogyService {
         // Add parent links if provided
         if (dto.parentPersonIds && dto.parentPersonIds.length > 0) {
           for (const p of dto.parentPersonIds) {
-            await this.linkRepo!.acquireGraphMutationLock(client);
             const wouldCycle = await this.linkRepo!.checkWouldCreateCycle(p.personId, created.id, client);
             if (wouldCycle) {
               throw new BadRequestException({
@@ -576,7 +613,6 @@ export class GenealogyService {
         // Add spouse links if provided
         if (dto.spousePersonIds && dto.spousePersonIds.length > 0) {
           for (const s of dto.spousePersonIds) {
-            await this.linkRepo!.acquireGraphMutationLock(client);
             await this.linkRepo!.addSpouseLink(created.id, s.personId, s.status, s.marriageDateBs, client);
           }
         }
@@ -599,6 +635,8 @@ export class GenealogyService {
                 branchId: dto.branchId,
                 generation: dto.generation,
                 justificationReason: justification,
+                duplicateOverride: (dto as AdminCreatePersonDto).allowDuplicateOverride ? true : false,
+                matchedCandidates: matchedCandidates.length > 0 ? matchedCandidates : undefined,
               },
             },
             client,
@@ -667,10 +705,17 @@ export class GenealogyService {
   }
 
   async updatePerson(id: string, dto: AdminUpdatePersonDto, actor: ActorContext): Promise<PersonDetailDto> {
-    if (!dto.justificationReason || !dto.justificationReason.trim()) {
+    if (dto.version === undefined || dto.version === null || typeof dto.version !== 'number') {
+      throw new BadRequestException({
+        errorCode: ErrorCode.STALE_UPDATE_DETECTED,
+        message: 'Record version is required for optimistic concurrency control (GEN-FR-016)',
+      });
+    }
+
+    if (!dto.justificationReason || dto.justificationReason.trim().length < 10 || /^(test|none|n\/a|asdf|updated|admin update)$/i.test(dto.justificationReason.trim())) {
       throw new BadRequestException({
         errorCode: ErrorCode.JUSTIFICATION_REQUIRED,
-        message: 'A detailed justification reason is mandatory for administrative person updates (GEN-FR-016)',
+        message: 'A detailed justification reason is mandatory for administrative person updates (minimum 10 characters, non-boilerplate)',
       });
     }
 
@@ -1020,15 +1065,16 @@ export class GenealogyService {
     const descDepth = query.descendantGenerations !== undefined ? query.descendantGenerations : 2;
     const ascDepth = query.ancestorGenerations !== undefined ? query.ancestorGenerations : 2;
 
-    if (descDepth > 25 || ascDepth > 25) {
+    if (descDepth < 0 || descDepth > 10 || ascDepth < 0 || ascDepth > 10) {
       throw new BadRequestException({
         errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
-        message: 'Requested tree depth exceeds safe rendering limits',
+        message: 'Requested tree depth exceeds safe rendering limits (0 to 10 generations)',
       });
     }
 
     if (this.isDatabaseAvailable) {
-      const root = await this.personRepo!.findById(query.rootPersonId);
+      const canonicalRes = await this.personRepo!.resolveCanonicalPerson(query.rootPersonId);
+      const root = canonicalRes.person;
       if (!root) {
         throw new NotFoundException({
           errorCode: ErrorCode.PERSON_NOT_FOUND,
@@ -1036,7 +1082,7 @@ export class GenealogyService {
         });
       }
 
-      const rawTree = await this.buildSubtreeFromDb(query.rootPersonId, descDepth);
+      const rawTree = await this.buildSubtreeFromDb(root.id, descDepth, ascDepth);
       if (this.privacyEngine) {
         return this.privacyEngine.filterTreeNode(rawTree, viewer);
       }
@@ -1052,10 +1098,23 @@ export class GenealogyService {
       });
     }
 
-    return this.buildSubtree(query.rootPersonId, descDepth);
+    return this.buildSubtree(query.rootPersonId, descDepth, ascDepth);
   }
 
-  private async buildSubtreeFromDb(personId: string, depthRemaining: number): Promise<TreeNodeDto> {
+  private async buildSubtreeFromDb(
+    personId: string,
+    descDepthRemaining: number,
+    ascDepthRemaining: number = 0,
+    visited: Set<string> = new Set(),
+  ): Promise<TreeNodeDto> {
+    if (visited.size >= 500) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
+        message: 'Tree node budget exceeded (maximum 500 nodes per query)',
+      });
+    }
+    visited.add(personId);
+
     const p = await this.personRepo!.findById(personId);
     if (!p) throw new NotFoundException(`Person ${personId} not found`);
 
@@ -1070,15 +1129,27 @@ export class GenealogyService {
     const nameEn = names.find((n) => n.language === 'en')?.full_name || 'Unknown';
 
     const childNodes: TreeNodeDto[] = [];
-    if (depthRemaining > 0) {
+    if (descDepthRemaining > 0) {
       for (const cl of childLinks) {
-        const childNode = await this.buildSubtreeFromDb(cl.child_id, depthRemaining - 1);
-        childNodes.push(childNode);
+        if (!visited.has(cl.child_id)) {
+          const childNode = await this.buildSubtreeFromDb(cl.child_id, descDepthRemaining - 1, 0, visited);
+          childNodes.push(childNode);
+        }
+      }
+    }
+
+    const ancestorNodes: TreeNodeDto[] = [];
+    if (ascDepthRemaining > 0) {
+      for (const pl of parentLinks) {
+        if (!visited.has(pl.parent_id)) {
+          const ancestorNode = await this.buildSubtreeFromDb(pl.parent_id, 0, ascDepthRemaining - 1, visited);
+          ancestorNodes.push(ancestorNode);
+        }
       }
     }
 
     const spouseNodes: TreeNodeDto[] = [];
-    if (depthRemaining > 0) {
+    if (descDepthRemaining > 0 || ascDepthRemaining > 0) {
       for (const sl of spouseLinks) {
         const sp = await this.personRepo!.findById(sl.spouse_id);
         if (sp) {
@@ -1093,6 +1164,7 @@ export class GenealogyService {
             isClaimed: sp.is_claimed,
             spouses: [],
             children: [],
+            ancestors: [],
             hasMoreAncestors: false,
             hasMoreDescendants: false,
           });
@@ -1111,14 +1183,16 @@ export class GenealogyService {
       avatarUrl: undefined,
       spouses: spouseNodes,
       children: childNodes,
-      hasMoreAncestors: parentLinks.length > 0,
-      hasMoreDescendants: childLinks.length > 0 && depthRemaining === 0,
+      ancestors: ancestorNodes,
+      hasMoreAncestors: parentLinks.length > 0 && ascDepthRemaining === 0,
+      hasMoreDescendants: childLinks.length > 0 && descDepthRemaining === 0,
     };
   }
 
-  private buildSubtree(personId: string, depthRemaining: number): TreeNodeDto {
+  private buildSubtree(personId: string, descDepthRemaining: number, ascDepthRemaining: number = 0): TreeNodeDto {
     const p = this.persons.get(personId);
     const childIds = Array.from(this.parentLinks.get(personId) || []);
+    const parentIds = Array.from(this.childLinks.get(personId) || []);
 
     return {
       id: p.id,
@@ -1130,9 +1204,10 @@ export class GenealogyService {
       isClaimed: p.isClaimed,
       avatarUrl: p.avatarUrl,
       spouses: [],
-      children: depthRemaining > 0 ? childIds.map((cId) => this.buildSubtree(cId, depthRemaining - 1)) : [],
-      hasMoreAncestors: (this.childLinks.get(personId)?.size || 0) > 0,
-      hasMoreDescendants: childIds.length > 0 && depthRemaining === 0,
+      children: descDepthRemaining > 0 ? childIds.map((cId) => this.buildSubtree(cId, descDepthRemaining - 1, 0)) : [],
+      ancestors: ascDepthRemaining > 0 ? parentIds.map((pId) => this.buildSubtree(pId, 0, ascDepthRemaining - 1)) : [],
+      hasMoreAncestors: parentIds.length > 0 && ascDepthRemaining === 0,
+      hasMoreDescendants: childIds.length > 0 && descDepthRemaining === 0,
     };
   }
 
@@ -1250,13 +1325,13 @@ export class GenealogyService {
 
     if (personIds.length > 0) {
       const pLinksRes = await this.db!.query(
-        'SELECT parent_id, child_id, parent_type FROM parent_links WHERE parent_id = ANY($1) OR child_id = ANY($1)',
+        'SELECT parent_id, child_id, parent_type FROM parent_links WHERE parent_id = ANY($1) AND child_id = ANY($1)',
         [personIds],
       );
       parentLinks = pLinksRes.rows;
 
       const sLinksRes = await this.db!.query(
-        'SELECT person_id, spouse_id, status, marriage_date_bs FROM spouse_links WHERE person_id = ANY($1)',
+        'SELECT person_id, spouse_id, status, marriage_date_bs FROM spouse_links WHERE person_id = ANY($1) AND spouse_id = ANY($1)',
         [personIds],
       );
       spouseLinks = sLinksRes.rows;

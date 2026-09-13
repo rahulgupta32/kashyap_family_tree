@@ -3,10 +3,9 @@
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
 **Current Phase**: Milestone 3 (Persistent Genealogy Core, Person Search, Interactive Tree Navigation, Governed Duplicate Management, and Mobile Client Architecture) - COMPLETED & FULLY VERIFIED  
-**Last Updated**: 2026-09-12T07:15:00+05:45  
+**Last Updated**: 2026-09-13T10:45:00+05:45  
 **Active Branch**: `feat/m3-genealogy-core`  
 **Base Branch**: `develop`  
-**Verified M3 Baseline Commit**: `deaa71c938866a6bc91e3754927c0431cc6cf1fe`  
 **Verified M2 Merge PR**: #2  
 
 ---
@@ -17,7 +16,7 @@
 |-----------|--------|-------|
 | **Foundation Readiness** | ✅ **PASSED (M1)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD with PostgreSQL 16 & Redis 7 containers, and NestJS/Next.js builds verified. |
 | **Persistence Readiness** | ✅ **PASSED (M1, M2 & M3)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Real Redis 7 persistence on D: (`/mnt/kashyap_pg/redis`). Automatic in-memory fallbacks strictly rejected outside tests. Durable `audit_outbox` table and database-enforced unique constraint (`003_audit_outbox_unique_event.sql`). Genealogy indexes, optimistic locking versioning, and duplicate candidate queue in `004_genealogy_m3_enhancements.sql`. Unlimited non-primary alias support in `005_person_names_alias_constraint.sql`. |
-| **Test Completeness** | ✅ **PASSED (M3)** | 78 unit tests across 12 suites (100% PASS), 78 real PostgreSQL/Redis integration tests across 7 suites including real Nest AppModule HTTP tests (100% PASS), and Playwright end-to-end browser test cases (100% PASS). |
+| **Test Completeness** | ✅ **PASSED (M3)** | 78 unit tests across 12 suites (100% PASS), 82 real PostgreSQL/Redis integration tests across 7 suites including real Nest AppModule HTTP tests (100% PASS), and Playwright end-to-end browser test cases (100% PASS). Total: 160 automated backend tests passed. |
 | **Security Readiness** | ✅ **HARDENED** | PostgreSQL transaction advisory graph lock (`pg_advisory_xact_lock`), rule-based privacy engine with dynamic Bikram Sambat age calculation and strict minor (< 18 / uncertain age) masking, optimistic locking versioning (`STALE_UPDATE_DETECTED`), claim conflict protection on merge (`CANNOT_MERGE_CLAIMED_PERSONS`), mandatory justification reason validation, strongly typed DI with atomic audit outbox persistence, and server-authoritative dual-branch resolution. |
 | **Operational Readiness** | ✅ **D: STORAGE VERIFIED** | PostgreSQL (`ensure-kashyap-pg.sh`) and Redis (`ensure-kashyap-redis.sh`) verified on D: drive ext4 mount. Unrelated WSL workloads (`vidyarthi`, `mala_chem`) strictly preserved. |
 | **UAT Readiness** | ⬜ **NOT STARTED** | Scheduled for Phase G6. |

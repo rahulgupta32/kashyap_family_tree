@@ -182,14 +182,14 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
     expect(afterCount).toBe(initialCount);
   });
 
-  it('should refuse pg-mem in production mode', () => {
+  it('should refuse pg-mem in production mode', async () => {
     const origEnv = process.env.NODE_ENV;
     const origMem = process.env.USE_PG_MEM;
     try {
       process.env.NODE_ENV = 'production';
       process.env.USE_PG_MEM = 'true';
       const svc = new DatabaseService();
-      expect(svc.onModuleInit()).rejects.toThrow(/USE_PG_MEM is strictly prohibited in production mode/);
+      await expect(svc.onModuleInit()).rejects.toThrow(/USE_PG_MEM is strictly prohibited in production mode/);
     } finally {
       process.env.NODE_ENV = origEnv;
       if (origMem) process.env.USE_PG_MEM = origMem;
@@ -197,7 +197,7 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
     }
   });
 
-  it('should reject missing production database configuration', () => {
+  it('should reject missing production database configuration', async () => {
     const origEnv = process.env.NODE_ENV;
     const origUrl = process.env.DATABASE_URL;
     const origHost = process.env.DB_HOST;
@@ -206,7 +206,7 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
       delete process.env.DATABASE_URL;
       delete process.env.DB_HOST;
       const svc = new DatabaseService();
-      expect(svc.onModuleInit()).rejects.toThrow(/Missing required production database configuration/);
+      await expect(svc.onModuleInit()).rejects.toThrow(/Missing required production database configuration/);
     } finally {
       process.env.NODE_ENV = origEnv;
       if (origUrl) process.env.DATABASE_URL = origUrl;

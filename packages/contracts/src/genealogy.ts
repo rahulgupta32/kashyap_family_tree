@@ -86,6 +86,7 @@ export interface TreeNodeDto {
   avatarUrl?: string;
   spouses: TreeNodeDto[];
   children: TreeNodeDto[];
+  ancestors?: TreeNodeDto[];
   hasMoreAncestors: boolean;
   hasMoreDescendants: boolean;
 }

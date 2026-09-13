@@ -9,8 +9,9 @@ import { GenealogyLinkRepository } from '../src/database/repositories/genealogy-
 import { BranchRepository } from '../src/database/repositories/branch.repository';
 import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
+import { DuplicateRepository } from '../src/database/repositories/duplicate.repository';
 import { JwtService } from '@nestjs/jwt';
-import { Role, Gender, LivingStatus, PrivacyVisibility, ParentType, ErrorCode } from '@kashyap/contracts';
+import { Role, Gender, LivingStatus, PrivacyVisibility, ParentType, ErrorCode, DuplicateCandidateStatus } from '@kashyap/contracts';
 import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../src/modules/auth/auth.constants';
 
 describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / PostgreSQL)', () => {
@@ -22,6 +23,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   let branchRepo: BranchRepository;
   let userRepo: UserRepository;
   let sessionRepo: SessionRepository;
+  let duplicateRepo: DuplicateRepository;
   let jwtService: JwtService;
 
   let superAdminToken: string;
@@ -57,6 +59,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     branchRepo = moduleFixture.get<BranchRepository>(BranchRepository);
     userRepo = moduleFixture.get<UserRepository>(UserRepository);
     sessionRepo = moduleFixture.get<SessionRepository>(SessionRepository);
+    duplicateRepo = moduleFixture.get<DuplicateRepository>(DuplicateRepository);
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
     // Discover or seed test branches
@@ -79,9 +82,14 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       branch2Id = b2.rows[0].id;
     }
 
+    // Isolated test phone numbers (avoiding collision with bootstrap users)
+    const saPhone = '+9779849999001';
+    const ba1Phone = '+9779849999002';
+    const ba2Phone = '+9779849999003';
+
     // 1. Super Admin User & Session
-    const saPhone = '+9779800000001';
     const saUser = await userRepo.findOrCreateByPhone(saPhone);
+    await db.query('DELETE FROM user_roles WHERE user_id = $1', [saUser.id]);
     await userRepo.assignRole(saUser.id, Role.SUPER_ADMIN);
     const saSession = await sessionRepo.createSession({
       userId: saUser.id,
@@ -108,9 +116,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       },
     );
 
-    // 2. Branch Admin 1 User & Session (assigned to branch1Id)
-    const ba1Phone = '+9779800000002';
+    // 2. Branch Admin 1 User & Session (assigned EXCLUSIVELY to branch1Id)
     const ba1User = await userRepo.findOrCreateByPhone(ba1Phone);
+    await db.query('DELETE FROM user_roles WHERE user_id = $1', [ba1User.id]);
     await userRepo.assignRole(ba1User.id, Role.BRANCH_ADMIN, branch1Id);
     const ba1Session = await sessionRepo.createSession({
       userId: ba1User.id,
@@ -137,9 +145,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       },
     );
 
-    // 3. Branch Admin 2 User & Session (assigned to branch2Id)
-    const ba2Phone = '+9779800000003';
+    // 3. Branch Admin 2 User & Session (assigned EXCLUSIVELY to branch2Id)
     const ba2User = await userRepo.findOrCreateByPhone(ba2Phone);
+    await db.query('DELETE FROM user_roles WHERE user_id = $1', [ba2User.id]);
     await userRepo.assignRole(ba2User.id, Role.BRANCH_ADMIN, branch2Id);
     const ba2Session = await sessionRepo.createSession({
       userId: ba2User.id,
@@ -165,6 +173,23 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         algorithm: JWT_ALGORITHM,
       },
     );
+
+    // Assert exact DB role assignments for test identities
+    const [ba1DbRoles, ba2DbRoles] = await Promise.all([
+      db.query('SELECT role, branch_id FROM user_roles WHERE user_id = $1', [ba1User.id]),
+      db.query('SELECT role, branch_id FROM user_roles WHERE user_id = $1', [ba2User.id]),
+    ]);
+    expect(ba1DbRoles.rows).toHaveLength(1);
+    expect(ba1DbRoles.rows[0].branch_id).toBe(branch1Id);
+    expect(ba2DbRoles.rows).toHaveLength(1);
+    expect(ba2DbRoles.rows[0].branch_id).toBe(branch2Id);
+
+    // Clean up any test persons from previous runs
+    await db.query("DELETE FROM duplicate_candidates WHERE person_a_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR person_b_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
+    await db.query("DELETE FROM parent_links WHERE parent_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR child_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
+    await db.query("DELETE FROM spouse_links WHERE person_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR spouse_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
+    await db.query("DELETE FROM person_names WHERE person_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
+    await db.query("DELETE FROM persons WHERE branch_id = ANY($1) AND generation >= 5", [[branch1Id, branch2Id]]);
   }, 45000);
 
   afterAll(async () => {
@@ -175,10 +200,11 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
   describe('1. Person Creation with Duplicate Prevention & Atomic Audit Outbox', () => {
     let createdPersonId: string;
-    let uniqueLastName = 'कश्यप_' + Date.now();
+    const testSeed = Math.floor(Math.random() * 900000 + 100000).toString();
+    const uniqueFirstName = 'उज्ज्वल' + testSeed;
+    const uniqueLastName = 'पोखरेल' + testSeed;
 
     it('should successfully create a new person and atomically persist audit_outbox entry', async () => {
-      uniqueLastName = 'कश्यप_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
       const res = await request(app.getHttpServer())
         .post('/genealogy/people')
         .set('Authorization', `Bearer ${superAdminToken}`)
@@ -189,20 +215,19 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           livingStatus: LivingStatus.LIVING,
           birthYearBs: 2040,
           names: [
-            { language: 'ne', firstName: 'राम', lastName: uniqueLastName, fullName: `राम ${uniqueLastName}`, isPrimary: true },
-            { language: 'en', firstName: 'Ram', lastName: 'Kashyap', fullName: 'Ram Kashyap', isPrimary: false },
+            { language: 'ne', firstName: uniqueFirstName, lastName: uniqueLastName, fullName: `${uniqueFirstName} ${uniqueLastName}`, isPrimary: true },
+            { language: 'en', firstName: 'Ujjwal' + testSeed, lastName: 'Pokharel' + testSeed, fullName: `Ujjwal Pokharel ${testSeed}`, isPrimary: false },
           ],
           justificationReason: 'Initial family lineage registration by Super Admin',
-        })
-        .expect(201);
+        });
 
       if (res.status !== 201) {
-        console.error('Create person failure body:', res.body);
+        console.error('TEST 1 FAILED STATUS:', res.status, 'BODY:', JSON.stringify(res.body));
       }
       expect(res.status).toBe(201);
 
       expect(res.body.id).toBeDefined();
-      expect(res.body.primaryNameNepali).toBe(`राम ${uniqueLastName}`);
+      expect(res.body.primaryNameNepali).toBe(`${uniqueFirstName} ${uniqueLastName}`);
       createdPersonId = res.body.id;
 
       // Assert durable audit outbox record exists for this entity
@@ -229,14 +254,51 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           livingStatus: LivingStatus.LIVING,
           birthYearBs: 2040,
           names: [
-            { language: 'ne', firstName: 'राम', lastName: uniqueLastName, fullName: `राम ${uniqueLastName}`, isPrimary: true },
+            { language: 'ne', firstName: uniqueFirstName, lastName: uniqueLastName, fullName: `${uniqueFirstName} ${uniqueLastName}`, isPrimary: true },
           ],
           justificationReason: 'Attempting duplicate creation without override',
-        });
+        })
+        .expect(400);
 
-      if (res.status === 400) {
-        expect(res.body.errorCode).toBe(ErrorCode.DUPLICATE_CANDIDATE_DETECTED);
-      }
+      expect(res.body.errorCode).toBe(ErrorCode.DUPLICATE_CANDIDATE_DETECTED);
+
+      // Verify no duplicate person record was inserted in database
+      const dbCheck = await db.query(
+        "SELECT p.* FROM persons p JOIN person_names n ON p.id = n.person_id WHERE n.full_name = $1",
+        [`${uniqueFirstName} ${uniqueLastName}`],
+      );
+      expect(dbCheck.rows.length).toBe(1);
+    });
+
+    it('should allow duplicate creation when allowDuplicateOverride is true and record override in audit outbox', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/genealogy/people')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          branchId: branch1Id,
+          generation: 5,
+          gender: Gender.MALE,
+          livingStatus: LivingStatus.LIVING,
+          birthYearBs: 2040,
+          names: [
+            { language: 'ne', firstName: uniqueFirstName, lastName: uniqueLastName, fullName: `${uniqueFirstName} ${uniqueLastName}`, isPrimary: true },
+          ],
+          allowDuplicateOverride: true,
+          justificationReason: 'Confirmed homonymous person with verified distinct identity and parents',
+        })
+        .expect(201);
+
+      expect(res.body.id).toBeDefined();
+      const overridePersonId = res.body.id;
+
+      // Verify audit outbox captured duplicate override decision
+      const outboxRes = await db.query(
+        "SELECT * FROM audit_outbox WHERE entity_id = $1 AND action = 'GENEALOGY_CREATE_PERSON'",
+        [overridePersonId],
+      );
+      expect(outboxRes.rows.length).toBeGreaterThanOrEqual(1);
+      const newVal = typeof outboxRes.rows[0].new_value === 'string' ? JSON.parse(outboxRes.rows[0].new_value) : outboxRes.rows[0].new_value;
+      expect(newVal.duplicateOverride).toBe(true);
     });
 
     it('should reject person creation if justification is missing or boilerplate', async () => {
@@ -310,8 +372,21 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
           occupation: 'इन्जिनियर',
-          version: initialVersion, // Old version
+          version: initialVersion, // Stale version
           justificationReason: 'Attempting update with stale version',
+        })
+        .expect(400);
+
+      expect(res.body.errorCode).toBe(ErrorCode.STALE_UPDATE_DETECTED);
+    });
+
+    it('should reject update if version is missing', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/genealogy/people/${testPersonId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          occupation: 'इन्जिनियर',
+          justificationReason: 'Attempting update without version',
         })
         .expect(400);
 
@@ -385,11 +460,35 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
       expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
     });
+
+    it('should enforce dual-branch authority when creating person with embedded cross-branch parent link', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/genealogy/people')
+        .set('Authorization', `Bearer ${branchAdminToken}`)
+        .send({
+          branchId: branch1Id,
+          generation: 3,
+          gender: Gender.FEMALE,
+          livingStatus: LivingStatus.LIVING,
+          names: [
+            { language: 'ne', firstName: 'कल्पना', lastName: 'अधिकारी', fullName: 'कल्पना अधिकारी', isPrimary: true },
+          ],
+          parentPersonIds: [
+            { personId: crossBranchPersonId, parentType: ParentType.BIOLOGICAL },
+          ],
+          justificationReason: 'Attempting cross-branch parent attachment during creation',
+        })
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
   });
 
   describe('4. Governed Duplicate Merge, Alias Preservation & Conflict Validation', () => {
     let personXId: string;
     let personYId: string;
+    let versionX: number;
+    let versionY: number;
 
     beforeEach(async () => {
       const pX = await personRepo.createPerson(
@@ -426,6 +525,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
       personXId = pX.id;
       personYId = pY.id;
+      versionX = pX.version;
+      versionY = pY.version;
     });
 
     it('should reject merge if material conflict exists without explicit field resolution', async () => {
@@ -436,12 +537,21 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         .send({
           survivingPersonId: personXId,
           mergedPersonId: personYId,
+          survivingPersonVersion: versionX,
+          mergedPersonVersion: versionY,
           justificationReason: 'Merging duplicate records without resolving conflicting mool_ghar',
-        });
+        })
+        .expect(400);
 
-      if (res.status === 400) {
-        expect(res.body.errorCode).toBe(ErrorCode.MERGE_CONFLICT_UNRESOLVED);
-      }
+      expect(res.body.errorCode).toBe(ErrorCode.MERGE_CONFLICT_UNRESOLVED);
+
+      // Verify DB records remain active and unarchived
+      const [checkX, checkY] = await Promise.all([
+        personRepo.findById(personXId),
+        personRepo.findById(personYId),
+      ]);
+      expect(checkX?.is_archived).toBe(false);
+      expect(checkY?.is_archived).toBe(false);
     });
 
     it('should successfully merge records, preserve alias (migration 005), and record audit outbox', async () => {
@@ -451,6 +561,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         .send({
           survivingPersonId: personXId,
           mergedPersonId: personYId,
+          survivingPersonVersion: versionX,
+          mergedPersonVersion: versionY,
           fieldResolutions: {
             mool_ghar: 'पोखरा - बाटुलेचौर',
           },
@@ -479,7 +591,66 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     });
   });
 
-  describe('5. ATOMIC ROLLBACK ON INJECTED AUDIT FAILURE', () => {
+  describe('5. Duplicate Candidate Resolution & Dual-Branch Governance', () => {
+    let candidateId: string;
+    let candPersonA: string;
+    let candPersonB: string;
+
+    beforeAll(async () => {
+      const [pA, pB] = await Promise.all([
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 2, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'कमल', last_name: 'अधिकारी', full_name: 'कमल अधिकारी', is_primary: true }],
+        ),
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 2, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'कमल', last_name: 'अधिकारी', full_name: 'कमल अधिकारी', is_primary: true }],
+        ),
+      ]);
+      candPersonA = pA.id;
+      candPersonB = pB.id;
+
+      const cand = await duplicateRepo.createOrUpdateCandidate(
+        candPersonA,
+        candPersonB,
+        0.85,
+        {
+          nameSimilarity: 0.85,
+          matchingNames: ['कमल अधिकारी'],
+          sameBranch: true,
+          sharedParentsCount: 0,
+          reasons: ['Identical names'],
+        },
+      );
+      candidateId = cand.id;
+    });
+
+    it('should resolve duplicate candidate to NOT_A_DUPLICATE and record audit outbox', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/genealogy/duplicates/candidates/${candidateId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          status: DuplicateCandidateStatus.NOT_A_DUPLICATE,
+          notes: 'Distinct individuals verified through maternal lineage documents',
+        });
+
+      if (res.status !== 200) {
+        console.error('TEST 5 FAILED STATUS:', res.status, 'BODY:', JSON.stringify(res.body), 'candidateId:', candidateId);
+      }
+      expect(res.status).toBe(200);
+
+      expect(res.body.status).toBe(DuplicateCandidateStatus.NOT_A_DUPLICATE);
+
+      // Verify audit outbox entry
+      const outboxRes = await db.query(
+        "SELECT * FROM audit_outbox WHERE entity_id = $1 AND action = 'GENEALOGY_RESOLVE_DUPLICATE_CANDIDATE'",
+        [candidateId],
+      );
+      expect(outboxRes.rows.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('6. ATOMIC ROLLBACK ON INJECTED AUDIT FAILURE', () => {
     it('should completely roll back person creation when audit outbox insertion fails', async () => {
       const spy = jest
         .spyOn(AuditOutboxRepository.prototype, 'recordAuditIntent')
@@ -499,9 +670,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
             { language: 'ne', firstName: 'अन्वेषक', lastName: doomedLastName, fullName: `अन्वेषक ${doomedLastName}`, isPrimary: true },
           ],
           justificationReason: 'Valid creation that should fail atomically due to injected audit failure',
-        });
-
-      expect(res.status).toBe(500);
+        })
+        .expect(500);
 
       // Verify mutation was rolled back: 0 rows in database
       const checkRes = await db.query(

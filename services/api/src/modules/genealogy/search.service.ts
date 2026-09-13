@@ -15,42 +15,24 @@ export class SearchService {
   async searchPersons(filter: PersonSearchQueryDto, viewer?: ViewerContext): Promise<PersonSearchResponseDto> {
     const result = await this.personRepo.searchPersons(filter);
 
-    // Apply viewer-specific privacy filtering to each item
-    const filteredItems = result.items.map((item) => {
-      const summary = this.privacyEngine.filterPersonSummary(
-        {
-          id: item.id,
-          primaryNameNepali: item.primaryNameNepali,
-          primaryNameEnglish: item.primaryNameEnglish,
-          gender: item.gender,
-          livingStatus: item.livingStatus,
-          generation: item.generation,
-          branchId: item.branchId,
-          branchName: item.branchName,
-          birthYearBs: item.birthYearBs,
-          deathYearBs: item.deathYearBs,
-          isClaimed: item.isClaimed,
-          version: item.version,
-        },
-        viewer,
-      );
+    // 1. Filter out records not visible to this viewer
+    const visibleRawItems = result.items.filter((item) =>
+      this.privacyEngine.isRecordVisible(item, viewer),
+    );
 
-      return {
-        ...item,
-        primaryNameNepali: summary.primaryNameNepali,
-        primaryNameEnglish: summary.primaryNameEnglish,
-        birthYearBs: summary.birthYearBs,
-        deathYearBs: summary.deathYearBs,
-        version: summary.version || item.version,
-      };
-    });
+    // 2. Apply explicit search projection with privacy masking
+    const projectedItems = visibleRawItems.map((item) =>
+      this.privacyEngine.filterSearchItem(item, viewer),
+    );
+
+    const totalVisible = result.total - (result.items.length - visibleRawItems.length);
 
     return {
-      items: filteredItems,
-      total: result.total,
+      items: projectedItems,
+      total: Math.max(0, totalVisible),
       page: result.page,
       limit: result.limit,
-      hasMore: result.hasMore,
+      hasMore: (result.page - 1) * result.limit + projectedItems.length < totalVisible,
     };
   }
 }

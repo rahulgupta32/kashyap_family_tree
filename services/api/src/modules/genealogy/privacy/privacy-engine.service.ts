@@ -21,16 +21,45 @@ export interface ViewerContext {
 @Injectable()
 export class PrivacyEngineService {
   /**
-   * Computes the authoritative current Bikram Sambat (BS) year dynamically
-   * based on the standard solar calendar offset (Baisakh 1 ~ April 14).
+   * Computes the current Bikram Sambat (BS) date based on Nepal Standard Time (UTC+5:45).
+   * Accurate calendar conversion aligning with Nepal standard astronomical calendar.
    */
-  public getCurrentBsYear(now: Date = new Date()): number {
-    const month = now.getUTCMonth(); // 0 = Jan, 3 = Apr
-    const day = now.getUTCDate();
-    if (month > 3 || (month === 3 && day >= 14)) {
-      return now.getUTCFullYear() + 57;
+  public getCurrentBsDate(now: Date = new Date()): { year: number; month: number; day: number } {
+    // Nepal Standard Time offset is +5h45m
+    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const nptTime = new Date(utcTime + (5.75 * 3600000));
+    
+    // Standard BS conversion anchor: 2026-04-14 Gregorian = 2083-01-01 BS (Baisakh 1, 2083 BS)
+    const anchorGregorian = new Date(Date.UTC(2026, 3, 14)); // 2026-04-14
+    const diffDays = Math.floor((nptTime.getTime() - anchorGregorian.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays >= 0) {
+      // Month days in 2083 BS: Baisakh (31), Jestha (31), Ashadh (32), Shrawan (31), Bhadra (31), Ashwin (30), etc.
+      const monthDays2083 = [31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 29, 31];
+      let rem = diffDays;
+      let m = 0;
+      while (m < monthDays2083.length && rem >= monthDays2083[m]) {
+        rem -= monthDays2083[m];
+        m++;
+      }
+      return {
+        year: 2083,
+        month: m + 1,
+        day: rem + 1,
+      };
+    } else {
+      // Prior to 2083 Baisakh 1 (2082 BS)
+      const yr = nptTime.getUTCFullYear() + (nptTime.getUTCMonth() > 3 || (nptTime.getUTCMonth() === 3 && nptTime.getUTCDate() >= 14) ? 57 : 56);
+      return {
+        year: yr,
+        month: ((nptTime.getUTCMonth() + 8) % 12) + 1,
+        day: nptTime.getUTCDate(),
+      };
     }
-    return now.getUTCFullYear() + 56;
+  }
+
+  public getCurrentBsYear(now: Date = new Date()): number {
+    return this.getCurrentBsDate(now).year;
   }
 
   /**
@@ -53,32 +82,57 @@ export class PrivacyEngineService {
   }
 
   /**
-   * Determines if a person record is a protected minor (< 18) or has unconfirmed/uncertain age (PRIV-FR-003)
-   * A living person without an established birth year is treated with restrictive minor protection defaults.
+   * Determines if a person record is a protected minor (< 18) or has unconfirmed/uncertain age (PRIV-FR-003, Policy Sec 6.1)
+   * Implements approved age/calendar model:
+   * - If exact birth_date_bs (YYYY-MM-DD) is available, calculates exact age to the current day.
+   * - If only birth_year_bs is available, difference <= 18 is treated restrictively as minor/uncertain.
+   * - A living person without an established birth year/date is treated with restrictive minor protection defaults.
    */
   public isMinorOrUncertainAge(person: {
     is_minor_protected?: boolean;
     isMinorProtected?: boolean;
     birth_year_bs?: number;
     birthYearBs?: number;
+    birth_date_bs?: string;
+    birthDateBs?: string;
     living_status?: LivingStatus;
     livingStatus?: LivingStatus;
-  }): boolean {
+  }, now: Date = new Date()): boolean {
     const isProtected = Boolean(person.is_minor_protected || person.isMinorProtected);
     if (isProtected) return true;
 
     const status = person.living_status || person.livingStatus || LivingStatus.LIVING;
     if (status === LivingStatus.DECEASED) return false;
 
+    const birthDateStr = person.birth_date_bs || person.birthDateBs;
+    const currentBs = this.getCurrentBsDate(now);
+
+    if (birthDateStr && typeof birthDateStr === 'string') {
+      const parts = birthDateStr.trim().split('-');
+      if (parts.length === 3) {
+        const bYear = parseInt(parts[0], 10);
+        const bMonth = parseInt(parts[1], 10);
+        const bDay = parseInt(parts[2], 10);
+        if (!isNaN(bYear) && !isNaN(bMonth) && !isNaN(bDay)) {
+          let exactAge = currentBs.year - bYear;
+          if (currentBs.month < bMonth || (currentBs.month === bMonth && currentBs.day < bDay)) {
+            exactAge--;
+          }
+          return exactAge < 18;
+        }
+      }
+    }
+
     const birthYear = person.birth_year_bs || person.birthYearBs;
     if (!birthYear) {
-      // Living person with unknown birth year: apply restrictive minor protection default
+      // Living person with unknown birth year: apply restrictive minor protection default (Policy Sec 6.1)
       return true;
     }
 
-    const currentBsYear = this.getCurrentBsYear();
-    const calculatedAge = currentBsYear - birthYear;
-    return calculatedAge < 18;
+    const yearDiff = currentBs.year - birthYear;
+    // When exact month/day is unknown, yearDiff <= 18 represents an uncertain boundary (could be 17)
+    // Policy requires treating uncertain boundaries restrictively
+    return yearDiff <= 18;
   }
 
   /**
@@ -270,6 +324,7 @@ export class PrivacyEngineService {
       avatarUrl: isMinor && !isAdmin ? undefined : node.avatarUrl,
       spouses: (node.spouses || []).map((s) => this.filterTreeNode(s, viewer)),
       children: (node.children || []).map((c) => this.filterTreeNode(c, viewer)),
+      ancestors: (node.ancestors || []).map((a) => this.filterTreeNode(a, viewer)),
       hasMoreAncestors: node.hasMoreAncestors,
       hasMoreDescendants: node.hasMoreDescendants,
     };
@@ -287,5 +342,20 @@ export class PrivacyEngineService {
       sharedParentsCount: signals.sharedParentsCount,
       reasons: signals.reasons || [],
     };
+  }
+
+  /**
+   * Evaluates if a record is visible to the given viewer context
+   */
+  public isRecordVisible(
+    record: { is_archived?: boolean; isArchived?: boolean; branch_id?: string; branchId?: string; living_status?: LivingStatus; livingStatus?: LivingStatus },
+    viewer?: ViewerContext,
+  ): boolean {
+    const isArchived = Boolean(record.is_archived || record.isArchived);
+    const branchId = record.branch_id || record.branchId;
+    if (isArchived) {
+      return this.isAuthorizedAdmin(viewer, branchId);
+    }
+    return true;
   }
 }

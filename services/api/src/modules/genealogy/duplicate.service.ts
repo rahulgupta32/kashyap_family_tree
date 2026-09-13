@@ -267,18 +267,30 @@ export class DuplicateService {
       };
     });
 
+    // Dual-branch authorization check for duplicate comparison
+    if (viewer && !this.privacyEngine.isAuthorizedAdmin(viewer, personA.branchId) && !this.privacyEngine.isAuthorizedAdmin(viewer, personB.branchId)) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.BRANCH_MISMATCH,
+        message: 'You do not have administrative authority across both branches for duplicate comparison',
+      });
+    }
+
+    const rawSignals = candidateRecord?.detection_signals || {
+      nameSimilarity: 0.8,
+      matchingNames: [personA.primaryNameNepali],
+      sameBranch: personA.branchId === personB.branchId,
+      sharedParentsCount: sharedParents.filter((p) => p.matched).length,
+      reasons: ['Direct comparison requested'],
+    };
+
+    const sanitizedSignals = this.privacyEngine.filterDuplicateSignals(rawSignals, viewer);
+
     return {
       candidateId: candidateRecord?.id,
       personA,
       personB,
       confidenceScore: candidateRecord ? parseFloat(candidateRecord.confidence_score.toString()) : 0.75,
-      detectionSignals: candidateRecord?.detection_signals || {
-        nameSimilarity: 0.8,
-        matchingNames: [personA.primaryNameNepali],
-        sameBranch: personA.branchId === personB.branchId,
-        sharedParentsCount: sharedParents.filter((p) => p.matched).length,
-        reasons: ['Direct comparison requested'],
-      },
+      detectionSignals: sanitizedSignals,
       fieldDifferences,
       sharedRelationships: {
         parents: sharedParents,
@@ -290,11 +302,12 @@ export class DuplicateService {
 
   /**
    * Mark candidate as NOT_A_DUPLICATE or CONFIRMED_DUPLICATE (DUP-FR-004)
+   * Enforces dual-branch authority and atomic audit outbox persistence inside transaction.
    */
   async resolveCandidate(
     candidateId: string,
     dto: ResolveDuplicateCandidateDto,
-    actor: { id: string; roles: Role[]; branchId?: string },
+    actor: { id: string; roles: Role[]; branchId?: string; branchIds?: string[]; ipAddress?: string; userAgent?: string },
   ): Promise<DuplicateCandidateDto> {
     const candidate = await this.duplicateRepo.getCandidateById(candidateId);
     if (!candidate) {
@@ -304,36 +317,81 @@ export class DuplicateService {
       });
     }
 
-    const updated = await this.duplicateRepo.updateCandidateStatus(
-      candidateId,
-      dto.status,
-      dto.notes,
-      actor.id,
-    );
-
-    if (!updated) {
-      throw new NotFoundException('Failed to update duplicate candidate');
-    }
-
     const [personA, personB] = await Promise.all([
-      this.loadSummary(updated.person_a_id),
-      this.loadSummary(updated.person_b_id),
+      this.personRepo.findById(candidate.person_a_id),
+      this.personRepo.findById(candidate.person_b_id),
     ]);
 
-    return {
-      id: updated.id,
-      personAId: updated.person_a_id,
-      personBId: updated.person_b_id,
-      personA: personA!,
-      personB: personB!,
-      confidenceScore: parseFloat(updated.confidence_score.toString()),
-      detectionSignals: updated.detection_signals,
-      status: updated.status,
-      reviewNotes: updated.review_notes,
-      reviewedBy: updated.reviewed_by,
-      reviewedAt: updated.reviewed_at,
-      createdAt: updated.created_at,
-    };
+    if (!personA || !personB) {
+      throw new NotFoundException({
+        errorCode: ErrorCode.PERSON_NOT_FOUND,
+        message: 'One or both candidate person records not found',
+      });
+    }
+
+    // Dual-branch authorization check for candidate resolution
+    const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
+    if (!isSuperAdmin) {
+      const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+      if (
+        (personA.branch_id && !actorBranches.includes(personA.branch_id)) ||
+        (personB.branch_id && !actorBranches.includes(personB.branch_id))
+      ) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
+        });
+      }
+    }
+
+    return this.db.transaction(async (client: PoolClient) => {
+      const updated = await this.duplicateRepo.updateCandidateStatus(
+        candidateId,
+        dto.status,
+        dto.notes,
+        actor.id,
+        client,
+      );
+
+      if (!updated) {
+        throw new NotFoundException('Failed to update duplicate candidate');
+      }
+
+      await this.auditOutboxRepo.recordAuditIntent(
+        {
+          actorId: actor.id,
+          actorRole: actor.roles[0] || Role.BRANCH_ADMIN,
+          ipAddress: actor.ipAddress || '127.0.0.1',
+          userAgent: actor.userAgent || 'system',
+          action: 'GENEALOGY_RESOLVE_DUPLICATE_CANDIDATE',
+          entityType: 'duplicate_candidate',
+          entityId: candidateId,
+          oldValue: { status: candidate.status },
+          newValue: { status: dto.status, notes: dto.notes, reviewedBy: actor.id },
+        },
+        client,
+      );
+
+      const [summaryA, summaryB] = await Promise.all([
+        this.loadSummary(updated.person_a_id),
+        this.loadSummary(updated.person_b_id),
+      ]);
+
+      return {
+        id: updated.id,
+        personAId: updated.person_a_id,
+        personBId: updated.person_b_id,
+        personA: summaryA!,
+        personB: summaryB!,
+        confidenceScore: parseFloat(updated.confidence_score.toString()),
+        detectionSignals: updated.detection_signals,
+        status: updated.status,
+        reviewNotes: updated.review_notes,
+        reviewedBy: updated.reviewed_by,
+        reviewedAt: updated.reviewed_at,
+        createdAt: updated.created_at,
+      };
+    });
   }
 
   /**
@@ -357,6 +415,31 @@ export class DuplicateService {
         errorCode: ErrorCode.CANNOT_MERGE_SAME_PERSON,
         message: 'Cannot merge a person into themselves',
       });
+    }
+
+    if (dto.survivingPersonVersion === undefined || dto.survivingPersonVersion === null ||
+        dto.mergedPersonVersion === undefined || dto.mergedPersonVersion === null) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.STALE_UPDATE_DETECTED,
+        message: 'Both survivingPersonVersion and mergedPersonVersion are required for merge operations',
+      });
+    }
+
+    // Validate fieldResolutions: reject unsupported resolution fields
+    const allowedUpdates = [
+      'generation', 'gender', 'living_status', 'birth_year_bs', 'birth_date_bs', 'birth_date_ad', 'birth_place',
+      'death_year_bs', 'death_date_bs', 'death_date_ad', 'death_place', 'gotra', 'kuldevata', 'mool_ghar',
+      'current_address', 'occupation', 'education', 'biography', 'phone_visibility', 'address_visibility', 'dob_visibility',
+    ];
+    if (fieldResolutions) {
+      for (const k of Object.keys(fieldResolutions)) {
+        if (!allowedUpdates.includes(k)) {
+          throw new BadRequestException({
+            errorCode: ErrorCode.MERGE_CONFLICT_UNRESOLVED,
+            message: `Unsupported field resolution: '${k}' is not a permitted merge resolution attribute`,
+          });
+        }
+      }
     }
 
     // Permission check: Super Admin or Branch Admin with authority over both records
@@ -402,26 +485,26 @@ export class DuplicateService {
         const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
         if (survivingRecord.branch_id && !actorBranches.includes(survivingRecord.branch_id)) {
           throw new ForbiddenException({
-            errorCode: ErrorCode.FORBIDDEN,
+            errorCode: ErrorCode.BRANCH_MISMATCH,
             message: 'Branch Administrators can only merge records within their assigned branch scope',
           });
         }
         if (mergedRecord.branch_id && !actorBranches.includes(mergedRecord.branch_id)) {
           throw new ForbiddenException({
-            errorCode: ErrorCode.FORBIDDEN,
+            errorCode: ErrorCode.BRANCH_MISMATCH,
             message: 'Branch Administrators can only merge records within their assigned branch scope',
           });
         }
       }
 
       // 3. Stale-write / Optimistic concurrency protection
-      if (dto.survivingPersonVersion !== undefined && survivingRecord.version !== dto.survivingPersonVersion) {
+      if (survivingRecord.version !== dto.survivingPersonVersion) {
         throw new BadRequestException({
           errorCode: ErrorCode.STALE_UPDATE_DETECTED,
           message: `Surviving person record was modified (expected version ${dto.survivingPersonVersion}, current ${survivingRecord.version})`,
         });
       }
-      if (dto.mergedPersonVersion !== undefined && mergedRecord.version !== dto.mergedPersonVersion) {
+      if (mergedRecord.version !== dto.mergedPersonVersion) {
         throw new BadRequestException({
           errorCode: ErrorCode.STALE_UPDATE_DETECTED,
           message: `Merged person record was modified (expected version ${dto.mergedPersonVersion}, current ${mergedRecord.version})`,
@@ -474,11 +557,6 @@ export class DuplicateService {
       // 6. Apply field resolutions to surviving person
       const resolvedFields: Record<string, any> = {};
       if (fieldResolutions) {
-        const allowedUpdates = [
-          'generation', 'gender', 'living_status', 'birth_year_bs', 'birth_date_bs', 'birth_date_ad', 'birth_place',
-          'death_year_bs', 'death_date_bs', 'death_date_ad', 'death_place', 'gotra', 'kuldevata', 'mool_ghar',
-          'current_address', 'occupation', 'education', 'biography', 'phone_visibility', 'address_visibility', 'dob_visibility',
-        ];
         for (const [k, v] of Object.entries(fieldResolutions)) {
           if (allowedUpdates.includes(k) && v !== undefined) {
             resolvedFields[k] = v;
@@ -537,6 +615,12 @@ export class DuplicateService {
 
       // 11. Soft-archive merged person record with canonical reference (GEN-FR-017, DUP-FR-008)
       await this.personRepo.archivePerson(mergedPersonId, `MERGED_INTO:${survivingPersonId}`, client);
+
+      // Flatten existing canonical redirect chains pointing to mergedPersonId
+      await client.query(
+        "UPDATE persons SET archive_reason = $1 WHERE archive_reason = $2",
+        [`MERGED_INTO:${survivingPersonId}`, `MERGED_INTO:${mergedPersonId}`],
+      );
 
       // 12. Record merge entry in duplicate_merges table
       await this.duplicateRepo.recordMerge(

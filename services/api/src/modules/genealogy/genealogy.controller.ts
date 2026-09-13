@@ -187,6 +187,7 @@ export class GenealogyController {
   }
 
   @Patch('duplicates/candidates/:id')
+  @Post('duplicates/candidates/:id/resolve')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN, Role.BRANCH_VERIFIER)
   @ApiBearerAuth()
