@@ -117,6 +117,10 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
     en: 'A detailed justification reason is mandatory for administrative mutations.',
     ne: 'प्रशासनिक परिमार्जनको लागि औचित्यपूर्ण कारण खुलाउनु अनिवार्य छ।'
   },
+  [ErrorCode.INTRA_GOTRA_MARRIAGE_WARNING]: {
+    en: 'Intra-gotra marriage warning: both parties belong to the Kashyap gotra.',
+    ne: 'सगोत्रीय विवाह चेतावनी: दुबै पक्ष कश्यप गोत्रका हुन्।'
+  },
   [ErrorCode.ACTIVE_CLAIM_EXISTS]: {
     en: 'An active verification claim already exists for this person.',
     ne: 'यो व्यक्तिको लागि दाबी प्रक्रिया पहिले नै विचाराधीन छ।'
@@ -136,6 +140,10 @@ export const errorMessages: Record<ErrorCode, { en: string; ne: string }> = {
   [ErrorCode.INSUFFICIENT_EVIDENCE]: {
     en: 'Please provide required evidence attachments.',
     ne: 'कृपया आवश्यक प्रमाण कागजातहरू संलग्न गर्नुहोस्।'
+  },
+  [ErrorCode.SEPARATION_OF_DUTIES_VIOLATION]: {
+    en: 'Separation of duties violation: reviewer cannot perform multiple conflicting review steps.',
+    ne: 'कर्तव्य विभाजन उल्लङ्घन: समीक्षकले एकै प्रक्रियामा बाझिने भूमिकाहरू निर्वाह गर्न पाउँदैन।'
   },
   [ErrorCode.CHANGE_REQUEST_NOT_FOUND]: {
     en: 'Change request not found.',
