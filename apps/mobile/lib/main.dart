@@ -8,7 +8,7 @@ void main() {
 }
 
 class KashyapApp extends StatelessWidget {
-  const KashyapApp({Key? key}) : super(key: key);
+  const KashyapApp({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -20,7 +20,6 @@ class AppTheme {
         primary: saffron,
         secondary: heritageBrown,
         surface: warmCream,
-        background: warmCream,
       ),
       scaffoldBackgroundColor: warmCream,
       appBarTheme: const AppBarTheme(
@@ -29,7 +28,7 @@ class AppTheme {
         elevation: 0,
         centerTitle: false,
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: cardBg,
         elevation: 1,
         shape: RoundedRectangleBorder(

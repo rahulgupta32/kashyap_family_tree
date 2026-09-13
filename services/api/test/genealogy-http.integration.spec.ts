@@ -1190,5 +1190,204 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       expect(res.body.items.length).toBe(0);
       expect(res.body.hasMore).toBe(false);
     });
+
+    it('should correctly match English-only names and return exact IDs, total, and hasMore progression', async () => {
+      const engPrefix = `EngMatch_${Math.random().toString(36).substring(2, 8)}_${Date.now()}`;
+      const engIds: string[] = [];
+
+      // Person 1: English ONLY (no Nepali name record)
+      const p1 = await personRepo.createPerson({
+        branch_id: branch1Id,
+        gender: Gender.FEMALE,
+        living_status: LivingStatus.LIVING,
+        generation: 3,
+        is_archived: false,
+      }, [
+        { language: 'en', first_name: `${engPrefix}_Alice`, last_name: 'Adhikari', full_name: `${engPrefix}_Alice Adhikari`, is_primary: true },
+      ]);
+      engIds.push(p1.id);
+
+      // Person 2: Bilingual with primary English
+      const p2 = await personRepo.createPerson({
+        branch_id: branch1Id,
+        gender: Gender.MALE,
+        living_status: LivingStatus.LIVING,
+        generation: 3,
+        is_archived: false,
+      }, [
+        { language: 'en', first_name: `${engPrefix}_Bob`, last_name: 'Adhikari', full_name: `${engPrefix}_Bob Adhikari`, is_primary: true },
+        { language: 'ne', first_name: 'बब', last_name: 'अधिकारी', full_name: 'बब अधिकारी', is_primary: false },
+      ]);
+      engIds.push(p2.id);
+
+      // Person 3: Bilingual with primary Nepali and English alias
+      const p3 = await personRepo.createPerson({
+        branch_id: branch1Id,
+        gender: Gender.FEMALE,
+        living_status: LivingStatus.LIVING,
+        generation: 3,
+        is_archived: false,
+      }, [
+        { language: 'ne', first_name: 'क्यारोल', last_name: 'अधिकारी', full_name: 'क्यारोल अधिकारी', is_primary: true },
+        { language: 'en', first_name: `${engPrefix}_Carol`, last_name: 'Adhikari', full_name: `${engPrefix}_Carol Adhikari`, is_primary: false },
+      ]);
+      engIds.push(p3.id);
+
+      try {
+        // Page 1: limit 2
+        const p1Res = await request(app.getHttpServer())
+          .get(`/genealogy/search?query=${encodeURIComponent(engPrefix)}&page=1&limit=2`)
+          .expect(200);
+
+        expect(p1Res.body.page).toBe(1);
+        expect(p1Res.body.limit).toBe(2);
+        expect(p1Res.body.total).toBe(3);
+        expect(p1Res.body.items.length).toBe(2);
+        expect(p1Res.body.hasMore).toBe(true);
+
+        // Page 2: limit 2
+        const p2Res = await request(app.getHttpServer())
+          .get(`/genealogy/search?query=${encodeURIComponent(engPrefix)}&page=2&limit=2`)
+          .expect(200);
+
+        expect(p2Res.body.page).toBe(2);
+        expect(p2Res.body.limit).toBe(2);
+        expect(p2Res.body.total).toBe(3);
+        expect(p2Res.body.items.length).toBe(1);
+        expect(p2Res.body.hasMore).toBe(false);
+
+        const allRetrievedIds = [
+          ...p1Res.body.items.map((i: any) => i.id),
+          ...p2Res.body.items.map((i: any) => i.id),
+        ];
+        expect(allRetrievedIds.sort()).toEqual(engIds.sort());
+      } finally {
+        await db.query('DELETE FROM persons WHERE id = ANY($1)', [engIds]);
+      }
+    });
+
+    it('should enforce authoritative roleAssignments for archived search (admin on Branch A, regular member on Branch B)', async () => {
+      const authPrefix = `ArchAuth_${Math.random().toString(36).substring(2, 8)}_${Date.now()}`;
+      const seededIds: string[] = [];
+
+      // Branch 1: 1 active, 1 archived
+      const b1Active = await personRepo.createPerson({
+        branch_id: branch1Id,
+        gender: Gender.MALE,
+        living_status: LivingStatus.LIVING,
+        generation: 5,
+        is_archived: false,
+      }, [
+        { language: 'ne', first_name: `${authPrefix}_B1_Active`, last_name: 'अधिकारी', full_name: `${authPrefix}_B1_Active अधिकारी`, is_primary: true },
+      ]);
+      seededIds.push(b1Active.id);
+
+      const b1Archived = await personRepo.createPerson({
+        branch_id: branch1Id,
+        gender: Gender.MALE,
+        living_status: LivingStatus.LIVING,
+        generation: 5,
+        is_archived: true,
+        archive_reason: 'Branch 1 archived duplicate test fixture',
+      }, [
+        { language: 'ne', first_name: `${authPrefix}_B1_Archived`, last_name: 'अधिकारी', full_name: `${authPrefix}_B1_Archived अधिकारी`, is_primary: true },
+      ]);
+      seededIds.push(b1Archived.id);
+
+      // Branch 2: 1 active, 1 archived
+      const b2Active = await personRepo.createPerson({
+        branch_id: branch2Id,
+        gender: Gender.FEMALE,
+        living_status: LivingStatus.LIVING,
+        generation: 5,
+        is_archived: false,
+      }, [
+        { language: 'ne', first_name: `${authPrefix}_B2_Active`, last_name: 'अधिकारी', full_name: `${authPrefix}_B2_Active अधिकारी`, is_primary: true },
+      ]);
+      seededIds.push(b2Active.id);
+
+      const b2Archived = await personRepo.createPerson({
+        branch_id: branch2Id,
+        gender: Gender.FEMALE,
+        living_status: LivingStatus.LIVING,
+        generation: 5,
+        is_archived: true,
+        archive_reason: 'Branch 2 archived duplicate test fixture',
+      }, [
+        { language: 'ne', first_name: `${authPrefix}_B2_Archived`, last_name: 'अधिकारी', full_name: `${authPrefix}_B2_Archived अधिकारी`, is_primary: true },
+      ]);
+      seededIds.push(b2Archived.id);
+
+      // Create a user who is BRANCH_ADMIN on Branch 1, but only VERIFIED_MEMBER on Branch 2
+      const mixedPhone = '+9779849999099';
+      const mixedUser = await userRepo.findOrCreateByPhone(mixedPhone);
+      await db.query('DELETE FROM user_roles WHERE user_id = $1', [mixedUser.id]);
+      await userRepo.assignRole(mixedUser.id, Role.BRANCH_ADMIN, branch1Id);
+      await userRepo.assignRole(mixedUser.id, Role.VERIFIED_MEMBER, branch2Id);
+
+      const mixedSession = await sessionRepo.createSession({
+        userId: mixedUser.id,
+        refreshTokenHash: 'hash_mixed_' + Date.now(),
+        devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-runner',
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+
+      const mixedToken = jwtService.sign(
+        {
+          sub: mixedUser.id,
+          sid: mixedSession.id,
+          phoneNumber: mixedUser.phone_number,
+          tokenType: 'access',
+          roles: [Role.BRANCH_ADMIN, Role.VERIFIED_MEMBER],
+          branchIds: [branch1Id, branch2Id],
+        },
+        {
+          secret: getJwtSecret(),
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithm: JWT_ALGORITHM,
+          expiresIn: '1h',
+        },
+      );
+
+      try {
+        // 1. With includeArchived=true:
+        // Must see B1 Active, B1 Archived, and B2 Active.
+        // Must NOT see B2 Archived because user is only a member in Branch 2. Total must be exactly 3.
+        const archRes = await request(app.getHttpServer())
+          .get(`/genealogy/search?query=${encodeURIComponent(authPrefix)}&includeArchived=true&limit=10`)
+          .set('Authorization', `Bearer ${mixedToken}`)
+          .expect(200);
+
+        expect(archRes.body.total).toBe(3);
+        expect(archRes.body.items.length).toBe(3);
+        const archItemIds = archRes.body.items.map((i: any) => i.id);
+        expect(archItemIds).toContain(b1Active.id);
+        expect(archItemIds).toContain(b1Archived.id);
+        expect(archItemIds).toContain(b2Active.id);
+        expect(archItemIds).not.toContain(b2Archived.id);
+
+        // 2. With includeArchived=false:
+        // Must only see B1 Active and B2 Active (total: 2)
+        const activeOnlyRes = await request(app.getHttpServer())
+          .get(`/genealogy/search?query=${encodeURIComponent(authPrefix)}&includeArchived=false&limit=10`)
+          .set('Authorization', `Bearer ${mixedToken}`)
+          .expect(200);
+
+        expect(activeOnlyRes.body.total).toBe(2);
+        expect(activeOnlyRes.body.items.length).toBe(2);
+        const activeItemIds = activeOnlyRes.body.items.map((i: any) => i.id);
+        expect(activeItemIds).toContain(b1Active.id);
+        expect(activeItemIds).toContain(b2Active.id);
+        expect(activeItemIds).not.toContain(b1Archived.id);
+        expect(activeItemIds).not.toContain(b2Archived.id);
+      } finally {
+        await db.query('DELETE FROM persons WHERE id = ANY($1)', [seededIds]);
+        await db.query('DELETE FROM user_roles WHERE user_id = $1', [mixedUser.id]);
+        await db.query('DELETE FROM user_sessions WHERE user_id = $1', [mixedUser.id]);
+      }
+    });
   });
 });

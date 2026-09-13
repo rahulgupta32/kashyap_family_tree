@@ -314,23 +314,21 @@ export class PersonRepository {
 
     // Apply visibility predicate consistently for both count and items
     const isSuperAdmin = viewer?.roles?.some((r: string) => r === 'SUPER_ADMIN' || r === 'CENTRAL_ADMIN');
-    const branchAdminBranches: string[] = (viewer?.roleAssignments || [])
-      .filter((ra: any) => (ra.role === 'BRANCH_ADMIN' || ra.role === 'BRANCH_VERIFIER') && ra.branchId)
-      .map((ra: any) => ra.branchId as string);
+    let branchAdminBranches: string[] = [];
 
-    if (viewer?.branchIds) {
-      for (const bId of viewer.branchIds) {
-        if (viewer.roles?.includes('BRANCH_ADMIN') || viewer.roles?.includes('BRANCH_VERIFIER')) {
-          if (!branchAdminBranches.includes(bId)) {
-            branchAdminBranches.push(bId);
-          }
-        }
-      }
+    if (viewer?.roleAssignments && viewer.roleAssignments.length > 0) {
+      // Authoritative roleAssignments present: strictly determine admin branches from assignments
+      branchAdminBranches = viewer.roleAssignments
+        .filter((ra: any) => (ra.role === 'BRANCH_ADMIN' || ra.role === 'BRANCH_VERIFIER') && ra.branchId)
+        .map((ra: any) => ra.branchId as string);
+    } else if (viewer?.branchIds && (viewer.roles?.includes('BRANCH_ADMIN') || viewer.roles?.includes('BRANCH_VERIFIER'))) {
+      // Fallback only when roleAssignments is absent
+      branchAdminBranches = [...viewer.branchIds];
     }
 
-    if (isSuperAdmin && (filter as any).includeArchived) {
+    if (isSuperAdmin && filter.includeArchived) {
       // Super admin can search archived records when explicitly requested
-    } else if (branchAdminBranches.length > 0 && (filter as any).includeArchived) {
+    } else if (branchAdminBranches.length > 0 && filter.includeArchived) {
       params.push(branchAdminBranches);
       conditions.push(`(p.is_archived = FALSE OR (p.is_archived = TRUE AND p.branch_id = ANY($${paramIdx++})))`);
     } else {
@@ -349,13 +347,16 @@ export class PersonRepository {
       const rawParam = paramIdx++;
 
       conditions.push(`(
-        n.full_name ILIKE $${wildParam}
-        OR similarity(n.full_name, $${rawParam}) > 0.2
+        EXISTS (
+          SELECT 1 FROM person_names pn 
+          WHERE pn.person_id = p.id 
+            AND (pn.full_name ILIKE $${wildParam} OR similarity(pn.full_name, $${rawParam}) >= 0.3)
+        )
         OR p.mool_ghar ILIKE $${wildParam}
         OR p.birth_place ILIKE $${wildParam}
       )`);
 
-      searchScoreSql = `similarity(n.full_name, $${rawParam}) as similarity_score`;
+      searchScoreSql = `COALESCE((SELECT MAX(similarity(pn.full_name, $${rawParam})) FROM person_names pn WHERE pn.person_id = p.id), 0.0) as similarity_score`;
     }
 
     if (filter.branchId) {
@@ -385,11 +386,10 @@ export class PersonRepository {
 
     const whereClause = conditions.join(' AND ');
 
-    // Count query for deterministic pagination
+    // Count query for deterministic pagination operating on identical WHERE condition
     const countSql = `
-      SELECT COUNT(DISTINCT p.id) as total
+      SELECT COUNT(p.id) as total
       FROM persons p
-      JOIN person_names n ON p.id = n.person_id AND n.is_primary = TRUE
       WHERE ${whereClause}
     `;
     const countRes = await this.db.query(countSql, params);
@@ -398,7 +398,7 @@ export class PersonRepository {
     // Data query with deterministic ordering
     const queryParams = [...params, limit, offset];
     const dataSql = `
-      SELECT DISTINCT ON (p.id)
+      SELECT
         p.id,
         p.gender,
         p.living_status,
@@ -409,16 +409,16 @@ export class PersonRepository {
         p.mool_ghar,
         p.is_claimed,
         p.version,
-        n.full_name as primary_name_nepali,
-        COALESCE(en.full_name, n.full_name) as primary_name_english,
+        COALESCE(ne.full_name, en.full_name, 'अज्ञात') as primary_name_nepali,
+        COALESCE(en.full_name, ne.full_name, 'Unknown') as primary_name_english,
         b.name_nepali as branch_name,
         ${searchScoreSql}
       FROM persons p
-      JOIN person_names n ON p.id = n.person_id AND n.language = 'ne' AND n.is_primary = TRUE
+      LEFT JOIN person_names ne ON p.id = ne.person_id AND ne.language = 'ne' AND ne.is_primary = TRUE
       LEFT JOIN person_names en ON p.id = en.person_id AND en.language = 'en' AND en.is_primary = TRUE
       LEFT JOIN branches b ON p.branch_id = b.id
       WHERE ${whereClause}
-      ORDER BY p.id, p.generation ASC, n.full_name ASC
+      ORDER BY p.generation ASC, COALESCE(ne.full_name, en.full_name) ASC, p.id ASC
       LIMIT $${paramIdx++} OFFSET $${paramIdx++}
     `;
 

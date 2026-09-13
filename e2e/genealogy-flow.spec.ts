@@ -303,6 +303,9 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     // 1. Seed a protected minor with PRIVATE address and exact DOB
     const rand = Math.floor(100000 + Math.random() * 900000);
     const minorName = `गोप्यनाबालक${rand}`;
+    const secretAddress = `गोप्य ठेगाना १०१-${rand}`;
+    const secretDob = '2076-05-10';
+
     const seedRes = await page.request.post(`${API_BASE}/genealogy/people`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
@@ -311,9 +314,9 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
         livingStatus: 'LIVING',
         generation: 4,
         branchId,
-        birthDateBs: '2076-05-10',
+        birthDateBs: secretDob,
         birthYearBs: 2076,
-        currentAddress: 'गोप्य ठेगाना १०१',
+        currentAddress: secretAddress,
         addressVisibility: 'PRIVATE',
         dobVisibility: 'PRIVATE',
         phoneVisibility: 'PRIVATE',
@@ -323,6 +326,8 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
       },
     });
     expect(seedRes.ok()).toBeTruthy();
+    const seededPerson = await seedRes.json();
+    expect(seededPerson.id).toBeDefined();
 
     // 2. Navigate to People
     await page.click('a[href="/people"]');
@@ -345,12 +350,16 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     expect(Array.isArray(jsonContent.parentLinks)).toBe(true);
     expect(Array.isArray(jsonContent.spouseLinks)).toBe(true);
 
-    // Assert that restricted private fields are absent for all exported records
-    for (const p of jsonContent.persons) {
-      expect(p.currentAddress).toBeUndefined();
-      expect(p.phoneNumber).toBeUndefined();
-      expect(p.claimedByUserId).toBeUndefined();
-    }
+    // Assert that seeded protected person's ID IS present in the exported dataset
+    const foundSeededPersonJson = jsonContent.persons.find((p: any) => p.id === seededPerson.id);
+    expect(foundSeededPersonJson).toBeDefined();
+    expect(foundSeededPersonJson.id).toBe(seededPerson.id);
+
+    // Assert that sensitive/private fields are absent for the protected minor record
+    expect(foundSeededPersonJson.currentAddress).toBeUndefined();
+    expect(foundSeededPersonJson.phoneNumber).toBeUndefined();
+    expect(foundSeededPersonJson.claimedByUserId).toBeUndefined();
+    expect(foundSeededPersonJson.birthDateBs).toBeUndefined();
 
     // 4. Test CSV Export download and inspect CSV headers and rows
     const csvDownloadPromise = page.waitForEvent('download');
@@ -365,7 +374,12 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     }
     const csvContent = Buffer.concat(csvChunks).toString('utf8');
     expect(csvContent).toContain('id,primaryNameNepali,primaryNameEnglish');
-    expect(csvContent).not.toContain('गोप्य ठेगाना १०१'); // PRIVATE address is absent
+    
+    // Assert seeded protected person's ID is present in CSV
+    expect(csvContent).toContain(seededPerson.id);
+    // Assert private address and sensitive DOB values are absent
+    expect(csvContent).not.toContain(secretAddress);
+    expect(csvContent).not.toContain(secretDob);
     expect(csvContent.split('\n').length).toBeGreaterThan(1);
 
     // 5. Direct unauthenticated export request is rejected with 401 Unauthorized

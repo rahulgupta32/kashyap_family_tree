@@ -35,7 +35,7 @@ class PersonSummary {
       fullNameEnglish: json['fullNameEnglish'],
       branchNameNepali: json['branchNameNepali'],
       generation: json['generation'],
-      gender: _parseGender(json['gender']),
+      gender: parseGender(json['gender']),
       livingStatus: json['livingStatus'] == 'DECEASED' ? LivingStatus.deceased : LivingStatus.living,
       dateOfBirthBs: json['dateOfBirthBs'],
       dateOfDeathBs: json['dateOfDeathBs'],
@@ -44,7 +44,7 @@ class PersonSummary {
     );
   }
 
-  static Gender _parseGender(String? g) {
+  static Gender parseGender(String? g) {
     if (g == 'FEMALE') return Gender.female;
     if (g == 'OTHER') return Gender.other;
     return Gender.male;
@@ -98,7 +98,7 @@ class PersonDetail extends PersonSummary {
       fullNameEnglish: json['fullNameEnglish'],
       branchNameNepali: json['branchNameNepali'],
       generation: json['generation'],
-      gender: PersonSummary._parseGender(json['gender']),
+      gender: PersonSummary.parseGender(json['gender']),
       livingStatus: json['livingStatus'] == 'DECEASED' ? LivingStatus.deceased : LivingStatus.living,
       dateOfBirthBs: json['dateOfBirthBs'],
       dateOfDeathBs: json['dateOfDeathBs'],
@@ -135,7 +135,7 @@ class ParentRelation {
       fullNameNepali: json['fullNameNepali'] ?? '',
       fullNameEnglish: json['fullNameEnglish'],
       parentType: json['parentType'] ?? 'BIOLOGICAL',
-      gender: PersonSummary._parseGender(json['gender']),
+      gender: PersonSummary.parseGender(json['gender']),
     );
   }
 }
@@ -186,7 +186,7 @@ class ChildRelation {
       id: json['id'] ?? '',
       fullNameNepali: json['fullNameNepali'] ?? '',
       fullNameEnglish: json['fullNameEnglish'],
-      gender: PersonSummary._parseGender(json['gender']),
+      gender: PersonSummary.parseGender(json['gender']),
       livingStatus: json['livingStatus'] == 'DECEASED' ? LivingStatus.deceased : LivingStatus.living,
     );
   }

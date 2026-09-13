@@ -7,7 +7,7 @@ import 'person_detail_screen.dart';
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
 
-  const PersonSearchScreen({Key? key, required this.apiService}) : super(key: key);
+  const PersonSearchScreen({super.key, required this.apiService});
 
   @override
   State<PersonSearchScreen> createState() => _PersonSearchScreenState();
@@ -126,8 +126,8 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                                   },
                                   leading: CircleAvatar(
                                     backgroundColor: person.livingStatus == LivingStatus.living
-                                        ? AppTheme.livingGreen.withOpacity(0.15)
-                                        : AppTheme.deceasedSlate.withOpacity(0.15),
+                                        ? AppTheme.livingGreen.withValues(alpha: 0.15)
+                                        : AppTheme.deceasedSlate.withValues(alpha: 0.15),
                                     child: Text(
                                       person.generation != null ? 'G${person.generation}' : '?',
                                       style: TextStyle(

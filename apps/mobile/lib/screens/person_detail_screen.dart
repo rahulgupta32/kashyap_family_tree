@@ -8,8 +8,7 @@ class PersonDetailScreen extends StatefulWidget {
   final String personId;
   final GenealogyApiService apiService;
 
-  const PersonDetailScreen({Key? key, required this.personId, required this.apiService})
-      : super(key: key);
+  const PersonDetailScreen({super.key, required this.personId, required this.apiService});
 
   @override
   State<PersonDetailScreen> createState() => _PersonDetailScreenState();
@@ -103,8 +102,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: p.livingStatus == LivingStatus.living
-                                ? AppTheme.livingGreen.withOpacity(0.15)
-                                : AppTheme.deceasedSlate.withOpacity(0.15),
+                                ? AppTheme.livingGreen.withValues(alpha: 0.15)
+                                : AppTheme.deceasedSlate.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(

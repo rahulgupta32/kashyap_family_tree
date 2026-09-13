@@ -199,6 +199,7 @@ export interface PersonSearchQueryDto {
   livingStatus?: LivingStatus;
   gender?: Gender;
   moolGhar?: string;
+  includeArchived?: boolean;
   page?: number;
   limit?: number;
   cursor?: string;

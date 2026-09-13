@@ -40,7 +40,7 @@ class TreeNode {
       id: json['id'] ?? '',
       fullNameNepali: json['fullNameNepali'] ?? '',
       fullNameEnglish: json['fullNameEnglish'],
-      gender: PersonSummary._parseGender(json['gender']),
+      gender: PersonSummary.parseGender(json['gender']),
       livingStatus: json['livingStatus'] == 'DECEASED' ? LivingStatus.deceased : LivingStatus.living,
       generation: json['generation'],
       dateOfBirthBs: json['dateOfBirthBs'],

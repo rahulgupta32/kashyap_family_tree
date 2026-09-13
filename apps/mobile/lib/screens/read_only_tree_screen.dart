@@ -8,8 +8,7 @@ class ReadOnlyTreeScreen extends StatefulWidget {
   final String rootPersonId;
   final GenealogyApiService apiService;
 
-  const ReadOnlyTreeScreen({Key? key, required this.rootPersonId, required this.apiService})
-      : super(key: key);
+  const ReadOnlyTreeScreen({super.key, required this.rootPersonId, required this.apiService});
 
   @override
   State<ReadOnlyTreeScreen> createState() => _ReadOnlyTreeScreenState();
@@ -90,7 +89,7 @@ class _ReadOnlyTreeScreenState extends State<ReadOnlyTreeScreen> {
               border: Border.all(color: AppTheme.saffron, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 6,
                   offset: const Offset(0, 2),
                 ),
@@ -111,7 +110,7 @@ class _ReadOnlyTreeScreenState extends State<ReadOnlyTreeScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: AppTheme.saffron.withOpacity(0.15),
+                    color: AppTheme.saffron.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -126,7 +125,7 @@ class _ReadOnlyTreeScreenState extends State<ReadOnlyTreeScreen> {
 
         // Connecting lines & Children
         if (node.children.isNotEmpty) ...[
-          Container(width: 2, height: 20, color: AppTheme.heritageBrown.withOpacity(0.4)),
+          Container(width: 2, height: 20, color: AppTheme.heritageBrown.withValues(alpha: 0.4)),
           Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

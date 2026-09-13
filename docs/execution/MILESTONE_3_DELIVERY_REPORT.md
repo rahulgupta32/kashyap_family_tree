@@ -116,25 +116,29 @@ All requirements and acceptance criteria have been strictly fulfilled and verifi
   - `branch_admin_1 (assigned branch)`: Phone visible, address and DOB masked (PRIVATE fields strictly protected): PASS
   - `branch_admin_2 (cross branch)`: Phone, address, and DOB masked: PASS
   - `super_admin`: Phone visible, address and DOB masked (PRIVATE fields strictly protected): PASS
-- **Section 10: Multi-Page Bilingual Search Pagination**:
+- **Section 10: Multi-Page Bilingual Search Pagination & Role Assignment Scoping**:
   - `should paginate search results without ID overlap across pages`: PASS
+  - `should paginate English-only names with exact totals and hasMore`: PASS
+  - `should enforce authoritative roleAssignments on includeArchived search`: PASS
 
 ### B. Summary of All Test Suites
 | Test Tier | Total Suites | Total Tests | Pass Rate | Execution Time |
 |-----------|--------------|-------------|-----------|----------------|
 | **Unit Tests (`test:unit`)** | 13 | 101 | **100% (101/101)** | ~19.6s |
-| **Integration Tests (`test:integration`)** | 7 | 97 | **100% (97/97)** | ~11.0s |
+| **Integration Tests (`test:integration`)** | 7 | 99 | **100% (99/99)** | ~11.0s |
 | **E2E Browser Tests (`test:e2e`)** | 2 | 9 | **100% (9/9)** | ~20.3s |
+| **Flutter Mobile Tests (`flutter test`)** | 2 | 5 | **100% (5/5)** | ~1.5s |
 | **Monorepo Build (`pnpm -r build`)** | 6 projects | 6 | **100% (6/6)** | ~22.0s |
-| **TOTAL** | **22 Suites** | **207 Tests** | **100% PASS** | **All Verified** |
+| **Flutter Code Analysis (`flutter analyze`)**| 1 package | 0 issues | **100% CLEAN** | ~8.3s |
+| **TOTAL** | **24 Suites** | **214 Tests** | **100% PASS** | **All Verified** |
 
-### C. Mobile Client Discovery & Tooling Constraints
+### C. Mobile Client Architecture & Tooling
 - The Flutter mobile codebase is fully structured in `apps/mobile/lib/` (`theme/app_theme.dart`, `models/`, `services/`, and `screens/`) utilizing the **Provider** pattern (`provider: ^6.1.1`).
-- Mobile tooling discovery:
-  - Command: `Get-Command flutter, dart, adb, android`
-  - Result: Failed with exit code 1 (`'flutter' is not recognized as an internal or external command`).
-  - Missing prerequisite: Flutter SDK and Android CLI / SDK Platform tools are not installed on the Windows host environment PATH.
-  - Platform constraint: Android APK builds require the Flutter SDK and Android command-line tools on the host; iOS IPA builds require macOS with Xcode. No artificial non-Flutter substitution was performed.
+- Mobile tooling & verification:
+  - Flutter SDK 3.47.4 installed on D: storage (`D:\flutter`).
+  - Android SDK 36.0.0 and Temurin OpenJDK 21 configured.
+  - Code analysis: `flutter analyze` passed with 0 issues.
+  - Automated tests: `flutter test` passed all 5 model and widget test cases.
 
 ---
 

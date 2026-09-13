@@ -95,10 +95,12 @@ export class GenealogyController {
     @Query('livingStatus') livingStatus?: LivingStatus,
     @Query('gender') gender?: Gender,
     @Query('moolGhar') moolGhar?: string,
+    @Query('includeArchived') includeArchived?: string | boolean,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @CurrentUser() user?: AuthenticatedUser,
   ): Promise<PersonSearchResponseDto> {
+    const isIncludeArchived = includeArchived === 'true' || includeArchived === true;
     return this.searchService.searchPersons(
       {
         query,
@@ -107,6 +109,7 @@ export class GenealogyController {
         livingStatus,
         gender,
         moolGhar,
+        includeArchived: isIncludeArchived,
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
       },
