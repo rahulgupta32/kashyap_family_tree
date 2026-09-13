@@ -139,26 +139,33 @@ All requirements and acceptance criteria have been strictly fulfilled and verifi
    - `models_and_widgets_test.dart`: Verifies `PersonSummary`, `PersonDetail`, `ParentRelation`, `SpouseRelation`, `ChildRelation`, and `TreeNode` serialization against `@kashyap/contracts` DTO schemas, and verifies `KashyapApp` initial widget layout.
    - `api_smoke_flow_test.dart`: Mocked navigation test utilizing `FakeGenealogyApiService` asserting Search -> Person Details -> Relative Navigation -> Tree Canvas navigation without network dependency.
 
-2. **Real Device & Live API Verification (`apps/mobile/integration_test/real_api_device_test.dart`)**:
+2. **Deterministic Real Device & Live API Verification (`apps/mobile/integration_test/real_api_device_test.dart`)**:
    - **Target Device / Emulator**: `emulator-5554` (`sdk gphone64 x86_64`, Android 15 / API 35).
    - **Backend Target**: Live NestJS API running on host `127.0.0.1:3000` accessible via Android emulator gateway `http://10.0.2.2:3000`.
    - **Database Target**: Real PostgreSQL on D: drive (`127.0.0.1:5434/kashyap_db`).
-   - **Flow Verified**:
-     - Live search query (`अधिकारी`) returning 10 real records from the 923 PostgreSQL persons table.
-     - Person profile loading (`0dfae46d-2268-4cea-8f7f-89e67b433773` / `जनक अधिकारी`).
-     - Parent/spouse/children relationship resolution via `targetPersonId` (`cd7a9457-a6e8-4690-a3d2-f211ecfda064` / `राम अधिकारी`).
-     - Relative profile navigation (`राम अधिकारी`).
-     - Interactive Read-Only Tree rendering (`ReadOnlyTreeScreen`) with root node and child descendants.
-   - **Result**: `00:54 +1: All tests passed!`
+   - **Deterministic 3-Generation Fixture**:
+     - Selected Target Person (Gen 2): `9fa0f0b3-7dba-4971-afc9-4f38544cd9af` (`जनक150249 अधिकारी`)
+     - Parent Fixture (Gen 1): `ae11d82c-5a5b-4d71-aed2-2672df9cffe3` (`पितामह150249 अधिकारी`, link ID `21bc77d3-3fbf-4a98-85c2-d0826a316cd8`)
+     - Child Fixture (Gen 3): `69570b80-fc50-4c74-8476-65e9600ef37b` (`नन्दन150249 अधिकारी`, link ID `bc0630d8-0bbc-437f-a9d0-bd057f4af8aa`)
+   - **Strict Verification Assertions**:
+     - Pre-UI Assertions: Validated that parent and child relationships exist in database, and asserted that relative `targetPersonId` strictly points to the relative's person record rather than the relationship link row ID (`targetPersonId != linkId`).
+     - Tree API Assertions: Validated tree root (`जनक150249 अधिकारी`), ancestor array containing `पितामह150249 अधिकारी`, and child array containing `नन्दन150249 अधिकारी`.
+     - Device UI Search: Entered search query `जनक150249` and tapped matching result card.
+     - Unconditional Relative Navigation: Scrolled into view and tapped child card `नन्दन150249 अधिकारी`, asserting destination person profile rendered with child identity, then navigated back via Back button.
+     - Device Tree Navigation: Tapped `Icons.account_tree` and asserted rendered ancestor name (`पितामह150249 अधिकारी`), root name (`जनक150249 अधिकारी`), and child name (`नन्दन150249 अधिकारी`) on `ReadOnlyTreeScreen`.
+   - **Result**: `00:40 +1: All tests passed!`
 
-3. **Local Debug APK Build**:
+3. **Local Debug APK Build & Security Manifest Hardening**:
    - **Command**: `$env:PUB_CACHE="D:\.pub-cache"; $env:GRADLE_USER_HOME="D:\.gradle"; flutter build apk --debug`
    - **Output Path**: `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk`
    - **Size**: 155,512,516 bytes (148.3 MB)
-   - **Configuration**: Android SDK 36.0.0, Temurin OpenJDK 21, `kotlin.incremental=false`, `usesCleartextTraffic=true`, `INTERNET` permission.
+   - **Security Hardening**:
+     - Main Manifest (`apps/mobile/android/app/src/main/AndroidManifest.xml`): Declares `<uses-permission android:name="android.permission.INTERNET"/>` with standard HTTPS enforcement; blanket cleartext traffic is strictly removed.
+     - Debug Manifest (`apps/mobile/android/app/src/debug/AndroidManifest.xml`): Scopes `android:usesCleartextTraffic="true"` solely to debug/emulator builds.
+     - Verified Merged Release Manifest: Executed `:app:processReleaseMainManifest` and verified that `apps/mobile/build/app/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml` does **not** contain `android:usesCleartextTraffic="true"`.
 
 4. **Remote CI Integration (`.github/workflows/ci.yml`)**:
-   - GitHub Actions workflow includes PostgreSQL 16 & Redis 7 services, full monorepo build, backend unit & integration tests, Playwright browser tests, Flutter SDK setup, `flutter pub get`, `flutter analyze` (0 issues), and `flutter test`.
+   - GitHub Actions workflow runs headless verification across PostgreSQL 16 & Redis 7 services, full monorepo build, backend unit & integration tests, Playwright browser tests, Flutter SDK setup, `flutter pub get`, `flutter analyze` (0 issues), and `flutter test`.
 
 ---
 

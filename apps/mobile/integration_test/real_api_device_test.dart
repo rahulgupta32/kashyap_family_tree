@@ -7,91 +7,145 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Real Device & Running API Acceptance Flow', () {
+  group('Real Device & Running API Deterministic Acceptance Flow', () {
     final realApi = GenealogyApiService(baseUrl: 'http://10.0.2.2:3000');
 
-    testWidgets('Verify Search -> Person Details -> Relative Navigation -> Tree on real device & API', (WidgetTester tester) async {
-      // 1. Direct Real API Verification
-      debugPrint('[REAL_DEVICE_TEST] 1. Executing real search query to NestJS API (http://10.0.2.2:3000)...');
-      final searchResults = await realApi.searchPersons(query: 'अधिकारी', limit: 10);
-      expect(searchResults.isNotEmpty, isTrue, reason: 'Expected real seeded records from PostgreSQL database');
-      debugPrint('[REAL_DEVICE_TEST] Found ${searchResults.length} real persons in search results.');
+    testWidgets('Verify Deterministic 3-Gen Family: Search -> Person Details -> Relative Navigation -> Tree on real device & API', (WidgetTester tester) async {
+      // 1. Direct Real API Verification on Deterministic Fixture
+      debugPrint('[REAL_DEVICE_TEST] 1. Executing deterministic search query for जनक150249...');
+      final searchResults = await realApi.searchPersons(query: 'जनक150249', limit: 10);
+      expect(searchResults.isNotEmpty, isTrue, reason: 'Expected deterministic fixture person in PostgreSQL database');
+      
+      final personSummary = searchResults.firstWhere(
+        (p) => p.primaryNameNepali.contains('जनक150249'),
+        orElse: () => throw Exception('Required deterministic fixture person जनक150249 was not returned by search API'),
+      );
+      
+      final targetPersonId = personSummary.id;
+      final expectedPersonName = personSummary.primaryNameNepali;
+      debugPrint('[REAL_DEVICE_TEST] Selected person: $targetPersonId | Name: $expectedPersonName | Gen: ${personSummary.generation}');
 
-      final firstPerson = searchResults.first;
-      debugPrint('[REAL_DEVICE_TEST] Target person: ${firstPerson.id} | Nepali: ${firstPerson.primaryNameNepali} | English: ${firstPerson.primaryNameEnglish} | Branch: ${firstPerson.branchName}');
+      // 2. Fetch Details and Assert Required 3-Generation Relationships
+      debugPrint('[REAL_DEVICE_TEST] 2. Fetching real person details for $targetPersonId...');
+      final personDetail = await realApi.getPerson(targetPersonId);
+      expect(personDetail.id, equals(targetPersonId));
+      expect(personDetail.primaryNameNepali, equals(expectedPersonName));
+      
+      // Strict requirement: must fail if required relationships are missing
+      expect(personDetail.parents.isNotEmpty, isTrue, reason: 'Deterministic test requires at least 1 parent relationship');
+      expect(personDetail.children.isNotEmpty, isTrue, reason: 'Deterministic test requires at least 1 child relationship');
 
-      // 2. Direct Real Details Verification
-      debugPrint('[REAL_DEVICE_TEST] 2. Fetching real person details for ${firstPerson.id}...');
-      final personDetail = await realApi.getPerson(firstPerson.id);
-      expect(personDetail.id, equals(firstPerson.id));
-      debugPrint('[REAL_DEVICE_TEST] PersonDetail loaded. Parents: ${personDetail.parents.length}, Spouses: ${personDetail.spouses.length}, Children: ${personDetail.children.length}');
-      for (final p in personDetail.parents) {
-        debugPrint('[REAL_DEVICE_TEST] -> Parent link: ${p.id}, Target personId: ${p.targetPersonId}, Name: ${p.person?.primaryNameNepali}');
-      }
-      for (final c in personDetail.children) {
-        debugPrint('[REAL_DEVICE_TEST] -> Child link: ${c.id}, Target personId: ${c.targetPersonId}, Name: ${c.person?.primaryNameNepali}');
-      }
+      final parentRelation = personDetail.parents.first;
+      final expectedParentPersonId = parentRelation.targetPersonId;
+      final expectedParentLinkId = parentRelation.id;
+      final expectedParentName = parentRelation.fullNameNepali;
+      
+      // Assert link ID and person ID are separate entities (not accidentally identical)
+      expect(expectedParentPersonId.isNotEmpty, isTrue);
+      expect(expectedParentLinkId.isNotEmpty, isTrue);
+      expect(expectedParentPersonId, isNot(equals(expectedParentLinkId)), reason: 'Target person ID must differ from relationship row link ID');
+      debugPrint('[REAL_DEVICE_TEST] Parent verified: $expectedParentName (PersonID: $expectedParentPersonId, LinkID: $expectedParentLinkId)');
 
-      // 3. Direct Real Tree Verification
-      debugPrint('[REAL_DEVICE_TEST] 3. Fetching real tree for ${firstPerson.id}...');
-      final treeNode = await realApi.getTree(firstPerson.id, ancestors: 2, descendants: 2);
-      expect(treeNode.id, equals(firstPerson.id));
-      debugPrint('[REAL_DEVICE_TEST] Tree loaded. Root: ${treeNode.nameNepali}, Ancestors: ${treeNode.ancestors.length}, Children: ${treeNode.children.length}');
+      final childRelation = personDetail.children.first;
+      final expectedChildPersonId = childRelation.targetPersonId;
+      final expectedChildLinkId = childRelation.id;
+      final expectedChildName = childRelation.fullNameNepali;
+      
+      expect(expectedChildPersonId.isNotEmpty, isTrue);
+      expect(expectedChildLinkId.isNotEmpty, isTrue);
+      expect(expectedChildPersonId, isNot(equals(expectedChildLinkId)), reason: 'Target person ID must differ from relationship row link ID');
+      debugPrint('[REAL_DEVICE_TEST] Child verified: $expectedChildName (PersonID: $expectedChildPersonId, LinkID: $expectedChildLinkId)');
 
-      // 4. End-to-End Real UI Interaction on Emulator
-      debugPrint('[REAL_DEVICE_TEST] 4. Rendering real UI on Android emulator...');
+      // 3. Direct Tree API Hierarchy Verification
+      debugPrint('[REAL_DEVICE_TEST] 3. Fetching real tree hierarchy for $targetPersonId...');
+      final treeNode = await realApi.getTree(targetPersonId, ancestors: 2, descendants: 2);
+      expect(treeNode.id, equals(targetPersonId));
+      expect(treeNode.nameNepali, equals(expectedPersonName));
+      
+      // Assert ancestors contain expected parent
+      expect(treeNode.ancestors.isNotEmpty, isTrue, reason: 'Tree must contain ancestors for generation 2 root');
+      final ancestorMatch = treeNode.ancestors.firstWhere(
+        (a) => a.id == expectedParentPersonId,
+        orElse: () => throw Exception('Tree ancestors must contain expected parent $expectedParentPersonId ($expectedParentName)'),
+      );
+      expect(ancestorMatch.nameNepali, equals(expectedParentName));
+      
+      // Assert children contain expected child
+      expect(treeNode.children.isNotEmpty, isTrue, reason: 'Tree must contain children for root');
+      final childMatch = treeNode.children.firstWhere(
+        (c) => c.id == expectedChildPersonId,
+        orElse: () => throw Exception('Tree children must contain expected child $expectedChildPersonId ($expectedChildName)'),
+      );
+      expect(childMatch.nameNepali, equals(expectedChildName));
+      debugPrint('[REAL_DEVICE_TEST] Tree API verified. Root: ${treeNode.nameNepali}, Ancestor: ${ancestorMatch.nameNepali}, Child: ${childMatch.nameNepali}');
+
+      // 4. Real UI Rendering on Android Emulator
+      debugPrint('[REAL_DEVICE_TEST] 4. Launching PersonSearchScreen on device...');
       await tester.pumpWidget(MaterialApp(
         home: PersonSearchScreen(apiService: realApi),
       ));
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Assert search screen rendered with real records
-      expect(find.text('कश्यप अधिकारी वंशावली'), findsOneWidget);
-      expect(find.text(firstPerson.primaryNameNepali), findsWidgets);
+      // Enter search query for deterministic fixture
+      final searchField = find.byType(TextField);
+      expect(searchField, findsOneWidget);
+      await tester.enterText(searchField, 'जनक150249');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Tap on person card to open PersonDetailScreen
-      debugPrint('[REAL_DEVICE_TEST] 5. Tapping person card to open PersonDetailScreen...');
-      final personCardFinder = find.text(firstPerson.primaryNameNepali).first;
+      // Assert search result appears
+      final personCardFinder = find.text(expectedPersonName).first;
+      expect(personCardFinder, findsOneWidget);
+
+      // 5. Open PersonDetailScreen
+      debugPrint('[REAL_DEVICE_TEST] 5. Opening PersonDetailScreen for $expectedPersonName...');
       await tester.tap(personCardFinder);
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Assert PersonDetailScreen loaded
+      // Assert PersonDetailScreen loaded with section headers
       expect(find.text('अभिभावकहरू (Parents)'), findsOneWidget);
       expect(find.text('दम्पती (Spouses)'), findsOneWidget);
-      debugPrint('[REAL_DEVICE_TEST] PersonDetailScreen rendered successfully with parents and spouses sections.');
+      expect(find.text('सन्तानहरू (Children) (${personDetail.children.length})'), findsOneWidget);
+      expect(find.text(expectedParentName), findsOneWidget);
 
-      // If person has children, verify child relative navigation with targetPersonId
-      if (personDetail.children.isNotEmpty) {
-        final firstChild = personDetail.children.first;
-        final childName = firstChild.person?.primaryNameNepali;
-        if (childName != null) {
-          debugPrint('[REAL_DEVICE_TEST] 6. Verifying relative navigation to child: $childName (Target ID: ${firstChild.targetPersonId})...');
-          final childFinder = find.text(childName);
-          if (childFinder.evaluate().isNotEmpty) {
-            await tester.tap(childFinder.first);
-            await tester.pumpAndSettle(const Duration(seconds: 3));
-            expect(find.text('अभिभावकहरू (Parents)'), findsOneWidget);
-            debugPrint('[REAL_DEVICE_TEST] Successfully navigated to relative profile: $childName');
-            // Tap back
-            await tester.pageBack();
-            await tester.pumpAndSettle(const Duration(seconds: 2));
-          }
-        }
-      }
+      // 6. Unconditional Relative Navigation to Child (Asserting Person ID Destination)
+      debugPrint('[REAL_DEVICE_TEST] 6. Scrolling to and navigating to child relative: $expectedChildName (Target Person ID: $expectedChildPersonId)...');
+      final childWidgetFinder = find.text(expectedChildName).first;
+      await tester.ensureVisible(childWidgetFinder);
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+      
+      await tester.tap(childWidgetFinder);
+      await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Tap Tree icon to open ReadOnlyTreeScreen
-      debugPrint('[REAL_DEVICE_TEST] 7. Tapping tree icon to open ReadOnlyTreeScreen...');
+      // Assert destination child profile is rendered with expected identity
+      expect(find.text(expectedChildName), findsWidgets);
+      expect(find.text('अभिभावकहरू (Parents)'), findsOneWidget);
+      debugPrint('[REAL_DEVICE_TEST] Destination child profile successfully rendered for $expectedChildName (Person ID: $expectedChildPersonId)');
+
+      // Navigate back to target person via Back button
+      debugPrint('[REAL_DEVICE_TEST] Navigating back to parent profile ($expectedPersonName)...');
+      final backButton = find.byType(BackButton);
+      expect(backButton, findsOneWidget);
+      await tester.tap(backButton);
+      await tester.pumpAndSettle(const Duration(seconds: 2));
+      
+      // Verify back on target person screen
+      expect(find.text(expectedPersonName), findsWidgets);
       final treeIconFinder = find.byIcon(Icons.account_tree);
       expect(treeIconFinder, findsOneWidget);
+
+      // 7. Tree Navigation and Rendered Ancestor/Descendant Assertions
+      debugPrint('[REAL_DEVICE_TEST] 7. Opening ReadOnlyTreeScreen...');
       await tester.tap(treeIconFinder);
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
-      // Assert ReadOnlyTreeScreen rendered
+      // Assert Tree Canvas renders title, ancestor, root, and child names on device
       expect(find.text('वंशावली रुख (Family Tree)'), findsOneWidget);
-      expect(find.text(firstPerson.primaryNameNepali), findsWidgets);
-      debugPrint('[REAL_DEVICE_TEST] ReadOnlyTreeScreen rendered successfully with root node: ${firstPerson.primaryNameNepali}.');
+      expect(find.text(expectedParentName), findsWidgets, reason: 'Ancestor name must be rendered on tree screen');
+      expect(find.text(expectedPersonName), findsWidgets, reason: 'Root focus name must be rendered on tree screen');
+      expect(find.text(expectedChildName), findsWidgets, reason: 'Child descendant name must be rendered on tree screen');
 
-      debugPrint('[REAL_DEVICE_TEST] Real device and running API verification PASSED completely!');
+      debugPrint('[REAL_DEVICE_TEST] Fully deterministic real device & live API verification PASSED completely!');
     });
   });
 }
