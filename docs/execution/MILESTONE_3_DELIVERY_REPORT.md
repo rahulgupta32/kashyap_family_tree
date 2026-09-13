@@ -121,27 +121,44 @@ All requirements and acceptance criteria have been strictly fulfilled and verifi
   - `should paginate English-only names with exact totals and hasMore`: PASS
   - `should enforce authoritative roleAssignments on includeArchived search`: PASS
 
-### B. Summary of All Test Suites
-| Test Tier | Total Suites | Total Tests | Pass Rate | Execution Time |
-|-----------|--------------|-------------|-----------|----------------|
-| **Unit Tests (`test:unit`)** | 13 | 101 | **100% (101/101)** | ~19.6s |
-| **Integration Tests (`test:integration`)** | 7 | 99 | **100% (99/99)** | ~11.0s |
-| **E2E Browser Tests (`test:e2e`)** | 2 | 9 | **100% (9/9)** | ~20.3s |
-| **Flutter Mobile Tests (`flutter test`)** | 2 | 5 | **100% (5/5)** | ~1.5s |
-| **Monorepo Build (`pnpm -r build`)** | 6 projects | 6 | **100% (6/6)** | ~22.0s |
-| **Flutter Code Analysis (`flutter analyze`)**| 1 package | 0 issues | **100% CLEAN** | ~8.3s |
-| **TOTAL** | **24 Suites** | **214 Tests** | **100% PASS** | **All Verified** |
+### B. Summary of All Verification Tiers
+| Verification Tier | Scope / Command | Total Tests / Items | Result | Execution Details |
+|-------------------|-----------------|---------------------|--------|-------------------|
+| **Backend Unit Tests** | `pnpm --filter @kashyap/api test:unit` | 101 tests (13 suites) | **100% PASS** | In-memory & isolated unit tests (~19.6s) |
+| **Real PostgreSQL/Redis Integration** | `pnpm --filter @kashyap/api test:integration` | 99 tests (7 suites) | **100% PASS** | Real PostgreSQL (`127.0.0.1:5434`) & Redis (`127.0.0.1:6379`) (~11.0s) |
+| **Playwright Browser E2E** | `pnpm run test:e2e` | 9 tests (2 suites) | **100% PASS** | Full browser governance & session flows in Chromium (~20.3s) |
+| **Mocked Mobile Widget Tests** | `flutter test` (in `apps/mobile`) | 5 tests (2 suites) | **100% PASS** | DTO serialization, widget rendering & `FakeGenealogyApiService` flow (~3.0s) |
+| **Real Device / API Integration** | `flutter test integration_test/ -d emulator-5554` | 1 test suite | **100% PASS** | Executed on Android 15 emulator (`emulator-5554`) querying real NestJS API (`http://10.0.2.2:3000`) & PostgreSQL records |
+| **Flutter Static Analysis** | `flutter analyze` (in `apps/mobile`) | 1 package | **100% CLEAN** | 0 issues found |
+| **Local Debug APK Build** | `flutter build apk --debug` | 1 APK target | **100% SUCCESS** | Built `app-debug.apk` (155,512,516 bytes, Exit Code 0) |
+| **Monorepo Build** | `pnpm -r build` | 6 projects | **100% PASS** | API, Admin, Contracts, Localization, Tokens, Fixtures |
 
-### C. Mobile Client Architecture & Tooling
-- The Flutter mobile codebase is fully structured in `apps/mobile/lib/` (`theme/app_theme.dart`, `models/`, `services/`, and `screens/`) utilizing the **Provider** pattern (`provider: ^6.1.1`).
-- Models aligned directly with `@kashyap/contracts` (`PersonSummary`, `PersonDetail`, `ParentRelation`, `SpouseRelation`, `ChildRelation`, `TreeNode`).
-- Navigation fixes: `PersonDetailScreen` navigates using `targetPersonId` mapping to related persons.
-- Mobile tooling & verification:
-  - Flutter SDK 3.47.4 installed on D: storage (`D:\flutter`).
-  - Android SDK 36.0.0 and Temurin OpenJDK 21 configured with Gradle user home on D: (`D:\.gradle`) and Pub cache on D: (`D:\.pub-cache`).
-  - Code analysis: `flutter analyze` passed with 0 issues (100% clean).
-  - Automated tests: `flutter test` passed all 5 test cases including contract serialization, widget rendering, and end-to-end navigation smoke flow (`api_smoke_flow_test.dart`).
-  - Debug APK Build: `flutter build apk --debug` succeeded (exit code 0), generating `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk` (155,512,516 bytes).
+### C. Mobile Client Architecture & Multi-Tier Verification
+
+1. **Mocked Unit & Widget Tests (`apps/mobile/test/`)**:
+   - `models_and_widgets_test.dart`: Verifies `PersonSummary`, `PersonDetail`, `ParentRelation`, `SpouseRelation`, `ChildRelation`, and `TreeNode` serialization against `@kashyap/contracts` DTO schemas, and verifies `KashyapApp` initial widget layout.
+   - `api_smoke_flow_test.dart`: Mocked navigation test utilizing `FakeGenealogyApiService` asserting Search -> Person Details -> Relative Navigation -> Tree Canvas navigation without network dependency.
+
+2. **Real Device & Live API Verification (`apps/mobile/integration_test/real_api_device_test.dart`)**:
+   - **Target Device / Emulator**: `emulator-5554` (`sdk gphone64 x86_64`, Android 15 / API 35).
+   - **Backend Target**: Live NestJS API running on host `127.0.0.1:3000` accessible via Android emulator gateway `http://10.0.2.2:3000`.
+   - **Database Target**: Real PostgreSQL on D: drive (`127.0.0.1:5434/kashyap_db`).
+   - **Flow Verified**:
+     - Live search query (`अधिकारी`) returning 10 real records from the 923 PostgreSQL persons table.
+     - Person profile loading (`0dfae46d-2268-4cea-8f7f-89e67b433773` / `जनक अधिकारी`).
+     - Parent/spouse/children relationship resolution via `targetPersonId` (`cd7a9457-a6e8-4690-a3d2-f211ecfda064` / `राम अधिकारी`).
+     - Relative profile navigation (`राम अधिकारी`).
+     - Interactive Read-Only Tree rendering (`ReadOnlyTreeScreen`) with root node and child descendants.
+   - **Result**: `00:54 +1: All tests passed!`
+
+3. **Local Debug APK Build**:
+   - **Command**: `$env:PUB_CACHE="D:\.pub-cache"; $env:GRADLE_USER_HOME="D:\.gradle"; flutter build apk --debug`
+   - **Output Path**: `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk`
+   - **Size**: 155,512,516 bytes (148.3 MB)
+   - **Configuration**: Android SDK 36.0.0, Temurin OpenJDK 21, `kotlin.incremental=false`, `usesCleartextTraffic=true`, `INTERNET` permission.
+
+4. **Remote CI Integration (`.github/workflows/ci.yml`)**:
+   - GitHub Actions workflow includes PostgreSQL 16 & Redis 7 services, full monorepo build, backend unit & integration tests, Playwright browser tests, Flutter SDK setup, `flutter pub get`, `flutter analyze` (0 issues), and `flutter test`.
 
 ---
 

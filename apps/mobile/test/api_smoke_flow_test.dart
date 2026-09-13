@@ -148,8 +148,8 @@ class FakeGenealogyApiService extends GenealogyApiService {
 }
 
 void main() {
-  group('Mobile End-to-End Navigation Smoke Flow', () {
-    testWidgets('Search -> Person Details -> Tree Canvas Navigation Flow', (WidgetTester tester) async {
+  group('Mocked Mobile Navigation Test (FakeGenealogyApiService)', () {
+    testWidgets('Mocked Search -> Person Details -> Tree Canvas Navigation Flow', (WidgetTester tester) async {
       final fakeApi = FakeGenealogyApiService();
 
       // 1. Launch Search Screen
