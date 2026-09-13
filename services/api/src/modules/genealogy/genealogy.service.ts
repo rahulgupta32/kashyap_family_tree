@@ -41,6 +41,7 @@ export const GENEALOGY_TEST_FIXTURE_MODE = 'GENEALOGY_TEST_FIXTURE_MODE';
 export interface ActorContext {
   id: string;
   roles: Role[];
+  roleAssignments?: { role: Role; branchId?: string | null }[];
   branchId?: string;
   branchIds?: string[];
   ipAddress?: string;
@@ -123,36 +124,23 @@ export class GenealogyService {
 
   private checkBranchAuthority(actor?: ActorContext, branchId?: string): void {
     if (!actor) return;
-    if (actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN)) {
-      return; // Global access
+    if (this.privacyEngine.isAuthorizedAdmin(actor, branchId)) {
+      return;
     }
-    if (actor.roles.includes(Role.BRANCH_ADMIN) || actor.roles.includes(Role.BRANCH_VERIFIER)) {
-      const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
-      if (branchId && !actorBranches.includes(branchId)) {
-        throw new ForbiddenException({
-          errorCode: ErrorCode.BRANCH_MISMATCH,
-          message: 'Branch administrator cannot mutate records outside their assigned branch',
-        });
-      }
-    }
+    throw new ForbiddenException({
+      errorCode: ErrorCode.BRANCH_MISMATCH,
+      message: 'Branch administrator cannot mutate records outside their assigned branch',
+    });
   }
 
   private checkDualBranchAuthority(actor?: ActorContext, branchA?: string, branchB?: string): void {
     if (!actor) return;
-    if (actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN)) {
-      return;
-    }
-    const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
-    if (branchA && !actorBranches.includes(branchA)) {
+    const allowedA = !branchA || this.privacyEngine.isAuthorizedAdmin(actor, branchA);
+    const allowedB = !branchB || this.privacyEngine.isAuthorizedAdmin(actor, branchB);
+    if (!allowedA || !allowedB) {
       throw new ForbiddenException({
         errorCode: ErrorCode.BRANCH_MISMATCH,
-        message: `Branch administrator cannot link records outside their assigned branch (${branchA})`,
-      });
-    }
-    if (branchB && !actorBranches.includes(branchB)) {
-      throw new ForbiddenException({
-        errorCode: ErrorCode.BRANCH_MISMATCH,
-        message: `Branch administrator cannot link records outside their assigned branch (${branchB})`,
+        message: 'Branch administrator cannot link records outside their assigned branch',
       });
     }
   }

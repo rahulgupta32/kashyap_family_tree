@@ -338,18 +338,13 @@ export class DuplicateService {
     }
 
     // Dual-branch authorization check for candidate resolution
-    const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
-    if (!isSuperAdmin) {
-      const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
-      if (
-        (personA.branch_id && !actorBranches.includes(personA.branch_id)) ||
-        (personB.branch_id && !actorBranches.includes(personB.branch_id))
-      ) {
-        throw new ForbiddenException({
-          errorCode: ErrorCode.BRANCH_MISMATCH,
-          message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
-        });
-      }
+    const allowedA = this.privacyEngine.isAuthorizedAdmin(actor, personA.branch_id);
+    const allowedB = this.privacyEngine.isAuthorizedAdmin(actor, personB.branch_id);
+    if (!allowedA || !allowedB) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.BRANCH_MISMATCH,
+        message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
+      });
     }
 
     return this.db.transaction(async (client: PoolClient) => {
@@ -374,17 +369,13 @@ export class DuplicateService {
         });
       }
 
-      if (!isSuperAdmin) {
-        const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
-        if (
-          (txPersonA.branch_id && !actorBranches.includes(txPersonA.branch_id)) ||
-          (txPersonB.branch_id && !actorBranches.includes(txPersonB.branch_id))
-        ) {
-          throw new ForbiddenException({
-            errorCode: ErrorCode.BRANCH_MISMATCH,
-            message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
-          });
-        }
+      const allowedTxA = this.privacyEngine.isAuthorizedAdmin(actor, txPersonA.branch_id);
+      const allowedTxB = this.privacyEngine.isAuthorizedAdmin(actor, txPersonB.branch_id);
+      if (!allowedTxA || !allowedTxB) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
+        });
       }
 
       const updated = await this.duplicateRepo.updateCandidateStatus(
@@ -523,20 +514,13 @@ export class DuplicateService {
       }
 
       // Dual-branch authorization check
-      if (!isSuperAdmin) {
-        const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
-        if (survivingRecord.branch_id && !actorBranches.includes(survivingRecord.branch_id)) {
-          throw new ForbiddenException({
-            errorCode: ErrorCode.BRANCH_MISMATCH,
-            message: 'Branch Administrators can only merge records within their assigned branch scope',
-          });
-        }
-        if (mergedRecord.branch_id && !actorBranches.includes(mergedRecord.branch_id)) {
-          throw new ForbiddenException({
-            errorCode: ErrorCode.BRANCH_MISMATCH,
-            message: 'Branch Administrators can only merge records within their assigned branch scope',
-          });
-        }
+      const allowedA = this.privacyEngine.isAuthorizedAdmin(actor, survivingRecord.branch_id);
+      const allowedB = this.privacyEngine.isAuthorizedAdmin(actor, mergedRecord.branch_id);
+      if (!allowedA || !allowedB) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'Branch Administrators can only merge records within their assigned branch scope',
+        });
       }
 
       // 3. Stale-write / Optimistic concurrency protection

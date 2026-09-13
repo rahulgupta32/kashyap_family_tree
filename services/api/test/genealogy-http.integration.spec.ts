@@ -822,4 +822,293 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       expect(res.body.errorCode).toBe(ErrorCode.CANNOT_MERGE_CLAIMED_PERSONS);
     });
   });
+
+  describe('8. Role-to-Branch Mixed Identity Invariants (Amendment 3 & 4)', () => {
+    let mixedAdminToken: string;
+    let pBranch1Mixed: string;
+    let pBranch2Mixed: string;
+    let mixedCandidateId: string;
+
+    beforeAll(async () => {
+      // User has BRANCH_ADMIN in branch1, but ONLY REGISTERED_USER in branch2
+      const mixedUser = await userRepo.findOrCreateByPhone('+9779849999050');
+      await db.query('DELETE FROM user_roles WHERE user_id = $1', [mixedUser.id]);
+      await userRepo.assignRole(mixedUser.id, Role.BRANCH_ADMIN, branch1Id);
+      await userRepo.assignRole(mixedUser.id, Role.REGISTERED_USER, branch2Id);
+
+      const mixedSession = await sessionRepo.createSession({
+        userId: mixedUser.id,
+        refreshTokenHash: 'hash_mixed_' + Date.now(),
+        devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-runner',
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+
+      mixedAdminToken = jwtService.sign(
+        {
+          sub: mixedUser.id,
+          sid: mixedSession.id,
+          phoneNumber: mixedUser.phone_number,
+          tokenType: 'access',
+          roles: [Role.BRANCH_ADMIN, Role.REGISTERED_USER],
+          branchIds: [branch1Id, branch2Id],
+        },
+        {
+          secret: getJwtSecret(),
+          issuer: JWT_ISSUER,
+          audience: JWT_AUDIENCE,
+          algorithm: JWT_ALGORITHM,
+          expiresIn: '15m',
+        },
+      );
+
+      const [p1, p2] = await Promise.all([
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 3, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'हरि', last_name: 'अधिकारी', full_name: 'हरि अधिकारी', is_primary: true }],
+        ),
+        personRepo.createPerson(
+          { branch_id: branch2Id, generation: 3, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'हरि', last_name: 'अधिकारी', full_name: 'हरि अधिकारी', is_primary: true }],
+        ),
+      ]);
+
+      pBranch1Mixed = p1.id;
+      pBranch2Mixed = p2.id;
+
+      const cand = await duplicateRepo.createOrUpdateCandidate(
+        pBranch1Mixed,
+        pBranch2Mixed,
+        0.82,
+        {
+          nameSimilarity: 0.9,
+          matchingNames: ['हरि अधिकारी'],
+          sameBranch: false,
+          sharedParentsCount: 0,
+          reasons: ['Cross-branch candidate'],
+        },
+      );
+      mixedCandidateId = cand.id;
+    });
+
+    it('should reject duplicate comparison for mixed user without admin authority in branch B (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/duplicates/compare?personAId=${pBranch1Mixed}&personBId=${pBranch2Mixed}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`)
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+
+    it('should reject candidate resolution for mixed user without admin authority in branch B (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/genealogy/duplicates/candidates/${mixedCandidateId}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`)
+        .send({
+          status: DuplicateCandidateStatus.NOT_A_DUPLICATE,
+          notes: 'Unauthorized branch admin attempt on non-admin branch B',
+        })
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+
+    it('should reject duplicate merge for mixed user without admin authority in branch B (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/genealogy/duplicates/merge')
+        .set('Authorization', `Bearer ${mixedAdminToken}`)
+        .send({
+          survivingPersonId: pBranch1Mixed,
+          mergedPersonId: pBranch2Mixed,
+          survivingPersonVersion: 1,
+          mergedPersonVersion: 1,
+          justificationReason: 'Unauthorized cross-branch merge by mixed-role user',
+        })
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+  });
+
+  describe('9. Privacy Governance: Comprehensive 6-Viewer Matrix on Protected Minor Record', () => {
+    let minorPersonId: string;
+    let selfToken: string;
+    let verifiedMemberToken: string;
+    let selfUserId: string;
+
+    beforeAll(async () => {
+      // 1. Create self user
+      const selfUser = await userRepo.findOrCreateByPhone('+9779849999060');
+      selfUserId = selfUser.id;
+      await db.query('DELETE FROM user_roles WHERE user_id = $1', [selfUser.id]);
+      await userRepo.assignRole(selfUser.id, Role.REGISTERED_USER, branch1Id);
+      const selfSession = await sessionRepo.createSession({
+        userId: selfUser.id,
+        refreshTokenHash: 'hash_self_' + Date.now(),
+        devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-runner',
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+      selfToken = jwtService.sign(
+        { sub: selfUser.id, sid: selfSession.id, phoneNumber: selfUser.phone_number, tokenType: 'access', roles: [Role.REGISTERED_USER], branchIds: [branch1Id] },
+        { secret: getJwtSecret(), issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: JWT_ALGORITHM, expiresIn: '15m' },
+      );
+
+      // 2. Create verified member user (different user)
+      const vmUser = await userRepo.findOrCreateByPhone('+9779849999061');
+      await db.query('DELETE FROM user_roles WHERE user_id = $1', [vmUser.id]);
+      await userRepo.assignRole(vmUser.id, Role.VERIFIED_MEMBER, branch1Id);
+      const vmSession = await sessionRepo.createSession({
+        userId: vmUser.id,
+        refreshTokenHash: 'hash_vm_' + Date.now(),
+        devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1',
+        userAgent: 'test-runner',
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+      verifiedMemberToken = jwtService.sign(
+        { sub: vmUser.id, sid: vmSession.id, phoneNumber: vmUser.phone_number, tokenType: 'access', roles: [Role.VERIFIED_MEMBER], branchIds: [branch1Id] },
+        { secret: getJwtSecret(), issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: JWT_ALGORITHM, expiresIn: '15m' },
+      );
+
+      // 3. Create protected minor person record with PRIVATE address & VERIFIED_COMMUNITY dob
+      const minor = await personRepo.createPerson(
+        {
+          branch_id: branch1Id,
+          generation: 5,
+          gender: Gender.FEMALE,
+          living_status: LivingStatus.LIVING,
+          birth_year_bs: 2075,
+          birth_date_bs: '2075-02-15',
+          birth_date_ad: '2018-05-29',
+          birth_place: 'पोखरा',
+          mool_ghar: 'कास्की',
+          current_address: 'पोखरा-८, कास्की',
+          occupation: 'विद्यार्थी',
+          education: 'प्राथमिक',
+          address_visibility: PrivacyVisibility.PRIVATE,
+          dob_visibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+          is_minor_protected: true,
+          is_claimed: true,
+          claimed_user_id: selfUser.id,
+        },
+        [{ language: 'ne', first_name: 'अन्जली', last_name: 'अधिकारी', full_name: 'अन्जली अधिकारी', is_primary: true }],
+      );
+      minorPersonId = minor.id;
+    });
+
+    it('1. isSelf viewer should see all private, minor, and administrative fields', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(200);
+
+      expect(res.body.currentAddress).toBe('पोखरा-८, कास्की');
+      expect(res.body.birthDateBs).toBe('2075-02-15');
+      expect(res.body.birthPlace).toBe('पोखरा');
+      expect(res.body.moolGhar).toBe('कास्की');
+      expect(res.body.occupation).toBe('विद्यार्थी');
+      expect(res.body.education).toBe('प्राथमिक');
+      expect(res.body.claimedByUserId).toBe(selfUserId);
+    });
+
+    it('2. Guest (unauthenticated) viewer should have sensitive minor contact and location masked', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .expect(200);
+
+      expect(res.body.currentAddress).toBeUndefined();
+      expect(res.body.birthPlace).toBeUndefined();
+      expect(res.body.moolGhar).toBeUndefined();
+      expect(res.body.occupation).toBeUndefined();
+      expect(res.body.education).toBeUndefined();
+      expect(res.body.birthDateBs).toBe('2075 B.S.');
+      expect(res.body.birthDateAd).toBeUndefined();
+      expect(res.body.claimedByUserId).toBeUndefined();
+    });
+
+    it('3. Verified Member viewer should still receive minor masking for non-self record', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .set('Authorization', `Bearer ${verifiedMemberToken}`)
+        .expect(200);
+
+      expect(res.body.currentAddress).toBeUndefined();
+      expect(res.body.birthPlace).toBeUndefined();
+      expect(res.body.moolGhar).toBeUndefined();
+      expect(res.body.occupation).toBeUndefined();
+      expect(res.body.birthDateBs).toBe('2075 B.S.');
+      expect(res.body.claimedByUserId).toBeUndefined();
+    });
+
+    it('4. Branch Admin of branch 1 should see admin facts but PRIVATE address must remain masked', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .set('Authorization', `Bearer ${branchAdminToken}`) // Branch 1 Admin
+        .expect(200);
+
+      expect(res.body.birthPlace).toBe('पोखरा');
+      expect(res.body.moolGhar).toBe('कास्की');
+      expect(res.body.claimedByUserId).toBe(selfUserId);
+      expect(res.body.birthDateBs).toBe('2075-02-15');
+      expect(res.body.currentAddress).toBeUndefined(); // PRIVATE address is strictly for isSelf!
+    });
+
+    it('5. Branch Admin of branch 2 (non-admin for branch 1) should receive regular member minor masking', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .set('Authorization', `Bearer ${branchAdmin2Token}`) // Branch 2 Admin
+        .expect(200);
+
+      expect(res.body.birthPlace).toBeUndefined();
+      expect(res.body.moolGhar).toBeUndefined();
+      expect(res.body.currentAddress).toBeUndefined();
+      expect(res.body.birthDateBs).toBe('2075 B.S.');
+      expect(res.body.claimedByUserId).toBeUndefined();
+    });
+
+    it('6. Super Admin should see admin facts but PRIVATE address must remain masked', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/people/${minorPersonId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      expect(res.body.birthPlace).toBe('पोखरा');
+      expect(res.body.moolGhar).toBe('कास्की');
+      expect(res.body.claimedByUserId).toBe(selfUserId);
+      expect(res.body.birthDateBs).toBe('2075-02-15');
+      expect(res.body.currentAddress).toBeUndefined(); // PRIVATE address is strictly for isSelf!
+    });
+  });
+
+  describe('10. Multi-Page Search & Visibility Counting (SRCH-FR-001..008)', () => {
+    it('should correctly paginate and calculate total and hasMore across multiple pages', async () => {
+      const page1Res = await request(app.getHttpServer())
+        .get('/genealogy/search?page=1&limit=3')
+        .expect(200);
+
+      expect(page1Res.body.page).toBe(1);
+      expect(page1Res.body.limit).toBe(3);
+      expect(page1Res.body.items.length).toBeLessThanOrEqual(3);
+      expect(page1Res.body.total).toBeGreaterThan(0);
+
+      if (page1Res.body.total > 3) {
+        expect(page1Res.body.hasMore).toBe(true);
+
+        const page2Res = await request(app.getHttpServer())
+          .get('/genealogy/search?page=2&limit=3')
+          .expect(200);
+
+        expect(page2Res.body.page).toBe(2);
+        expect(page2Res.body.limit).toBe(3);
+        // Ensure no ID overlap between consecutive pages
+        const p1Ids = new Set(page1Res.body.items.map((i: any) => i.id));
+        for (const item of page2Res.body.items) {
+          expect(p1Ids.has(item.id)).toBe(false);
+        }
+      }
+    });
+  });
 });

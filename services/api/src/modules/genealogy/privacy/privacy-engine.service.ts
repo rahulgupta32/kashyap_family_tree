@@ -16,9 +16,15 @@ import {
   BsDate,
 } from '@kashyap/localization';
 
+export interface RoleAssignment {
+  role: Role;
+  branchId?: string | null;
+}
+
 export interface ViewerContext {
   userId?: string;
   roles: Role[];
+  roleAssignments?: RoleAssignment[];
   branchId?: string;
   branchIds?: string[];
   isVerifiedMember?: boolean;
@@ -28,26 +34,47 @@ export interface ViewerContext {
 export class PrivacyEngineService {
   /**
    * Computes the current Bikram Sambat (BS) date based on Nepal Standard Time (UTC+5:45).
-   * Accurate calendar conversion aligning with Nepal standard astronomical calendar.
+   * Returns null if out of supported range (BS 2000..2090), preventing false approximations.
    */
-  public getCurrentBsDate(now: Date = new Date()): BsDate {
+  public getCurrentBsDate(now: Date = new Date()): BsDate | null {
     return getCalBsDate(now);
   }
 
-  public getCurrentBsYear(now: Date = new Date()): number {
-    return this.getCurrentBsDate(now).year;
+  public getCurrentBsYear(now: Date = new Date()): number | null {
+    const bs = this.getCurrentBsDate(now);
+    return bs ? bs.year : null;
   }
 
   /**
-   * Evaluates if viewer has full administrative access within this person's branch scope
+   * Evaluates if viewer has full administrative access within this person's branch scope.
    * Strict authorization: Super/Central Admins have global access; Branch Admins/Verifiers
-   * have access strictly within their assigned branchIds. Blanket bypasses are prohibited.
+   * have access strictly within their assigned branchIds.
+   * A user with mixed roles (e.g. admin of branch A, but member of branch B) receives
+   * administrative authority ONLY within branch A.
    */
   public isAuthorizedAdmin(viewer?: ViewerContext, personBranchId?: string): boolean {
     if (!viewer || !viewer.roles || viewer.roles.length === 0) return false;
     if (viewer.roles.includes(Role.SUPER_ADMIN) || viewer.roles.includes(Role.CENTRAL_ADMIN)) {
       return true;
     }
+
+    // Authoritative roleAssignments check
+    if (viewer.roleAssignments && viewer.roleAssignments.length > 0) {
+      if (
+        viewer.roleAssignments.some(
+          (a) => a.role === Role.SUPER_ADMIN || a.role === Role.CENTRAL_ADMIN,
+        )
+      ) {
+        return true;
+      }
+      if (!personBranchId) return false;
+      return viewer.roleAssignments.some(
+        (a) =>
+          (a.role === Role.BRANCH_ADMIN || a.role === Role.BRANCH_VERIFIER) &&
+          a.branchId === personBranchId,
+      );
+    }
+
     if (viewer.roles.includes(Role.BRANCH_ADMIN) || viewer.roles.includes(Role.BRANCH_VERIFIER)) {
       if (!personBranchId) return false;
       if (viewer.branchId && viewer.branchId === personBranchId) return true;
@@ -211,23 +238,33 @@ export class PrivacyEngineService {
         if (filtered.birthDateBs) filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
         if (filtered.birthDateAd) filtered.birthDateAd = undefined;
       }
+      // Apply field-level PRIVATE restrictions to minors/uncertain-age records as well (even for administrators):
+      if (!isSelf) {
+        if (detail.privacy?.addressVisibility === PrivacyVisibility.PRIVATE) {
+          filtered.currentAddress = undefined;
+        }
+        if (detail.privacy?.dobVisibility === PrivacyVisibility.PRIVATE) {
+          filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
+          filtered.birthDateAd = undefined;
+        }
+      }
       return filtered;
     }
 
     // Adult Living Person Visibility Rules (PRIV-FR-001, PRIV-FR-002):
     if (!isDeceased) {
-      // Address visibility
+      // Address visibility: PRIVATE is strictly for isSelf
       if (
-        detail.privacy.addressVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        detail.privacy?.addressVisibility === PrivacyVisibility.PRIVATE ||
+        (detail.privacy?.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
       ) {
         filtered.currentAddress = undefined;
       }
 
-      // DOB visibility
+      // DOB visibility: PRIVATE is strictly for isSelf
       if (
-        detail.privacy.dobVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        detail.privacy?.dobVisibility === PrivacyVisibility.PRIVATE ||
+        (detail.privacy?.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
       ) {
         filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
         filtered.birthDateAd = undefined;

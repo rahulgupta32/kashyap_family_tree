@@ -33,21 +33,43 @@ describe('Localization & Error Code Completeness (I18N-FR-001..005)', () => {
     const privacyEngine = new PrivacyEngineService();
 
     it('should accurately convert AD dates to BS and BS to AD within supported range (BS 2000..2090)', () => {
-      // Test Anchor: 2000-01-01 BS = 1943-04-14 UTC
-      const startAd = new Date(Date.UTC(1943, 3, 14, 0, 0, 0));
-      const startBs = adToBs(startAd);
+      // 1. Test Anchor: 2000-01-01 BS = 1943-04-14 AD (Nepal midnight 1943-04-13T18:15:00.000Z)
+      const startBs = adToBs(new Date('1943-04-14T00:00:00+05:45'));
       expect(startBs).toEqual({ year: 2000, month: 1, day: 1 });
 
-      const backAd = bsToAd(2000, 1, 1);
-      expect(backAd).not.toBeNull();
-      expect(backAd!.toISOString().slice(0, 10)).toBe('1943-04-14');
+      const startAd = bsToAd(2000, 1, 1);
+      expect(startAd).not.toBeNull();
+      expect(startAd!.toISOString()).toBe('1943-04-13T18:15:00.000Z');
+
+      // 2. Independently Sourced Historical & Contemporary Reference Cases:
+      // Case A: 2046-11-07 BS = 1990-02-18 AD
+      const demAd = bsToAd(2046, 11, 7);
+      expect(demAd).not.toBeNull();
+      expect(adToBs(new Date('1990-02-18T00:00:00+05:45'))).toEqual({ year: 2046, month: 11, day: 7 });
+
+      // Case B: 2072-01-12 BS = 2015-04-25 AD
+      const quakeAd = bsToAd(2072, 1, 12);
+      expect(quakeAd).not.toBeNull();
+      expect(adToBs(new Date('2015-04-25T00:00:00+05:45'))).toEqual({ year: 2072, month: 1, day: 12 });
+
+      // Case C: 2081-01-01 BS = 2024-04-13 AD
+      const newYear81 = bsToAd(2081, 1, 1);
+      expect(newYear81).not.toBeNull();
+      expect(newYear81!.toISOString()).toBe('2024-04-12T18:15:00.000Z');
+      expect(adToBs(new Date('2024-04-13T00:00:00+05:45'))).toEqual({ year: 2081, month: 1, day: 1 });
+
+      // Case D: 2083-01-01 BS = 2026-04-14 AD (Fixed & Validated)
+      const newYear83 = bsToAd(2083, 1, 1);
+      expect(newYear83).not.toBeNull();
+      expect(newYear83!.toISOString()).toBe('2026-04-13T18:15:00.000Z');
+      expect(adToBs(new Date('2026-04-14T00:00:00+05:45'))).toEqual({ year: 2083, month: 1, day: 1 });
     });
 
-    it('should handle year rollover correctly (Chaitra 31, 2082 BS -> Baisakh 1, 2083 BS)', () => {
-      const end2082 = bsToAd(2082, 12, 31);
+    it('should handle year rollover correctly (Chaitra 30, 2082 BS -> Baisakh 1, 2083 BS)', () => {
+      const end2082 = bsToAd(2082, 12, 30);
       expect(end2082).not.toBeNull();
       const bsEnd = adToBs(end2082!);
-      expect(bsEnd).toEqual({ year: 2082, month: 12, day: 31 });
+      expect(bsEnd).toEqual({ year: 2082, month: 12, day: 30 });
 
       const start2083 = bsToAd(2083, 1, 1);
       expect(start2083).not.toBeNull();
@@ -56,27 +78,37 @@ describe('Localization & Error Code Completeness (I18N-FR-001..005)', () => {
     });
 
     it('should respect Nepal Standard Time (UTC+5:45) across midnight boundary', () => {
-      // 2026-04-16T18:14:59Z is 23:59:59 NPT on 2026-04-16 (Chaitra 31, 2082 BS)
-      const beforeMidnight = new Date('2026-04-16T18:14:59Z');
+      // 2026-04-13T18:14:59.999Z is 23:59:59.999 NPT on 2026-04-13 (Chaitra 30, 2082 BS)
+      const beforeMidnight = new Date('2026-04-13T18:14:59.999Z');
       const bsBefore = adToBs(beforeMidnight);
-      expect(bsBefore).toEqual({ year: 2082, month: 12, day: 31 });
+      expect(bsBefore).toEqual({ year: 2082, month: 12, day: 30 });
 
-      // 2026-04-16T18:15:01Z is 00:00:01 NPT on 2026-04-17 (Baisakh 1, 2083 BS)
-      const afterMidnight = new Date('2026-04-16T18:15:01Z');
-      const bsAfter = adToBs(afterMidnight);
-      expect(bsAfter).toEqual({ year: 2083, month: 1, day: 1 });
+      // 2026-04-13T18:15:00.000Z is 00:00:00 NPT on 2026-04-14 (Baisakh 1, 2083 BS)
+      const atMidnight = new Date('2026-04-13T18:15:00.000Z');
+      const bsMidnight = adToBs(atMidnight);
+      expect(bsMidnight).toEqual({ year: 2083, month: 1, day: 1 });
+
+      // 2026-04-14T06:00:00.000Z is 11:45:00 NPT on 2026-04-14 (Baisakh 1, 2083 BS)
+      const daytime = new Date('2026-04-14T06:00:00.000Z');
+      const bsDaytime = adToBs(daytime);
+      expect(bsDaytime).toEqual({ year: 2083, month: 1, day: 1 });
     });
 
-    it('should reject invalid or out-of-range BS dates fail-closed', () => {
+    it('should reject invalid or out-of-range BS dates fail-closed with null', () => {
       expect(isValidBsDate(1999, 1, 1)).toBe(false);
       expect(isValidBsDate(2095, 1, 1)).toBe(false);
       expect(isValidBsDate(2083, 13, 1)).toBe(false);
       expect(isValidBsDate(2083, 0, 1)).toBe(false);
-      expect(isValidBsDate(2083, 1, 35)).toBe(false); // Baisakh 2083 has 31 days
+      expect(isValidBsDate(2083, 1, 35)).toBe(false);
+
+      expect(bsToAd(1999, 1, 1)).toBeNull();
+      expect(bsToAd(2095, 1, 1)).toBeNull();
+      expect(adToBs(new Date('1940-01-01'))).toBeNull();
+      expect(adToBs(new Date('2050-01-01'))).toBeNull();
     });
 
     it('should treat uncertain age boundaries and unknown birth year restrictively (PRIV-FR-003, Policy Sec 6.1)', () => {
-      const fixedNow = new Date('2026-09-13T07:30:00Z'); // Current BS date is approx 2083-05-25
+      const fixedNow = new Date('2026-09-13T07:30:00Z'); // Current BS date is 2083-05-28
 
       // 1. Living person with unknown birth year -> minor/uncertain protection applies
       expect(privacyEngine.isMinorOrUncertainAge({ livingStatus: 'LIVING' as any }, fixedNow)).toBe(true);

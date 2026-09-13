@@ -61,6 +61,7 @@ export class GenealogyController {
     return {
       userId: user.id,
       roles: user.roles as Role[],
+      roleAssignments: user.roleAssignments,
       branchId: branchIds[0] || undefined,
       branchIds,
       isVerifiedMember:
@@ -75,6 +76,7 @@ export class GenealogyController {
     return {
       id: user.id,
       roles: user.roles as Role[],
+      roleAssignments: user.roleAssignments,
       branchId: branchIds[0] || undefined,
       branchIds,
       ipAddress: req?.ip || '127.0.0.1',
