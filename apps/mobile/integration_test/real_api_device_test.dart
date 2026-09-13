@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:kashyap_mobile/screens/person_detail_screen.dart';
 import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 
@@ -102,6 +103,10 @@ void main() {
       await tester.tap(personCardFinder);
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
+      // Assert active PersonDetailScreen widget has target person ID
+      final initialDetailScreen = tester.widget<PersonDetailScreen>(find.byType(PersonDetailScreen).last);
+      expect(initialDetailScreen.personId, equals(targetPersonId), reason: 'Active PersonDetailScreen.personId must equal initial target person ID');
+
       // Assert PersonDetailScreen loaded with section headers
       expect(find.text('अभिभावकहरू (Parents)'), findsOneWidget);
       expect(find.text('दम्पती (Spouses)'), findsOneWidget);
@@ -117,10 +122,15 @@ void main() {
       await tester.tap(childWidgetFinder);
       await tester.pumpAndSettle(const Duration(seconds: 3));
 
+      // Assert active PersonDetailScreen widget has destination child person ID and not link ID
+      final destinationDetailScreen = tester.widget<PersonDetailScreen>(find.byType(PersonDetailScreen).last);
+      expect(destinationDetailScreen.personId, equals(expectedChildPersonId), reason: 'Active PersonDetailScreen.personId must equal child person ID');
+      expect(destinationDetailScreen.personId, isNot(equals(expectedChildLinkId)), reason: 'Active PersonDetailScreen.personId must differ from relationship row link ID');
+
       // Assert destination child profile is rendered with expected identity
       expect(find.text(expectedChildName), findsWidgets);
       expect(find.text('अभिभावकहरू (Parents)'), findsOneWidget);
-      debugPrint('[REAL_DEVICE_TEST] Destination child profile successfully rendered for $expectedChildName (Person ID: $expectedChildPersonId)');
+      debugPrint('[REAL_DEVICE_TEST] Destination child profile successfully rendered for $expectedChildName (Person ID: ${destinationDetailScreen.personId})');
 
       // Navigate back to target person via Back button
       debugPrint('[REAL_DEVICE_TEST] Navigating back to parent profile ($expectedPersonName)...');
@@ -129,8 +139,11 @@ void main() {
       await tester.tap(backButton);
       await tester.pumpAndSettle(const Duration(seconds: 2));
       
-      // Verify back on target person screen
+      // Assert active PersonDetailScreen widget has returned to original target person ID
+      final returnedDetailScreen = tester.widget<PersonDetailScreen>(find.byType(PersonDetailScreen).last);
+      expect(returnedDetailScreen.personId, equals(targetPersonId), reason: 'Active PersonDetailScreen.personId after back navigation must equal original target person ID');
       expect(find.text(expectedPersonName), findsWidgets);
+
       final treeIconFinder = find.byIcon(Icons.account_tree);
       expect(treeIconFinder, findsOneWidget);
 

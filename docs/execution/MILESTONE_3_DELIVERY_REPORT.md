@@ -150,10 +150,11 @@ All requirements and acceptance criteria have been strictly fulfilled and verifi
    - **Strict Verification Assertions**:
      - Pre-UI Assertions: Validated that parent and child relationships exist in database, and asserted that relative `targetPersonId` strictly points to the relative's person record rather than the relationship link row ID (`targetPersonId != linkId`).
      - Tree API Assertions: Validated tree root (`जनक150249 अधिकारी`), ancestor array containing `पितामह150249 अधिकारी`, and child array containing `नन्दन150249 अधिकारी`.
-     - Device UI Search: Entered search query `जनक150249` and tapped matching result card.
-     - Unconditional Relative Navigation: Scrolled into view and tapped child card `नन्दन150249 अधिकारी`, asserting destination person profile rendered with child identity, then navigated back via Back button.
+     - Device UI Search: Entered search query `जनक150249` and tapped matching result card. Asserted active `PersonDetailScreen.personId` equals target person ID (`9fa0f0b3-7dba-4971-afc9-4f38544cd9af`).
+     - Unconditional Relative Navigation: Scrolled into view and tapped child card `नन्दन150249 अधिकारी`. Asserted active `PersonDetailScreen.personId` equals child person ID (`69570b80-fc50-4c74-8476-65e9600ef37b`) and strictly differs from relationship link row ID (`bc0630d8-0bbc-437f-a9d0-bd057f4af8aa`).
+     - Return Navigation: Navigated back via Back button and asserted active `PersonDetailScreen.personId` returns to original target person ID (`9fa0f0b3-7dba-4971-afc9-4f38544cd9af`).
      - Device Tree Navigation: Tapped `Icons.account_tree` and asserted rendered ancestor name (`पितामह150249 अधिकारी`), root name (`जनक150249 अधिकारी`), and child name (`नन्दन150249 अधिकारी`) on `ReadOnlyTreeScreen`.
-   - **Result**: `00:40 +1: All tests passed!`
+   - **Result**: `00:55 +1: All tests passed!`
 
 3. **Local Debug APK Build & Security Manifest Hardening**:
    - **Command**: `$env:PUB_CACHE="D:\.pub-cache"; $env:GRADLE_USER_HOME="D:\.gradle"; flutter build apk --debug`
