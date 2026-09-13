@@ -107,3 +107,21 @@ jobs:
           ADMIN_PORT: '3002'
           CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002'
 
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter Dependencies
+        run: flutter pub get
+        working-directory: apps/mobile
+
+      - name: Flutter Analyze
+        run: flutter analyze
+        working-directory: apps/mobile
+
+      - name: Flutter Test
+        run: flutter test
+        working-directory: apps/mobile
+

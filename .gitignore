@@ -58,6 +58,8 @@ pubspec.lock
 
 # --- Android ---
 **/android/.gradle/
+**/.kotlin/
+*.salive
 **/android/captures/
 **/android/gradlew
 **/android/gradlew.bat

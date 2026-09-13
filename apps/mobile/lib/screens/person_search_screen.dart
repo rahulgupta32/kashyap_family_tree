@@ -140,11 +140,11 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                                     ),
                                   ),
                                   title: Text(
-                                    person.fullNameNepali,
+                                    person.primaryNameNepali,
                                     style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textDark),
                                   ),
                                   subtitle: Text(
-                                    '${person.branchNameNepali ?? 'शाखा अज्ञात'} • ${person.livingStatus == LivingStatus.living ? 'जीवित' : 'दिवंगत'}',
+                                    '${person.branchName ?? "शाखा अज्ञात"} • ${person.livingStatus == LivingStatus.living ? "जीवित" : "दिवंगत"}',
                                     style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
                                   ),
                                   trailing: const Icon(Icons.chevron_right, color: AppTheme.saffron),

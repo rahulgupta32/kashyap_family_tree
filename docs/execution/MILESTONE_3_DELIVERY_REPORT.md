@@ -134,11 +134,14 @@ All requirements and acceptance criteria have been strictly fulfilled and verifi
 
 ### C. Mobile Client Architecture & Tooling
 - The Flutter mobile codebase is fully structured in `apps/mobile/lib/` (`theme/app_theme.dart`, `models/`, `services/`, and `screens/`) utilizing the **Provider** pattern (`provider: ^6.1.1`).
+- Models aligned directly with `@kashyap/contracts` (`PersonSummary`, `PersonDetail`, `ParentRelation`, `SpouseRelation`, `ChildRelation`, `TreeNode`).
+- Navigation fixes: `PersonDetailScreen` navigates using `targetPersonId` mapping to related persons.
 - Mobile tooling & verification:
   - Flutter SDK 3.47.4 installed on D: storage (`D:\flutter`).
-  - Android SDK 36.0.0 and Temurin OpenJDK 21 configured.
-  - Code analysis: `flutter analyze` passed with 0 issues.
-  - Automated tests: `flutter test` passed all 5 model and widget test cases.
+  - Android SDK 36.0.0 and Temurin OpenJDK 21 configured with Gradle user home on D: (`D:\.gradle`) and Pub cache on D: (`D:\.pub-cache`).
+  - Code analysis: `flutter analyze` passed with 0 issues (100% clean).
+  - Automated tests: `flutter test` passed all 5 test cases including contract serialization, widget rendering, and end-to-end navigation smoke flow (`api_smoke_flow_test.dart`).
+  - Debug APK Build: `flutter build apk --debug` succeeded (exit code 0), generating `apps/mobile/build/app/outputs/flutter-apk/app-debug.apk` (155,512,516 bytes).
 
 ---
 
