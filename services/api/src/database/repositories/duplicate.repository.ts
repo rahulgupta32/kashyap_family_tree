@@ -236,7 +236,8 @@ export class DuplicateRepository {
         AND (similarity(n.full_name, $1) > 0.45 OR n.full_name ILIKE '%' || $1 || '%')
         ${branchCondition}
         ${excludeCondition}
-      LIMIT 25;
+      ORDER BY similarity(n.full_name, $1) DESC, p.created_at DESC
+      LIMIT 50;
     `;
 
     const res = await this.executeQuery(sql, params, client);

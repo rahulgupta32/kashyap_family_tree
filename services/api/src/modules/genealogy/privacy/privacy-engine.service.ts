@@ -110,6 +110,12 @@ export class PrivacyEngineService {
     const birthDateStr = person.birth_date_bs || person.birthDateBs;
     const currentBs = this.getCurrentBsDate(now);
 
+    if (!currentBs) {
+      // If current BS date cannot be resolved (unsupported range or invalid date),
+      // treat living person restrictively as uncertain age / protected minor without throwing.
+      return true;
+    }
+
     if (birthDateStr && typeof birthDateStr === 'string') {
       const parts = birthDateStr.trim().split('-');
       if (parts.length === 3) {

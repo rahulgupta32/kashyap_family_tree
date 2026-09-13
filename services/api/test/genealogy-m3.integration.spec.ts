@@ -284,15 +284,19 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
 
   describe('3. Pre-Creation Duplicate Evaluation (Amendment 3)', () => {
     it('should evaluate uncommitted facts and score potential duplicates', async () => {
+      const suffix = Math.floor(1000 + Math.random() * 9000);
+      const uniqueFirstName = `हरिप्रसाद-${suffix}`;
+      const uniqueFullName = `${uniqueFirstName} अधिकारी`;
+
       const existing = await createTestPerson({
-        firstNameNepali: 'हरि प्रसाद',
+        firstNameNepali: uniqueFirstName,
         lastNameNepali: 'अधिकारी',
         birthYearBs: 2035,
       });
 
       const matches = await duplicateService.evaluateProposedPerson({
         names: [
-          { language: 'ne', firstName: 'हरि प्रसाद', lastName: 'अधिकारी', fullName: 'हरि प्रसाद अधिकारी', isPrimary: true },
+          { language: 'ne', firstName: uniqueFirstName, lastName: 'अधिकारी', fullName: uniqueFullName, isPrimary: true },
         ],
         branchId: testBranchId,
         birthYearBs: 2035,

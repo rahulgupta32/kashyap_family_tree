@@ -1084,31 +1084,111 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   });
 
   describe('10. Multi-Page Search & Visibility Counting (SRCH-FR-001..008)', () => {
-    it('should correctly paginate and calculate total and hasMore across multiple pages', async () => {
+    let searchPrefix: string;
+    const activeIds: string[] = [];
+    const archivedIds: string[] = [];
+
+    beforeAll(async () => {
+      // Clean up any stale search test records to guarantee test isolation
+      await db.query("DELETE FROM persons WHERE id IN (SELECT person_id FROM person_names WHERE full_name LIKE '%पेजिनेसन%')");
+
+      searchPrefix = `पेजिनेसन_${Math.random().toString(36).substring(2, 8)}_${Date.now()}`;
+
+      // Seed exactly 5 active persons and 2 archived persons with unique prefix
+      for (let i = 1; i <= 5; i++) {
+        const p = await personRepo.createPerson({
+          branch_id: branch1Id,
+          gender: Gender.MALE,
+          living_status: LivingStatus.LIVING,
+          generation: 4,
+          is_archived: false,
+        }, [
+          { language: 'ne', first_name: `${searchPrefix}व्यक्ति${i}`, last_name: 'अधिकारी', full_name: `${searchPrefix}व्यक्ति${i} अधिकारी`, is_primary: true },
+          { language: 'en', first_name: `${searchPrefix}Person${i}`, last_name: 'Adhikari', full_name: `${searchPrefix}Person${i} Adhikari`, is_primary: false },
+        ]);
+        activeIds.push(p.id);
+      }
+
+      for (let j = 1; j <= 2; j++) {
+        const p = await personRepo.createPerson({
+          branch_id: branch1Id,
+          gender: Gender.MALE,
+          living_status: LivingStatus.LIVING,
+          generation: 4,
+          is_archived: true,
+          archive_reason: 'Archived duplicate fixture for search testing',
+        }, [
+          { language: 'ne', first_name: `${searchPrefix}आर्काइभ${j}`, last_name: 'अधिकारी', full_name: `${searchPrefix}आर्काइभ${j} अधिकारी`, is_primary: true },
+          { language: 'en', first_name: `${searchPrefix}Archive${j}`, last_name: 'Adhikari', full_name: `${searchPrefix}Archive${j} Adhikari`, is_primary: false },
+        ]);
+        archivedIds.push(p.id);
+      }
+    });
+
+    afterAll(async () => {
+      const allIds = [...activeIds, ...archivedIds];
+      if (allIds.length > 0) {
+        await db.query('DELETE FROM persons WHERE id = ANY($1)', [allIds]);
+      }
+    });
+
+    it('should accurately calculate total (5 visible), paginate without gaps/overlap, and exclude archived records for guest viewer', async () => {
+      // Page 1: limit 2
       const page1Res = await request(app.getHttpServer())
-        .get('/genealogy/search?page=1&limit=3')
+        .get(`/genealogy/search?query=${encodeURIComponent(searchPrefix)}&page=1&limit=2`)
         .expect(200);
 
       expect(page1Res.body.page).toBe(1);
-      expect(page1Res.body.limit).toBe(3);
-      expect(page1Res.body.items.length).toBeLessThanOrEqual(3);
-      expect(page1Res.body.total).toBeGreaterThan(0);
+      expect(page1Res.body.limit).toBe(2);
+      expect(page1Res.body.total).toBe(5); // Exactly 5 active records (archived excluded)
+      expect(page1Res.body.items.length).toBe(2);
+      expect(page1Res.body.hasMore).toBe(true);
 
-      if (page1Res.body.total > 3) {
-        expect(page1Res.body.hasMore).toBe(true);
+      // Page 2: limit 2
+      const page2Res = await request(app.getHttpServer())
+        .get(`/genealogy/search?query=${encodeURIComponent(searchPrefix)}&page=2&limit=2`)
+        .expect(200);
 
-        const page2Res = await request(app.getHttpServer())
-          .get('/genealogy/search?page=2&limit=3')
-          .expect(200);
+      expect(page2Res.body.page).toBe(2);
+      expect(page2Res.body.limit).toBe(2);
+      expect(page2Res.body.total).toBe(5);
+      expect(page2Res.body.items.length).toBe(2);
+      expect(page2Res.body.hasMore).toBe(true);
 
-        expect(page2Res.body.page).toBe(2);
-        expect(page2Res.body.limit).toBe(3);
-        // Ensure no ID overlap between consecutive pages
-        const p1Ids = new Set(page1Res.body.items.map((i: any) => i.id));
-        for (const item of page2Res.body.items) {
-          expect(p1Ids.has(item.id)).toBe(false);
-        }
+      // Page 3: limit 2 (final page)
+      const page3Res = await request(app.getHttpServer())
+        .get(`/genealogy/search?query=${encodeURIComponent(searchPrefix)}&page=3&limit=2`)
+        .expect(200);
+
+      expect(page3Res.body.page).toBe(3);
+      expect(page3Res.body.limit).toBe(2);
+      expect(page3Res.body.total).toBe(5);
+      expect(page3Res.body.items.length).toBe(1);
+      expect(page3Res.body.hasMore).toBe(false);
+
+      // Verify complete coverage: all 5 active records retrieved with zero overlap and zero archived
+      const retrievedIds = [
+        ...page1Res.body.items.map((i: any) => i.id),
+        ...page2Res.body.items.map((i: any) => i.id),
+        ...page3Res.body.items.map((i: any) => i.id),
+      ];
+      expect(new Set(retrievedIds).size).toBe(5);
+      for (const actId of activeIds) {
+        expect(retrievedIds).toContain(actId);
       }
+      for (const arcId of archivedIds) {
+        expect(retrievedIds).not.toContain(arcId);
+      }
+    });
+
+    it('should return empty result with total=0 and hasMore=false when query matches no records', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/genealogy/search?query=नभएकोनाम_शून्यनतिजा_९९९९९९&page=1&limit=10')
+        .expect(200);
+
+      expect(res.body.total).toBe(0);
+      expect(res.body.items.length).toBe(0);
+      expect(res.body.hasMore).toBe(false);
     });
   });
 });

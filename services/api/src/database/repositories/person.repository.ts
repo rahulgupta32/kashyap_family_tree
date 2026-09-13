@@ -303,14 +303,40 @@ export class PersonRepository {
     return res.rows[0] || null;
   }
 
-  async searchPersons(filter: PersonSearchQueryDto): Promise<PersonSearchResponseDto> {
+  async searchPersons(filter: PersonSearchQueryDto, viewer?: any): Promise<PersonSearchResponseDto> {
     const page = Math.max(1, filter.page || 1);
     const limit = Math.min(100, Math.max(1, filter.limit || 20));
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = ['p.is_archived = FALSE'];
+    const conditions: string[] = [];
     const params: any[] = [];
     let paramIdx = 1;
+
+    // Apply visibility predicate consistently for both count and items
+    const isSuperAdmin = viewer?.roles?.some((r: string) => r === 'SUPER_ADMIN' || r === 'CENTRAL_ADMIN');
+    const branchAdminBranches: string[] = (viewer?.roleAssignments || [])
+      .filter((ra: any) => (ra.role === 'BRANCH_ADMIN' || ra.role === 'BRANCH_VERIFIER') && ra.branchId)
+      .map((ra: any) => ra.branchId as string);
+
+    if (viewer?.branchIds) {
+      for (const bId of viewer.branchIds) {
+        if (viewer.roles?.includes('BRANCH_ADMIN') || viewer.roles?.includes('BRANCH_VERIFIER')) {
+          if (!branchAdminBranches.includes(bId)) {
+            branchAdminBranches.push(bId);
+          }
+        }
+      }
+    }
+
+    if (isSuperAdmin && (filter as any).includeArchived) {
+      // Super admin can search archived records when explicitly requested
+    } else if (branchAdminBranches.length > 0 && (filter as any).includeArchived) {
+      params.push(branchAdminBranches);
+      conditions.push(`(p.is_archived = FALSE OR (p.is_archived = TRUE AND p.branch_id = ANY($${paramIdx++})))`);
+    } else {
+      // Regular users and guests only see active records
+      conditions.push('p.is_archived = FALSE');
+    }
 
     let searchScoreSql = '0.0 as similarity_score';
 

@@ -13,26 +13,19 @@ export class SearchService {
   ) {}
 
   async searchPersons(filter: PersonSearchQueryDto, viewer?: ViewerContext): Promise<PersonSearchResponseDto> {
-    const result = await this.personRepo.searchPersons(filter);
+    const result = await this.personRepo.searchPersons(filter, viewer);
 
-    // 1. Filter out records not visible to this viewer
-    const visibleRawItems = result.items.filter((item) =>
-      this.privacyEngine.isRecordVisible(item, viewer),
-    );
-
-    // 2. Apply explicit search projection with privacy masking
-    const projectedItems = visibleRawItems.map((item) =>
+    // Apply explicit search projection with privacy masking
+    const projectedItems = result.items.map((item) =>
       this.privacyEngine.filterSearchItem(item, viewer),
     );
 
-    const totalVisible = result.total - (result.items.length - visibleRawItems.length);
-
     return {
       items: projectedItems,
-      total: Math.max(0, totalVisible),
+      total: result.total,
       page: result.page,
       limit: result.limit,
-      hasMore: (result.page - 1) * result.limit + projectedItems.length < totalVisible,
+      hasMore: (result.page - 1) * result.limit + projectedItems.length < result.total,
     };
   }
 }

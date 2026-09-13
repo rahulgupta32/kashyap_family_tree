@@ -213,10 +213,12 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
 
     // 1. Seed two duplicate candidates and candidate queue entry
     const dupSuffix = Math.floor(100000 + Math.random() * 900000);
+    const candidateName = `कमल${dupSuffix}`;
+
     const p1Res = await page.request.post(`${API_BASE}/genealogy/people`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
-        names: [{ language: 'ne', firstName: `कमल${dupSuffix}`, lastName: 'अधिकारी', fullName: `कमल${dupSuffix} अधिकारी`, isPrimary: true }],
+        names: [{ language: 'ne', firstName: candidateName, lastName: 'अधिकारी', fullName: `${candidateName} अधिकारी`, isPrimary: true }],
         gender: 'MALE',
         livingStatus: 'LIVING',
         generation: 4,
@@ -232,7 +234,7 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     const p2Res = await page.request.post(`${API_BASE}/genealogy/people`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
-        names: [{ language: 'ne', firstName: `कमल${dupSuffix}`, lastName: 'अधिकारी', fullName: `कमल${dupSuffix} अधिकारी`, isPrimary: true }],
+        names: [{ language: 'ne', firstName: candidateName, lastName: 'अधिकारी', fullName: `${candidateName} अधिकारी`, isPrimary: true }],
         gender: 'MALE',
         livingStatus: 'LIVING',
         generation: 4,
@@ -253,14 +255,16 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     await expect(page).toHaveURL(/\/duplicates/);
     await expect(page.locator('h2:has-text("दोहोरिएको रेकर्ड व्यवस्थापन")')).toBeVisible();
 
-    // 3. Search/find the duplicate candidate in table
+    // 3. Search/find the specific candidate row corresponding to seeded person IDs
     const statusSelect = page.locator('select').first();
     await statusSelect.selectOption('DETECTED');
     await page.waitForTimeout(500);
 
-    // 4. Assert comparison matrix modal opens when clicking Compare
-    const compareBtn = page.locator('button:has-text("तुलना र एकीकरण (Compare & Merge)")').first();
-    await expect(compareBtn).toBeVisible({ timeout: 10000 });
+    const candidateRow = page.locator(`tr:has-text("${candidateName}")`).first();
+    await expect(candidateRow).toBeVisible({ timeout: 10000 });
+
+    // 4. Assert comparison matrix modal opens when clicking Compare on this specific row
+    const compareBtn = candidateRow.locator('button:has-text("तुलना र एकीकरण (Compare & Merge)")');
     await compareBtn.click();
 
     // Assert side-by-side comparison modal is open
@@ -294,13 +298,37 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
   });
 
   test('4. Privacy-Filtered Export Functionality (JSON & CSV Content Inspection)', async ({ page }) => {
-    await loginAsAdmin(page);
+    const { token, branchId } = await loginAsAdmin(page);
 
-    // 1. Navigate to People
+    // 1. Seed a protected minor with PRIVATE address and exact DOB
+    const rand = Math.floor(100000 + Math.random() * 900000);
+    const minorName = `गोप्यनाबालक${rand}`;
+    const seedRes = await page.request.post(`${API_BASE}/genealogy/people`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        names: [{ language: 'ne', firstName: minorName, lastName: 'अधिकारी', fullName: `${minorName} अधिकारी`, isPrimary: true }],
+        gender: 'MALE',
+        livingStatus: 'LIVING',
+        generation: 4,
+        branchId,
+        birthDateBs: '2076-05-10',
+        birthYearBs: 2076,
+        currentAddress: 'गोप्य ठेगाना १०१',
+        addressVisibility: 'PRIVATE',
+        dobVisibility: 'PRIVATE',
+        phoneVisibility: 'PRIVATE',
+        isMinorProtected: true,
+        allowDuplicateOverride: true,
+        justificationReason: 'Deterministic seed minor for export privacy assertion',
+      },
+    });
+    expect(seedRes.ok()).toBeTruthy();
+
+    // 2. Navigate to People
     await page.click('a[href="/people"]');
     await expect(page).toHaveURL(/\/people/);
 
-    // 2. Test JSON Export download and inspect payload structure
+    // 3. Test JSON Export download and inspect payload structure
     const jsonDownloadPromise = page.waitForEvent('download');
     await page.click('button:has-text("Export JSON")');
     const jsonDownload = await jsonDownloadPromise;
@@ -317,7 +345,14 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     expect(Array.isArray(jsonContent.parentLinks)).toBe(true);
     expect(Array.isArray(jsonContent.spouseLinks)).toBe(true);
 
-    // 3. Test CSV Export download and inspect CSV headers and rows
+    // Assert that restricted private fields are absent for all exported records
+    for (const p of jsonContent.persons) {
+      expect(p.currentAddress).toBeUndefined();
+      expect(p.phoneNumber).toBeUndefined();
+      expect(p.claimedByUserId).toBeUndefined();
+    }
+
+    // 4. Test CSV Export download and inspect CSV headers and rows
     const csvDownloadPromise = page.waitForEvent('download');
     await page.click('button:has-text("Export CSV")');
     const csvDownload = await csvDownloadPromise;
@@ -330,6 +365,11 @@ test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone
     }
     const csvContent = Buffer.concat(csvChunks).toString('utf8');
     expect(csvContent).toContain('id,primaryNameNepali,primaryNameEnglish');
+    expect(csvContent).not.toContain('गोप्य ठेगाना १०१'); // PRIVATE address is absent
     expect(csvContent.split('\n').length).toBeGreaterThan(1);
+
+    // 5. Direct unauthenticated export request is rejected with 401 Unauthorized
+    const unauthRes = await page.request.get(`${API_BASE}/genealogy/export`);
+    expect(unauthRes.status()).toBe(401);
   });
 });

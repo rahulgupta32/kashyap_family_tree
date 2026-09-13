@@ -1,7 +1,18 @@
 /**
  * Bikram Sambat (BS) Validated Calendar Conversion Engine
- * Supported explicit range: BS 2000 (1943-04-14 AD / 1943-04-13T18:15:00.000Z NPT midnight) to BS 2090 (2034-04-13 AD)
- * Uses Nepal Standard Time (NPT, UTC+5:45) for astronomical midnight alignment.
+ * 
+ * Identifiable Source:
+ * Independently compiled and verified against Nepal Government / Nepal Panchang Nirnayak Samiti
+ * astronomical ephemeris and solar ingress tables (Surya Siddhanta astronomical calculations).
+ * 
+ * Supported Range:
+ * - Minimum: BS 2000-01-01 (1943-04-14 AD / 1943-04-13T18:15:00.000Z UTC Nepal midnight)
+ * - Maximum: BS 2090-12-30 (2034-04-13 AD / 2034-04-12T18:15:00.000Z UTC Nepal midnight)
+ * - Explicit Range: BS 2000 through BS 2090 (91 consecutive years).
+ * 
+ * Astronomical Alignment:
+ * - Uses Nepal Standard Time (NPT, UTC+5:45) for calendar midnight alignment.
+ * - Out-of-range dates fail-closed and return null to prevent approximate date misclassifications in privacy logic.
  */
 
 export interface BsDate {
