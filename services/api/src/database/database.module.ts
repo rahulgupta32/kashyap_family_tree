@@ -3,6 +3,7 @@ import { DatabaseService } from './database.service';
 import { MigrationService } from './migration.service';
 import { PersonRepository } from './repositories/person.repository';
 import { GenealogyLinkRepository } from './repositories/genealogy-link.repository';
+import { DuplicateRepository } from './repositories/duplicate.repository';
 import { ClaimRepository } from './repositories/claim.repository';
 import { AuditRepository } from './repositories/audit.repository';
 import { CulturalArticleRepository } from './repositories/cultural-article.repository';
@@ -20,6 +21,7 @@ import { BootstrapService } from './bootstrap.service';
     MigrationService,
     PersonRepository,
     GenealogyLinkRepository,
+    DuplicateRepository,
     ClaimRepository,
     AuditRepository,
     AuditOutboxRepository,
@@ -35,6 +37,7 @@ import { BootstrapService } from './bootstrap.service';
     MigrationService,
     PersonRepository,
     GenealogyLinkRepository,
+    DuplicateRepository,
     ClaimRepository,
     AuditRepository,
     AuditOutboxRepository,
@@ -47,4 +50,3 @@ import { BootstrapService } from './bootstrap.service';
   ],
 })
 export class DatabaseModule {}
-
