@@ -715,4 +715,111 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       spy.mockRestore();
     });
   });
+
+  describe('7. Dual-Branch Authorization Negative Tests & Cross-Branch Claim Invariants', () => {
+    let pBranch1: string;
+    let pBranch2: string;
+    let crossCandidateId: string;
+
+    beforeAll(async () => {
+      const [p1, p2] = await Promise.all([
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 3, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'हरि', last_name: 'अधिकारी', full_name: 'हरि अधिकारी', is_primary: true }],
+        ),
+        personRepo.createPerson(
+          { branch_id: branch2Id, generation: 3, gender: Gender.MALE, living_status: LivingStatus.LIVING },
+          [{ language: 'ne', first_name: 'हरि', last_name: 'अधिकारी', full_name: 'हरि अधिकारी', is_primary: true }],
+        ),
+      ]);
+      pBranch1 = p1.id;
+      pBranch2 = p2.id;
+
+      const cand = await duplicateRepo.createOrUpdateCandidate(
+        pBranch1,
+        pBranch2,
+        0.88,
+        {
+          nameSimilarity: 0.88,
+          matchingNames: ['हरि अधिकारी'],
+          sameBranch: false,
+          sharedParentsCount: 0,
+          reasons: ['Cross-branch candidate'],
+        },
+      );
+      crossCandidateId = cand.id;
+    });
+
+    it('should reject duplicate comparison when caller only has single-branch authority (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/genealogy/duplicates/compare?personAId=${pBranch1}&personBId=${pBranch2}`)
+        .set('Authorization', `Bearer ${branchAdminToken}`) // Authorized only for branch1Id
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+
+    it('should reject candidate resolution when caller only has single-branch authority (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/genealogy/duplicates/candidates/${crossCandidateId}`)
+        .set('Authorization', `Bearer ${branchAdminToken}`) // Authorized only for branch1Id
+        .send({
+          status: DuplicateCandidateStatus.NOT_A_DUPLICATE,
+          notes: 'Unauthorized branch admin attempt',
+        })
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+
+    it('should reject duplicate merge across branches when caller only has single-branch authority (403 BRANCH_MISMATCH)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/genealogy/duplicates/merge')
+        .set('Authorization', `Bearer ${branchAdminToken}`) // Authorized only for branch1Id
+        .send({
+          survivingPersonId: pBranch1,
+          mergedPersonId: pBranch2,
+          survivingPersonVersion: 1,
+          mergedPersonVersion: 1,
+          justificationReason: 'Unauthorized cross-branch merge attempt',
+        })
+        .expect(403);
+
+      expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
+    });
+
+    it('should reject merge of two persons claimed by distinct user accounts (400 CANNOT_MERGE_CLAIMED_PERSONS)', async () => {
+      // Create two distinct users in user_accounts linked to two persons
+      const u1 = await userRepo.findOrCreateByPhone('+9779849999011');
+      const u2 = await userRepo.findOrCreateByPhone('+9779849999012');
+
+      const [claimedP1, claimedP2] = await Promise.all([
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 4, gender: Gender.FEMALE, living_status: LivingStatus.LIVING, is_claimed: true, claimed_user_id: u1.id },
+          [{ language: 'ne', first_name: 'सीता', last_name: 'अधिकारी', full_name: 'सीता अधिकारी', is_primary: true }],
+        ),
+        personRepo.createPerson(
+          { branch_id: branch1Id, generation: 4, gender: Gender.FEMALE, living_status: LivingStatus.LIVING, is_claimed: true, claimed_user_id: u2.id },
+          [{ language: 'ne', first_name: 'सीता', last_name: 'अधिकारी', full_name: 'सीता अधिकारी', is_primary: true }],
+        ),
+      ]);
+
+      await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [claimedP1.id, u1.id]);
+      await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [claimedP2.id, u2.id]);
+
+      const res = await request(app.getHttpServer())
+        .post('/genealogy/duplicates/merge')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          survivingPersonId: claimedP1.id,
+          mergedPersonId: claimedP2.id,
+          survivingPersonVersion: 1,
+          mergedPersonVersion: 1,
+          justificationReason: 'Attempt to merge persons linked to distinct accounts',
+        })
+        .expect(400);
+
+      expect(res.body.errorCode).toBe(ErrorCode.CANNOT_MERGE_CLAIMED_PERSONS);
+    });
+  });
 });

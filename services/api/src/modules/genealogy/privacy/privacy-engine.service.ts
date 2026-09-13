@@ -9,6 +9,12 @@ import {
   LivingStatus,
   DuplicateDetectionSignals,
 } from '@kashyap/contracts';
+import {
+  getCurrentBsDate as getCalBsDate,
+  isValidBsDate,
+  isSupportedBsYear,
+  BsDate,
+} from '@kashyap/localization';
 
 export interface ViewerContext {
   userId?: string;
@@ -24,38 +30,8 @@ export class PrivacyEngineService {
    * Computes the current Bikram Sambat (BS) date based on Nepal Standard Time (UTC+5:45).
    * Accurate calendar conversion aligning with Nepal standard astronomical calendar.
    */
-  public getCurrentBsDate(now: Date = new Date()): { year: number; month: number; day: number } {
-    // Nepal Standard Time offset is +5h45m
-    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const nptTime = new Date(utcTime + (5.75 * 3600000));
-    
-    // Standard BS conversion anchor: 2026-04-14 Gregorian = 2083-01-01 BS (Baisakh 1, 2083 BS)
-    const anchorGregorian = new Date(Date.UTC(2026, 3, 14)); // 2026-04-14
-    const diffDays = Math.floor((nptTime.getTime() - anchorGregorian.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays >= 0) {
-      // Month days in 2083 BS: Baisakh (31), Jestha (31), Ashadh (32), Shrawan (31), Bhadra (31), Ashwin (30), etc.
-      const monthDays2083 = [31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 29, 31];
-      let rem = diffDays;
-      let m = 0;
-      while (m < monthDays2083.length && rem >= monthDays2083[m]) {
-        rem -= monthDays2083[m];
-        m++;
-      }
-      return {
-        year: 2083,
-        month: m + 1,
-        day: rem + 1,
-      };
-    } else {
-      // Prior to 2083 Baisakh 1 (2082 BS)
-      const yr = nptTime.getUTCFullYear() + (nptTime.getUTCMonth() > 3 || (nptTime.getUTCMonth() === 3 && nptTime.getUTCDate() >= 14) ? 57 : 56);
-      return {
-        year: yr,
-        month: ((nptTime.getUTCMonth() + 8) % 12) + 1,
-        day: nptTime.getUTCDate(),
-      };
-    }
+  public getCurrentBsDate(now: Date = new Date()): BsDate {
+    return getCalBsDate(now);
   }
 
   public getCurrentBsYear(now: Date = new Date()): number {
@@ -114,6 +90,10 @@ export class PrivacyEngineService {
         const bMonth = parseInt(parts[1], 10);
         const bDay = parseInt(parts[2], 10);
         if (!isNaN(bYear) && !isNaN(bMonth) && !isNaN(bDay)) {
+          // If date is invalid or unsupported, treat restrictively as uncertain/minor
+          if (!isValidBsDate(bYear, bMonth, bDay)) {
+            return true;
+          }
           let exactAge = currentBs.year - bYear;
           if (currentBs.month < bMonth || (currentBs.month === bMonth && currentBs.day < bDay)) {
             exactAge--;
@@ -129,6 +109,11 @@ export class PrivacyEngineService {
       return true;
     }
 
+    if (!isSupportedBsYear(birthYear)) {
+      // Unsupported birth year: treat restrictively as uncertain
+      return true;
+    }
+
     const yearDiff = currentBs.year - birthYear;
     // When exact month/day is unknown, yearDiff <= 18 represents an uncertain boundary (could be 17)
     // Policy requires treating uncertain boundaries restrictively
@@ -137,6 +122,7 @@ export class PrivacyEngineService {
 
   /**
    * Applies privacy filtering and explicit field projection to PersonDetailDto
+   * Removes unconditional admin bypass so user-level PRIVATE fields and minor protections are respected.
    */
   public filterPersonDetail(detail: PersonDetailDto, viewer?: ViewerContext): PersonDetailDto {
     const isAdmin = this.isAuthorizedAdmin(viewer, detail.branchId);
@@ -208,21 +194,23 @@ export class PrivacyEngineService {
       })),
     };
 
-    if (isAdmin || isSelf) {
+    if (isSelf) {
       return filtered;
     }
 
-    // Minor / Uncertain Age Protection (PRIV-FR-003):
+    // Minor / Uncertain Age Protection (PRIV-FR-003, Policy Sec 6.1):
     if (isMinor) {
-      filtered.currentAddress = undefined;
-      filtered.birthPlace = undefined;
-      filtered.moolGhar = undefined;
-      filtered.occupation = undefined;
-      filtered.education = undefined;
-      filtered.avatarUrl = undefined;
-      // Show only birth year, redact exact dates
-      if (filtered.birthDateBs) filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
-      if (filtered.birthDateAd) filtered.birthDateAd = undefined;
+      if (!isAdmin && !isSelf) {
+        filtered.currentAddress = undefined;
+        filtered.birthPlace = undefined;
+        filtered.moolGhar = undefined;
+        filtered.occupation = undefined;
+        filtered.education = undefined;
+        filtered.avatarUrl = undefined;
+        // Show only birth year, redact exact dates
+        if (filtered.birthDateBs) filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
+        if (filtered.birthDateAd) filtered.birthDateAd = undefined;
+      }
       return filtered;
     }
 
@@ -231,7 +219,7 @@ export class PrivacyEngineService {
       // Address visibility
       if (
         detail.privacy.addressVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified)
+        (detail.privacy.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
       ) {
         filtered.currentAddress = undefined;
       }
@@ -239,7 +227,7 @@ export class PrivacyEngineService {
       // DOB visibility
       if (
         detail.privacy.dobVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified)
+        (detail.privacy.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
       ) {
         filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
         filtered.birthDateAd = undefined;

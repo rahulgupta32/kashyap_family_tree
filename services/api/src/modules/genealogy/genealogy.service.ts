@@ -544,6 +544,7 @@ export class GenealogyService {
               birthYearBs: dto.birthYearBs,
             },
             actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : undefined,
+            client,
           );
 
           const strongMatches = matches.filter((m) => m.score >= 0.70);
@@ -1151,23 +1152,32 @@ export class GenealogyService {
     const spouseNodes: TreeNodeDto[] = [];
     if (descDepthRemaining > 0 || ascDepthRemaining > 0) {
       for (const sl of spouseLinks) {
-        const sp = await this.personRepo!.findById(sl.spouse_id);
-        if (sp) {
-          const spNames = await this.personRepo!.findNamesByPersonId(sl.spouse_id);
-          spouseNodes.push({
-            id: sp.id,
-            nameNepali: spNames.find((n) => n.language === 'ne')?.full_name || 'अज्ञात',
-            nameEnglish: spNames.find((n) => n.language === 'en')?.full_name || 'Unknown',
-            gender: sp.gender,
-            generation: sp.generation,
-            livingStatus: sp.living_status,
-            isClaimed: sp.is_claimed,
-            spouses: [],
-            children: [],
-            ancestors: [],
-            hasMoreAncestors: false,
-            hasMoreDescendants: false,
-          });
+        if (!visited.has(sl.spouse_id)) {
+          if (visited.size >= 500) {
+            throw new BadRequestException({
+              errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
+              message: 'Tree node budget exceeded (maximum 500 nodes per query)',
+            });
+          }
+          visited.add(sl.spouse_id);
+          const sp = await this.personRepo!.findById(sl.spouse_id);
+          if (sp) {
+            const spNames = await this.personRepo!.findNamesByPersonId(sl.spouse_id);
+            spouseNodes.push({
+              id: sp.id,
+              nameNepali: spNames.find((n) => n.language === 'ne')?.full_name || 'अज्ञात',
+              nameEnglish: spNames.find((n) => n.language === 'en')?.full_name || 'Unknown',
+              gender: sp.gender,
+              generation: sp.generation,
+              livingStatus: sp.living_status,
+              isClaimed: sp.is_claimed,
+              spouses: [],
+              children: [],
+              ancestors: [],
+              hasMoreAncestors: false,
+              hasMoreDescendants: false,
+            });
+          }
         }
       }
     }

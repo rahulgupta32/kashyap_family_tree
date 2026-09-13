@@ -46,6 +46,7 @@ export class DuplicateService {
   async evaluateProposedPerson(
     dto: EvaluatePersonDto,
     viewer?: ViewerContext,
+    client?: PoolClient,
   ): Promise<Array<{ person: PersonSummaryDto; score: number; signals: any }>> {
     const primaryName = dto.names.find((n) => n.isPrimary) || dto.names[0];
     if (!primaryName || !primaryName.fullName.trim()) {
@@ -56,6 +57,8 @@ export class DuplicateService {
       primaryName.fullName,
       dto.branchId,
       dto.birthYearBs,
+      undefined,
+      client,
     );
 
     const results = await Promise.all(
@@ -267,12 +270,17 @@ export class DuplicateService {
       };
     });
 
-    // Dual-branch authorization check for duplicate comparison
-    if (viewer && !this.privacyEngine.isAuthorizedAdmin(viewer, personA.branchId) && !this.privacyEngine.isAuthorizedAdmin(viewer, personB.branchId)) {
-      throw new ForbiddenException({
-        errorCode: ErrorCode.BRANCH_MISMATCH,
-        message: 'You do not have administrative authority across both branches for duplicate comparison',
-      });
+    // Dual-branch authorization check for duplicate comparison: must possess authority over BOTH records
+    const isSuper = viewer?.roles?.some((r) => r === Role.SUPER_ADMIN || r === Role.CENTRAL_ADMIN);
+    if (!isSuper) {
+      const allowedA = this.privacyEngine.isAuthorizedAdmin(viewer, personA.branchId);
+      const allowedB = this.privacyEngine.isAuthorizedAdmin(viewer, personB.branchId);
+      if (!allowedA || !allowedB) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.BRANCH_MISMATCH,
+          message: 'You must possess administrative authority across both branches for duplicate comparison',
+        });
+      }
     }
 
     const rawSignals = candidateRecord?.detection_signals || {
@@ -345,6 +353,40 @@ export class DuplicateService {
     }
 
     return this.db.transaction(async (client: PoolClient) => {
+      // Recheck candidate record and branch authorization inside transaction
+      const txCandidate = await this.duplicateRepo.getCandidateById(candidateId, client);
+      if (!txCandidate) {
+        throw new NotFoundException({
+          errorCode: ErrorCode.DUPLICATE_CANDIDATE_NOT_FOUND,
+          message: 'Duplicate candidate not found',
+        });
+      }
+
+      const [txPersonA, txPersonB] = await Promise.all([
+        this.personRepo.findById(txCandidate.person_a_id, false, client),
+        this.personRepo.findById(txCandidate.person_b_id, false, client),
+      ]);
+
+      if (!txPersonA || !txPersonB) {
+        throw new NotFoundException({
+          errorCode: ErrorCode.PERSON_NOT_FOUND,
+          message: 'One or both candidate person records not found',
+        });
+      }
+
+      if (!isSuperAdmin) {
+        const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+        if (
+          (txPersonA.branch_id && !actorBranches.includes(txPersonA.branch_id)) ||
+          (txPersonB.branch_id && !actorBranches.includes(txPersonB.branch_id))
+        ) {
+          throw new ForbiddenException({
+            errorCode: ErrorCode.BRANCH_MISMATCH,
+            message: 'Branch Administrators must possess authority across both candidates branches to resolve duplicates',
+          });
+        }
+      }
+
       const updated = await this.duplicateRepo.updateCandidateStatus(
         candidateId,
         dto.status,
@@ -366,7 +408,7 @@ export class DuplicateService {
           action: 'GENEALOGY_RESOLVE_DUPLICATE_CANDIDATE',
           entityType: 'duplicate_candidate',
           entityId: candidateId,
-          oldValue: { status: candidate.status },
+          oldValue: { status: txCandidate.status },
           newValue: { status: dto.status, notes: dto.notes, reviewedBy: actor.id },
         },
         client,
@@ -529,7 +571,19 @@ export class DuplicateService {
         }
       }
 
-      // 4. Check Claim Invariants (DUP-FR-005 / DUP_5005)
+      // 4. Check Claim Invariants (DUP-FR-005 / DUP_5005) & validate actual user_accounts ownership under transaction
+      const userAccountsRes = await client.query(
+        'SELECT id, person_id FROM user_accounts WHERE person_id IN ($1, $2)',
+        [survivingPersonId, mergedPersonId],
+      );
+      const userSurviving = userAccountsRes.rows.find((u) => u.person_id === survivingPersonId);
+      const userMerged = userAccountsRes.rows.find((u) => u.person_id === mergedPersonId);
+      if (userSurviving && userMerged && userSurviving.id !== userMerged.id) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.CANNOT_MERGE_CLAIMED_PERSONS,
+          message: 'Cannot merge two persons claimed by distinct user accounts (DUP_5005)',
+        });
+      }
       if (survivingRecord.is_claimed && mergedRecord.is_claimed) {
         if (survivingRecord.claimed_user_id && mergedRecord.claimed_user_id && survivingRecord.claimed_user_id !== mergedRecord.claimed_user_id) {
           throw new BadRequestException({

@@ -86,10 +86,31 @@ function TreeCanvasContent() {
 
   const handleMouseUp = () => setIsDragging(false);
 
-  const renderNode = (node: TreeNodeDto) => {
+  const renderNode = (node: TreeNodeDto, renderAncestors: boolean = true) => {
     const isSelected = selectedNode?.id === node.id;
     return (
       <div key={node.id} className="flex flex-col items-center">
+        {/* Ancestors Subtree (Above Node) */}
+        {renderAncestors && node.ancestors && node.ancestors.length > 0 && (
+          <div className="flex flex-col items-center mb-2">
+            <div className="flex items-end gap-8 relative pb-4">
+              {node.ancestors.length > 1 && (
+                <div className="absolute bottom-0 left-[15%] right-[15%] h-0.5 bg-saffron-300" />
+              )}
+              {node.ancestors.map((ancestor) => (
+                <div key={ancestor.id} className="relative flex flex-col items-center">
+                  {renderNode(ancestor, true)}
+                  <div className="w-0.5 h-4 bg-saffron-300 absolute -bottom-4" />
+                </div>
+              ))}
+            </div>
+            <div className="w-0.5 h-6 bg-saffron-400" />
+            <span className="text-[10px] font-semibold text-saffron-700 bg-saffron-100 px-2 py-0.5 rounded-full mb-1">
+              पुर्खा (Ancestor)
+            </span>
+          </div>
+        )}
+
         {/* Node Box */}
         <div
           onClick={(e) => {
@@ -140,7 +161,7 @@ function TreeCanvasContent() {
               {node.children.map((child) => (
                 <div key={child.id} className="relative flex flex-col items-center">
                   <div className="w-0.5 h-4 bg-slate-300 absolute -top-4" />
-                  {renderNode(child)}
+                  {renderNode(child, false)}
                 </div>
               ))}
             </div>
@@ -299,6 +320,59 @@ function TreeCanvasContent() {
                     {selectedNode.children ? selectedNode.children.length : 0} जना
                   </span>
                 </div>
+              </div>
+
+              {/* Relatives Quick Navigation */}
+              <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
+                <span className="text-[11px] font-bold text-slate-600 block">नातागोता नेभिगेसन (Relatives):</span>
+                {selectedNode.ancestors && selectedNode.ancestors.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 text-[10px]">पुर्खा (Ancestors):</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedNode.ancestors.map((a) => (
+                        <button
+                          key={a.id}
+                          onClick={() => setRootPersonId(a.id)}
+                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-200 text-[10px] font-medium"
+                        >
+                          {a.nameNepali}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.spouses && selectedNode.spouses.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 text-[10px]">दम्पती (Spouses):</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedNode.spouses.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setRootPersonId(s.id)}
+                          className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded border border-purple-200 text-[10px] font-medium"
+                        >
+                          {s.nameNepali}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedNode.children && selectedNode.children.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 text-[10px]">सन्तान (Children):</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedNode.children.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => setRootPersonId(c.id)}
+                          className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded border border-blue-200 text-[10px] font-medium"
+                        >
+                          {c.nameNepali}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

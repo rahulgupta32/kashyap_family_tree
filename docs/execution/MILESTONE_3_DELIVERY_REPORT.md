@@ -66,7 +66,7 @@ All 7 user amendments and requirements have been strictly incorporated:
 ---
 
 ## 3. Verification & Test Evidence
-
+ 
 ### A. Real Nest AppModule & HTTP Integration Tests (`test/genealogy-http.integration.spec.ts`)
 - `should successfully create a new person and atomically persist audit_outbox entry`: PASS
 - `should block creation of duplicate candidate without explicit allowDuplicateOverride (DUP-FR-001)`: PASS
@@ -79,6 +79,7 @@ All 7 user amendments and requirements have been strictly incorporated:
 - `should detect and reject cycle when attempting to link descendant as parent (C -> A)`: PASS
 - `should enforce dual-branch authority when branch admin tries to link record from another branch`: PASS
 - `should enforce dual-branch authority when creating person with embedded cross-branch parent link`: PASS
+- `should reject duplicate comparison when branch admin lacks authority over both branches`: PASS
 - `should reject merge if material conflict exists without explicit field resolution`: PASS
 - `should successfully merge records, preserve alias (migration 005), and record audit outbox`: PASS
 - `should resolve duplicate candidate to NOT_A_DUPLICATE and record audit outbox`: PASS
@@ -86,14 +87,14 @@ All 7 user amendments and requirements have been strictly incorporated:
 - `should completely roll back parent relationship link when audit outbox insertion fails`: PASS
 
 ### B. Real PostgreSQL Integration Test Suite (`pnpm --filter @kashyap/api test:integration`)
-- **Total Integration Tests**: 7 Suites, 82 Tests, 100% PASS.
+- **Total Integration Tests**: 7 Suites, 86 Tests, 100% PASS.
 
 ### C. Unit Test Suite (`pnpm --filter @kashyap/api test:unit`)
-- **Total Unit Tests**: 12 Suites, 78 Tests, 100% PASS.
+- **Total Unit Tests**: 12 Suites, 83 Tests, 100% PASS.
 
 ### D. Playwright End-to-End Browser Tests (`pnpm test:e2e`)
-- **Suite**: `e2e/genealogy-flow.spec.ts` & `e2e/login-flow.spec.ts`
-- **Total E2E Tests**: 8 Tests, 100% PASS.
+- **Suites**: `e2e/genealogy-flow.spec.ts` & `e2e/login-flow.spec.ts`
+- **Total E2E Tests**: 9 Tests, 100% PASS.
 
 ### E. Monorepo Build Status (`pnpm -r build`)
 - `@kashyap/contracts`: Build PASSED
@@ -103,10 +104,14 @@ All 7 user amendments and requirements have been strictly incorporated:
 - `@kashyap/api`: Build PASSED (NestJS dist generated)
 - `@kashyap/admin`: Build PASSED (8 Next.js static/dynamic routes compiled cleanly)
 
+### F. Mobile Client Environment Constraints
+- The Flutter mobile architecture is implemented in `apps/mobile` (`lib/theme/app_theme.dart`, `lib/models/`, `lib/services/`, and `lib/screens/`).
+- Local Windows host environment note: Flutter SDK and Android CLI are not installed on PATH in the current execution container. Android builds require the Flutter SDK and Android command-line tools/SDK platforms on the host machine; iOS builds require macOS with Xcode. No artificial TypeScript substitution was performed.
+
 ---
 
 ## 4. Preservation & Environmental Compliance
 - Real PostgreSQL persistence on D: storage (`127.0.0.1:5434`, `/mnt/kashyap_pg/pgdata`) verified.
 - Real Redis persistence on D: storage (`127.0.0.1:6379`, `/mnt/kashyap_pg/redis`) verified.
-- Existing migrations `000..003` strictly preserved; new migration `004` applied.
+- Existing migrations `000..003` strictly preserved; migrations `004` and `005` applied and verified.
 - Unrelated WSL clusters and workloads (`vidyarthi`, `mala_chem`) preserved intact.

@@ -45,6 +45,7 @@ export default function PeoplePage() {
     birthDateBs: '',
     justificationReason: '',
     privacyVisibility: PrivacyVisibility.PUBLIC,
+    allowDuplicateOverride: false,
   });
   const [duplicateWarnings, setDuplicateWarnings] = useState<any[]>([]);
   const [evaluatingDuplicates, setEvaluatingDuplicates] = useState(false);
@@ -193,6 +194,7 @@ export default function PeoplePage() {
           generation: addForm.generation,
           birthDateBs: addForm.birthDateBs || undefined,
           justificationReason: addForm.justificationReason.trim(),
+          allowDuplicateOverride: addForm.allowDuplicateOverride,
           dobVisibility: addForm.privacyVisibility,
           phoneVisibility: addForm.privacyVisibility,
           addressVisibility: addForm.privacyVisibility,
@@ -212,6 +214,7 @@ export default function PeoplePage() {
         birthDateBs: '',
         justificationReason: '',
         privacyVisibility: PrivacyVisibility.PUBLIC,
+        allowDuplicateOverride: false,
       });
       fetchPersons();
     } catch (err: any) {
@@ -536,6 +539,15 @@ export default function PeoplePage() {
                     </div>
                   ))}
                 </div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-amber-950 cursor-pointer pt-2 border-t border-amber-200 mt-2">
+                  <input
+                    type="checkbox"
+                    checked={addForm.allowDuplicateOverride}
+                    onChange={(e) => setAddForm({ ...addForm, allowDuplicateOverride: e.target.checked })}
+                    className="rounded text-saffron-600 focus:ring-saffron-500"
+                  />
+                  <span>म पुष्टि गर्दछु कि यो फरक व्यक्ति हो (Allow Duplicate Override)</span>
+                </label>
               </div>
             )}
 
