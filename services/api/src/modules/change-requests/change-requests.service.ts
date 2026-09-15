@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   ConflictException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   SubmitChangeRequestDto,
   ChangeRequestDetailDto,
   ReviewChangeRequestDto,
   ResubmitChangeRequestDto,
+  ChangeRequestType,
   ChangeRequestStatus,
   Role,
   ErrorCode,
@@ -110,7 +112,7 @@ export class ChangeRequestsService {
           requesterUserId,
           dto.type,
           baseVersion,
-          JSON.stringify(dto.proposedChanges),
+          JSON.stringify(dto.proposedChanges || {}),
           snapshot ? JSON.stringify(snapshot) : null,
           dto.reason,
         ],
@@ -143,7 +145,7 @@ export class ChangeRequestsService {
           newValue: {
             requestId: req.id,
             targetPersonId: req.target_person_id,
-            type: req.type,
+            type: req.request_type || req.type,
             baseVersion,
           },
         },
@@ -175,6 +177,7 @@ export class ChangeRequestsService {
       }
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
+      await this.validateFamilyRecusal(client, actor, gcr);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
@@ -249,10 +252,14 @@ export class ChangeRequestsService {
              resubmission_count = resubmission_count + 1,
              version = version + 1,
              reason = COALESCE($4, reason),
+             reviewed_by = NULL,
+             reviewed_at = NULL,
+             review_notes = NULL,
+             correction_notes = NULL,
              updated_at = NOW()
          WHERE id = $5 RETURNING *`,
         [
-          JSON.stringify(dto.proposedChanges),
+          JSON.stringify(dto.proposedChanges || {}),
           JSON.stringify(snapshot),
           refreshedBaseVersion,
           dto.reason || null,
@@ -297,6 +304,7 @@ export class ChangeRequestsService {
       }
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
+      await this.validateFamilyRecusal(client, actor, gcr);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
@@ -354,10 +362,33 @@ export class ChangeRequestsService {
       }
 
       await this.validateBranchAuthority(client, reviewer, gcr.target_person_id);
+      await this.validateFamilyRecusal(client, reviewer, gcr);
 
-      // Genuine Idempotency check
+      // Genuine Idempotency check: authorized idempotent retry
       if (gcr.status === ChangeRequestStatus.APPROVED && dto.status === ChangeRequestStatus.APPROVED) {
         return { status: 'ALREADY_APPROVED', gcr };
+      }
+
+      // Check reviewable states: PENDING, RESUBMITTED, ESCALATED
+      const reviewableStates = [
+        ChangeRequestStatus.PENDING,
+        ChangeRequestStatus.RESUBMITTED,
+        ChangeRequestStatus.ESCALATED,
+      ];
+      if (!reviewableStates.includes(gcr.status)) {
+        throw new BadRequestException({
+          errorCode: ErrorCode.CANNOT_MODIFY_PROCESSED_REQUEST,
+          message: `Cannot review change request in state ${gcr.status}. Only PENDING, RESUBMITTED, or ESCALATED requests can be reviewed.`,
+        });
+      }
+
+      if (gcr.status === ChangeRequestStatus.ESCALATED) {
+        if (!reviewer.roles.includes(Role.SUPER_ADMIN)) {
+          throw new ForbiddenException({
+            errorCode: ErrorCode.FORBIDDEN,
+            message: 'Escalated change requests strictly require designated Super Admin adjudication',
+          });
+        }
       }
 
       if (dto.status === ChangeRequestStatus.REJECTED) {
@@ -365,14 +396,14 @@ export class ChangeRequestsService {
           `UPDATE genealogy_change_requests 
            SET status = 'REJECTED', review_notes = $1, reviewed_by = $2, reviewed_at = NOW(), version = version + 1, updated_at = NOW()
            WHERE id = $3 RETURNING *`,
-          [dto.reviewNotes, reviewer.id, id],
+          [dto.reviewNotes || null, reviewer.id, id],
         );
         const updated = updatedRes.rows[0];
 
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('CHANGE_REQUEST', $1, $2, 'REJECTED', $3, $4)`,
-          [id, gcr.status, reviewer.id, dto.reviewNotes],
+          [id, gcr.status, reviewer.id, dto.reviewNotes || 'Rejected by reviewer'],
         );
 
         await this.auditOutboxRepo.recordAuditIntent(
@@ -391,16 +422,24 @@ export class ChangeRequestsService {
         return { status: 'REJECTED', gcr: updated };
       }
 
-      // APPROVAL FLOW with Concurrency Conflict Isolation
+      if (dto.status !== ChangeRequestStatus.APPROVED) {
+        throw new BadRequestException(`Invalid review decision status: ${dto.status}`);
+      }
+
+      // APPROVAL FLOW with Concurrency Conflict & Graph Mutations
+      const requestType = gcr.request_type || gcr.type;
+      const changes = gcr.proposed_changes || {};
+
+      let targetPerson: any = null;
       if (gcr.target_person_id) {
         const personRes = await client.query('SELECT * FROM persons WHERE id = $1 FOR UPDATE', [gcr.target_person_id]);
-        const person = personRes.rows[0];
-        if (!person) {
+        targetPerson = personRes.rows[0];
+        if (!targetPerson) {
           throw new NotFoundException(`Target person ${gcr.target_person_id} not found`);
         }
 
-        // STALE BASE VERSION CHECK
-        if (person.version !== gcr.base_version) {
+        // Stale base version check
+        if (targetPerson.version !== gcr.base_version) {
           await client.query(
             `UPDATE genealogy_change_requests SET status = 'CONFLICT_DETECTED', version = version + 1, updated_at = NOW() WHERE id = $1`,
             [id],
@@ -420,76 +459,24 @@ export class ChangeRequestsService {
               actorId: reviewer.id,
               actorRole: reviewer.roles[0] || 'BRANCH_ADMIN',
               oldValue: { base_version: gcr.base_version, status: gcr.status },
-              newValue: { status: 'CONFLICT_DETECTED', current_version: person.version },
+              newValue: { status: 'CONFLICT_DETECTED', current_version: targetPerson.version },
             },
             client,
           );
 
-          const refreshedDiff = this.diffService.computeVisualDiff(person, gcr.proposed_changes);
+          const refreshedDiff = this.diffService.computeVisualDiff(targetPerson, gcr.proposed_changes);
 
           return {
             status: 'CONFLICT_DETECTED',
             baseVersion: gcr.base_version,
-            currentVersion: person.version,
+            currentVersion: targetPerson.version,
             refreshedDiff,
           };
         }
+      }
 
-        // Apply mutations to person
-        const changes = gcr.proposed_changes || {};
-        if (changes.primaryNameNepali || changes.primaryNameEnglish) {
-          if (changes.primaryNameNepali) {
-            const parts = changes.primaryNameNepali.trim().split(/\s+/);
-            const firstName = parts[0] || 'अज्ञात';
-            const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'अधिकारी';
-            await client.query(
-              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
-               VALUES ($1, 'ne', $2, $3, $4, TRUE)
-               ON CONFLICT (person_id, language) WHERE is_primary = TRUE 
-               DO UPDATE SET full_name = EXCLUDED.full_name, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name`,
-              [person.id, firstName, lastName, changes.primaryNameNepali],
-            );
-          }
-          if (changes.primaryNameEnglish) {
-            const parts = changes.primaryNameEnglish.trim().split(/\s+/);
-            const firstName = parts[0] || 'Unknown';
-            const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'Adhikari';
-            await client.query(
-              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
-               VALUES ($1, 'en', $2, $3, $4, TRUE)
-               ON CONFLICT (person_id, language) WHERE is_primary = TRUE 
-               DO UPDATE SET full_name = EXCLUDED.full_name, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name`,
-              [person.id, firstName, lastName, changes.primaryNameEnglish],
-            );
-          }
-        }
-
-        await client.query(
-          `UPDATE persons 
-           SET gender = COALESCE($1, gender),
-               living_status = COALESCE($2, living_status),
-               branch_id = COALESCE($3, branch_id),
-               birth_date_bs = COALESCE($4, birth_date_bs),
-               birth_year_bs = COALESCE($5, birth_year_bs),
-               death_date_bs = COALESCE($6, death_date_bs),
-               death_year_bs = COALESCE($7, death_year_bs),
-               version = version + 1,
-               updated_at = NOW()
-           WHERE id = $8`,
-          [
-            changes.gender || null,
-            changes.livingStatus || null,
-            changes.branchId || null,
-            changes.birthDateBs || null,
-            changes.birthYearBs || null,
-            changes.deathDateBs || null,
-            changes.deathYearBs || null,
-            person.id,
-          ],
-        );
-      } else {
-        // Person creation proposal
-        const changes = gcr.proposed_changes || {};
+      // Explicit handlers for each supported request type
+      if (requestType === 'NEW_PERSON') {
         const newPersonRes = await client.query(
           `INSERT INTO persons (gender, living_status, branch_id, generation, version)
            VALUES ($1, $2, $3, $4, 1) RETURNING *`,
@@ -503,34 +490,320 @@ export class ChangeRequestsService {
         const newPerson = newPersonRes.rows[0];
 
         if (changes.primaryNameNepali) {
+          const parts = changes.primaryNameNepali.trim().split(/\s+/);
+          const firstName = parts[0] || 'अज्ञात';
+          const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'अधिकारी';
           await client.query(
-            `INSERT INTO person_names (person_id, name_type, full_name, language, is_primary)
-             VALUES ($1, 'LEGAL', $2, 'ne', TRUE)`,
-            [newPerson.id, changes.primaryNameNepali],
+            `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+             VALUES ($1, 'ne', $2, $3, $4, TRUE)`,
+            [newPerson.id, firstName, lastName, changes.primaryNameNepali],
           );
         }
         if (changes.primaryNameEnglish) {
+          const parts = changes.primaryNameEnglish.trim().split(/\s+/);
+          const firstName = parts[0] || 'Unknown';
+          const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'Adhikari';
           await client.query(
-            `INSERT INTO person_names (person_id, name_type, full_name, language, is_primary)
-             VALUES ($1, 'LEGAL', $2, 'en', TRUE)`,
-            [newPerson.id, changes.primaryNameEnglish],
+            `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+             VALUES ($1, 'en', $2, $3, $4, TRUE)`,
+            [newPerson.id, firstName, lastName, changes.primaryNameEnglish],
           );
+        }
+      } else if (requestType === 'EDIT_PERSON') {
+        if (changes.primaryNameNepali) {
+          const parts = changes.primaryNameNepali.trim().split(/\s+/);
+          const firstName = parts[0] || 'अज्ञात';
+          const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'अधिकारी';
+          await client.query(
+            `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+             VALUES ($1, 'ne', $2, $3, $4, TRUE)
+             ON CONFLICT (person_id, language) WHERE is_primary = TRUE 
+             DO UPDATE SET full_name = EXCLUDED.full_name, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name`,
+            [targetPerson.id, firstName, lastName, changes.primaryNameNepali],
+          );
+        }
+        if (changes.primaryNameEnglish) {
+          const parts = changes.primaryNameEnglish.trim().split(/\s+/);
+          const firstName = parts[0] || 'Unknown';
+          const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'Adhikari';
+          await client.query(
+            `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+             VALUES ($1, 'en', $2, $3, $4, TRUE)
+             ON CONFLICT (person_id, language) WHERE is_primary = TRUE 
+             DO UPDATE SET full_name = EXCLUDED.full_name, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name`,
+            [targetPerson.id, firstName, lastName, changes.primaryNameEnglish],
+          );
+        }
+
+        await client.query(
+          `UPDATE persons 
+           SET gender = COALESCE($1, gender),
+               living_status = COALESCE($2, living_status),
+               birth_date_bs = COALESCE($3, birth_date_bs),
+               birth_year_bs = COALESCE($4, birth_year_bs),
+               death_date_bs = COALESCE($5, death_date_bs),
+               death_year_bs = COALESCE($6, death_year_bs),
+               version = version + 1,
+               updated_at = NOW()
+           WHERE id = $7`,
+          [
+            changes.gender || null,
+            changes.livingStatus || null,
+            changes.birthDateBs || null,
+            changes.birthYearBs || null,
+            changes.deathDateBs || null,
+            changes.deathYearBs || null,
+            targetPerson.id,
+          ],
+        );
+      } else if (requestType === 'RECORD_DEATH') {
+        await client.query(
+          `UPDATE persons 
+           SET living_status = 'DECEASED',
+               death_date_bs = COALESCE($1, death_date_bs),
+               death_year_bs = COALESCE($2, death_year_bs),
+               version = version + 1,
+               updated_at = NOW()
+           WHERE id = $3`,
+          [changes.deathDateBs || null, changes.deathYearBs || null, targetPerson.id],
+        );
+      } else if (requestType === 'ADD_CHILD' || (requestType === 'ADD_PARENT_LINK' && changes.isChild)) {
+        let childId = changes.childPersonId;
+        if (!childId) {
+          // Create child person
+          const newChildRes = await client.query(
+            `INSERT INTO persons (gender, living_status, branch_id, generation, version)
+             VALUES ($1, $2, $3, $4, 1) RETURNING *`,
+            [
+              changes.gender || 'MALE',
+              changes.livingStatus || 'LIVING',
+              targetPerson.branch_id,
+              targetPerson.generation + 1,
+            ],
+          );
+          const newChild = newChildRes.rows[0];
+          childId = newChild.id;
+
+          if (changes.primaryNameNepali) {
+            const parts = changes.primaryNameNepali.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'ne', $2, $3, $4, TRUE)`,
+              [childId, parts[0] || 'अज्ञात', parts.slice(1).join(' ') || 'अधिकारी', changes.primaryNameNepali],
+            );
+          }
+          if (changes.primaryNameEnglish) {
+            const parts = changes.primaryNameEnglish.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'en', $2, $3, $4, TRUE)`,
+              [childId, parts[0] || 'Unknown', parts.slice(1).join(' ') || 'Adhikari', changes.primaryNameEnglish],
+            );
+          }
+        }
+
+        // Prevent self-link
+        if (targetPerson.id === childId) {
+          throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
+        }
+
+        // Insert parent_links
+        await client.query(
+          `INSERT INTO parent_links (parent_id, child_id, parent_type, confidence, created_by)
+           VALUES ($1, $2, 'BIOLOGICAL', 'VERIFIED', $3)
+           ON CONFLICT (parent_id, child_id) DO NOTHING`,
+          [targetPerson.id, childId, reviewer.id],
+        );
+
+        await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+      } else if (requestType === 'ADD_PARENT' || requestType === 'ADD_PARENT_LINK') {
+        let parentId = changes.parentPersonId || changes.parentId;
+        if (!parentId) {
+          // Create parent person
+          const newParentRes = await client.query(
+            `INSERT INTO persons (gender, living_status, branch_id, generation, version)
+             VALUES ($1, $2, $3, $4, 1) RETURNING *`,
+            [
+              changes.gender || 'MALE',
+              changes.livingStatus || 'LIVING',
+              targetPerson.branch_id,
+              Math.max(1, targetPerson.generation - 1),
+            ],
+          );
+          const newParent = newParentRes.rows[0];
+          parentId = newParent.id;
+
+          if (changes.primaryNameNepali) {
+            const parts = changes.primaryNameNepali.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'ne', $2, $3, $4, TRUE)`,
+              [parentId, parts[0] || 'अज्ञात', parts.slice(1).join(' ') || 'अधिकारी', changes.primaryNameNepali],
+            );
+          }
+          if (changes.primaryNameEnglish) {
+            const parts = changes.primaryNameEnglish.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'en', $2, $3, $4, TRUE)`,
+              [parentId, parts[0] || 'Unknown', parts.slice(1).join(' ') || 'Adhikari', changes.primaryNameEnglish],
+            );
+          }
+        }
+
+        if (targetPerson.id === parentId) {
+          throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
+        }
+
+        await client.query(
+          `INSERT INTO parent_links (parent_id, child_id, parent_type, confidence, created_by)
+           VALUES ($1, $2, 'BIOLOGICAL', 'VERIFIED', $3)
+           ON CONFLICT (parent_id, child_id) DO NOTHING`,
+          [parentId, targetPerson.id, reviewer.id],
+        );
+
+        await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+      } else if (requestType === 'ADD_SPOUSE' || requestType === 'ADD_SPOUSE_LINK') {
+        let spouseId = changes.spousePersonId || changes.spouseId;
+        if (!spouseId) {
+          const newSpouseRes = await client.query(
+            `INSERT INTO persons (gender, living_status, branch_id, generation, version)
+             VALUES ($1, $2, $3, $4, 1) RETURNING *`,
+            [
+              changes.gender || (targetPerson.gender === 'MALE' ? 'FEMALE' : 'MALE'),
+              changes.livingStatus || 'LIVING',
+              targetPerson.branch_id,
+              targetPerson.generation,
+            ],
+          );
+          const newSpouse = newSpouseRes.rows[0];
+          spouseId = newSpouse.id;
+
+          if (changes.primaryNameNepali) {
+            const parts = changes.primaryNameNepali.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'ne', $2, $3, $4, TRUE)`,
+              [spouseId, parts[0] || 'अज्ञात', parts.slice(1).join(' ') || 'अधिकारी', changes.primaryNameNepali],
+            );
+          }
+          if (changes.primaryNameEnglish) {
+            const parts = changes.primaryNameEnglish.trim().split(/\s+/);
+            await client.query(
+              `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+               VALUES ($1, 'en', $2, $3, $4, TRUE)`,
+              [spouseId, parts[0] || 'Unknown', parts.slice(1).join(' ') || 'Adhikari', changes.primaryNameEnglish],
+            );
+          }
+        }
+
+        if (targetPerson.id === spouseId) {
+          throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
+        }
+
+        const spouseProvenance = {
+          changeRequestId: id,
+          approvedBy: reviewer.id,
+          approvedAt: new Date().toISOString(),
+          notes: dto.reviewNotes || 'Approved via governed genealogy change request',
+        };
+
+        await client.query(
+          `INSERT INTO spouse_links (person_id, spouse_id, status, created_by, confidence, provenance)
+           VALUES ($1, $2, 'CURRENT', $3, 'VERIFIED', $4)
+           ON CONFLICT (person_id, spouse_id) DO UPDATE SET confidence = 'VERIFIED', provenance = EXCLUDED.provenance`,
+          [targetPerson.id, spouseId, reviewer.id, JSON.stringify(spouseProvenance)],
+        );
+
+        await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+      } else if (requestType === 'REMOVE_PARENT_LINK') {
+        const parentId = changes.parentPersonId || changes.parentId;
+        if (parentId) {
+          await client.query('DELETE FROM parent_links WHERE parent_id = $1 AND child_id = $2', [parentId, targetPerson.id]);
+          await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+        }
+      } else if (requestType === 'REMOVE_SPOUSE_LINK') {
+        const spouseId = changes.spousePersonId || changes.spouseId;
+        if (spouseId) {
+          await client.query(
+            'DELETE FROM spouse_links WHERE (person_id = $1 AND spouse_id = $2) OR (person_id = $2 AND spouse_id = $1)',
+            [targetPerson.id, spouseId],
+          );
+          await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+        }
+      } else if (requestType === 'BRANCH_TRANSFER') {
+        const destBranchId = changes.destinationBranchId || changes.branchId;
+        if (!destBranchId) {
+          throw new BadRequestException('Destination branch ID is required for branch transfer');
+        }
+
+        // Verify destination branch exists
+        const bRes = await client.query('SELECT id FROM branches WHERE id = $1', [destBranchId]);
+        if (bRes.rows.length === 0) {
+          throw new NotFoundException(`Destination branch ${destBranchId} does not exist`);
+        }
+
+        // Require dual authorization: source AND destination branch authority (or Super Admin)
+        if (!reviewer.roles.includes(Role.SUPER_ADMIN)) {
+          const reviewerBranches = (reviewer.roleAssignments || [])
+            .filter((ra) => ra.role === Role.BRANCH_ADMIN)
+            .map((ra) => ra.branchId);
+
+          const hasSource = reviewerBranches.includes(targetPerson.branch_id);
+          const hasDest = reviewerBranches.includes(destBranchId);
+
+          if (!hasSource || !hasDest) {
+            throw new ForbiddenException({
+              errorCode: ErrorCode.BRANCH_MISMATCH,
+              message: 'Branch transfer requires administrative authority for both source and destination branches',
+            });
+          }
+        }
+
+        await client.query(
+          'UPDATE persons SET branch_id = $1, version = version + 1, updated_at = NOW() WHERE id = $2',
+          [destBranchId, targetPerson.id],
+        );
+      } else if (requestType === 'MERGE_PERSON') {
+        const secondaryId = changes.secondaryPersonId || changes.mergedPersonId;
+        if (secondaryId && secondaryId !== targetPerson.id) {
+          // Verify secondary person exists and is not claimed
+          const secRes = await client.query('SELECT is_claimed FROM persons WHERE id = $1', [secondaryId]);
+          if (secRes.rows[0]?.is_claimed) {
+            throw new ConflictException({
+              errorCode: ErrorCode.CANNOT_MERGE_CLAIMED_PERSONS,
+              message: 'Cannot merge claimed profile into another person',
+            });
+          }
+
+          // Re-parent links
+          await client.query('UPDATE parent_links SET parent_id = $1 WHERE parent_id = $2', [targetPerson.id, secondaryId]);
+          await client.query('UPDATE parent_links SET child_id = $1 WHERE child_id = $2', [targetPerson.id, secondaryId]);
+          await client.query('UPDATE spouse_links SET person_id = $1 WHERE person_id = $2', [targetPerson.id, secondaryId]);
+          await client.query('UPDATE spouse_links SET spouse_id = $1 WHERE spouse_id = $2', [targetPerson.id, secondaryId]);
+          await client.query('UPDATE persons SET living_status = $1, updated_at = NOW() WHERE id = $2', ['MERGED', secondaryId]);
+          await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
         }
       }
 
-      // Mark request approved
+      // Finalize Change Request Record
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
-         SET status = 'APPROVED', review_notes = $1, reviewed_by = $2, reviewed_at = NOW(), version = version + 1, updated_at = NOW()
+         SET status = 'APPROVED',
+             reviewed_by = $1,
+             reviewed_at = NOW(),
+             review_notes = $2,
+             version = version + 1,
+             updated_at = NOW()
          WHERE id = $3 RETURNING *`,
-        [dto.reviewNotes, reviewer.id, id],
+        [reviewer.id, dto.reviewNotes || null, id],
       );
       const updated = updatedRes.rows[0];
 
       await client.query(
         `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
          VALUES ('CHANGE_REQUEST', $1, $2, 'APPROVED', $3, $4)`,
-        [id, gcr.status, reviewer.id, dto.reviewNotes],
+        [id, gcr.status, reviewer.id, dto.reviewNotes || 'Approved and merged into tree graph'],
       );
 
       await this.auditOutboxRepo.recordAuditIntent(
@@ -540,8 +813,13 @@ export class ChangeRequestsService {
           entityId: id,
           actorId: reviewer.id,
           actorRole: reviewer.roles[0] || 'BRANCH_ADMIN',
-          oldValue: { status: gcr.status },
-          newValue: { status: 'APPROVED', reviewNotes: dto.reviewNotes },
+          oldValue: { status: gcr.status, baseVersion: gcr.base_version },
+          newValue: {
+            status: 'APPROVED',
+            requestType,
+            targetPersonId: gcr.target_person_id,
+            reviewNotes: dto.reviewNotes,
+          },
         },
         client,
       );
@@ -568,12 +846,35 @@ export class ChangeRequestsService {
     if (!req) {
       throw new NotFoundException('Change request not found');
     }
+
+    // Actor authorization: requester, branch admin/verifier for the branch, or Super Admin
+    if (actor && !actor.roles?.includes(Role.SUPER_ADMIN) && req.requester_user_id !== actor.id) {
+      let targetBranchId: string | null = null;
+      if (req.target_person_id) {
+        const pRes = await this.db.query('SELECT branch_id FROM persons WHERE id = $1', [req.target_person_id]);
+        targetBranchId = pRes.rows[0]?.branch_id;
+      }
+
+      const hasAuthority = (actor.roleAssignments || []).some(
+        (ra) =>
+          (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
+          ra.branchId === targetBranchId,
+      );
+
+      if (!hasAuthority) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'You do not have authorization to view this change request',
+        });
+      }
+    }
+
     return this.mapToDetailDto(req);
   }
 
   async listRequests(
     actor?: AuthenticatedUser,
-    options?: { status?: ChangeRequestStatus; branchId?: string },
+    options?: { status?: ChangeRequestStatus; branchId?: string; requesterUserId?: string },
   ): Promise<ChangeRequestDetailDto[]> {
     let sql = `
       SELECT r.*, p.branch_id as person_branch_id
@@ -584,6 +885,22 @@ export class ChangeRequestsService {
     const params: any[] = [];
     let pIdx = 1;
 
+    // Regular members can only view their own requests
+    const isReviewer = actor
+      ? (actor.roles?.includes(Role.SUPER_ADMIN) ||
+        (actor.roleAssignments || []).some(
+          (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
+        ))
+      : true;
+
+    if (actor && !isReviewer) {
+      sql += ` AND r.requester_user_id = $${pIdx++}`;
+      params.push(actor.id);
+    } else if (options?.requesterUserId) {
+      sql += ` AND r.requester_user_id = $${pIdx++}`;
+      params.push(options.requesterUserId);
+    }
+
     if (options?.status) {
       sql += ` AND r.status = $${pIdx++}`;
       params.push(options.status);
@@ -593,7 +910,7 @@ export class ChangeRequestsService {
     const res = await this.db.query<any>(sql, params);
 
     let rows = res.rows;
-    if (actor && !actor.roles.includes(Role.SUPER_ADMIN)) {
+    if (actor && isReviewer && !actor.roles?.includes(Role.SUPER_ADMIN)) {
       const authorizedBranches = (actor.roleAssignments || [])
         .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
         .map((ra) => ra.branchId)
@@ -659,6 +976,36 @@ export class ChangeRequestsService {
         errorCode: ErrorCode.BRANCH_MISMATCH,
         message: `Branch mismatch: You do not possess administrative authority for branch ${targetBranchId}`,
         messageNepali: 'शाखा बेमेल: तपाईंसँग यस शाखाको लागि प्रशासनिक अधिकार छैन।',
+      });
+    }
+  }
+
+  private async validateFamilyRecusal(client: any, actor: AuthenticatedUser, req: ChangeRequestRecord) {
+    if (!req.target_person_id) return;
+    const actorUserRes = await client.query('SELECT person_id FROM user_accounts WHERE id = $1', [actor.id]);
+    const actorPersonId = actorUserRes.rows[0]?.person_id;
+    if (!actorPersonId) return;
+
+    if (actorPersonId === req.target_person_id) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.SELF_VERIFICATION_PROHIBITED,
+        message: 'Family recusal: Reviewer cannot verify change proposals for their own person record',
+      });
+    }
+
+    const relRes = await client.query(
+      `SELECT 1 FROM parent_links 
+       WHERE (parent_id = $1 AND child_id = $2) OR (parent_id = $2 AND child_id = $1)
+       UNION
+       SELECT 1 FROM spouse_links 
+       WHERE (person_id = $1 AND spouse_id = $2) OR (person_id = $2 AND spouse_id = $1)`,
+      [actorPersonId, req.target_person_id],
+    );
+
+    if (relRes.rows.length > 0) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.SELF_VERIFICATION_PROHIBITED,
+        message: 'Family recusal: Reviewer cannot review change proposals for immediate family members (parent, child, spouse)',
       });
     }
   }

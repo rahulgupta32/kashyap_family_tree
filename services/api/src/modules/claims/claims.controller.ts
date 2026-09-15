@@ -39,7 +39,7 @@ export class ClaimsController {
   }
 
   @Get()
-  @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN)
+  @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async listClaims(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: ClaimStatus,
@@ -50,7 +50,7 @@ export class ClaimsController {
   }
 
   @Get(':id')
-  @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.REGISTERED_USER)
+  @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async getClaim(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

@@ -3,20 +3,21 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { CulturalRulesService } from '../src/modules/cultural-rules/cultural-rules.service';
 import { RuleType, ErrorCode } from '@kashyap/contracts';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Milestone 4: Cultural Rules, Observances & Open Gates Integration', () => {
   let moduleRef: TestingModule;
   let db: DatabaseService;
   let culturalRulesService: CulturalRulesService;
+  let isoDb: DisposableDatabase;
 
   beforeAll(async () => {
-    process.env.USE_REAL_POSTGRES = 'true';
-    delete process.env.USE_PG_MEM;
-    process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
-    process.env.DB_PORT = process.env.DB_PORT || '5434';
-    process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
-    process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    // 1. Create dedicated disposable database for cultural tests
+    isoDb = await createDisposableDatabase('cultural');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+
+    // 2. Set DB_NAME for Nest application
+    process.env.DB_NAME = isoDb.dbName;
 
     moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -27,14 +28,18 @@ describe('Milestone 4: Cultural Rules, Observances & Open Gates Integration', ()
 
     db = moduleRef.get<DatabaseService>(DatabaseService);
     culturalRulesService = moduleRef.get<CulturalRulesService>(CulturalRulesService);
-  });
+
+    // Verify application is bound to the isolated database
+    await assertDatabaseIsolation(db, isoDb.dbName);
+    console.log(`[DISPOSABLE DB TARGET] Cultural Observances test verified running exclusively against target: ${isoDb.dbName}`);
+  }, 45000);
 
   afterAll(async () => {
-    if (db) {
-      await db.query("DELETE FROM cultural_articles WHERE slug IN ('kashyap-gotra-origin', 'kashyap-draft');");
-    }
     if (moduleRef) {
       await moduleRef.close();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import {
@@ -27,6 +28,7 @@ import { PersonRepository } from '../../database/repositories/person.repository'
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { UserRepository } from '../../database/repositories/user.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ClaimsService {
@@ -41,7 +43,10 @@ export class ClaimsService {
 
   private generatePresignedUrl(mediaAssetId: string): string {
     const expiresAt = Math.floor(Date.now() / 1000) + 15 * 60;
-    return `https://storage.kashyap.org.np/evidence/${mediaAssetId}?expires=${expiresAt}&sig=mock_hmac_valid`;
+    const secret = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_chars_long_12345';
+    const payload = `${mediaAssetId}:${expiresAt}`;
+    const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    return `https://storage.kashyap.org.np/evidence/${mediaAssetId}?expires=${expiresAt}&sig=${sig}`;
   }
 
   async submitClaim(claimantUserId: string, dto: SubmitClaimDto): Promise<ClaimDetailDto> {
@@ -199,8 +204,9 @@ export class ClaimsService {
       }
 
       await this.validateBranchAuthority(client, actor, claim.target_person_id);
+      await this.validateFamilyRecusal(client, actor, claim);
 
-      if (claim.status !== ClaimStatus.PENDING_TIER1 && claim.status !== ClaimStatus.PENDING_TIER2) {
+      if (claim.status !== ClaimStatus.PENDING_TIER1 && claim.status !== ClaimStatus.PENDING_TIER2 && claim.status !== ClaimStatus.RESUBMITTED) {
         throw new BadRequestException({
           errorCode: ErrorCode.INVALID_CLAIM_STATE,
           message: `Cannot request corrections for claim in state ${claim.status}`,
@@ -271,12 +277,22 @@ export class ClaimsService {
         });
       }
 
+      // Hardening: Reset both Tier 1 and Tier 2 decisions upon resubmission
       const updatedRes = await client.query<ClaimRecord>(
         `UPDATE profile_claims 
          SET status = 'PENDING_TIER1',
              relationship_description = COALESCE($1, relationship_description),
              known_family_members = COALESCE($2, known_family_members),
              resubmission_count = resubmission_count + 1,
+             tier1_reviewed_by = NULL,
+             tier1_reviewed_at = NULL,
+             tier1_decision = NULL,
+             tier1_notes = NULL,
+             tier2_reviewed_by = NULL,
+             tier2_reviewed_at = NULL,
+             tier2_decision = NULL,
+             tier2_notes = NULL,
+             correction_request_notes = NULL,
              version = version + 1,
              updated_at = NOW()
          WHERE id = $3 RETURNING *`,
@@ -334,6 +350,7 @@ export class ClaimsService {
       }
 
       await this.validateBranchAuthority(client, actor, claim.target_person_id);
+      await this.validateFamilyRecusal(client, actor, claim);
 
       if (claim.claimant_user_id === actor.id) {
         throw new ForbiddenException({
@@ -437,6 +454,8 @@ export class ClaimsService {
           message: 'Super Admin cannot verify their own profile claim',
         });
       }
+
+      await this.validateFamilyRecusal(client, actor, claim);
 
       if (claim.tier1_reviewed_by && claim.tier1_reviewed_by === actor.id) {
         throw new ForbiddenException({
@@ -710,6 +729,28 @@ export class ClaimsService {
 
       const claimRes = await client.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1 FOR UPDATE', [dispute.claim_id]);
       const claim = claimRes.rows[0];
+      if (!claim) {
+        throw new NotFoundException('Associated claim record not found');
+      }
+
+      // Check authorization and family recusal BEFORE returning any idempotent response
+      await this.validateFamilyRecusal(client, actor, claim);
+
+      // Idempotency: if already terminal, return existing state
+      if (dispute.status === DisputeStatus.RESOLVED || dispute.status === DisputeStatus.DISMISSED) {
+        return {
+          id: dispute.id,
+          claimId: dispute.claim_id,
+          disputantUserId: dispute.disputant_user_id,
+          reason: dispute.reason,
+          status: dispute.status,
+          resolutionNotes: dispute.resolution_notes || undefined,
+          resolvedByUserId: dispute.resolved_by || undefined,
+          resolvedAt: dispute.resolved_at || undefined,
+          createdAt: dispute.created_at,
+          updatedAt: dispute.updated_at,
+        };
+      }
 
       const newDisputeStatus = dto.decision === 'DISMISSED' ? DisputeStatus.DISMISSED : DisputeStatus.RESOLVED;
 
@@ -735,14 +776,19 @@ export class ClaimsService {
           `UPDATE profile_claims SET status = 'SUPERSEDED', version = version + 1, updated_at = NOW() WHERE id = $1`,
           [claim.id],
         );
+
+        // Safe unlinking: ONLY unlink if the claimant user is currently linked to THIS target person
         await client.query(
-          'UPDATE user_accounts SET person_id = NULL, updated_at = NOW() WHERE id = $1',
-          [claim.claimant_user_id],
+          'UPDATE user_accounts SET person_id = NULL, updated_at = NOW() WHERE id = $1 AND person_id = $2',
+          [claim.claimant_user_id, claim.target_person_id],
         );
+
+        // ONLY clear person claimed_user_id if currently claimed by this specific claimant
         await client.query(
-          'UPDATE persons SET claimed_user_id = NULL, is_claimed = FALSE, version = version + 1, updated_at = NOW() WHERE id = $1',
-          [claim.target_person_id],
+          'UPDATE persons SET claimed_user_id = NULL, is_claimed = FALSE, version = version + 1, updated_at = NOW() WHERE id = $1 AND claimed_user_id = $2',
+          [claim.target_person_id, claim.claimant_user_id],
         );
+
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('PROFILE_CLAIM', $1, 'DISPUTED', 'SUPERSEDED', $2, $3)`,
@@ -790,10 +836,17 @@ export class ClaimsService {
         throw new ForbiddenException('Only the claimant can withdraw their claim');
       }
 
-      if (claim.status === ClaimStatus.APPROVED || claim.status === ClaimStatus.REJECTED || claim.status === ClaimStatus.SUPERSEDED) {
+      const terminalOrDisputed = [
+        ClaimStatus.APPROVED,
+        ClaimStatus.REJECTED,
+        ClaimStatus.SUPERSEDED,
+        ClaimStatus.DISPUTED,
+        ClaimStatus.WITHDRAWN,
+      ];
+      if (terminalOrDisputed.includes(claim.status)) {
         throw new BadRequestException({
           errorCode: ErrorCode.INVALID_CLAIM_STATE,
-          message: `Cannot withdraw claim in terminal status ${claim.status}`,
+          message: `Cannot withdraw claim in status ${claim.status}`,
         });
       }
 
@@ -831,15 +884,47 @@ export class ClaimsService {
     if (!claim) {
       throw new NotFoundException('Claim not found');
     }
-    return this.mapToDetailDto(claim);
+
+    // Authorization: claimant, branch reviewer/admin, or Super Admin
+    if (actor && !actor.roles?.includes(Role.SUPER_ADMIN) && claim.claimant_user_id !== actor.id) {
+      const person = await this.personRepo.findById(claim.target_person_id);
+      const targetBranchId = person?.branch_id;
+
+      const hasAuthority = (actor.roleAssignments || []).some(
+        (ra) =>
+          (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
+          ra.branchId === targetBranchId,
+      );
+
+      if (!hasAuthority) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'You are not authorized to view this claim',
+        });
+      }
+    }
+
+    return this.mapToDetailDto(claim, undefined, actor);
   }
 
   async listClaims(
     actor?: AuthenticatedUser,
     options?: { status?: ClaimStatus; claimantUserId?: string; branchId?: string },
   ): Promise<ClaimDetailDto[]> {
+    const isReviewer = actor
+      ? (actor.roles?.includes(Role.SUPER_ADMIN) ||
+        (actor.roleAssignments || []).some(
+          (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
+        ))
+      : true;
+
+    let claimantFilter = options?.claimantUserId;
     let branchFilter = options?.branchId;
-    if (actor && !actor.roles.includes(Role.SUPER_ADMIN)) {
+
+    if (actor && !isReviewer) {
+      // Regular members can only view their own claims
+      claimantFilter = actor.id;
+    } else if (actor && !actor.roles?.includes(Role.SUPER_ADMIN)) {
       const branchAssignments = (actor.roleAssignments || [])
         .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
         .map((ra) => ra.branchId)
@@ -851,14 +936,14 @@ export class ClaimsService {
 
     const records = await this.claimRepo.listAll({
       status: options?.status,
-      claimantUserId: options?.claimantUserId,
+      claimantUserId: claimantFilter,
       branchId: branchFilter,
     });
 
-    return Promise.all(records.map((r) => this.mapToDetailDto(r)));
+    return Promise.all(records.map((r) => this.mapToDetailDto(r, undefined, actor)));
   }
 
-  private async mapToDetailDto(claim: ClaimRecord, client?: PoolClient): Promise<ClaimDetailDto> {
+  private async mapToDetailDto(claim: ClaimRecord, client?: PoolClient, viewer?: AuthenticatedUser): Promise<ClaimDetailDto> {
     let targetPersonNameNepali = 'अज्ञात';
     let targetPersonNameEnglish = 'Unknown';
     let branchId = 'b-001';
@@ -894,7 +979,19 @@ export class ClaimsService {
       claimantPhone = user.phone_number;
     }
 
-    const rawEvidence = await this.claimRepo.findEvidenceByClaimId(claim.id, client);
+    // Phone and evidence redaction if viewer is not claimant and not reviewer
+    let canViewEvidence = true;
+    if (viewer && !viewer.roles?.includes(Role.SUPER_ADMIN) && viewer.id !== claim.claimant_user_id) {
+      const isReviewer = (viewer.roleAssignments || []).some(
+        (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
+      );
+      if (!isReviewer) {
+        claimantPhone = claimantPhone.substring(0, 4) + '****' + claimantPhone.slice(-2);
+        canViewEvidence = false;
+      }
+    }
+
+    const rawEvidence = canViewEvidence ? await this.claimRepo.findEvidenceByClaimId(claim.id, client) : [];
     const evidenceAttachments = rawEvidence.map((e) => ({
       id: e.id,
       mediaAssetId: e.media_asset_id,
@@ -976,20 +1073,22 @@ export class ClaimsService {
     }
 
     const relRes = await client.query(
-      `SELECT 1 FROM parent_child_links 
-       WHERE (parent_person_id = $1 AND child_person_id = $2)
-          OR (parent_person_id = $2 AND child_person_id = $1)
+      `SELECT 1 FROM parent_links 
+       WHERE (parent_id = $1 AND child_id = $2)
+          OR (parent_id = $2 AND child_id = $1)
        UNION
        SELECT 1 FROM spouse_links 
-       WHERE (person_a_id = $1 AND person_b_id = $2)
-          OR (person_a_id = $2 AND person_b_id = $1)`,
+       WHERE (person_id = $1 AND spouse_id = $2)
+          OR (person_id = $2 AND spouse_id = $1)
+       UNION
+       SELECT 1 FROM parent_links p1 JOIN parent_links p2 ON p1.parent_id = p2.parent_id WHERE p1.child_id = $1 AND p2.child_id = $2`,
       [actorPersonId, claim.target_person_id],
     );
 
     if (relRes.rows.length > 0) {
       throw new ForbiddenException({
         errorCode: ErrorCode.SELF_VERIFICATION_PROHIBITED,
-        message: 'Family recusal: Reviewer cannot verify claims for immediate family members (parent, child, spouse)',
+        message: 'Family recusal: Reviewer cannot verify claims for immediate family members (parent, child, spouse, sibling)',
       });
     }
   }

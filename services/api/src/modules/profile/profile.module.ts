@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
-import { DatabaseModule } from '../../database/database.module';
-import { ProfileService } from './profile.service';
 import { ProfileController } from './profile.controller';
+import { ProfileService } from './profile.service';
+import { MalwareScannerService } from './malware-scanner.service';
 
 @Module({
-  imports: [DatabaseModule],
   controllers: [ProfileController],
-  providers: [ProfileService],
-  exports: [ProfileService],
+  providers: [ProfileService, MalwareScannerService],
+  exports: [ProfileService, MalwareScannerService],
 })
 export class ProfileModule {}

@@ -15,6 +15,7 @@ import { MapModule } from './modules/map/map.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { CalendarModule } from './modules/calendar/calendar.module';
     ChatModule,
     ProfileModule,
     CalendarModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

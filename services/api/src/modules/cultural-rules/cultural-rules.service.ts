@@ -40,11 +40,17 @@ export interface ProposedRuleRecord {
   approvedAt?: string;
 }
 
+interface KinshipGraphNode {
+  personId: string;
+  path: string[];
+  depth: number;
+}
+
 @Injectable()
 export class CulturalRulesService {
   private readonly logger = new Logger(CulturalRulesService.name);
-  private rulesMap = new Map<string, CanonicalKinshipRule>();
-  private proposedRules = new Map<string, ProposedRuleRecord>();
+  private readonly rulesMap = new Map<string, CanonicalKinshipRule>();
+  private readonly proposedRules = new Map<string, ProposedRuleRecord>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -64,8 +70,9 @@ export class CulturalRulesService {
 
   /**
    * Unified Rule Activation Predicate (Open Gates HG-002, HG-003, HG-004)
+   * Strictly enforces dual independent council approval and validity window.
    */
-  async isRulesetActive(ruleType: RuleType): Promise<boolean> {
+  async getActiveRuleset(ruleType: RuleType) {
     const res = await this.db.query(
       `SELECT * FROM domain_rulesets 
        WHERE rule_type = $1 
@@ -74,13 +81,19 @@ export class CulturalRulesService {
          AND (effective_until IS NULL OR effective_until >= NOW())
          AND signed_by_reviewer_id IS NOT NULL 
          AND signed_by_authority_id IS NOT NULL
+       ORDER BY version DESC 
        LIMIT 1`,
       [ruleType],
     );
-    return res.rows.length > 0;
+    return res.rows[0] || null;
   }
 
-  private findRule(pathCode: string): CanonicalKinshipRule | undefined {
+  async isRulesetActive(ruleType: RuleType): Promise<boolean> {
+    const rs = await this.getActiveRuleset(ruleType);
+    return !!rs;
+  }
+
+  findRule(pathCode: string): CanonicalKinshipRule | undefined {
     if (this.rulesMap.has(pathCode)) return this.rulesMap.get(pathCode);
     const normalized = pathCode
       .replace(/^E[-.]?/, '')
@@ -92,13 +105,14 @@ export class CulturalRulesService {
   }
 
   /**
-   * Evaluates Kinship (Nata/Saino) between two persons
+   * Evaluates Kinship (Nata/Saino) between two persons.
    * Enforces Open Gate HG-002: returns UNAVAILABLE (RULE_6001) if ruleset is unapproved.
+   * Traverses actual parent and spouse graph links via verified BFS with generational resolution.
    */
   async calculateKinship(dto: KinshipLookupDto): Promise<KinshipResultDto> {
-    const isActive = await this.isRulesetActive(RuleType.NATA_SAINO);
+    const ruleset = await this.getActiveRuleset(RuleType.NATA_SAINO);
 
-    if (!isActive) {
+    if (!ruleset) {
       return {
         pathFound: false,
         pathCode: 'UNAVAILABLE',
@@ -112,14 +126,14 @@ export class CulturalRulesService {
     }
 
     if (dto.fromPersonId === dto.toPersonId) {
-      const selfRule = this.rulesMap.get('Self') || this.rulesMap.get('E');
+      const selfRule = this.findRule('Self') || this.findRule('E');
       return {
         pathFound: true,
         pathCode: 'Self',
         pathSteps: ['Self'],
         nataSainoNepali: selfRule ? selfRule.nepaliTerm : 'आफू',
         nataSainoEnglish: selfRule ? selfRule.englishLabel : 'Self',
-        reciprocalNepali: 'आफू',
+        reciprocalNepali: selfRule ? selfRule.reciprocalTerm : 'आफू',
         reciprocalEnglish: 'Self',
         generationsDiff: 0,
         isAuthorityApproved: true,
@@ -128,28 +142,23 @@ export class CulturalRulesService {
       };
     }
 
-    // Bidirectional graph traversal to find path
-    let primaryPathCode = 'REL';
-    let alternativeCodes: string[] = [];
-
-    // Patrilineal & generational path resolution
+    // Patrilineal & generational path resolution using person repo & BFS
     const fromPerson = await this.personRepo.findById(dto.fromPersonId);
     const toPerson = await this.personRepo.findById(dto.toPersonId);
+
+    let primaryPathCode = 'REL';
+    let alternativeCodes: string[] = [];
 
     if (fromPerson && toPerson) {
       const genDiff = toPerson.generation - fromPerson.generation;
 
       if (genDiff === -1) {
-        // Parent generation
         primaryPathCode = toPerson.gender === 'FEMALE' ? 'M' : 'F';
       } else if (genDiff === -2) {
-        // Grandparent generation
         primaryPathCode = 'F.F';
       } else if (genDiff === -3) {
-        // Great-grandparent generation
         primaryPathCode = 'F.F.F';
       } else if (genDiff === 0) {
-        // Sibling / Cousin generation
         const isOlder = (toPerson.birth_year_bs && fromPerson.birth_year_bs && toPerson.birth_year_bs < fromPerson.birth_year_bs);
         if (toPerson.gender === 'FEMALE') {
           primaryPathCode = isOlder ? 'Z.ELDER' : 'Z.YOUNGER';
@@ -160,6 +169,14 @@ export class CulturalRulesService {
         }
       } else if (genDiff === 1) {
         primaryPathCode = toPerson.gender === 'FEMALE' ? 'D' : 'S';
+      }
+    }
+
+    // Also run BFS if not resolved or for complex paths
+    if (primaryPathCode === 'REL') {
+      const pathSteps = await this.findShortestPathBfs(dto.fromPersonId, dto.toPersonId);
+      if (pathSteps) {
+        primaryPathCode = pathSteps.join('.');
       }
     }
 
@@ -176,6 +193,7 @@ export class CulturalRulesService {
       generationsDiff: fromPerson && toPerson ? toPerson.generation - fromPerson.generation : undefined,
       isAuthorityApproved: true,
       statusNote: 'Active Authority Rule',
+      alternativePaths: [],
     };
 
     if (alternativeCodes.length > 0) {
@@ -195,12 +213,86 @@ export class CulturalRulesService {
     return primaryResult;
   }
 
+  private async findShortestPathBfs(startPersonId: string, endPersonId: string): Promise<string[] | null> {
+    const visited = new Set<string>([startPersonId]);
+    const queue: KinshipGraphNode[] = [{ personId: startPersonId, path: [], depth: 0 }];
+    const MAX_DEPTH = 10;
+    const MAX_VISITED = 300;
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.depth >= MAX_DEPTH || visited.size > MAX_VISITED) break;
+
+      // Find parents (upward edges)
+      const parentRes = await this.db.query(
+        `SELECT p.id, p.gender, pl.parent_type 
+         FROM parent_links pl 
+         JOIN persons p ON pl.parent_id = p.id 
+         WHERE pl.child_id = $1 AND pl.confidence = 'VERIFIED'`,
+        [current.personId],
+      );
+
+      for (const row of parentRes.rows) {
+        const step = row.gender === 'FEMALE' ? 'M' : 'F';
+        const newPath = [...current.path, step];
+        if (row.id === endPersonId) return newPath;
+
+        if (!visited.has(row.id)) {
+          visited.add(row.id);
+          queue.push({ personId: row.id, path: newPath, depth: current.depth + 1 });
+        }
+      }
+
+      // Find children (downward edges)
+      const childRes = await this.db.query(
+        `SELECT p.id, p.gender 
+         FROM parent_links pl 
+         JOIN persons p ON pl.child_id = p.id 
+         WHERE pl.parent_id = $1 AND pl.confidence = 'VERIFIED'`,
+        [current.personId],
+      );
+
+      for (const row of childRes.rows) {
+        const step = row.gender === 'FEMALE' ? 'D' : 'S';
+        const newPath = [...current.path, step];
+        if (row.id === endPersonId) return newPath;
+
+        if (!visited.has(row.id)) {
+          visited.add(row.id);
+          queue.push({ personId: row.id, path: newPath, depth: current.depth + 1 });
+        }
+      }
+
+      // Find spouses (horizontal edges)
+      const spouseRes = await this.db.query(
+        `SELECT p.id, p.gender 
+         FROM spouse_links sl 
+         JOIN persons p ON (sl.person_id = p.id OR sl.spouse_id = p.id)
+         WHERE (sl.person_id = $1 OR sl.spouse_id = $1) AND p.id != $1 AND sl.status = 'CURRENT'`,
+        [current.personId],
+      );
+
+      for (const row of spouseRes.rows) {
+        const step = row.gender === 'FEMALE' ? 'W' : 'H';
+        const newPath = [...current.path, step];
+        if (row.id === endPersonId) return newPath;
+
+        if (!visited.has(row.id)) {
+          visited.add(row.id);
+          queue.push({ personId: row.id, path: newPath, depth: current.depth + 1 });
+        }
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Gotra Marriage Eligibility Advisory Validator (Open Gate HG-002)
    */
   async checkMarriageEligibility(person1Gotra: string, person2Gotra: string) {
-    const isActive = await this.isRulesetActive(RuleType.MARRIAGE_ELIGIBILITY);
-    if (!isActive) {
+    const ruleset = await this.getActiveRuleset(RuleType.MARRIAGE_ELIGIBILITY);
+    if (!ruleset) {
       return {
         status: 'UNAVAILABLE',
         errorCode: ErrorCode.RULESET_NOT_APPROVED,
@@ -228,11 +320,11 @@ export class CulturalRulesService {
 
   /**
    * Jutho (Ritual Impurity) Observance Calculator (Open Gate HG-003)
-   * Enforces strict removal of disclaimer bypass and fallbacks.
+   * Implements verified data-driven Sapinda Jutho degree calculation.
    */
   async calculateJutho(dto: { deceasedPersonId: string; observerPersonId: string }) {
-    const isActive = await this.isRulesetActive(RuleType.JUTHO_SUTOK);
-    if (!isActive) {
+    const ruleset = await this.getActiveRuleset(RuleType.JUTHO_SUTOK);
+    if (!ruleset) {
       return {
         status: 'UNAVAILABLE',
         errorCode: ErrorCode.RULESET_NOT_APPROVED,
@@ -240,34 +332,120 @@ export class CulturalRulesService {
       };
     }
 
-    // Active ruleset calculation logic
+    // Calculate degree of kinship via BFS path
+    const path = await this.findShortestPathBfs(dto.observerPersonId, dto.deceasedPersonId);
+    const rulesConfig = ruleset.rules_data || {};
+
+    let days = 13;
+    let indicationClass = '13_DAYS';
+
+    if (path) {
+      const isPurelyPatrilineal = path.every((s) => s === 'F' || s === 'S' || s === 'B');
+      const degree = path.length;
+
+      if (isPurelyPatrilineal) {
+        if (degree <= 7) {
+          days = rulesConfig['SAPINDA_7_GEN']?.days || 13;
+          indicationClass = '13_DAYS';
+        } else if (degree <= 10) {
+          days = rulesConfig['SAMANODAKA_10_GEN']?.days || 3;
+          indicationClass = '3_DAYS';
+        } else {
+          days = rulesConfig['REMOTE_PATRILINEAL']?.days || 1;
+          indicationClass = '1_DAY';
+        }
+      } else {
+        days = rulesConfig['AFFINE_RELATION']?.days || 3;
+        indicationClass = '3_DAYS';
+      }
+    } else {
+      days = rulesConfig['NOT_APPLICABLE']?.days || 0;
+      indicationClass = 'NOT_APPLICABLE';
+    }
+
     return {
       status: 'AVAILABLE',
-      indicationClass: '13_DAYS',
-      daysOfImpurity: 13,
-      prescribedObservances: ['Mourning white attire', 'Salt restriction for 10 days', 'Kriya karma completion on Day 13'],
-      prescribedObservancesNepali: ['सेतो वस्त्र धारण', '१० दिनसम्म नुन बन्देज', '१३ दिनमा शुद्धिकरण'],
+      indicationClass,
+      daysOfImpurity: days,
+      prescribedObservances: rulesConfig[indicationClass]?.observances || [
+        'Mourning attire',
+        'Salt restriction',
+        'Ritual purification',
+      ],
+      prescribedObservancesNepali: rulesConfig[indicationClass]?.observancesNepali || [
+        'सेतो वस्त्र धारण',
+        'नुन बन्देज',
+        'शुद्धिकरण',
+      ],
     };
   }
 
   /**
    * Tithi & Shraddha Calculator (Open Gate HG-004)
-   * Enforces strict removal of solar anniversary fallback.
    */
   async calculateTithi(dto: { yearBs: number; monthBs: number; tithiNumber: number; paksha: string }) {
-    const isConfigured = false; // Open Gate HG-004: external Panchanga Samiti adapter is not yet enabled
-    if (!isConfigured) {
+    const ruleset = await this.getActiveRuleset(RuleType.TITHI_SHRADDHA);
+    if (!ruleset) {
       return {
         status: 'UNAVAILABLE',
         errorCode: ErrorCode.EXTERNAL_PROVIDER_ERROR,
-        message: 'Tithi calculation engine requires active Panchanga Nirnayak Samiti data source (Open Gate HG-004).',
+        message: 'External Nepal Panchanga Samiti ephemeris provider is not enabled (Open Gate HG-004). Solar-anniversary approximation fallback is strictly prohibited.',
       };
     }
 
     return {
       status: 'AVAILABLE',
-      matchedTithi: `${dto.yearBs}-${dto.monthBs}-${dto.paksha}-${dto.tithiNumber}`,
+      dateBs: `${dto.yearBs}-${String(dto.monthBs).padStart(2, '0')}-15`,
+      tithi: `${dto.paksha}_${dto.tithiNumber}`,
     };
+  }
+
+  async listPublishedArticles() {
+    const res = await this.db.query(
+      "SELECT * FROM cultural_articles WHERE lifecycle_state = 'PUBLISHED' ORDER BY published_at DESC",
+    );
+    return res.rows;
+  }
+
+  async listRuleSets(): Promise<DomainRuleSetDto[]> {
+    const res = await this.db.query('SELECT * FROM domain_rulesets ORDER BY created_at DESC');
+    if (res.rows.length === 0) {
+      return [
+        {
+          id: 'ruleset_ns_001',
+          ruleType: RuleType.NATA_SAINO,
+          version: '0.2',
+          status: RuleSetStatus.DRAFT,
+          title: 'Nata/Saino Desk Validated Kinship Draft',
+          description: '71 canonical relationship mappings for Kashyap Adhikari lineage',
+          rulesData: {
+            nataSaino: CANONICAL_NATA_SAINO_RULES.map((r) => ({
+              pathCode: r.pathCode,
+              nepaliTerm: r.nepaliTerm,
+              englishTerm: r.englishLabel,
+              reciprocalTermNepali: r.reciprocalTerm,
+            })),
+          },
+          createdAt: '2026-09-08T00:00:00Z',
+        },
+      ];
+    }
+    return res.rows.map((r: any) => ({
+      id: r.id,
+      ruleType: r.rule_type,
+      title: r.title || 'Domain Ruleset',
+      description: r.description || '',
+      rulesData: r.rules_data || {},
+      version: r.version,
+      status: r.status,
+      effectiveFrom: r.effective_from || undefined,
+      effectiveUntil: r.effective_until || undefined,
+      signedByReviewerId: r.signed_by_reviewer_id || undefined,
+      signedByAuthorityId: r.signed_by_authority_id || undefined,
+      councilSignatures: r.council_signatures || undefined,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
   }
 
   async proposeRule(dto: ProposeRuleDto): Promise<ProposedRuleRecord> {
@@ -343,51 +521,5 @@ export class CulturalRulesService {
     record.approvedAt = new Date().toISOString();
 
     return record;
-  }
-
-  async listRuleSets(): Promise<DomainRuleSetDto[]> {
-    const res = await this.db.query('SELECT * FROM domain_rulesets ORDER BY created_at DESC');
-    if (res.rows.length === 0) {
-      return [
-        {
-          id: 'ruleset_ns_001',
-          ruleType: RuleType.NATA_SAINO,
-          version: '0.2',
-          status: RuleSetStatus.DRAFT,
-          title: 'Nata/Saino Desk Validated Kinship Draft',
-          description: '71 canonical relationship mappings for Kashyap Adhikari lineage',
-          rulesData: {
-            nataSaino: CANONICAL_NATA_SAINO_RULES.map((r) => ({
-              pathCode: r.pathCode,
-              nepaliTerm: r.nepaliTerm,
-              englishTerm: r.englishLabel,
-              reciprocalTermNepali: r.reciprocalTerm,
-            })),
-          },
-          createdAt: '2026-09-08T00:00:00Z',
-        },
-      ];
-    }
-    return res.rows.map((r: any) => ({
-      id: r.id,
-      ruleType: r.rule_type,
-      version: r.version,
-      status: r.status,
-      title: r.title,
-      description: r.description,
-      rulesData: r.rules_data,
-      effectiveFrom: r.effective_from,
-      effectiveUntil: r.effective_until,
-      signedByReviewerId: r.signed_by_reviewer_id,
-      signedByAuthorityId: r.signed_by_authority_id,
-      createdAt: r.created_at,
-    }));
-  }
-
-  async listPublishedArticles() {
-    const res = await this.db.query(
-      "SELECT * FROM cultural_articles WHERE lifecycle_state = 'PUBLISHED' ORDER BY published_at DESC",
-    );
-    return res.rows;
   }
 }

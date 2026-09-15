@@ -3,11 +3,13 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { ClaimsService } from '../src/modules/claims/claims.service';
 import { ClaimStatus, DisputeStatus, Role, ErrorCode } from '@kashyap/contracts';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () => {
   let moduleRef: TestingModule;
   let db: DatabaseService;
   let claimsService: ClaimsService;
+  let isoDb: DisposableDatabase;
 
   let testBranchId: string;
   let claimant1Id: string;
@@ -18,13 +20,9 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
   let person2Id: string;
 
   beforeAll(async () => {
-    process.env.USE_REAL_POSTGRES = 'true';
-    delete process.env.USE_PG_MEM;
-    process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
-    process.env.DB_PORT = process.env.DB_PORT || '5434';
-    process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
-    process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    isoDb = await createDisposableDatabase('claims');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    process.env.DB_NAME = isoDb.dbName;
 
     moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -35,6 +33,8 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
 
     db = moduleRef.get<DatabaseService>(DatabaseService);
     claimsService = moduleRef.get<ClaimsService>(ClaimsService);
+    await assertDatabaseIsolation(db, isoDb.dbName);
+    console.log(`[DISPOSABLE DB TARGET] Claims Workflow test verified running exclusively against target: ${isoDb.dbName}`);
 
     const suffix = Math.floor(100000 + Math.random() * 900000);
     const randPhone = () => '+97798' + Math.floor(10000000 + Math.random() * 90000000);
@@ -97,19 +97,11 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
   });
 
   afterAll(async () => {
-    if (db) {
-      await db.query('DELETE FROM claim_evidence_attachments WHERE claim_id IN (SELECT id FROM profile_claims WHERE claimant_user_id IN ($1, $2));', [claimant1Id, claimant2Id]);
-      await db.query('DELETE FROM claim_disputes WHERE claim_id IN (SELECT id FROM profile_claims WHERE claimant_user_id IN ($1, $2));', [claimant1Id, claimant2Id]);
-      await db.query('DELETE FROM profile_claims WHERE claimant_user_id IN ($1, $2);', [claimant1Id, claimant2Id]);
-      await db.query('DELETE FROM user_roles WHERE user_id IN ($1, $2, $3, $4);', [claimant1Id, claimant2Id, verifier1Id, superAdminId]);
-      await db.query('UPDATE persons SET claimed_user_id = NULL WHERE id IN ($1, $2);', [person1Id, person2Id]);
-      await db.query('UPDATE user_accounts SET person_id = NULL, is_active = FALSE WHERE id IN ($1, $2, $3, $4);', [claimant1Id, claimant2Id, verifier1Id, superAdminId]);
-      await db.query('DELETE FROM person_names WHERE person_id IN ($1, $2);', [person1Id, person2Id]);
-      await db.query('DELETE FROM persons WHERE id IN ($1, $2);', [person1Id, person2Id]);
-      await db.query('DELETE FROM branches WHERE id = $1;', [testBranchId]);
-    }
     if (moduleRef) {
       await moduleRef.close();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 
@@ -282,7 +274,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
 
     expect(dispute.status).toBe(DisputeStatus.OPEN);
 
-    const claimAfterDispute = await claimsService.getClaimById(claimId);
+    const claimAfterDispute = await claimsService.getClaimById(claimId, { id: claimant1Id, roles: [Role.REGISTERED_USER] } as any);
     expect(claimAfterDispute.status).toBe(ClaimStatus.DISPUTED);
 
     // Super Admin dismisses dispute
@@ -299,7 +291,65 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
 
     expect(resolved.status).toBe(DisputeStatus.DISMISSED);
 
-    const claimRestored = await claimsService.getClaimById(claimId);
+    const claimRestored = await claimsService.getClaimById(claimId, superAdminUser);
     expect(claimRestored.status).toBe(ClaimStatus.APPROVED);
+  });
+  it('6. should enforce designated Super Admin adjudication on ESCALATED claims', async () => {
+    // Submit another claim to test escalation
+    const suffix = Math.floor(100000 + Math.random() * 900000);
+    const pRes = await db.query(
+      'INSERT INTO persons (gender, living_status, branch_id, generation, version) VALUES ($1, $2, $3, $4, 1) RETURNING id',
+      ['FEMALE', 'LIVING', testBranchId, 4],
+    );
+    const newPersonId = pRes.rows[0].id;
+
+    const uRes = await db.query(
+      `INSERT INTO user_accounts (phone_number, is_active) VALUES ('+9779841${suffix}', TRUE) RETURNING id`,
+    );
+    const newClaimantId = uRes.rows[0].id;
+
+    const submitted = await claimsService.submitClaim(newClaimantId, {
+      targetPersonId: newPersonId,
+      relationshipDescription: 'Daughter of branch elder',
+      evidenceAttachments: [],
+      statementOfTruth: true,
+    });
+
+    const verifierUser = {
+      id: verifier1Id,
+      roles: [Role.BRANCH_VERIFIER],
+      roleAssignments: [{ role: Role.BRANCH_VERIFIER, branchId: testBranchId }],
+    } as any;
+
+    // Escalate from Tier 1
+    const escalated = await claimsService.escalate(submitted.id, verifierUser, 'Complex adoption case; requires central adjudication');
+    expect(escalated.status).toBe(ClaimStatus.ESCALATED);
+
+    // Non-SuperAdmin attempting Tier 2 review on ESCALATED claim must be rejected
+    const branchAdminUser = {
+      id: verifier1Id,
+      roles: [Role.BRANCH_ADMIN],
+      roleAssignments: [{ role: Role.BRANCH_ADMIN, branchId: testBranchId }],
+    } as any;
+
+    await expect(
+      claimsService.tier2Review(submitted.id, branchAdminUser, {
+        decision: 'APPROVED',
+        notes: 'Attempting branch admin approval of escalated case',
+      }),
+    ).rejects.toThrow();
+
+    // Designated Super Admin adjudicator approves with mandatory notes
+    const superAdminUser = {
+      id: superAdminId,
+      roles: [Role.SUPER_ADMIN],
+      roleAssignments: [{ role: Role.SUPER_ADMIN, branchId: null }],
+    } as any;
+
+    const adjudicated = await claimsService.tier2Review(submitted.id, superAdminUser, {
+      decision: 'APPROVED',
+      notes: 'Central Genealogy Authority reviewed archival documents and verified adoption lineage',
+    });
+    expect(adjudicated.claim.status).toBe(ClaimStatus.APPROVED);
   });
 });

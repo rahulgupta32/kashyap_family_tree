@@ -24,6 +24,11 @@ import {
   GenealogyExportDto,
   ParentType,
   SpouseStatus,
+  ClaimDetailDto,
+  ChangeRequestDetailDto,
+  CalendarEventDetailDto,
+  PrivacySettingsDto,
+  NotificationPreferencesDto,
 } from '@kashyap/contracts';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -343,6 +348,146 @@ export class ApiClient {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to export data');
+    return data;
+  }
+
+  // --- Milestone 4: Claims Management ---
+  static async listClaims(token: string, options?: { status?: string; branchId?: string }): Promise<ClaimDetailDto[]> {
+    const params = new URLSearchParams();
+    if (options?.status) params.append('status', options.status);
+    if (options?.branchId) params.append('branchId', options.branchId);
+
+    const res = await fetch(`${API_BASE}/claims?${params.toString()}`, {
+      headers: this.getHeaders(token),
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to load claims');
+    return data;
+  }
+
+  static async tier1Review(token: string, claimId: string, dto: { decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/claims/${claimId}/tier1-review`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Tier 1 review failed');
+    return data;
+  }
+
+  static async tier2Review(token: string, claimId: string, dto: { decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/claims/${claimId}/tier2-review`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Tier 2 approval failed');
+    return data;
+  }
+
+  static async resolveDispute(token: string, disputeId: string, dto: { decision: 'UPHELD' | 'DISMISSED'; notes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/claims/disputes/${disputeId}/resolve`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Dispute resolution failed');
+    return data;
+  }
+
+  // --- Milestone 4: Change Requests ---
+  static async listChangeRequests(token: string, options?: { status?: string; branchId?: string }): Promise<ChangeRequestDetailDto[]> {
+    const params = new URLSearchParams();
+    if (options?.status) params.append('status', options.status);
+    if (options?.branchId) params.append('branchId', options.branchId);
+
+    const res = await fetch(`${API_BASE}/change-requests?${params.toString()}`, {
+      headers: this.getHeaders(token),
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to load change requests');
+    return data;
+  }
+
+  static async reviewChangeRequest(token: string, id: string, dto: { status: 'APPROVED' | 'REJECTED'; reviewNotes?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/change-requests/${id}/review`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Change request review failed');
+    return data;
+  }
+
+  // --- Milestone 4: Calendar Events ---
+  static async listCalendarEvents(token: string, options?: { yearBs?: number; monthBs?: number }): Promise<CalendarEventDetailDto[]> {
+    const params = new URLSearchParams();
+    if (options?.yearBs) params.append('yearBs', String(options.yearBs));
+    if (options?.monthBs) params.append('monthBs', String(options.monthBs));
+
+    const res = await fetch(`${API_BASE}/calendar?${params.toString()}`, {
+      headers: this.getHeaders(token),
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to load calendar events');
+    return data;
+  }
+
+  static async createCalendarEvent(token: string, dto: any): Promise<CalendarEventDetailDto> {
+    const res = await fetch(`${API_BASE}/calendar`, {
+      method: 'POST',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to create calendar event');
+    return data;
+  }
+
+  // --- Milestone 4: Profile & Privacy ---
+  static async getProfile(token: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/profile/me`, {
+      headers: this.getHeaders(token),
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to load profile');
+    return data;
+  }
+
+  static async updatePrivacySettings(token: string, dto: PrivacySettingsDto): Promise<PrivacySettingsDto> {
+    const res = await fetch(`${API_BASE}/profile/privacy`, {
+      method: 'PUT',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to update privacy settings');
+    return data;
+  }
+
+  static async updateNotificationPreferences(token: string, dto: Partial<NotificationPreferencesDto>): Promise<NotificationPreferencesDto> {
+    const res = await fetch(`${API_BASE}/profile/preferences`, {
+      method: 'PUT',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to update preferences');
     return data;
   }
 }

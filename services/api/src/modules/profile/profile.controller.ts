@@ -7,8 +7,11 @@ import {
   Delete,
   Body,
   Param,
+  Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   UpdateProfileDto,
   PrivacySettingsDto,
@@ -22,16 +25,17 @@ import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('me')
-@UseGuards(JwtAuthGuard)
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUser() user: AuthenticatedUser): Promise<UserProfileDetailDto> {
     return this.profileService.getMe(user.id);
   }
 
   @Patch('profile')
+  @UseGuards(JwtAuthGuard)
   async updateProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateProfileDto,
@@ -40,6 +44,7 @@ export class ProfileController {
   }
 
   @Post('photo')
+  @UseGuards(JwtAuthGuard)
   async uploadPhoto(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: { mimeType: string; dataBase64: string },
@@ -48,6 +53,7 @@ export class ProfileController {
   }
 
   @Get('privacy')
+  @UseGuards(JwtAuthGuard)
   async getPrivacy(@CurrentUser() user: AuthenticatedUser): Promise<PrivacySettingsDto> {
     const profile = await this.profileService.getMe(user.id);
     return profile.privacy || {
@@ -58,6 +64,7 @@ export class ProfileController {
   }
 
   @Put('privacy')
+  @UseGuards(JwtAuthGuard)
   async updatePrivacy(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: PrivacySettingsDto,
@@ -66,6 +73,7 @@ export class ProfileController {
   }
 
   @Get('preferences')
+  @UseGuards(JwtAuthGuard)
   async getPreferences(@CurrentUser() user: AuthenticatedUser): Promise<NotificationPreferencesDto> {
     const profile = await this.profileService.getMe(user.id);
     return profile.preferences || {
@@ -79,6 +87,7 @@ export class ProfileController {
   }
 
   @Put('preferences')
+  @UseGuards(JwtAuthGuard)
   async updatePreferences(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: NotificationPreferencesDto,
@@ -87,11 +96,13 @@ export class ProfileController {
   }
 
   @Get('sessions')
+  @UseGuards(JwtAuthGuard)
   async getSessions(@CurrentUser() user: AuthenticatedUser): Promise<UserSessionDto[]> {
     return this.profileService.getSessions(user.id);
   }
 
   @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
   async revokeSession(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') sessionId: string,
@@ -99,8 +110,36 @@ export class ProfileController {
     return this.profileService.revokeSession(user.id, sessionId);
   }
 
+  @Post('delete-challenge')
+  @UseGuards(JwtAuthGuard)
+  async requestDeleteChallenge(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ otp: string; expiresAt: string }> {
+    return this.profileService.requestAccountDeletionChallenge(user.id);
+  }
+
   @Post('delete')
-  async deleteAccount(@CurrentUser() user: AuthenticatedUser): Promise<DeleteAccountResponseDto> {
-    return this.profileService.deleteAccount(user.id);
+  @UseGuards(JwtAuthGuard)
+  async deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { otp?: string; password?: string },
+  ): Promise<DeleteAccountResponseDto> {
+    return this.profileService.deleteAccount(user.id, body);
+  }
+
+  @Get('media/:assetId')
+  async streamMedia(
+    @Param('assetId') assetId: string,
+    @Query('user') queryUser?: string,
+    @Query('expires') queryExpires?: string,
+    @Query('sig') querySig?: string,
+    @Res() res?: Response,
+  ) {
+    const media = await this.profileService.getMediaAsset(assetId, undefined, queryUser, queryExpires, querySig);
+    if (res) {
+      res.setHeader('Content-Type', media.mimeType);
+      res.sendFile(media.filePath);
+    }
+    return media;
   }
 }

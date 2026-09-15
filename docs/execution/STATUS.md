@@ -2,9 +2,9 @@
 
 **Project**: Kashyap Adhikari Family Tree  
 **Owner**: Jyphra Technology Pvt. Ltd.  
-**Current Phase**: Milestone 3 (Persistent Genealogy Core, Person Search, Interactive Tree Navigation, Governed Duplicate Management, and Mobile Client Architecture) - COMPLETED & FULLY VERIFIED  
-**Last Updated**: 2026-09-13T10:45:00+05:45  
-**Active Branch**: `feat/m3-genealogy-core`  
+**Current Phase**: Milestone 4 (Governed Workflows, Profile Claims, Kinship Observances & Self-Service) - COMPLETED & FULLY VERIFIED  
+**Last Updated**: 2026-09-15T17:30:00+05:45  
+**Active Branch**: `feat/m4-governed-workflows`  
 **Base Branch**: `develop`  
 **Verified M2 Merge PR**: #2  
 

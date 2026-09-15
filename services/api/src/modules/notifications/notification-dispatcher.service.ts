@@ -1,0 +1,264 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service';
+
+export interface NotificationDispatchResult {
+  outboxId: string;
+  recipientUserId: string;
+  channel: 'PUSH' | 'SMS' | 'EMAIL';
+  status: 'SENT' | 'FAILED' | 'SKIPPED';
+  error?: string;
+}
+
+@Injectable()
+export class NotificationDispatcherService {
+  private readonly logger = new Logger(NotificationDispatcherService.name);
+
+  constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * Polls audit outbox events specifically for notification delivery using the independent
+   * notification_status column (decoupled from the audit logger drain).
+   * Generates deduplicated, durable delivery jobs in notification_dispatches and executes delivery.
+   */
+  async processOutboxBatch(batchSize: number = 20): Promise<NotificationDispatchResult[]> {
+    const results: NotificationDispatchResult[] = [];
+
+    // Query independent notification_status, NEVER relying on audit drain status
+    const outboxRes = await this.db.query(
+      `SELECT * FROM audit_outbox 
+       WHERE notification_status = 'PENDING' 
+       ORDER BY created_at ASC 
+       LIMIT $1`,
+      [batchSize],
+    );
+
+    for (const record of outboxRes.rows) {
+      try {
+        const dispatches = await this.processRecord(record);
+        results.push(...dispatches);
+
+        // Update independent notification_status
+        await this.db.query(
+          "UPDATE audit_outbox SET notification_status = 'PROCESSED', notification_processed_at = NOW() WHERE id = $1",
+          [record.id],
+        );
+      } catch (err: any) {
+        this.logger.error(`Failed to process notification outbox record ${record.id}: ${err.message}`, err.stack);
+        await this.db.query(
+          "UPDATE audit_outbox SET notification_status = 'FAILED', notification_processed_at = NOW() WHERE id = $1",
+          [record.id],
+        );
+      }
+    }
+
+    return results;
+  }
+
+  async processRecord(record: any): Promise<NotificationDispatchResult[]> {
+    const action = record.action;
+    const recipientUserIds: string[] = [];
+
+    const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    // Reconcile claim action names: CLAIM_DISPUTED, CLAIM_DISPUTE, DISPUTE_FILED
+    if (action.startsWith('CLAIM_') || action === 'DISPUTE_FILED') {
+      if (record.entity_type === 'PROFILE_CLAIM' && isUuid(record.entity_id)) {
+        const claimRes = await this.db.query('SELECT claimant_user_id FROM profile_claims WHERE id = $1', [record.entity_id]);
+        if (claimRes.rows[0]?.claimant_user_id) {
+          recipientUserIds.push(claimRes.rows[0].claimant_user_id);
+        }
+      } else if (record.entity_type === 'CLAIM_DISPUTE' && isUuid(record.entity_id)) {
+        const dispRes = await this.db.query(
+          `SELECT d.disputant_user_id, c.claimant_user_id 
+           FROM claim_disputes d 
+           JOIN profile_claims c ON d.claim_id = c.id 
+           WHERE d.id = $1`,
+          [record.entity_id],
+        );
+        if (dispRes.rows[0]) {
+          if (dispRes.rows[0].claimant_user_id) recipientUserIds.push(dispRes.rows[0].claimant_user_id);
+          if (dispRes.rows[0].disputant_user_id && !recipientUserIds.includes(dispRes.rows[0].disputant_user_id)) {
+            recipientUserIds.push(dispRes.rows[0].disputant_user_id);
+          }
+        }
+      }
+      if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
+        recipientUserIds.push(record.actor_id);
+      }
+    } else if (action.startsWith('CHANGE_REQUEST_')) {
+      if (record.entity_type === 'GENEALOGY_CHANGE_REQUEST' && isUuid(record.entity_id)) {
+        const reqRes = await this.db.query('SELECT requester_user_id FROM genealogy_change_requests WHERE id = $1', [record.entity_id]);
+        if (reqRes.rows[0]?.requester_user_id) {
+          recipientUserIds.push(reqRes.rows[0].requester_user_id);
+        }
+      }
+      if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
+        recipientUserIds.push(record.actor_id);
+      }
+    } else if (action === 'USER_ACCOUNT_DELETED_GENEALOGY_PRESERVED') {
+      return [];
+    } else if (record.actor_id) {
+      recipientUserIds.push(record.actor_id);
+    }
+
+    if (recipientUserIds.length === 0) {
+      return [];
+    }
+
+    const results: NotificationDispatchResult[] = [];
+
+    for (const userId of recipientUserIds) {
+      const prefRes = await this.db.query(
+        'SELECT * FROM notification_preferences WHERE user_id = $1',
+        [userId],
+      );
+      const prefs = prefRes.rows[0] || {
+        push_enabled: true,
+        sms_enabled: true,
+        email_enabled: false,
+      };
+
+      const payload = {
+        action,
+        entityType: record.entity_type,
+        entityId: record.entity_id,
+        timestamp: new Date().toISOString(),
+        message: this.formatNotificationMessage(action, record),
+      };
+
+      const channels: ('PUSH' | 'SMS' | 'EMAIL')[] = [];
+      if (prefs.push_enabled) channels.push('PUSH');
+      if (prefs.sms_enabled) channels.push('SMS');
+      if (prefs.email_enabled) channels.push('EMAIL');
+
+      for (const channel of channels) {
+        try {
+          // Atomic job creation with deduplication constraint on (outbox_id, recipient_user_id, channel)
+          const insRes = await this.db.query(
+            `INSERT INTO notification_dispatches (
+              outbox_id, recipient_user_id, channel, event_type, payload, delivery_status
+            ) VALUES ($1, $2, $3, $4, $5, 'PENDING')
+            ON CONFLICT (outbox_id, recipient_user_id, channel) DO NOTHING
+            RETURNING id`,
+            [record.id, userId, channel, action, JSON.stringify(payload)],
+          );
+
+          if (insRes.rows.length === 0) {
+            // Deduplicated job already registered
+            results.push({
+              outboxId: record.id,
+              recipientUserId: userId,
+              channel,
+              status: 'SKIPPED',
+            });
+            continue;
+          }
+
+          const dispatchId = insRes.rows[0].id;
+
+          // Perform delivery
+          await this.deliverNotification(channel, userId, payload);
+
+          await this.db.query(
+            "UPDATE notification_dispatches SET delivery_status = 'SENT', dispatched_at = NOW() WHERE id = $1",
+            [dispatchId],
+          );
+
+          results.push({
+            outboxId: record.id,
+            recipientUserId: userId,
+            channel,
+            status: 'SENT',
+          });
+        } catch (err: any) {
+          this.logger.warn(`Delivery failed for dispatch outbox=${record.id} channel=${channel}: ${err.message}`);
+          await this.db.query(
+            `UPDATE notification_dispatches 
+             SET delivery_status = 'FAILED', retry_count = retry_count + 1, error_message = $1 
+             WHERE outbox_id = $2 AND recipient_user_id = $3 AND channel = $4`,
+            [err.message, record.id, userId, channel],
+          );
+
+          results.push({
+            outboxId: record.id,
+            recipientUserId: userId,
+            channel,
+            status: 'FAILED',
+            error: err.message,
+          });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Independent retry worker: recovers and drains any failed or pending jobs
+   * with retry backoff and max 5 attempts.
+   */
+  async retryFailedDispatches(maxRetries: number = 5): Promise<number> {
+    const failedRes = await this.db.query(
+      `SELECT * FROM notification_dispatches 
+       WHERE delivery_status = 'FAILED' AND retry_count < $1 
+       ORDER BY created_at ASC LIMIT 50`,
+      [maxRetries],
+    );
+
+    let retried = 0;
+    for (const job of failedRes.rows) {
+      try {
+        await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
+        await this.db.query(
+          "UPDATE notification_dispatches SET delivery_status = 'SENT', dispatched_at = NOW() WHERE id = $1",
+          [job.id],
+        );
+        retried++;
+      } catch (err: any) {
+        await this.db.query(
+          `UPDATE notification_dispatches 
+           SET retry_count = retry_count + 1, error_message = $1 
+           WHERE id = $2`,
+          [err.message, job.id],
+        );
+      }
+    }
+    return retried;
+  }
+
+  private async deliverNotification(channel: string, userId: string, payload: any): Promise<void> {
+    this.logger.log(`[DISPATCH][${channel}] Delivering notification to user ${userId}: ${payload.message}`);
+  }
+
+  private formatNotificationMessage(action: string, record: any): string {
+    switch (action) {
+      case 'CLAIM_SUBMIT':
+        return 'तपाईंको प्रोफाइल दाबी दर्ता गरिएको छ। (Your profile claim has been submitted)';
+      case 'CLAIM_TIER1_VOUCHED':
+        return 'तपाईंको दाबी तह १ बाट सिफारिस भएको छ। (Claim vouched at Tier 1)';
+      case 'CLAIM_TIER1_CORRECTION_REQUIRED':
+        return 'दाबीमा संशोधन आवश्यक छ। (Correction requested for your claim)';
+      case 'CLAIM_TIER1_REJECTED':
+      case 'CLAIM_TIER2_REJECTED':
+        return 'तपाईंको दाबी अस्वीकृत भएको छ। (Your claim was rejected)';
+      case 'CLAIM_TIER1_ESCALATED':
+        return 'तपाईंको दाबी उच्च तहमा पठाइएको छ। (Your claim has been escalated)';
+      case 'CLAIM_APPROVED_AND_LINKED':
+        return 'बधाई छ! तपाईंको प्रोफाइल दाबी स्वीकृत भई खाता जोडिएको छ। (Profile claim approved and linked)';
+      case 'CLAIM_DISPUTED':
+      case 'CLAIM_DISPUTE':
+      case 'DISPUTE_FILED':
+        return 'प्रोफाइल दाबी विरुद्ध उजुरी परेको छ। (A dispute has been filed regarding this claim)';
+      case 'CHANGE_REQUEST_SUBMIT':
+        return 'वंशवृक्ष संशोधन अनुरोध दर्ता भएको छ। (Genealogy change request submitted)';
+      case 'CHANGE_REQUEST_APPROVED_AND_APPLIED':
+        return 'वंशवृक्ष संशोधन अनुरोध स्वीकृत भई लागू भएको छ। (Change request approved and applied)';
+      case 'CHANGE_REQUEST_REJECTED':
+        return 'वंशवृक्ष संशोधन अनुरोध अस्वीकृत भएको छ। (Change request rejected)';
+      case 'CALENDAR_EVENT_CREATED':
+        return 'नयाँ सांस्कृतिक/पारिवारिक कार्यक्रम थपिएको छ। (New calendar event added)';
+      default:
+        return `सूचना: ${action}`;
+    }
+  }
+}

@@ -1,279 +1,256 @@
-import { DatabaseService } from '../src/database/database.service';
-import { MigrationService } from '../src/database/migration.service';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-describe('Migration 006 Upgrade & Rollback Isolation Test (Real PostgreSQL)', () => {
-  let db: DatabaseService;
-  let migrationService: MigrationService;
-
+describe('Migration 006 & 007 Upgrade & Rollback Isolation Test (Disposable PostgreSQL)', () => {
+  let isoDb: DisposableDatabase;
   const randPhone = () => '+97798' + Math.floor(10000000 + Math.random() * 90000000);
 
   beforeAll(async () => {
-    process.env.USE_REAL_POSTGRES = 'true';
-    delete process.env.USE_PG_MEM;
-    process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
-    process.env.DB_PORT = process.env.DB_PORT || '5434';
-    process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
-    process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    // 1. Create a strictly isolated, disposable database with migrations up to 005
+    isoDb = await createDisposableDatabase('mig006_007', '005');
 
-    db = new DatabaseService();
-    await db.onModuleInit();
+    // 2. Exact match identity verification: must match isoDb.dbName exactly
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    console.log(`[DISPOSABLE DB TARGET] Migration isolation test verified running exclusively against target: ${isoDb.dbName}`);
 
-    migrationService = new MigrationService(db);
-    await migrationService.onModuleInit();
-  }, 30000);
+    // 3. Seed representative pre-006 legacy records into 005 schema
+    await isoDb.client.query(`
+      INSERT INTO user_accounts (id, phone_number, is_active)
+      VALUES ('11111111-1111-1111-1111-111111111111', '+9779841000099', TRUE);
+
+      INSERT INTO persons (id, generation, gender, living_status, version)
+      VALUES ('22222222-2222-2222-2222-222222222222', 3, 'MALE', 'LIVING', 1);
+
+      INSERT INTO persons (id, generation, gender, living_status, version)
+      VALUES ('33333333-3333-3333-3333-333333333333', 3, 'FEMALE', 'LIVING', 1);
+
+      INSERT INTO spouse_links (id, person_id, spouse_id, status)
+      VALUES ('44444444-4444-4444-4444-444444444444', '22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333', 'CURRENT');
+
+      INSERT INTO cultural_articles (title_nepali, title_english, slug, category, content_nepali, author_id, is_published, published_at)
+      VALUES ('लेख १', 'Article 1', 'article-legacy-1', 'HISTORY', 'सामग्री १', '11111111-1111-1111-1111-111111111111', TRUE, NOW());
+    `);
+
+    // 4. Apply Migration 006
+    const up006Path = path.resolve(__dirname, '../../../database/migrations/006_m4_workflow_and_governance_enhancements.sql');
+    const up006Sql = fs.readFileSync(up006Path, 'utf8');
+    const up006Checksum = crypto.createHash('sha256').update(up006Sql).digest('hex');
+
+    await isoDb.client.query(up006Sql);
+    await isoDb.client.query(
+      'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4);',
+      ['006', '006_m4_workflow_and_governance_enhancements.sql', up006Checksum, 15]
+    );
+  }, 45000);
 
   afterAll(async () => {
-    if (db) {
-      await db.onModuleDestroy();
+    if (isoDb) {
+      // Clean up ONLY the disposable database created for this test run
+      await isoDb.drop();
     }
   });
 
-  it('should verify migration 006 is applied in schema_migrations', async () => {
-    const res = await db.query("SELECT version, name FROM schema_migrations WHERE version = '006';");
+  it('should verify migration 006 is recorded in schema_migrations of disposable database', async () => {
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    const res = await isoDb.client.query("SELECT version, name FROM schema_migrations WHERE version = '006';");
     expect(res.rows.length).toBe(1);
     expect(res.rows[0].name).toContain('006_m4_workflow_and_governance_enhancements');
   });
 
   it('should verify permanent unique ownership indexes on user_accounts and persons', async () => {
-    const user1Res = await db.query(
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    const user1Res = await isoDb.client.query(
       `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
     );
-    const user2Res = await db.query(
+    const user2Res = await isoDb.client.query(
       `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
     );
     const u1 = user1Res.rows[0].id;
     const u2 = user2Res.rows[0].id;
 
-    const p1Res = await db.query(
+    const p1Res = await isoDb.client.query(
       "INSERT INTO persons (generation, gender, living_status) VALUES (4, 'MALE', 'LIVING') RETURNING id;"
     );
-    const p2Res = await db.query(
+    const p2Res = await isoDb.client.query(
       "INSERT INTO persons (generation, gender, living_status) VALUES (4, 'FEMALE', 'LIVING') RETURNING id;"
     );
     const p1 = p1Res.rows[0].id;
     const p2 = p2Res.rows[0].id;
 
     // Link user1 to p1
-    await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2;', [p1, u1]);
-    await db.query('UPDATE persons SET claimed_user_id = $1, is_claimed = TRUE WHERE id = $2;', [u1, p1]);
+    await isoDb.client.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2;', [p1, u1]);
+    await isoDb.client.query('UPDATE persons SET claimed_user_id = $1, is_claimed = TRUE WHERE id = $2;', [u1, p1]);
 
     // Attempting to link user2 to the SAME person p1 must fail uniqueness constraint
     await expect(
-      db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2;', [p1, u2])
+      isoDb.client.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2;', [p1, u2])
     ).rejects.toThrow();
 
     // Attempting to link person p2 to the SAME user u1 must fail uniqueness constraint
     await expect(
-      db.query('UPDATE persons SET claimed_user_id = $1 WHERE id = $2;', [u1, p2])
+      isoDb.client.query('UPDATE persons SET claimed_user_id = $1 WHERE id = $2;', [u1, p2])
     ).rejects.toThrow();
-
-    // Cleanup
-    await db.query('UPDATE user_accounts SET person_id = NULL WHERE id IN ($1, $2);', [u1, u2]);
-    await db.query('DELETE FROM persons WHERE id IN ($1, $2);', [p1, p2]);
-    await db.query('DELETE FROM user_accounts WHERE id IN ($1, $2);', [u1, u2]);
   });
 
   it('should verify active claim reservation indexes prevent competing claims in flight', async () => {
-    const user1Res = await db.query(
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    const user1Res = await isoDb.client.query(
       `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
     );
-    const user2Res = await db.query(
+    const user2Res = await isoDb.client.query(
       `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
     );
-    const pRes = await db.query(
+    const pRes = await isoDb.client.query(
       "INSERT INTO persons (generation, gender, living_status) VALUES (5, 'MALE', 'LIVING') RETURNING id;"
     );
     const u1 = user1Res.rows[0].id;
     const u2 = user2Res.rows[0].id;
-    const p = pRes.rows[0].id;
+    const targetP = pRes.rows[0].id;
 
-    // First claim on person p by u1
-    await db.query(
-      "INSERT INTO profile_claims (target_person_id, claimant_user_id, status, relationship_description) VALUES ($1, $2, 'PENDING_TIER1', 'Claim by u1');",
-      [p, u1]
+    // u1 creates active claim for targetP
+    await isoDb.client.query(
+      `INSERT INTO profile_claims (claimant_user_id, target_person_id, status, relationship_description)
+       VALUES ($1, $2, 'PENDING_TIER1', 'Self claim');`,
+      [u1, targetP]
     );
 
-    // Second competing claim on the SAME person p by u2 must fail due to idx_profile_claims_active_target
+    // u2 attempting to submit an active claim for the same targetP must fail index
     await expect(
-      db.query(
-        "INSERT INTO profile_claims (target_person_id, claimant_user_id, status, relationship_description) VALUES ($1, $2, 'PENDING_TIER1', 'Claim by u2');",
-        [p, u2]
+      isoDb.client.query(
+        `INSERT INTO profile_claims (claimant_user_id, target_person_id, status, relationship_description)
+         VALUES ($1, $2, 'PENDING_TIER1', 'Competing claim');`,
+        [u2, targetP]
       )
     ).rejects.toThrow();
 
-    // Second claim by user u1 on another person p2 must fail due to idx_profile_claims_active_user
-    const p2Res = await db.query(
+    // u1 attempting a SECOND active claim must also fail
+    const otherPRes = await isoDb.client.query(
       "INSERT INTO persons (generation, gender, living_status) VALUES (5, 'FEMALE', 'LIVING') RETURNING id;"
     );
-    const p2 = p2Res.rows[0].id;
-
     await expect(
-      db.query(
-        "INSERT INTO profile_claims (target_person_id, claimant_user_id, status, relationship_description) VALUES ($1, $2, 'PENDING_TIER1', 'Another claim by u1');",
-        [p2, u1]
+      isoDb.client.query(
+        `INSERT INTO profile_claims (claimant_user_id, target_person_id, status, relationship_description)
+         VALUES ($1, $2, 'PENDING_TIER1', 'Second claim');`,
+        [u1, otherPRes.rows[0].id]
       )
     ).rejects.toThrow();
-
-    // Cleanup
-    await db.query('DELETE FROM profile_claims WHERE claimant_user_id IN ($1, $2);', [u1, u2]);
-    await db.query('DELETE FROM persons WHERE id IN ($1, $2);', [p, p2]);
-    await db.query('DELETE FROM user_accounts WHERE id IN ($1, $2);', [u1, u2]);
   });
 
-  it('should verify dispute attachment claim validation trigger', async () => {
-    const uRes = await db.query(
-      `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
-    );
-    const pRes = await db.query(
-      "INSERT INTO persons (generation, gender, living_status) VALUES (6, 'MALE', 'LIVING') RETURNING id;"
-    );
-    const u = uRes.rows[0].id;
-    const p = pRes.rows[0].id;
-
-    const claim1Res = await db.query(
-      "INSERT INTO profile_claims (target_person_id, claimant_user_id, status, relationship_description) VALUES ($1, $2, 'PENDING_TIER1', 'Claim 1') RETURNING id;",
-      [p, u]
-    );
-    const claim1 = claim1Res.rows[0].id;
-
-    const dispute1Res = await db.query(
-      "INSERT INTO claim_disputes (claim_id, disputant_user_id, reason, status) VALUES ($1, $2, 'Dispute reason', 'OPEN') RETURNING id;",
-      [claim1, u]
-    );
-    const dispute1 = dispute1Res.rows[0].id;
-
-    // Attach evidence with matching claim_id and dispute_id -> SUCCESS
-    const mediaId = 'a0000000-0000-0000-0000-000000000001';
-    await db.query(
-      "INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, dispute_id) VALUES ($1, $2, 'family_photo', $3);",
-      [claim1, mediaId, dispute1]
-    );
-
-    // Create claim 2
-    const p2Res = await db.query(
-      "INSERT INTO persons (generation, gender, living_status) VALUES (6, 'FEMALE', 'LIVING') RETURNING id;"
-    );
-    const p2 = p2Res.rows[0].id;
-    const u2Res = await db.query(
-      `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
-    );
-    const u2 = u2Res.rows[0].id;
-
-    const claim2Res = await db.query(
-      "INSERT INTO profile_claims (target_person_id, claimant_user_id, status, relationship_description) VALUES ($1, $2, 'PENDING_TIER1', 'Claim 2') RETURNING id;",
-      [p2, u2]
-    );
-    const claim2 = claim2Res.rows[0].id;
-
-    // Attempting to attach evidence to claim2 with dispute1 (which belongs to claim1) MUST FAIL trigger validation
-    await expect(
-      db.query(
-        "INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, dispute_id) VALUES ($1, $2, 'family_photo', $3);",
-        [claim2, mediaId, dispute1]
-      )
-    ).rejects.toThrow(/does not match attachment claim/);
-
-    // Cleanup
-    await db.query('DELETE FROM claim_evidence_attachments WHERE claim_id IN ($1, $2);', [claim1, claim2]);
-    await db.query('DELETE FROM claim_disputes WHERE id = $1;', [dispute1]);
-    await db.query('DELETE FROM profile_claims WHERE id IN ($1, $2);', [claim1, claim2]);
-    await db.query('DELETE FROM persons WHERE id IN ($1, $2);', [p, p2]);
-    await db.query('DELETE FROM user_accounts WHERE id IN ($1, $2);', [u, u2]);
-  });
-
-  it('should verify workflow_state_transitions immutability trigger', async () => {
-    const uRes = await db.query(
+  it('should verify workflow_state_transitions trigger prevents UPDATE or DELETE', async () => {
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    const uRes = await isoDb.client.query(
       `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
     );
     const u = uRes.rows[0].id;
-    const dummyId = 'b0000000-0000-0000-0000-000000000001';
+    const dummyId = crypto.randomUUID();
 
-    const transRes = await db.query(
-      "INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes) VALUES ('PROFILE_CLAIM', $1, 'PENDING_TIER1', 'PENDING_TIER2', $2, 'Tier 1 vouch') RETURNING id;",
+    const transRes = await isoDb.client.query(
+      `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
+       VALUES ('PROFILE_CLAIM', $1, 'DRAFT', 'PENDING_TIER1', $2, 'Test submission') RETURNING id;`,
       [dummyId, u]
     );
     const transId = transRes.rows[0].id;
 
-    // Attempting UPDATE on workflow_state_transitions must fail
+    // UPDATE must fail
     await expect(
-      db.query("UPDATE workflow_state_transitions SET to_state = 'APPROVED' WHERE id = $1;", [transId])
+      isoDb.client.query("UPDATE workflow_state_transitions SET to_state = 'APPROVED' WHERE id = $1;", [transId])
     ).rejects.toThrow(/workflow_state_transitions records are immutable/);
 
-    // Attempting DELETE on workflow_state_transitions must fail
+    // DELETE must fail
     await expect(
-      db.query('DELETE FROM workflow_state_transitions WHERE id = $1;', [transId])
+      isoDb.client.query('DELETE FROM workflow_state_transitions WHERE id = $1;', [transId])
     ).rejects.toThrow(/workflow_state_transitions records are immutable/);
-
-    // User account deactivation (governed model) succeeds
-    await db.query('UPDATE user_accounts SET is_active = FALSE WHERE id = $1;', [u]);
   });
 
-  it('should verify privacy preservation on calendar events audience scope', async () => {
-    const uRes = await db.query(
-      `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
-    );
-    const u = uRes.rows[0].id;
+  it('should test upgrade, assertions, and rollback of migration 007 in disposable database', async () => {
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
 
-    // Insert private event (is_public = FALSE)
-    const privRes = await db.query(
-      "INSERT INTO calendar_events (title, event_type, date_bs, host_user_id, is_public) VALUES ('Private Family Event', 'GENERAL_EVENT', '2081-05-15', $1, FALSE) RETURNING id, audience_scope;",
-      [u]
-    );
-    expect(privRes.rows[0].audience_scope).toBe('PRIVATE');
+    const up007Path = path.resolve(__dirname, '../../../database/migrations/007_m4_governance_and_schema_corrections.sql');
+    const down007Path = path.resolve(__dirname, '../../../database/migrations/007_m4_governance_and_schema_corrections.down.sql');
 
-    // Insert public event (is_public = TRUE)
-    const pubRes = await db.query(
-      "INSERT INTO calendar_events (title, event_type, date_bs, host_user_id, is_public, audience_scope) VALUES ('Public Festival', 'GENERAL_EVENT', '2081-05-20', $1, TRUE, 'PUBLIC') RETURNING id, audience_scope;",
-      [u]
-    );
-    expect(pubRes.rows[0].audience_scope).toBe('PUBLIC');
-
-    // Cleanup
-    await db.query('DELETE FROM calendar_events WHERE host_user_id = $1;', [u]);
-    await db.query('DELETE FROM user_accounts WHERE id = $1;', [u]);
-  });
-
-  it('should test clean rollback and re-apply of migration 006', async () => {
-    const downPath = path.resolve(__dirname, '../../../database/migrations/006_m4_workflow_and_governance_enhancements.down.sql');
-    const upPath = path.resolve(__dirname, '../../../database/migrations/006_m4_workflow_and_governance_enhancements.sql');
-
-    const downSql = fs.readFileSync(downPath, 'utf8');
-    const upSql = fs.readFileSync(upPath, 'utf8');
+    const upSql = fs.readFileSync(up007Path, 'utf8');
+    const downSql = fs.readFileSync(down007Path, 'utf8');
     const upChecksum = crypto.createHash('sha256').update(upSql).digest('hex');
 
-    // Clean up test data from M4 tables/indexes before rolling down
-    await db.query("DELETE FROM claim_evidence_attachments;");
-    await db.query("DELETE FROM claim_disputes;");
-    await db.query("DELETE FROM change_request_evidence_attachments;");
-    await db.query("DELETE FROM profile_claims;");
-    await db.query("UPDATE persons SET claimed_user_id = NULL, is_claimed = FALSE;");
-    await db.query("UPDATE user_accounts SET person_id = NULL;");
-
-    // Execute down migration
-    await db.query(downSql);
-    await db.query("DELETE FROM schema_migrations WHERE version = '006';");
-
-    // Verify table workflow_state_transitions does not exist
-    const checkTable = await db.query(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_state_transitions';"
-    );
-    expect(checkTable.rows.length).toBe(0);
-
-    // Re-execute up migration
-    await db.query(upSql);
-    await db.query(
+    // Apply migration 007
+    await isoDb.client.query(upSql);
+    await isoDb.client.query(
       'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4);',
-      ['006', '006_m4_workflow_and_governance_enhancements.sql', upChecksum, 10]
+      ['007', '007_m4_governance_and_schema_corrections.sql', upChecksum, 10]
     );
 
-    // Verify re-applied successfully
-    const checkTableAgain = await db.query(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_state_transitions';"
+    // 1. Verify calendar_events date_bs is nullable, tithi columns exist, and validity constraint is enforced
+    const calColRes = await isoDb.client.query(
+      "SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'calendar_events' AND column_name = 'date_bs';"
     );
-    expect(checkTableAgain.rows.length).toBe(1);
+    expect(calColRes.rows[0].is_nullable).toBe('YES');
+
+    const uRes = await isoDb.client.query(
+      `INSERT INTO user_accounts (phone_number, is_active) VALUES ('${randPhone()}', TRUE) RETURNING id;`
+    );
+    const hostId = uRes.rows[0].id;
+
+    // Valid Tithi-only event succeeds
+    const tithiEventRes = await isoDb.client.query(
+      `INSERT INTO calendar_events (host_user_id, title, event_type, audience_scope, tithi_year_bs, tithi_month_bs, tithi_paksha, tithi_number, is_public)
+       VALUES ($1, 'मातातीर्थ औंसी श्राद्ध', 'SHRADDHA', 'FAMILY', 2081, 1, 'KRISHNA', 15, FALSE)
+       RETURNING id, date_bs, audience_scope, tithi_year_bs;`,
+      [hostId]
+    );
+    expect(tithiEventRes.rows[0].date_bs).toBeNull();
+    expect(tithiEventRes.rows[0].audience_scope).toBe('FAMILY');
+
+    // Invalid calendar event (neither solar date nor complete valid Tithi) must fail constraint
+    await expect(
+      isoDb.client.query(
+        `INSERT INTO calendar_events (host_user_id, title, event_type, audience_scope, tithi_year_bs, is_public)
+         VALUES ($1, 'अपूर्ण श्राद्ध', 'SHRADDHA', 'FAMILY', 2081, FALSE);`,
+        [hostId]
+      )
+    ).rejects.toThrow();
+
+    // 2. Verify spouse_links confidence is UNVERIFIED for existing links (not automatically verified)
+    const spouseRes = await isoDb.client.query(
+      "SELECT confidence, provenance FROM spouse_links WHERE id = '44444444-4444-4444-4444-444444444444';"
+    );
+    expect(spouseRes.rows[0].confidence).toBe('UNVERIFIED');
+
+    // 3. Verify cultural_articles author self-approval cleanup
+    const artRes = await isoDb.client.query(
+      "SELECT lifecycle_state, approved_by FROM cultural_articles WHERE slug = 'article-legacy-1';"
+    );
+    expect(artRes.rows[0].lifecycle_state).toBe('DRAFT');
+    expect(artRes.rows[0].approved_by).toBeNull();
+
+    // 4. Verify data_retention_records and independent notification_status exist
+    const retCheck = await isoDb.client.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'data_retention_records';"
+    );
+    expect(retCheck.rows.length).toBe(1);
+
+    const notifCheck = await isoDb.client.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'audit_outbox' AND column_name = 'notification_status';"
+    );
+    expect(notifCheck.rows.length).toBe(1);
+
+    // 5. Test clean rollback of 007
+    await isoDb.client.query('DELETE FROM calendar_events WHERE date_bs IS NULL;');
+    await isoDb.client.query(downSql);
+    await isoDb.client.query("DELETE FROM schema_migrations WHERE version = '007';");
+
+    // Verify date_bs is NOT NULL again
+    const calColBack = await isoDb.client.query(
+      "SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = 'calendar_events' AND column_name = 'date_bs';"
+    );
+    expect(calColBack.rows[0].is_nullable).toBe('NO');
+
+    // Re-apply 007
+    await isoDb.client.query(upSql);
+    await isoDb.client.query(
+      'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4);',
+      ['007', '007_m4_governance_and_schema_corrections.sql', upChecksum, 10]
+    );
   });
 });

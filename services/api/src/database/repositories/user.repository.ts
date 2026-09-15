@@ -14,6 +14,8 @@ export interface UserAccountRecord {
   consent_given: boolean;
   consent_version: string | null;
   consent_timestamp: Date | null;
+  privacy_settings?: any;
+  avatar_asset_id?: string | null;
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
