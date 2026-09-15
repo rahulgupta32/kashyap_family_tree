@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const API_PORT = process.env.API_PORT || '3000';
 const ADMIN_PORT = process.env.ADMIN_PORT || '3002';
@@ -31,7 +33,9 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'node services/api/dist/src/main.js',
+      command: fs.existsSync(path.resolve(__dirname, 'services/api/dist/main.js'))
+        ? 'node services/api/dist/main.js'
+        : 'node services/api/dist/src/main.js',
       url: `http://localhost:${API_PORT}/api/docs`,
       reuseExistingServer: !process.env.CI,
       timeout: 60 * 1000,
