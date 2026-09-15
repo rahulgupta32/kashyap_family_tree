@@ -37,6 +37,7 @@ export enum ErrorCode {
   MAX_TREE_DEPTH_EXCEEDED = 'GEN_3009',
   STALE_UPDATE_DETECTED = 'GEN_3010',
   JUSTIFICATION_REQUIRED = 'ADM_3011',
+  INTRA_GOTRA_MARRIAGE_WARNING = 'GEN_3012',
 
   // Claim Errors (4000 - 4099)
   ACTIVE_CLAIM_EXISTS = 'CLAIM_4001',
@@ -44,6 +45,7 @@ export enum ErrorCode {
   INVALID_CLAIM_STATE = 'CLAIM_4003',
   SELF_VERIFICATION_PROHIBITED = 'CLAIM_4004',
   INSUFFICIENT_EVIDENCE = 'CLAIM_4005',
+  SEPARATION_OF_DUTIES_VIOLATION = 'CLAIM_4006',
 
   // Change Request & Duplicate Errors (5000 - 5099)
   CHANGE_REQUEST_NOT_FOUND = 'CHG_5001',
@@ -79,7 +81,7 @@ export enum ErrorCode {
 
 export interface ApiErrorResponse {
   success: false;
-  errorCode: ErrorCode;
+  errorCode: ErrorCode | string;
   message: string;
   messageNepali?: string;
   details?: Record<string, any>;

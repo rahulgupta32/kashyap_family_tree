@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && node -e \"const fs=require('fs'); if (!fs.existsSync('dist/src')) fs.mkdirSync('dist/src', {recursive: true}); fs.writeFileSync('dist/src/main.js', 'require(\\\"../main\\\");');\"",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "nest start",

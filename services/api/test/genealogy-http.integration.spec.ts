@@ -790,8 +790,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
     it('should reject merge of two persons claimed by distinct user accounts (400 CANNOT_MERGE_CLAIMED_PERSONS)', async () => {
       // Create two distinct users in user_accounts linked to two persons
-      const u1 = await userRepo.findOrCreateByPhone('+9779849999011');
-      const u2 = await userRepo.findOrCreateByPhone('+9779849999012');
+      const randSuffix = Math.floor(100000 + Math.random() * 900000);
+      const u1 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}1`);
+      const u2 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}2`);
 
       const [claimedP1, claimedP2] = await Promise.all([
         personRepo.createPerson(
