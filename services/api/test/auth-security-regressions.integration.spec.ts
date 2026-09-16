@@ -11,6 +11,7 @@ import { Role, ErrorCode, Gender, LivingStatus } from '@kashyap/contracts';
 import { getJwtSecret } from '../src/modules/auth/auth.constants';
 import { BootstrapService } from '../src/database/bootstrap.service';
 import { SparrowSmsProviderAdapter } from '../src/modules/auth/sms/sparrow-sms-provider.adapter';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Milestone 2 Security & Authority Hardening Regressions (Real PG & Redis / D: Storage)', () => {
   let app: INestApplication;
@@ -21,12 +22,15 @@ describe('Milestone 2 Security & Authority Hardening Regressions (Real PG & Redi
   let sessionRepo: SessionRepository;
   let branchRepo: BranchRepository;
   let personRepo: PersonRepository;
+  let isoDb: DisposableDatabase;
 
   const uniqueId = Math.floor(100000 + Math.random() * 900000).toString();
   let kaskiBranchId: string;
   let lamjungBranchId: string;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('auth_sec_reg');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     process.env.NODE_ENV = 'test';
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
@@ -34,7 +38,7 @@ describe('Milestone 2 Security & Authority Hardening Regressions (Real PG & Redi
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    process.env.DB_NAME = isoDb.dbName;
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
 
@@ -103,6 +107,9 @@ describe('Milestone 2 Security & Authority Hardening Regressions (Real PG & Redi
   afterAll(async () => {
     if (app) {
       await app.close();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 

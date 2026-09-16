@@ -42,7 +42,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
 
     // Normal runtime always targets real PostgreSQL
-    const dbHost = process.env.DB_HOST || '127.0.0.1';
+    const dbHost = (process.env.DB_HOST && process.env.DB_HOST !== '127.0.0.1' && process.env.DB_HOST !== 'localhost')
+      ? process.env.DB_HOST
+      : (process.platform === 'win32'
+          ? (() => {
+              try {
+                const { execSync } = require('child_process');
+                const wslIp = execSync('wsl hostname -I', { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim().split(' ')[0];
+                if (wslIp && /^\d+\.\d+\.\d+\.\d+$/.test(wslIp)) return wslIp;
+              } catch (e) {}
+              return process.env.DB_HOST || '127.0.0.1';
+            })()
+          : (process.env.DB_HOST || '127.0.0.1'));
     const dbPort = parseInt(process.env.DB_PORT || '5434', 10);
     const dbUser = process.env.DB_USER || 'kashyap_user';
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';

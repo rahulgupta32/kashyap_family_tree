@@ -1,3 +1,4 @@
+import { isValidBsDate } from '@kashyap/localization';
 import {
   Injectable,
   BadRequestException,
@@ -72,6 +73,10 @@ export class CalendarService {
     if (solarDate) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(solarDate)) {
         throw new BadRequestException('Invalid solarDate format. Expected YYYY-MM-DD');
+      }
+      const parts = solarDate.split('-').map((s) => parseInt(s, 10));
+      if (!isValidBsDate(parts[0], parts[1], parts[2])) {
+        throw new BadRequestException(`Invalid Bikram Sambat date: ${solarDate}`);
       }
       this.validateBsYear(undefined, solarDate);
       return;
@@ -209,7 +214,7 @@ export class CalendarService {
       const isBranchAdmin =
         actor.roles.includes(Role.BRANCH_ADMIN) &&
         event.branch_id &&
-        actor.roleAssignments.some((ra) => ra.branchId === event.branch_id);
+        actor.roleAssignments.some((ra) => ra.branchId === event.branch_id && ra.role === Role.BRANCH_ADMIN);
 
       if (!isHost && !isSuperAdmin && !isBranchAdmin) {
         throw new ForbiddenException({
@@ -387,21 +392,26 @@ export class CalendarService {
 
       const isHost = event.host_user_id === userId;
 
-      // Restrict self-invitation to private events
-      if (
-        (event.audience_scope === EventAudienceScope.PRIVATE || event.audience_scope === EventAudienceScope.INVITED_ONLY) &&
-        !isHost
-      ) {
-        const invRes = await client.query(
-          'SELECT * FROM event_invitations WHERE event_id = $1 AND invited_user_id = $2',
-          [eventId, userId],
-        );
-        if (invRes.rows.length === 0) {
-          throw new ForbiddenException({
-            errorCode: ErrorCode.FORBIDDEN,
-            message: 'Cannot RSVP to a private event without an invitation',
-          });
-        }
+      // Strictly enforce audience authorization for RSVP (forbids unrelated users from FAMILY/PRIVATE events)
+      const userRes = await client.query('SELECT person_id FROM user_accounts WHERE id = $1', [userId]);
+      const actorPersonId = userRes.rows[0]?.person_id;
+      const rolesRes = await client.query('SELECT role, branch_id FROM user_roles WHERE user_id = $1', [userId]);
+      const actorUser: AuthenticatedUser = {
+        id: userId,
+        phoneNumber: '',
+        roles: rolesRes.rows.map((r: any) => r.role),
+        branchIds: rolesRes.rows.map((r: any) => r.branch_id).filter(Boolean),
+        roleAssignments: rolesRes.rows.map((r: any) => ({ role: r.role, branchId: r.branch_id })),
+        sessionId: '',
+        personId: actorPersonId,
+      };
+
+      const canAccess = await this.canViewEvent(event, actorUser);
+      if (!canAccess) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'Cannot RSVP to an event you do not have permission to view or attend',
+        });
       }
 
       await client.query(

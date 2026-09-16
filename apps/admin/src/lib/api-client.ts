@@ -27,6 +27,7 @@ import {
   ClaimDetailDto,
   ChangeRequestDetailDto,
   CalendarEventDetailDto,
+  UpdateProfileDto,
   PrivacySettingsDto,
   NotificationPreferencesDto,
 } from '@kashyap/contracts';
@@ -366,7 +367,7 @@ export class ApiClient {
     return data;
   }
 
-  static async tier1Review(token: string, claimId: string, dto: { decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
+  static async tier1Review(token: string, claimId: string, dto: { decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUESTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
     const res = await fetch(`${API_BASE}/claims/${claimId}/tier1-review`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -378,7 +379,7 @@ export class ApiClient {
     return data;
   }
 
-  static async tier2Review(token: string, claimId: string, dto: { decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
+  static async tier2Review(token: string, claimId: string, dto: { decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUESTED' | 'CORRECTION_REQUIRED'; notes?: string }): Promise<any> {
     const res = await fetch(`${API_BASE}/claims/${claimId}/tier2-review`, {
       method: 'POST',
       headers: this.getHeaders(token),
@@ -457,6 +458,18 @@ export class ApiClient {
   }
 
   // --- Milestone 4: Profile & Privacy ---
+  static async updateProfile(token: string, dto: UpdateProfileDto): Promise<any> {
+    const res = await fetch(`${API_BASE}/profile/profile`, {
+      method: 'PATCH',
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      body: JSON.stringify(dto),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.messageNepali || data.message || 'Failed to update profile');
+    return data;
+  }
+
   static async getProfile(token: string): Promise<any> {
     const res = await fetch(`${API_BASE}/profile/me`, {
       headers: this.getHeaders(token),

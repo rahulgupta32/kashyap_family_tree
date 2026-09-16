@@ -10,6 +10,7 @@ import {
   Query,
   Res,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import {
@@ -19,22 +20,23 @@ import {
   UserSessionDto,
   UserProfileDetailDto,
   DeleteAccountResponseDto,
+  Role,
 } from '@kashyap/contracts';
 import { ProfileService } from './profile.service';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-@Controller('me')
+@Controller(['me', 'profile'])
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
-  @Get()
+  @Get(['', 'me'])
   @UseGuards(JwtAuthGuard)
   async getMe(@CurrentUser() user: AuthenticatedUser): Promise<UserProfileDetailDto> {
     return this.profileService.getMe(user.id);
   }
 
-  @Patch('profile')
+  @Patch(['profile', ''])
   @UseGuards(JwtAuthGuard)
   async updateProfile(
     @CurrentUser() user: AuthenticatedUser,
@@ -92,7 +94,7 @@ export class ProfileController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: NotificationPreferencesDto,
   ): Promise<NotificationPreferencesDto> {
-    return this.profileService.updatePreferences(user.id, dto);
+    return this.profileService.updateNotificationPreferences(user.id, dto);
   }
 
   @Get('sessions')
@@ -114,7 +116,7 @@ export class ProfileController {
   @UseGuards(JwtAuthGuard)
   async requestDeleteChallenge(
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ otp: string; expiresAt: string }> {
+  ): Promise<{ challengeId: string; expiresAt: string; cooldownSeconds: number; otp?: string }> {
     return this.profileService.requestAccountDeletionChallenge(user.id);
   }
 
@@ -122,24 +124,40 @@ export class ProfileController {
   @UseGuards(JwtAuthGuard)
   async deleteAccount(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { otp?: string; password?: string },
+    @Body() body: { challengeId?: string; otp?: string; password?: string },
   ): Promise<DeleteAccountResponseDto> {
     return this.profileService.deleteAccount(user.id, body);
+  }
+
+  @Post('retention/review')
+  @UseGuards(JwtAuthGuard)
+  async reviewLegalHold(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { holdId: string; decision: 'MAINTAIN' | 'RELEASE'; notes?: string },
+  ) {
+    if (!user.roles.includes(Role.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin / DPO can review legal holds');
+    }
+    return this.profileService.reviewLegalHold(body.holdId, user.id, body.decision, body.notes);
   }
 
   @Get('media/:assetId')
   async streamMedia(
     @Param('assetId') assetId: string,
     @Query('user') queryUser?: string,
+    @Query('u') queryU?: string,
     @Query('expires') queryExpires?: string,
     @Query('sig') querySig?: string,
-    @Res() res?: Response,
+    @Res() res?: any,
   ) {
-    const media = await this.profileService.getMediaAsset(assetId, undefined, queryUser, queryExpires, querySig);
-    if (res) {
+    const effectiveUser = queryUser || queryU;
+    const media = await this.profileService.getMediaAsset(assetId, undefined, effectiveUser, queryExpires, querySig);
+    if (res && res.setHeader && res.sendFile) {
       res.setHeader('Content-Type', media.mimeType);
       res.sendFile(media.filePath);
+      return;
     }
     return media;
   }
 }
+

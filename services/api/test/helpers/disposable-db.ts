@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { execSync } from 'child_process';
 
 export interface DisposableDatabase {
   dbName: string;
@@ -11,8 +12,23 @@ export interface DisposableDatabase {
   cleanup: () => Promise<void>;
 }
 
+export function getDatabaseHost(): string {
+  if (process.env.DB_HOST && process.env.DB_HOST !== '127.0.0.1' && process.env.DB_HOST !== 'localhost') {
+    return process.env.DB_HOST;
+  }
+  if (process.platform === 'win32') {
+    try {
+      const wslIp = execSync('wsl hostname -I', { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim().split(' ')[0];
+      if (wslIp && /^\d+\.\d+\.\d+\.\d+$/.test(wslIp)) {
+        return wslIp;
+      }
+    } catch (e) {}
+  }
+  return process.env.DB_HOST || '127.0.0.1';
+}
+
 export async function createDisposableDatabase(prefix: string, applyMigrationsUpTo?: string): Promise<DisposableDatabase> {
-  const host = process.env.DB_HOST || '127.0.0.1';
+  const host = getDatabaseHost();
   const port = parseInt(process.env.DB_PORT || '5434', 10);
   const user = process.env.DB_USER || 'kashyap_user';
   const password = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
@@ -27,8 +43,9 @@ export async function createDisposableDatabase(prefix: string, applyMigrationsUp
   await adminClient.query(`CREATE DATABASE "${isoDbName}";`);
   await adminClient.end();
 
-  // Synchronize both DB_NAME and DATABASE_URL environment variables
+  // Synchronize DB_HOST, DB_NAME, and DATABASE_URL environment variables
   const isoDatabaseUrl = `postgresql://${user}:${password}@${host}:${port}/${isoDbName}`;
+  process.env.DB_HOST = host;
   process.env.DB_NAME = isoDbName;
   process.env.DATABASE_URL = isoDatabaseUrl;
   process.env.USE_REAL_POSTGRES = 'true';
@@ -91,11 +108,14 @@ export async function createDisposableDatabase(prefix: string, applyMigrationsUp
     }
 
     const cleanupClient = new Client({ host, port, user, password, database: 'postgres' });
-    await cleanupClient.connect();
     try {
+      await cleanupClient.connect();
       await cleanupClient.query(`DROP DATABASE IF EXISTS "${isoDbName}" WITH (FORCE);`);
+    } catch (e) {
     } finally {
-      await cleanupClient.end();
+      try {
+        await cleanupClient.end();
+      } catch (e) {}
       process.env.DB_NAME = 'kashyap_db';
       delete process.env.DATABASE_URL;
     }

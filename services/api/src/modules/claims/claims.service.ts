@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import {
   Injectable,
   BadRequestException,
@@ -41,12 +42,141 @@ export class ClaimsService {
     private readonly auditOutboxRepo: AuditOutboxRepository,
   ) {}
 
-  private generatePresignedUrl(mediaAssetId: string): string {
+  private generatePresignedUrl(mediaAssetId: string, claimantUserId?: string): string {
     const expiresAt = Math.floor(Date.now() / 1000) + 15 * 60;
     const secret = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_chars_long_12345';
-    const payload = `${mediaAssetId}:${expiresAt}`;
+    const payload = claimantUserId ? `${mediaAssetId}:${claimantUserId}:${expiresAt}` : `${mediaAssetId}:${expiresAt}`;
     const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    return `https://storage.kashyap.org.np/evidence/${mediaAssetId}?expires=${expiresAt}&sig=${sig}`;
+    const userParam = claimantUserId ? `&user=${claimantUserId}` : '';
+    return `/api/v1/claims/evidence/${mediaAssetId}?expires=${expiresAt}${userParam}&sig=${sig}`;
+  }
+
+  private async validateEvidenceAttachments(
+    client: PoolClient,
+    uploaderUserId: string,
+    attachments?: Array<{ mediaAssetId: string; documentType: any; description?: string }>,
+  ): Promise<void> {
+    if (!attachments || attachments.length === 0) return;
+    for (const att of attachments) {
+      const res = await client.query(
+        'SELECT id, uploader_user_id, quarantine_status, retention_status FROM media_assets WHERE id = $1',
+        [att.mediaAssetId],
+      );
+      const asset = res.rows[0];
+      if (!asset) {
+        throw new NotFoundException({
+          errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
+          message: `Evidence media asset not found: ${att.mediaAssetId}`,
+        });
+      }
+      if (asset.uploader_user_id !== uploaderUserId) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: `Evidence media asset does not belong to the submitting user: ${att.mediaAssetId}`,
+        });
+      }
+      if (asset.quarantine_status !== 'CLEAN') {
+        throw new BadRequestException({
+          errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
+          message: `Evidence media asset is quarantined or has not passed malware scan (status: ${asset.quarantine_status})`,
+        });
+      }
+      if (asset.retention_status === 'DELETED' || asset.retention_status === 'PURGED') {
+        throw new BadRequestException({
+          errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
+          message: 'Evidence media asset has been deleted or purged',
+        });
+      }
+    }
+  }
+
+  async getEvidenceMediaAsset(
+    assetId: string,
+    viewer?: AuthenticatedUser,
+    queryUser?: string,
+    queryExpires?: string,
+    querySig?: string,
+  ): Promise<{ filePath: string; fileName: string; mimeType: string; byteSize: number }> {
+    const assetRes = await this.db.query('SELECT * FROM media_assets WHERE id = $1', [assetId]);
+    const asset = assetRes.rows[0];
+    if (!asset) {
+      throw new NotFoundException('Evidence media asset not found');
+    }
+
+    if (asset.quarantine_status !== 'CLEAN') {
+      throw new ForbiddenException('Media asset failed malware scan and has been quarantined');
+    }
+
+    if (asset.retention_status === 'DELETED' || asset.retention_status === 'PURGED') {
+      throw new NotFoundException('Media asset has been permanently deleted');
+    }
+
+    let isAuthorized = false;
+    if (viewer) {
+      if (viewer.roles?.includes(Role.SUPER_ADMIN)) {
+        isAuthorized = true;
+      } else if (asset.uploader_user_id === viewer.id) {
+        isAuthorized = true;
+      } else {
+        const claimEvidenceRes = await this.db.query(
+          `SELECT pc.target_person_id, p.branch_id
+             FROM claim_evidence_attachments cea
+             JOIN profile_claims pc ON pc.id = cea.claim_id
+             JOIN persons p ON p.id = pc.target_person_id
+             WHERE cea.media_asset_id = $1
+             LIMIT 1`,
+          [assetId],
+        );
+        const branchId = claimEvidenceRes.rows[0]?.branch_id;
+        if (branchId) {
+          const hasBranchRole = (viewer.roleAssignments || []).some(
+            (ra) => (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) && ra.branchId === branchId,
+          );
+          if (hasBranchRole) {
+            isAuthorized = true;
+          }
+        }
+      }
+    }
+
+    if (!isAuthorized && queryExpires && querySig) {
+      const exp = parseInt(queryExpires, 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (!isNaN(exp) && exp >= now) {
+        const secret = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_chars_long_12345';
+        const payloadsToCheck = [];
+        if (queryUser) {
+          payloadsToCheck.push(`${assetId}:${queryUser}:${exp}`);
+        }
+        payloadsToCheck.push(`${assetId}:${exp}`);
+
+        for (const p of payloadsToCheck) {
+          const expectedSig = crypto.createHmac('sha256', secret).update(p).digest('hex');
+          if (
+            expectedSig.length === querySig.length &&
+            crypto.timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(querySig, 'hex'))
+          ) {
+            isAuthorized = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new ForbiddenException('You do not have permission to access or stream this evidence asset');
+    }
+
+    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
+      throw new NotFoundException('Physical media file not found on storage volume');
+    }
+
+    return {
+      filePath: asset.storage_path,
+      fileName: asset.file_name,
+      mimeType: asset.mime_type,
+      byteSize: asset.byte_size,
+    };
   }
 
   async submitClaim(claimantUserId: string, dto: SubmitClaimDto): Promise<ClaimDetailDto> {
@@ -136,8 +266,12 @@ export class ClaimsService {
       );
       const claim = insertClaimRes.rows[0];
 
+      // 5.5 Validate evidence ownership and clean quarantine status
+      await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
+
       // 6. Insert evidence attachments
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
+        await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description)
@@ -668,6 +802,7 @@ export class ClaimsService {
       );
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
+        await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description, dispute_id)
@@ -731,6 +866,14 @@ export class ClaimsService {
       const claim = claimRes.rows[0];
       if (!claim) {
         throw new NotFoundException('Associated claim record not found');
+      }
+
+      // Recusal check: disputant or claimant cannot adjudicate their own dispute
+      if (actor.id === dispute.disputant_user_id || actor.id === claim.claimant_user_id) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.SELF_VERIFICATION_PROHIBITED,
+          message: 'Disputant or claimant cannot adjudicate their own dispute due to conflict of interest',
+        });
       }
 
       // Check authorization and family recusal BEFORE returning any idempotent response
@@ -995,7 +1138,7 @@ export class ClaimsService {
     const evidenceAttachments = rawEvidence.map((e) => ({
       id: e.id,
       mediaAssetId: e.media_asset_id,
-      mediaUrl: this.generatePresignedUrl(e.media_asset_id),
+      mediaUrl: this.generatePresignedUrl(e.media_asset_id, claim.claimant_user_id),
       documentType: e.document_type,
       description: e.description || undefined,
       disputeId: e.dispute_id || undefined,

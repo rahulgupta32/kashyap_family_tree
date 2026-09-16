@@ -81,11 +81,19 @@ export class CulturalRulesService {
          AND (effective_until IS NULL OR effective_until >= NOW())
          AND signed_by_reviewer_id IS NOT NULL 
          AND signed_by_authority_id IS NOT NULL
+         AND signed_by_reviewer_id != signed_by_authority_id
        ORDER BY version DESC 
        LIMIT 1`,
       [ruleType],
     );
-    return res.rows[0] || null;
+    const rs = res.rows[0];
+    if (rs && Array.isArray(rs.council_signatures) && rs.council_signatures.length > 0) {
+      const distinctSigners = new Set(rs.council_signatures.map((s: any) => s.signerId || s.userId || s));
+      if (distinctSigners.size < 2) {
+        return null;
+      }
+    }
+    return rs || null;
   }
 
   async isRulesetActive(ruleType: RuleType): Promise<boolean> {
@@ -142,41 +150,44 @@ export class CulturalRulesService {
       };
     }
 
-    // Patrilineal & generational path resolution using person repo & BFS
     const fromPerson = await this.personRepo.findById(dto.fromPersonId);
     const toPerson = await this.personRepo.findById(dto.toPersonId);
 
-    let primaryPathCode = 'REL';
-    let alternativeCodes: string[] = [];
+    // Real BFS path traversal across verified lineage graph (never generation arithmetic)
+    const pathSteps = await this.findShortestPathBfs(dto.fromPersonId, dto.toPersonId);
 
-    if (fromPerson && toPerson) {
-      const genDiff = toPerson.generation - fromPerson.generation;
-
-      if (genDiff === -1) {
-        primaryPathCode = toPerson.gender === 'FEMALE' ? 'M' : 'F';
-      } else if (genDiff === -2) {
-        primaryPathCode = 'F.F';
-      } else if (genDiff === -3) {
-        primaryPathCode = 'F.F.F';
-      } else if (genDiff === 0) {
-        const isOlder = (toPerson.birth_year_bs && fromPerson.birth_year_bs && toPerson.birth_year_bs < fromPerson.birth_year_bs);
-        if (toPerson.gender === 'FEMALE') {
-          primaryPathCode = isOlder ? 'Z.ELDER' : 'Z.YOUNGER';
-          alternativeCodes = ['Z'];
-        } else {
-          primaryPathCode = isOlder ? 'B.ELDER' : 'B.YOUNGER';
-          alternativeCodes = ['B'];
-        }
-      } else if (genDiff === 1) {
-        primaryPathCode = toPerson.gender === 'FEMALE' ? 'D' : 'S';
-      }
+    if (!pathSteps) {
+      return {
+        pathFound: false,
+        pathCode: 'UNLINKED',
+        pathSteps: [],
+        nataSainoNepali: 'नाता सम्बन्ध भेटिएन',
+        nataSainoEnglish: 'No kinship relationship path found in verified tree graph',
+        isAuthorityApproved: true,
+        generationsDiff: fromPerson && toPerson ? toPerson.generation - fromPerson.generation : undefined,
+        statusNote: 'Unconnected graph component',
+        alternativePaths: [],
+      };
     }
 
-    // Also run BFS if not resolved or for complex paths
-    if (primaryPathCode === 'REL') {
-      const pathSteps = await this.findShortestPathBfs(dto.fromPersonId, dto.toPersonId);
-      if (pathSteps) {
-        primaryPathCode = pathSteps.join('.');
+    let primaryPathCode = pathSteps.join('.');
+    let alternativeCodes: string[] = [];
+
+    // Resolve brother/sister sibling branches from shared parent traversal
+    if (
+      pathSteps.length === 2 &&
+      (pathSteps[0] === 'F' || pathSteps[0] === 'M') &&
+      (pathSteps[1] === 'S' || pathSteps[1] === 'D')
+    ) {
+      const isOlder = Boolean(
+        toPerson?.birth_year_bs && fromPerson?.birth_year_bs && toPerson.birth_year_bs < fromPerson.birth_year_bs,
+      );
+      if (toPerson?.gender === 'FEMALE') {
+        primaryPathCode = isOlder ? 'Z.ELDER' : 'Z.YOUNGER';
+        alternativeCodes = ['Z'];
+      } else {
+        primaryPathCode = isOlder ? 'B.ELDER' : 'B.YOUNGER';
+        alternativeCodes = ['B'];
       }
     }
 
@@ -263,12 +274,12 @@ export class CulturalRulesService {
         }
       }
 
-      // Find spouses (horizontal edges)
+      // Find spouses (horizontal edges with VERIFIED confidence)
       const spouseRes = await this.db.query(
         `SELECT p.id, p.gender 
          FROM spouse_links sl 
          JOIN persons p ON (sl.person_id = p.id OR sl.spouse_id = p.id)
-         WHERE (sl.person_id = $1 OR sl.spouse_id = $1) AND p.id != $1 AND sl.status = 'CURRENT'`,
+         WHERE (sl.person_id = $1 OR sl.spouse_id = $1) AND p.id != $1 AND sl.status = 'CURRENT' AND sl.confidence = 'VERIFIED'`,
         [current.personId],
       );
 
@@ -393,9 +404,23 @@ export class CulturalRulesService {
       };
     }
 
+    const ephemeris = ruleset.rules_data?.ephemeris_table || ruleset.rules_data?.ephemeris || {};
+    const key = `${dto.yearBs}_${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
+    const fallbackKey = `${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
+    const day = ephemeris[key] ?? ephemeris[fallbackKey] ?? ruleset.rules_data?.default_day;
+
+    if (!day) {
+      return {
+        status: 'UNAVAILABLE',
+        errorCode: ErrorCode.EXTERNAL_PROVIDER_ERROR,
+        message: 'Tithi mapping not found in active ephemeris table for the requested BS period (solar fallback prohibited)',
+      };
+    }
+
+    const dayStr = String(day).padStart(2, '0');
     return {
       status: 'AVAILABLE',
-      dateBs: `${dto.yearBs}-${String(dto.monthBs).padStart(2, '0')}-15`,
+      dateBs: `${dto.yearBs}-${String(dto.monthBs).padStart(2, '0')}-${dayStr}`,
       tithi: `${dto.paksha}_${dto.tithiNumber}`,
     };
   }

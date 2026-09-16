@@ -336,6 +336,24 @@ export class PersonRepository {
       conditions.push('p.is_archived = FALSE');
     }
 
+    // Exclude profile_visibility = 'PRIVATE' unless viewer is the person or authorized admin
+    if (!isSuperAdmin) {
+      if (viewer?.userId) {
+        if (branchAdminBranches.length > 0) {
+          params.push(branchAdminBranches);
+          const bParam = paramIdx++;
+          params.push(viewer.userId);
+          const uParam = paramIdx++;
+          conditions.push(`(p.profile_visibility IS DISTINCT FROM 'PRIVATE' OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam}))`);
+        } else {
+          params.push(viewer.userId);
+          conditions.push(`(p.profile_visibility IS DISTINCT FROM 'PRIVATE' OR p.claimed_user_id = $${paramIdx++})`);
+        }
+      } else {
+        conditions.push(`p.profile_visibility IS DISTINCT FROM 'PRIVATE'`);
+      }
+    }
+
     let searchScoreSql = '0.0 as similarity_score';
 
     if (filter.query && filter.query.trim()) {

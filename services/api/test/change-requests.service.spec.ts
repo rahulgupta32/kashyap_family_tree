@@ -108,12 +108,22 @@ describe('ChangeRequestsService (Genealogy Change Governance & Workflow)', () =>
       recordAuditIntent: jest.fn(async () => {}),
     };
 
+    const mockLinkRepo: any = {
+      checkWouldCreateCycle: jest.fn(async () => false),
+      acquireGraphMutationLock: jest.fn(async () => {}),
+    };
+    const mockDuplicateService: any = {
+      evaluateProposedPerson: jest.fn(async () => []),
+      mergePersons: jest.fn(async () => ({})),
+    };
     changeRequestsService = new ChangeRequestsService(
       mockDb,
       mockPersonRepo,
       mockBranchRepo,
+      mockLinkRepo,
       mockAuditOutboxRepo,
       diffService,
+      mockDuplicateService,
     );
   });
 

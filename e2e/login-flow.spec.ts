@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { ErrorCode } from '@kashyap/contracts';
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3000';
+const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
 
 test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
   test('1. Regular user gets bilingual Access Denied state (BR-GOV-004)', async ({ page }) => {
@@ -72,7 +72,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await expect(page.locator('text=सक्रिय (Active)')).toBeVisible();
 
     // 6. Verify refresh token cookie security properties
-    const cookies = await context.cookies(['http://localhost:3000', 'http://localhost:3002']);
+    const cookies = await context.cookies();
     const refreshCookie = cookies.find((c) => c.name === 'refreshToken');
     expect(refreshCookie).toBeDefined();
     expect(refreshCookie?.httpOnly).toBe(true);
@@ -197,7 +197,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     await expect(page.locator('text=ड्यासवोर्ड सारांश (Executive Dashboard)')).toBeVisible();
 
     // 2. Capture the initial refresh token credential before rotation using Playwright test tooling
-    const cookiesBefore = await context.cookies(['http://localhost:3000', 'http://localhost:3002']);
+    const cookiesBefore = await context.cookies();
     const initialCookie = cookiesBefore.find((c) => c.name === 'refreshToken');
     expect(initialCookie).toBeDefined();
     const consumedRefreshToken = initialCookie!.value;
@@ -208,7 +208,7 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     expect(rotatedToken).toBeTruthy();
 
     // Confirm that cookie was rotated with a new, different refresh token
-    const cookiesAfter = await context.cookies(['http://localhost:3000', 'http://localhost:3002']);
+    const cookiesAfter = await context.cookies();
     const rotatedCookie = cookiesAfter.find((c) => c.name === 'refreshToken');
     expect(rotatedCookie).toBeDefined();
     expect(rotatedCookie!.value).not.toBe(consumedRefreshToken);

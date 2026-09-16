@@ -15,6 +15,16 @@ describe('ClaimsService (State Transitions & Governance)', () => {
       query: jest.fn(),
       transaction: jest.fn((cb) => cb({
         query: jest.fn(async (sql, params) => {
+          if (sql.includes('FROM media_assets')) {
+            return {
+              rows: [{
+                id: params[0],
+                uploader_user_id: 'u-401',
+                quarantine_status: 'CLEAN',
+                retention_status: 'ACTIVE',
+              }],
+            };
+          }
           if (sql.includes('FROM user_accounts')) {
             return { rows: [{ id: params[0], phone_number: '9841000001', person_id: null }] };
           }

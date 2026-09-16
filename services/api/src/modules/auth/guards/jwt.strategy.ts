@@ -114,6 +114,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       branchIds,
       roleAssignments,
       sessionId: session.id,
+      personId: user.person_id || undefined,
     };
   }
 }

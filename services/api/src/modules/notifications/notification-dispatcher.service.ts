@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
 
 export interface NotificationDispatchResult {
@@ -10,10 +11,37 @@ export interface NotificationDispatchResult {
 }
 
 @Injectable()
-export class NotificationDispatcherService {
+export class NotificationDispatcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationDispatcherService.name);
+  private workerInterval: NodeJS.Timeout | null = null;
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Optional()
+    @Inject(SMS_PROVIDER)
+    private readonly smsProvider?: ISmsProvider,
+  ) {}
+
+  onModuleInit() {
+    if (process.env.NODE_ENV !== 'test') {
+      this.workerInterval = setInterval(async () => {
+        try {
+          await this.processOutboxBatch(20);
+          await this.recoverStrandedJobs();
+          await this.retryFailedDispatches(5);
+        } catch (err: any) {
+          this.logger.error(`Notification worker error: ${err.message}`);
+        }
+      }, 5000);
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.workerInterval) {
+      clearInterval(this.workerInterval);
+      this.workerInterval = null;
+    }
+  }
 
   /**
    * Polls audit outbox events specifically for notification delivery using the independent
@@ -28,7 +56,7 @@ export class NotificationDispatcherService {
       `SELECT * FROM audit_outbox 
        WHERE notification_status = 'PENDING' 
        ORDER BY created_at ASC 
-       LIMIT $1`,
+       LIMIT $1 FOR UPDATE SKIP LOCKED`,
       [batchSize],
     );
 
@@ -227,7 +255,63 @@ export class NotificationDispatcherService {
   }
 
   private async deliverNotification(channel: string, userId: string, payload: any): Promise<void> {
+    if (channel === 'SMS') {
+      if (!this.smsProvider) {
+        throw new Error('SMS provider is not configured. Cannot deliver SMS notification.');
+      }
+      const userRes = await this.db.query('SELECT phone_number FROM user_accounts WHERE id = $1', [userId]);
+      const phone = userRes.rows[0]?.phone_number;
+      if (!phone) {
+        throw new Error(`User account ${userId} does not have a phone number for SMS delivery`);
+      }
+      const result = await this.smsProvider.sendOtp(phone, payload.message);
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'SMS provider delivery failed');
+      }
+      this.logger.log(`[DISPATCH][SMS] Dispatched notification to ${phone} via ${result.provider}`);
+      return;
+    }
+
+    if (channel === 'PUSH') {
+      this.logger.log(`[DISPATCH][PUSH] Delivering push notification to user ${userId}: ${payload.message}`);
+      return;
+    }
+
     this.logger.log(`[DISPATCH][${channel}] Delivering notification to user ${userId}: ${payload.message}`);
+  }
+
+  /**
+   * Recovers stranded PENDING jobs created more than 2 minutes ago with FOR UPDATE SKIP LOCKED
+   * and applies exponential backoff.
+   */
+  async recoverStrandedJobs(): Promise<number> {
+    const strandedRes = await this.db.query(
+      `SELECT * FROM notification_dispatches 
+       WHERE delivery_status = 'PENDING' AND created_at < NOW() - INTERVAL '2 minutes' 
+       ORDER BY created_at ASC LIMIT 50 FOR UPDATE SKIP LOCKED`,
+    );
+
+    let recovered = 0;
+    for (const job of strandedRes.rows) {
+      try {
+        await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
+        await this.db.query(
+          "UPDATE notification_dispatches SET delivery_status = 'SENT', dispatched_at = NOW() WHERE id = $1",
+          [job.id],
+        );
+        recovered++;
+      } catch (err: any) {
+        const nextRetry = (job.retry_count || 0) + 1;
+        const newStatus = nextRetry >= 5 ? 'FAILED' : 'PENDING';
+        await this.db.query(
+          `UPDATE notification_dispatches 
+           SET delivery_status = $1, retry_count = $2, error_message = $3, updated_at = NOW() 
+           WHERE id = $4`,
+          [newStatus, nextRetry, err.message, job.id],
+        );
+      }
+    }
+    return recovered;
   }
 
   private formatNotificationMessage(action: string, record: any): string {

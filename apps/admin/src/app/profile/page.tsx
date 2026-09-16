@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
-import { PrivacySettingsDto, VisibilityScope } from '@kashyap/contracts';
+import { UpdateProfileDto, PrivacySettingsDto, VisibilityScope } from '@kashyap/contracts';
 
 export default function ProfileAdminPage() {
   const { user, accessToken } = useAuth();
@@ -12,6 +12,12 @@ export default function ProfileAdminPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [profileForm, setProfileForm] = useState<UpdateProfileDto>({
+    occupation: '',
+    education: '',
+    biography: '',
+    currentAddress: '',
+  });
   const [privacy, setPrivacy] = useState<PrivacySettingsDto>({
     profileVisibility: 'VERIFIED_COMMUNITY',
     contactVisibility: 'IMMEDIATE_FAMILY',
@@ -37,6 +43,14 @@ export default function ProfileAdminPage() {
     try {
       const data = await ApiClient.getProfile(accessToken);
       setProfile(data);
+      if (data.person) {
+        setProfileForm({
+          occupation: data.person.occupation || '',
+          education: data.person.education || '',
+          biography: data.person.biography || '',
+          currentAddress: data.person.currentAddress || '',
+        });
+      }
       if (data.privacySettings) {
         setPrivacy(data.privacySettings);
       }
@@ -50,6 +64,20 @@ export default function ProfileAdminPage() {
     }
   }
 
+  async function saveProfile() {
+    if (!accessToken) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await ApiClient.updateProfile(accessToken, profileForm);
+      setMessage({ type: 'success', text: 'व्यक्तिगत विवरण सफलतापूर्वक सुरक्षित गरियो ।' });
+      await loadProfile();
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
   async function savePrivacy() {
     if (!accessToken) return;
     setSaving(true);
@@ -107,6 +135,69 @@ export default function ProfileAdminPage() {
         </div>
       </div>
 
+      {/* Profile Details Form Section */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+        <div className="border-b border-slate-100 pb-3">
+          <h3 className="text-base font-bold text-slate-900">व्यक्तिगत विवरण (Personal Details)</h3>
+          <p className="text-xs text-slate-500">पेशा, शिक्षा, जीवनी तथा हालको बसोबासको विवरण अद्यावधिक गर्नुहोस्</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">हालको ठेगाना (Current Address)</label>
+            <input
+              type="text"
+              value={profileForm.currentAddress || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, currentAddress: e.target.value })}
+              placeholder="उदा: पोखरा-१५, कास्की"
+              className="w-full text-xs p-2.5 border border-slate-200 rounded-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">पेशा / व्यवसाय (Occupation)</label>
+            <input
+              type="text"
+              value={profileForm.occupation || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, occupation: e.target.value })}
+              placeholder="उदा: इन्जिनियर / प्राध्यापक / कृषक"
+              className="w-full text-xs p-2.5 border border-slate-200 rounded-lg"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">शैक्षिक योग्यता (Education)</label>
+            <input
+              type="text"
+              value={profileForm.education || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, education: e.target.value })}
+              placeholder="उदा: स्नातकोत्तर (M.Sc.)"
+              className="w-full text-xs p-2.5 border border-slate-200 rounded-lg"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1">जीवनी / परिचय (Biography)</label>
+            <textarea
+              value={profileForm.biography || ''}
+              onChange={(e) => setProfileForm({ ...profileForm, biography: e.target.value })}
+              rows={3}
+              placeholder="आफ्नो संक्षिप्त परिचय वा योगदान उल्लेख गर्नुहोस्..."
+              className="w-full text-xs p-2.5 border border-slate-200 rounded-lg"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={saveProfile}
+            disabled={saving}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition"
+          >
+            विवरण सुरक्षित गर्नुहोस् (Save Profile)
+          </button>
+        </div>
+      </div>
       {/* Privacy Controls Section */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
         <div className="border-b border-slate-100 pb-3">

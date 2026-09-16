@@ -77,4 +77,105 @@ class GenealogyApiService {
       throw Exception('रुख लोड गर्न सकिएन');
     }
   }
+  // Milestone 4: Profile Claims
+  Future<Map<String, dynamic>> submitProfileClaim({
+    required String targetPersonId,
+    required String relationshipDescription,
+    bool statementOfTruth = true,
+    List<Map<String, dynamic>>? evidenceAttachments,
+  }) async {
+    final uri = Uri.parse('$baseUrl/claims');
+    final body = json.encode({
+      'targetPersonId': targetPersonId,
+      'relationshipDescription': relationshipDescription,
+      'statementOfTruth': statementOfTruth,
+      if (evidenceAttachments != null) 'evidenceAttachments': evidenceAttachments,
+    });
+    final response = await http.post(uri, headers: _headers, body: body);
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      final err = json.decode(response.body);
+      throw Exception(err['message'] ?? 'दाबी दर्ता गर्न असफल भयो');
+    }
+  }
+
+  // Milestone 4: Genealogy Change Requests
+  Future<Map<String, dynamic>> submitChangeRequest({
+    required String targetPersonId,
+    required String type,
+    required Map<String, dynamic> proposedChanges,
+    required String reason,
+  }) async {
+    final uri = Uri.parse('$baseUrl/change-requests');
+    final body = json.encode({
+      'targetPersonId': targetPersonId,
+      'type': type,
+      'proposedChanges': proposedChanges,
+      'reason': reason,
+    });
+    final response = await http.post(uri, headers: _headers, body: body);
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      final err = json.decode(response.body);
+      throw Exception(err['message'] ?? 'संशोधन अनुरोध दर्ता गर्न असफल भयो');
+    }
+  }
+
+  // Milestone 4: Calendar Events
+  Future<List<dynamic>> getCalendarEvents({int? yearBs, int? monthBs}) async {
+    final params = {
+      if (yearBs != null) 'yearBs': yearBs.toString(),
+      if (monthBs != null) 'monthBs': monthBs.toString(),
+    };
+    final uri = Uri.parse('$baseUrl/calendar').replace(queryParameters: params);
+    final response = await http.get(uri, headers: _headers);
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as List<dynamic>;
+    } else {
+      throw Exception('पात्रो कार्यक्रम लोड गर्न सकिएन');
+    }
+  }
+
+  // Milestone 4: Update Profile Details & Privacy
+  Future<Map<String, dynamic>> updateProfilePrivacy({
+    required String profileVisibility,
+    required String contactVisibility,
+    required String addressVisibility,
+  }) async {
+    final uri = Uri.parse('$baseUrl/profile/privacy');
+    final body = json.encode({
+      'profileVisibility': profileVisibility,
+      'contactVisibility': contactVisibility,
+      'addressVisibility': addressVisibility,
+    });
+    final response = await http.put(uri, headers: _headers, body: body);
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('गोपनीयता सेटिङ अद्यावधिक गर्न सकिएन');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateProfileDetails({
+    String? occupation,
+    String? education,
+    String? biography,
+    String? currentAddress,
+  }) async {
+    final uri = Uri.parse('$baseUrl/profile/profile');
+    final body = json.encode({
+      if (occupation != null) 'occupation': occupation,
+      if (education != null) 'education': education,
+      if (biography != null) 'biography': biography,
+      if (currentAddress != null) 'currentAddress': currentAddress,
+    });
+    final response = await http.patch(uri, headers: _headers, body: body);
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('प्रोफाइल विवरण अद्यावधिक गर्न सकिएन');
+    }
+  }
 }

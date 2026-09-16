@@ -35,7 +35,7 @@ export default function ClaimsAdminPage() {
     }
   }
 
-  async function handleTier1(decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUIRED') {
+  async function handleTier1(decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUESTED') {
     if (!activeClaim || !accessToken) return;
     setActionLoading(true);
     setMessage(null);
@@ -52,7 +52,7 @@ export default function ClaimsAdminPage() {
     }
   }
 
-  async function handleTier2(decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUIRED') {
+  async function handleTier2(decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUESTED') {
     if (!activeClaim || !accessToken) return;
     setActionLoading(true);
     setMessage(null);
@@ -259,7 +259,7 @@ export default function ClaimsAdminPage() {
                       तह १ सिफारिस गर्नुहोस् (Vouch)
                     </button>
                     <button
-                      onClick={() => handleTier1('CORRECTION_REQUIRED')}
+                      onClick={() => handleTier1('CORRECTION_REQUESTED')}
                       disabled={actionLoading}
                       className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition"
                     >

@@ -97,7 +97,7 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
     });
 
     it('2. should update notification preferences', async () => {
-      const updated = await profileService.updatePreferences(testUserId, {
+      const updated = await profileService.updateNotificationPreferences(testUserId, {
         pushEnabled: false,
         smsEnabled: true,
         emailEnabled: false,
@@ -348,7 +348,7 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
   });
 
   describe('Governed Account Deletion & Lineage Preservation (PROF-FR-010/011)', () => {
-    let deletionChallenge: { otp: string; expiresAt: string };
+    let deletionChallenge: { challengeId: string; expiresAt: string; cooldownSeconds: number; otp?: string };
     let heldAssetId: string;
     let nonHeldAssetId: string;
 

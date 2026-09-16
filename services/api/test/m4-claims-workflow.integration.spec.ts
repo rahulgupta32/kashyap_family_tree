@@ -94,6 +94,15 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       'INSERT INTO user_roles (user_id, role, branch_id) VALUES ($1, $2, NULL)',
       [superAdminId, Role.SUPER_ADMIN],
     );
+
+    await db.query(
+      `INSERT INTO media_assets (id, uploader_user_id, storage_key, bucket, file_name, mime_type, byte_size, sha256_checksum, is_private, quarantine_status, retention_status)
+       VALUES
+       ('00000000-0000-0000-0000-000000000101', $1, 'k1', 'private-profiles', 'f1.jpg', 'image/jpeg', 100, 'hash1', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-0000-0000-000000000102', $1, 'k2', 'private-profiles', 'f2.jpg', 'image/jpeg', 100, 'hash2', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-0000-0000-000000000103', $2, 'k3', 'private-profiles', 'f3.jpg', 'image/jpeg', 100, 'hash3', TRUE, 'CLEAN', 'ACTIVE')`,
+      [claimant1Id, claimant2Id],
+    );
   });
 
   afterAll(async () => {
@@ -123,7 +132,8 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     expect(claim.id).toBeDefined();
     expect(claim.status).toBe(ClaimStatus.PENDING_TIER1);
     expect(claim.evidenceAttachments.length).toBe(1);
-    expect(claim.evidenceAttachments[0].mediaUrl).toContain('https://storage.kashyap.org.np/evidence/');
+    expect(claim.evidenceAttachments[0].mediaUrl).toContain('00000000-0000-0000-0000-000000000101');
+    expect(claim.evidenceAttachments[0].mediaUrl).toContain('sig=');
 
     // Check transition table
     const transRes = await db.query(

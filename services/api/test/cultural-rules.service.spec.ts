@@ -24,14 +24,26 @@ describe('CulturalRulesService (Kinship Engine & Open Gate HG-002 Governance)', 
             ],
           };
         }
-        if (sql.includes('FROM parent_child_links WHERE parent_person_id = $1 AND child_person_id = $2')) {
-          if (params[0] === 'p-301' && params[1] === 'p-401') {
-            return { rows: [{ parent_person_id: 'p-301', child_person_id: 'p-401' }] };
+        if (sql.includes('FROM parent_links') && sql.includes('WHERE pl.child_id = $1')) {
+          if (params[0] === 'p-401') {
+            return { rows: [{ id: 'p-301', gender: 'MALE', parent_type: 'BIOLOGICAL' }] };
+          }
+          if (params[0] === 'p-402') {
+            return { rows: [{ id: 'p-301', gender: 'MALE', parent_type: 'BIOLOGICAL' }] };
+          }
+          if (params[0] === 'p-301') {
+            return { rows: [{ id: 'p-201', gender: 'MALE', parent_type: 'BIOLOGICAL' }] };
           }
           return { rows: [] };
         }
-        if (sql.includes('FROM parent_child_links p1')) {
-          return { rows: [{ match: 1 }] };
+        if (sql.includes('FROM parent_links') && sql.includes('WHERE pl.parent_id = $1')) {
+          if (params[0] === 'p-301') {
+            return { rows: [{ id: 'p-401', gender: 'MALE' }, { id: 'p-402', gender: 'MALE' }] };
+          }
+          return { rows: [] };
+        }
+        if (sql.includes('FROM spouse_links')) {
+          return { rows: [] };
         }
         return { rows: [] };
       }),

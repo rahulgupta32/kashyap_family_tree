@@ -23,6 +23,7 @@ export interface RoleAssignment {
 
 export interface ViewerContext {
   userId?: string;
+  personId?: string;
   roles: Role[];
   roleAssignments?: RoleAssignment[];
   branchId?: string;
@@ -259,19 +260,54 @@ export class PrivacyEngineService {
 
     // Adult Living Person Visibility Rules (PRIV-FR-001, PRIV-FR-002):
     if (!isDeceased) {
-      // Address visibility: PRIVATE is strictly for isSelf
+      const isImmediateFamily = isSelf || Boolean(viewer?.personId && (
+        (detail.parents || []).some((p) => p.personId === viewer?.personId) ||
+        (detail.children || []).some((c) => c.personId === viewer?.personId) ||
+        (detail.spouses || []).some((s) => s.spousePersonId === viewer?.personId)
+      ));
+
+      // Address visibility:
+      // - PRIVATE: strictly isSelf
+      // - IMMEDIATE_FAMILY: isSelf, isImmediateFamily, or authorized admin
+      // - VERIFIED_COMMUNITY: verified member or authorized admin
+      // - Unverified guest: ALWAYS redacted when IMMEDIATE_FAMILY, VERIFIED_COMMUNITY, or PRIVATE
+      const addrVis = detail.privacy?.addressVisibility;
       if (
-        detail.privacy?.addressVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy?.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        addrVis === PrivacyVisibility.PRIVATE ||
+        (addrVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin) ||
+        (addrVis === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin) ||
+        (!isVerified && !isAdmin)
       ) {
         filtered.currentAddress = undefined;
       }
 
-      // DOB visibility: PRIVATE is strictly for isSelf
+      // DOB visibility:
+      // - PRIVATE: strictly isSelf
+      // - IMMEDIATE_FAMILY: isSelf, isImmediateFamily, or authorized admin
+      // - VERIFIED_COMMUNITY: isSelf, verified member, or authorized admin
+      // - Unverified guest: exact dates redacted, year only
+      const dobVis = detail.privacy?.dobVisibility;
       if (
-        detail.privacy?.dobVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy?.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        dobVis === PrivacyVisibility.PRIVATE ||
+        (dobVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin) ||
+        (dobVis === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin) ||
+        (!isVerified && !isAdmin)
       ) {
+        filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
+        filtered.birthDateAd = undefined;
+      }
+
+      // Profile visibility (separate from dobVisibility):
+      const profVis = (detail.privacy as any)?.profileVisibility || PrivacyVisibility.PUBLIC;
+      if (
+        (profVis === PrivacyVisibility.PRIVATE && !isSelf && !isAdmin) ||
+        (profVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin)
+      ) {
+        filtered.biography = undefined;
+        filtered.occupation = undefined;
+        filtered.education = undefined;
+        filtered.avatarUrl = undefined;
+        filtered.currentAddress = undefined;
         filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
         filtered.birthDateAd = undefined;
       }
@@ -379,7 +415,22 @@ export class PrivacyEngineService {
    * Evaluates if a record is visible to the given viewer context
    */
   public isRecordVisible(
-    record: { is_archived?: boolean; isArchived?: boolean; branch_id?: string; branchId?: string; living_status?: LivingStatus; livingStatus?: LivingStatus },
+    record: {
+      is_archived?: boolean;
+      isArchived?: boolean;
+      branch_id?: string;
+      branchId?: string;
+      living_status?: LivingStatus;
+      livingStatus?: LivingStatus;
+      profile_visibility?: PrivacyVisibility;
+      profileVisibility?: PrivacyVisibility;
+      claimed_user_id?: string;
+      claimedByUserId?: string;
+      id?: string;
+      parents?: any[];
+      children?: any[];
+      spouses?: any[];
+    },
     viewer?: ViewerContext,
   ): boolean {
     const isArchived = Boolean(record.is_archived || record.isArchived);
@@ -387,6 +438,40 @@ export class PrivacyEngineService {
     if (isArchived) {
       return this.isAuthorizedAdmin(viewer, branchId);
     }
+
+    const profileVis = record.profile_visibility || record.profileVisibility || PrivacyVisibility.PUBLIC;
+    if (profileVis === PrivacyVisibility.PUBLIC) {
+      return true;
+    }
+
+    const isAdmin = this.isAuthorizedAdmin(viewer, branchId);
+    if (isAdmin) return true;
+
+    const claimedUser = record.claimed_user_id || record.claimedByUserId;
+    const isSelf = Boolean(
+      (viewer?.userId && claimedUser && viewer.userId === claimedUser) ||
+      (viewer?.personId && record.id && viewer.personId === record.id)
+    );
+    if (isSelf) return true;
+
+    if (profileVis === PrivacyVisibility.PRIVATE) {
+      return false;
+    }
+
+    if (profileVis === PrivacyVisibility.IMMEDIATE_FAMILY) {
+      if (viewer?.personId) {
+        const isParent = (record.parents || []).some((p: any) => (p.personId || p.person_id) === viewer.personId);
+        const isChild = (record.children || []).some((c: any) => (c.personId || c.person_id) === viewer.personId);
+        const isSpouse = (record.spouses || []).some((s: any) => (s.spousePersonId || s.spouse_person_id) === viewer.personId);
+        if (isParent || isChild || isSpouse) return true;
+      }
+      return false;
+    }
+
+    if (profileVis === PrivacyVisibility.VERIFIED_COMMUNITY) {
+      return Boolean(viewer?.isVerifiedMember || viewer?.roles?.includes(Role.VERIFIED_MEMBER));
+    }
+
     return true;
   }
 }

@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -26,11 +27,11 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('claims')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ClaimsController {
   constructor(private readonly claimsService: ClaimsService) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   async submitClaim(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SubmitClaimDto,
@@ -39,6 +40,7 @@ export class ClaimsController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async listClaims(
     @CurrentUser() user: AuthenticatedUser,
@@ -50,6 +52,7 @@ export class ClaimsController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async getClaim(
     @Param('id') id: string,
@@ -59,6 +62,7 @@ export class ClaimsController {
   }
 
   @Post(':id/correction-request')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN)
   async requestCorrection(
     @Param('id') id: string,
@@ -69,6 +73,7 @@ export class ClaimsController {
   }
 
   @Post(':id/resubmit')
+  @UseGuards(JwtAuthGuard)
   async resubmit(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -78,6 +83,7 @@ export class ClaimsController {
   }
 
   @Post(':id/tier1-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN)
   async tier1Review(
     @Param('id') id: string,
@@ -88,6 +94,7 @@ export class ClaimsController {
   }
 
   @Post(':id/escalate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN)
   async escalate(
     @Param('id') id: string,
@@ -98,6 +105,7 @@ export class ClaimsController {
   }
 
   @Post(':id/tier2-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN)
   async tier2Review(
     @Param('id') id: string,
@@ -108,6 +116,7 @@ export class ClaimsController {
   }
 
   @Post(':id/dispute')
+  @UseGuards(JwtAuthGuard)
   async fileDispute(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -117,6 +126,7 @@ export class ClaimsController {
   }
 
   @Post('disputes/:disputeId/resolve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN)
   async resolveDispute(
     @Param('disputeId') disputeId: string,
@@ -127,10 +137,29 @@ export class ClaimsController {
   }
 
   @Post(':id/withdraw')
+  @UseGuards(JwtAuthGuard)
   async withdraw(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ClaimDetailDto> {
     return this.claimsService.withdrawClaim(id, user.id);
+  }
+  @Get('evidence/:assetId')
+  async streamEvidence(
+    @Param('assetId') assetId: string,
+    @Query('user') queryUser?: string,
+    @Query('u') queryU?: string,
+    @Query('expires') queryExpires?: string,
+    @Query('sig') querySig?: string,
+    @Res() res?: any,
+  ) {
+    const effectiveUser = queryUser || queryU;
+    const media = await this.claimsService.getEvidenceMediaAsset(assetId, undefined, effectiveUser, queryExpires, querySig);
+    if (res && res.setHeader && res.sendFile) {
+      res.setHeader('Content-Type', media.mimeType);
+      res.sendFile(media.filePath);
+      return;
+    }
+    return media;
   }
 }

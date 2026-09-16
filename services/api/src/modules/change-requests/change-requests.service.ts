@@ -1,5 +1,7 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -19,6 +21,8 @@ import {
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { DatabaseService } from '../../database/database.service';
 import { PersonRepository } from '../../database/repositories/person.repository';
+import { GenealogyLinkRepository } from '../../database/repositories/genealogy-link.repository';
+import { DuplicateService } from '../genealogy/duplicate.service';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { DiffService } from './diff.service';
@@ -50,8 +54,11 @@ export class ChangeRequestsService {
     private readonly db: DatabaseService,
     private readonly personRepo: PersonRepository,
     private readonly branchRepo: BranchRepository,
+    private readonly linkRepo: GenealogyLinkRepository,
     private readonly auditOutboxRepo: AuditOutboxRepository,
     private readonly diffService: DiffService,
+    @Inject(forwardRef(() => DuplicateService))
+    private readonly duplicateService: DuplicateService,
   ) {}
 
   async submitRequest(
@@ -477,6 +484,22 @@ export class ChangeRequestsService {
 
       // Explicit handlers for each supported request type
       if (requestType === 'NEW_PERSON') {
+        const evalDto = {
+          names: [
+            { language: 'ne' as const, fullName: changes.primaryNameNepali || 'अज्ञात', isPrimary: true },
+            { language: 'en' as const, fullName: changes.primaryNameEnglish || 'Unknown', isPrimary: false },
+          ],
+          gender: changes.gender || 'MALE',
+          branchId: changes.branchId || null,
+          birthYearBs: changes.birthYearBs,
+        };
+        const dupCandidates = await this.duplicateService.evaluateProposedPerson(evalDto as any, undefined, client);
+        if (dupCandidates.length > 0 && dupCandidates.some((c) => c.score >= 0.95) && !changes.forceCreate) {
+          throw new ConflictException({
+            errorCode: ErrorCode.DUPLICATE_CANDIDATE_DETECTED,
+            message: 'Potential duplicate candidate detected in tree graph during person creation',
+          });
+        }
         const newPersonRes = await client.query(
           `INSERT INTO persons (gender, living_status, branch_id, generation, version)
            VALUES ($1, $2, $3, $4, 1) RETURNING *`,
@@ -607,6 +630,32 @@ export class ChangeRequestsService {
           throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
         }
 
+        // Cycle detection check via M3 GenealogyLinkRepository
+        const wouldCycle = await this.linkRepo.checkWouldCreateCycle(targetPerson.id, childId, client);
+        if (wouldCycle) {
+          throw new BadRequestException({
+            errorCode: ErrorCode.CYCLE_DETECTED,
+            message: 'Adding this parent-child link would create a directed cycle in the family tree graph',
+          });
+        }
+
+        // Cross-branch link dual authority check
+        const childBranchRes = await client.query('SELECT branch_id FROM persons WHERE id = $1', [childId]);
+        const childBranchId = childBranchRes.rows[0]?.branch_id;
+        if (targetPerson.branch_id && childBranchId && targetPerson.branch_id !== childBranchId) {
+          if (!reviewer.roles.includes(Role.SUPER_ADMIN)) {
+            const reviewerBranches = (reviewer.roleAssignments || [])
+              .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
+              .map((ra) => ra.branchId);
+            if (!reviewerBranches.includes(targetPerson.branch_id) || !reviewerBranches.includes(childBranchId)) {
+              throw new ForbiddenException({
+                errorCode: ErrorCode.BRANCH_MISMATCH,
+                message: 'Cross-branch relationship links require administrative authority for both branches',
+              });
+            }
+          }
+        }
+
         // Insert parent_links
         await client.query(
           `INSERT INTO parent_links (parent_id, child_id, parent_type, confidence, created_by)
@@ -653,6 +702,32 @@ export class ChangeRequestsService {
 
         if (targetPerson.id === parentId) {
           throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
+        }
+
+        // Cycle detection check via M3 GenealogyLinkRepository
+        const wouldCycleParent = await this.linkRepo.checkWouldCreateCycle(parentId, targetPerson.id, client);
+        if (wouldCycleParent) {
+          throw new BadRequestException({
+            errorCode: ErrorCode.CYCLE_DETECTED,
+            message: 'Adding this parent-child link would create a directed cycle in the family tree graph',
+          });
+        }
+
+        // Cross-branch link dual authority check
+        const parentBranchRes = await client.query('SELECT branch_id FROM persons WHERE id = $1', [parentId]);
+        const parentBranchId = parentBranchRes.rows[0]?.branch_id;
+        if (targetPerson.branch_id && parentBranchId && targetPerson.branch_id !== parentBranchId) {
+          if (!reviewer.roles.includes(Role.SUPER_ADMIN)) {
+            const reviewerBranches = (reviewer.roleAssignments || [])
+              .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
+              .map((ra) => ra.branchId);
+            if (!reviewerBranches.includes(targetPerson.branch_id) || !reviewerBranches.includes(parentBranchId)) {
+              throw new ForbiddenException({
+                errorCode: ErrorCode.BRANCH_MISMATCH,
+                message: 'Cross-branch relationship links require administrative authority for both branches',
+              });
+            }
+          }
         }
 
         await client.query(
@@ -767,22 +842,36 @@ export class ChangeRequestsService {
       } else if (requestType === 'MERGE_PERSON') {
         const secondaryId = changes.secondaryPersonId || changes.mergedPersonId;
         if (secondaryId && secondaryId !== targetPerson.id) {
-          // Verify secondary person exists and is not claimed
-          const secRes = await client.query('SELECT is_claimed FROM persons WHERE id = $1', [secondaryId]);
-          if (secRes.rows[0]?.is_claimed) {
+          const secRes = await client.query('SELECT * FROM persons WHERE id = $1', [secondaryId]);
+          const secondaryPerson = secRes.rows[0];
+          if (!secondaryPerson) {
+            throw new NotFoundException(`Secondary person record not found: ${secondaryId}`);
+          }
+          if (secondaryPerson.is_claimed) {
             throw new ConflictException({
               errorCode: ErrorCode.CANNOT_MERGE_CLAIMED_PERSONS,
               message: 'Cannot merge claimed profile into another person',
             });
           }
 
-          // Re-parent links
-          await client.query('UPDATE parent_links SET parent_id = $1 WHERE parent_id = $2', [targetPerson.id, secondaryId]);
-          await client.query('UPDATE parent_links SET child_id = $1 WHERE child_id = $2', [targetPerson.id, secondaryId]);
-          await client.query('UPDATE spouse_links SET person_id = $1 WHERE person_id = $2', [targetPerson.id, secondaryId]);
-          await client.query('UPDATE spouse_links SET spouse_id = $1 WHERE spouse_id = $2', [targetPerson.id, secondaryId]);
-          await client.query('UPDATE persons SET living_status = $1, updated_at = NOW() WHERE id = $2', ['MERGED', secondaryId]);
-          await client.query('UPDATE persons SET version = version + 1, updated_at = NOW() WHERE id = $1', [targetPerson.id]);
+          const actorContext = {
+            id: reviewer.id,
+            roles: reviewer.roles,
+            roleAssignments: reviewer.roleAssignments,
+            branchId: reviewer.branchIds?.[0],
+            branchIds: reviewer.branchIds,
+          };
+
+          const mergeDto = {
+            survivingPersonId: targetPerson.id,
+            mergedPersonId: secondaryId,
+            survivingPersonVersion: targetPerson.version,
+            mergedPersonVersion: secondaryPerson.version,
+            fieldResolutions: changes.fieldResolutions || {},
+            notes: dto.reviewNotes || 'Merged via governed genealogy change request',
+          };
+
+          await this.duplicateService.mergePersons(mergeDto as any, actorContext as any);
         }
       }
 
