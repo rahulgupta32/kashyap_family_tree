@@ -122,9 +122,9 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
                 decoration: BoxDecoration(
                   color: _isSuccess ? Colors.green.shade50 : Colors.red.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: BorderSide(
+                  border: Border.fromBorderSide(BorderSide(
                     color: _isSuccess ? Colors.green.shade300 : Colors.red.shade300,
-                  ),
+                  )),
                 ),
                 child: Text(
                   _message!,
