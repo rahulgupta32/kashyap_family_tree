@@ -120,7 +120,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
             const Text('अनुरोध प्रकार (Request Type):', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              value: _changeType,
+              initialValue: _changeType,
               items: const [
                 DropdownMenuItem(value: 'EDIT_PERSON', child: Text('विवरण संशोधन (Edit Details)')),
                 DropdownMenuItem(value: 'RECORD_DEATH', child: Text('मृत्यु दर्ता (Record Death)')),

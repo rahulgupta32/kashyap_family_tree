@@ -1,6 +1,7 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { UserRepository } from './repositories/user.repository';
 import { BranchRepository } from './repositories/branch.repository';
+import { MigrationService } from './migration.service';
 import { Role } from '@kashyap/contracts';
 
 @Injectable()
@@ -10,14 +11,21 @@ export class BootstrapService implements OnModuleInit {
   constructor(
     private readonly userRepo: UserRepository,
     private readonly branchRepo: BranchRepository,
+    @Optional() private readonly migrationService?: MigrationService,
   ) {}
 
   async onModuleInit() {
+    // 0. Ensure migrations have run before any seeding or repository operations
+    if (this.migrationService) {
+      await this.migrationService.runMigrations();
+    }
+
     // 1. Seed Core Reference Branches (needed for foreign keys and branch lookups)
     try {
       await this.seedReferenceBranches();
     } catch (err: any) {
-      this.logger.warn(`Reference branch seeding skipped or deferred: ${err.message}`);
+      this.logger.error(`Reference branch seeding failed: ${err.message}`, err.stack);
+      throw err;
     }
 
     // 2. Fictional Admin Seeding: must be an explicit opt-in command (SEED_ADMINS=true),
@@ -40,7 +48,8 @@ export class BootstrapService implements OnModuleInit {
     try {
       await this.bootstrapDevelopmentAccounts();
     } catch (err: any) {
-      this.logger.warn(`Admin bootstrap skipped or deferred: ${err.message}`);
+      this.logger.error(`Admin bootstrap failed: ${err.message}`, err.stack);
+      throw err;
     }
   }
 

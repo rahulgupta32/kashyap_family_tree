@@ -3,6 +3,11 @@ import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
 import '../theme/app_theme.dart';
 import 'person_detail_screen.dart';
+import 'read_only_tree_screen.dart';
+import 'claim_profile_screen.dart';
+import 'change_request_screen.dart';
+import 'calendar_events_screen.dart';
+import 'profile_privacy_screen.dart';
 
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -52,6 +57,98 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            const DrawerHeader(
+              decoration: BoxDecoration(color: AppTheme.saffron),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'कश्यप अधिकारी वंशावली',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text('नेभिगेसन मेनु (Navigation Menu)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.search, color: AppTheme.saffron),
+              title: const Text('व्यक्ति खोजी (Person Search)'),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
+              title: const Text('वंशावली रुख (Family Tree)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ReadOnlyTreeScreen(rootPersonId: 'p-101', apiService: widget.apiService),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.verified_user, color: Colors.blue),
+              title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ClaimProfileScreen(personId: 'p-101', personName: 'राम अधिकारी', apiService: widget.apiService),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_document, color: Colors.amber),
+              title: const Text('संशोधन अनुरोध (Change Requests)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChangeRequestScreen(personId: 'p-101', personName: 'राम अधिकारी', apiService: widget.apiService),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_month, color: Colors.deepOrange),
+              title: const Text('पात्रो तथा कार्यक्रम (Calendar)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CalendarEventsScreen(apiService: widget.apiService),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.security, color: Colors.purple),
+              title: const Text('प्रोफाइल तथा गोपनीयता (Profile Privacy)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProfilePrivacyScreen(apiService: widget.apiService),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
       body: Column(
         children: [

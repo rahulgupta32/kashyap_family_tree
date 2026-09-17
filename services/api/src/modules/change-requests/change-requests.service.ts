@@ -15,6 +15,7 @@ import {
   ResubmitChangeRequestDto,
   ChangeRequestType,
   ChangeRequestStatus,
+  MergePersonsDto,
   Role,
   ErrorCode,
 } from '@kashyap/contracts';
@@ -862,16 +863,16 @@ export class ChangeRequestsService {
             branchIds: reviewer.branchIds,
           };
 
-          const mergeDto = {
+          const mergeDto: MergePersonsDto = {
             survivingPersonId: targetPerson.id,
             mergedPersonId: secondaryId,
             survivingPersonVersion: targetPerson.version,
             mergedPersonVersion: secondaryPerson.version,
             fieldResolutions: changes.fieldResolutions || {},
-            notes: dto.reviewNotes || 'Merged via governed genealogy change request',
+            justificationReason: dto.reviewNotes?.trim() || 'Merged via governed genealogy change request resolution',
           };
 
-          await this.duplicateService.mergePersons(mergeDto as any, actorContext as any);
+          await this.duplicateService.mergePersons(mergeDto, actorContext, client);
         }
       }
 

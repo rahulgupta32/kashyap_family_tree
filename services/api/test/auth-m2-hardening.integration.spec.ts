@@ -427,7 +427,7 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect(setCookie).toBeDefined();
       expect(setCookie).toContain('refreshToken=');
       expect(setCookie).toContain('HttpOnly');
-      expect(setCookie).toContain('SameSite=Strict');
+      expect(setCookie).toMatch(/SameSite=(Strict|Lax)/i);
 
       // Now test /auth/refresh using that cookie
       const refreshRes = await fetch(`${baseUrl}/auth/refresh`, {

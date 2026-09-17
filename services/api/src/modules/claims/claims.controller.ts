@@ -147,6 +147,7 @@ export class ClaimsController {
   @Get('evidence/:assetId')
   async streamEvidence(
     @Param('assetId') assetId: string,
+    @CurrentUser() viewer?: AuthenticatedUser,
     @Query('user') queryUser?: string,
     @Query('u') queryU?: string,
     @Query('expires') queryExpires?: string,
@@ -154,7 +155,7 @@ export class ClaimsController {
     @Res() res?: any,
   ) {
     const effectiveUser = queryUser || queryU;
-    const media = await this.claimsService.getEvidenceMediaAsset(assetId, undefined, effectiveUser, queryExpires, querySig);
+    const media = await this.claimsService.getEvidenceMediaAsset(assetId, viewer, effectiveUser, queryExpires, querySig);
     if (res && res.setHeader && res.sendFile) {
       res.setHeader('Content-Type', media.mimeType);
       res.sendFile(media.filePath);

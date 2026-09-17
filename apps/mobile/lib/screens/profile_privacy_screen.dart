@@ -122,7 +122,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
-              value: _profileVisibility,
+              initialValue: _profileVisibility,
               decoration: const InputDecoration(labelText: 'प्रोफाइल दृश्यता (Profile Visibility)', border: OutlineInputBorder()),
               items: const [
                 DropdownMenuItem(value: 'PUBLIC', child: Text('सार्वजनिक (PUBLIC)')),
@@ -135,7 +135,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
-              value: _contactVisibility,
+              initialValue: _contactVisibility,
               decoration: const InputDecoration(labelText: 'सम्पर्क दृश्यता (Contact Visibility)', border: OutlineInputBorder()),
               items: const [
                 DropdownMenuItem(value: 'PUBLIC', child: Text('सार्वजनिक (PUBLIC)')),
@@ -148,7 +148,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
-              value: _addressVisibility,
+              initialValue: _addressVisibility,
               decoration: const InputDecoration(labelText: 'ठेगाना दृश्यता (Address Visibility)', border: OutlineInputBorder()),
               items: const [
                 DropdownMenuItem(value: 'PUBLIC', child: Text('सार्वजनिक (PUBLIC)')),

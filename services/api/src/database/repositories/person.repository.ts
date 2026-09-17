@@ -28,6 +28,7 @@ export interface PersonRecord {
   phone_visibility: PrivacyVisibility;
   address_visibility: PrivacyVisibility;
   dob_visibility: PrivacyVisibility;
+  profile_visibility?: PrivacyVisibility;
   is_minor_protected: boolean;
   is_claimed: boolean;
   claimed_user_id?: string;
@@ -130,11 +131,11 @@ export class PersonRepository {
         `INSERT INTO persons (
           generation, gender, living_status, branch_id, birth_year_bs, birth_date_bs, birth_date_ad, birth_place,
           death_year_bs, death_date_bs, death_date_ad, death_place, gotra, kuldevata, mool_ghar, current_address,
-          occupation, education, biography, phone_visibility, address_visibility, dob_visibility, is_minor_protected,
+          occupation, education, biography, phone_visibility, address_visibility, dob_visibility, profile_visibility, is_minor_protected,
           is_claimed, claimed_user_id, is_archived, archive_reason, version
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
-          $24, $25, $26, $27, 1
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+          $25, $26, $27, $28, 1
         ) RETURNING *`,
         [
           data.generation || 1,
@@ -159,6 +160,7 @@ export class PersonRepository {
           data.phone_visibility || 'VERIFIED_COMMUNITY',
           data.address_visibility || 'VERIFIED_COMMUNITY',
           data.dob_visibility || 'VERIFIED_COMMUNITY',
+          (data as any).profile_visibility || 'PUBLIC',
           data.is_minor_protected ?? false,
           data.is_claimed ?? false,
           data.claimed_user_id || null,
@@ -240,6 +242,7 @@ export class PersonRepository {
         phone_visibility: data.phone_visibility,
         address_visibility: data.address_visibility,
         dob_visibility: data.dob_visibility,
+        profile_visibility: (data as any).profile_visibility,
         is_minor_protected: data.is_minor_protected,
         is_claimed: data.is_claimed,
         claimed_user_id: data.claimed_user_id,

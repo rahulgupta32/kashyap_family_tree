@@ -1,5 +1,3 @@
-import 'claim_profile_screen.dart';
-import 'change_request_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';

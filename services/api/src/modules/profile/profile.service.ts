@@ -453,39 +453,41 @@ export class ProfileService {
       });
     }
 
-    const chalQuery = reauthChallenge.challengeId
-      ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION' FOR UPDATE`
-      : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`;
-    const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
-
-    const chalRes = await this.db.query(chalQuery, chalParams);
-    const challenge = chalRes.rows[0];
-
-    if (!challenge) {
-      throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
-    }
-
-    if (challenge.consumed_at) {
-      throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
-    }
-
-    if (new Date(challenge.expires_at).getTime() < Date.now()) {
-      throw new UnauthorizedException('Reauthentication challenge has expired');
-    }
-
-    if (challenge.attempts >= challenge.max_attempts) {
-      throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
-    }
-
-    const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
-    if (computedHash !== challenge.code_hash) {
-      await this.db.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
-      throw new UnauthorizedException('Invalid reauthentication challenge OTP');
-    }
-
-    await this.db.query('UPDATE auth_challenges SET consumed_at = NOW() WHERE id = $1', [challenge.id]);
-
     const result = await this.db.transaction(async (client) => {
+      // 1. Lock challenge record for update inside transaction (prevents TOCTOU replay)
+      const chalQuery = reauthChallenge.challengeId
+        ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION' FOR UPDATE`
+        : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`;
+      const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
+
+      const chalRes = await client.query(chalQuery, chalParams);
+      const challenge = chalRes.rows[0];
+
+      if (!challenge) {
+        throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
+      }
+
+      if (challenge.consumed_at) {
+        throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
+      }
+
+      if (new Date(challenge.expires_at).getTime() < Date.now()) {
+        throw new UnauthorizedException('Reauthentication challenge has expired');
+      }
+
+      if (challenge.attempts >= challenge.max_attempts) {
+        throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
+      }
+
+      const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
+      if (computedHash !== challenge.code_hash) {
+        await client.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
+        throw new UnauthorizedException('Invalid reauthentication challenge OTP');
+      }
+
+      // Mark challenge consumed atomically inside transaction
+      await client.query('UPDATE auth_challenges SET consumed_at = NOW() WHERE challenge_id = $1 OR id = $2', [challenge.challenge_id, challenge.id]);
+
       const userRes = await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [userId]);
       const user = userRes.rows[0];
       if (!user) throw new NotFoundException('User not found');
@@ -551,6 +553,9 @@ export class ProfileService {
           );
         }
       }
+
+      // Revoke all active sessions for the user atomically
+      await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
       await client.query('DELETE FROM notification_preferences WHERE user_id = $1', [userId]);
 
@@ -640,17 +645,25 @@ export class ProfileService {
         );
 
         if (hold.asset_id) {
-          await client.query(
-            `UPDATE media_assets SET retention_status = 'PURGED' WHERE id = $1`,
-            [hold.asset_id],
+          // Multi-hold protection: ensure no other active (unreleased) holds exist for this asset
+          const otherHoldsRes = await client.query(
+            `SELECT COUNT(*) as cnt FROM data_retention_records WHERE asset_id = $1 AND id != $2 AND released_at IS NULL`,
+            [hold.asset_id, holdId],
           );
-
-          const assetRes = await client.query('SELECT storage_path FROM media_assets WHERE id = $1', [hold.asset_id]);
-          if (assetRes.rows[0]?.storage_path) {
+          const otherHoldsCount = parseInt(otherHoldsRes.rows[0]?.cnt || '0', 10);
+          if (otherHoldsCount === 0) {
             await client.query(
-              `INSERT INTO media_deletion_queue (asset_id, storage_path, status) VALUES ($1, $2, 'PENDING')`,
-              [hold.asset_id, assetRes.rows[0].storage_path],
+              `UPDATE media_assets SET retention_status = 'PURGED' WHERE id = $1`,
+              [hold.asset_id],
             );
+
+            const assetRes = await client.query('SELECT storage_path FROM media_assets WHERE id = $1', [hold.asset_id]);
+            if (assetRes.rows[0]?.storage_path) {
+              await client.query(
+                `INSERT INTO media_deletion_queue (asset_id, storage_path, status) VALUES ($1, $2, 'PENDING')`,
+                [hold.asset_id, assetRes.rows[0].storage_path],
+              );
+            }
           }
         }
       });

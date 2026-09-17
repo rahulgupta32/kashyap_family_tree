@@ -572,6 +572,7 @@ export class GenealogyService {
             phone_visibility: dto.phoneVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             address_visibility: dto.addressVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             dob_visibility: dto.dobVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
+            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility || PrivacyVisibility.PUBLIC,
             is_minor_protected: dto.isMinorProtected ?? false,
           },
           dto.names.map((n) => ({
@@ -635,7 +636,7 @@ export class GenealogyService {
         return created.id;
       });
 
-      return (await this.getPersonById(createdId))!;
+      return (await this.getPersonById(createdId, actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : { userId: 'system', roles: [Role.SUPER_ADMIN] }))!;
     }
 
     // In-memory fallback
@@ -745,6 +746,7 @@ export class GenealogyService {
             phone_visibility: dto.phoneVisibility,
             address_visibility: dto.addressVisibility,
             dob_visibility: dto.dobVisibility,
+            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility,
             is_minor_protected: dto.isMinorProtected,
           },
           dto.names ? dto.names.map((n) => ({
@@ -786,7 +788,7 @@ export class GenealogyService {
         return id;
       });
 
-      return (await this.getPersonById(updatedId))!;
+      return (await this.getPersonById(updatedId, actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : { userId: 'system', roles: [Role.SUPER_ADMIN] }))!;
     }
 
     // In-memory fallback
@@ -859,6 +861,13 @@ export class GenealogyService {
       }
 
       const activeId = person.id;
+
+      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(person, viewer)) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'Access denied: Profile is marked private by owner',
+        });
+      }
 
       const [names, parentLinks, childLinks, spouseLinks, branchRes] = await Promise.all([
         this.personRepo!.findNamesByPersonId(activeId),
@@ -1299,23 +1308,30 @@ export class GenealogyService {
       isVerifiedMember: true,
     };
 
-    const sanitizedPersons = personsRes.rows.map((r: any) => {
-      const summary: PersonSummaryDto = {
-        id: r.id,
-        primaryNameNepali: r.primary_name_nepali,
-        primaryNameEnglish: r.primary_name_english || r.primary_name_nepali,
-        gender: r.gender,
-        livingStatus: r.living_status,
-        generation: r.generation,
-        branchId: r.branch_id || undefined,
-        branchName: r.branch_name || undefined,
-        birthYearBs: r.birth_year_bs,
-        deathYearBs: r.death_year_bs,
-        isClaimed: r.is_claimed,
-        version: r.version,
-      };
-      return this.privacyEngine ? this.privacyEngine.filterPersonSummary(summary, viewerContext) : summary;
-    });
+    const sanitizedPersons = personsRes.rows
+      .filter((r: any) => {
+        if (this.privacyEngine) {
+          return this.privacyEngine.isRecordVisible(r, viewerContext);
+        }
+        return true;
+      })
+      .map((r: any) => {
+        const summary: PersonSummaryDto = {
+          id: r.id,
+          primaryNameNepali: r.primary_name_nepali,
+          primaryNameEnglish: r.primary_name_english || r.primary_name_nepali,
+          gender: r.gender,
+          livingStatus: r.living_status,
+          generation: r.generation,
+          branchId: r.branch_id || undefined,
+          branchName: r.branch_name || undefined,
+          birthYearBs: r.birth_year_bs,
+          deathYearBs: r.death_year_bs,
+          isClaimed: r.is_claimed,
+          version: r.version,
+        };
+        return this.privacyEngine ? this.privacyEngine.filterPersonSummary(summary, viewerContext) : summary;
+      });
 
     const personIds = personsRes.rows.map((r: any) => r.id);
     let parentLinks: any[] = [];

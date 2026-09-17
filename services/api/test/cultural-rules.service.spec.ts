@@ -173,5 +173,53 @@ describe('CulturalRulesService (Kinship Engine & Open Gate HG-002 Governance)', 
 
       expect(approved.status).toBe('APPROVED');
     });
+
+    it('should return UNAVAILABLE status with RULE_6001 when no active ruleset exists', async () => {
+      mockDb.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM domain_rulesets')) {
+          return { rows: [] };
+        }
+        return { rows: [] };
+      });
+
+      const res = await culturalRulesService.calculateKinship({
+        fromPersonId: 'p-401',
+        toPersonId: 'p-301',
+      });
+
+      expect(res.pathFound).toBe(false);
+      expect(res.pathCode).toBe('UNAVAILABLE');
+      expect(res.statusNote).toContain('RULE_6001');
+    });
+
+    it('should return UNAVAILABLE when ruleset has fewer than 2 distinct signers', async () => {
+      mockDb.query.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM domain_rulesets')) {
+          return {
+            rows: [
+              {
+                id: 'ruleset-insufficient',
+                rule_type: 'NATA_SAINO',
+                status: 'ACTIVE',
+                version: '1.0',
+                effective_from: new Date(Date.now() - 100000).toISOString(),
+                signed_by_reviewer_id: 'u-same',
+                signed_by_authority_id: 'u-same', // Same signer!
+                council_signatures: [{ signerId: 'u-same' }],
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+
+      const res = await culturalRulesService.calculateKinship({
+        fromPersonId: 'p-401',
+        toPersonId: 'p-301',
+      });
+
+      expect(res.pathFound).toBe(false);
+      expect(res.pathCode).toBe('UNAVAILABLE');
+    });
   });
 });

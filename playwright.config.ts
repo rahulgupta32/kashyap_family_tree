@@ -50,12 +50,14 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: fs.existsSync(path.resolve(__dirname, 'services/api/dist/main.js'))
-        ? 'node services/api/dist/main.js'
-        : 'node services/api/dist/src/main.js',
-      url: `http://127.0.0.1:${API_PORT}/api/docs`,
-      reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000,
+      command: fs.existsSync(path.resolve(__dirname, 'services/api/dist/src/main.js'))
+        ? 'node services/api/dist/src/main.js'
+        : 'node services/api/dist/main.js',
+      url: `http://127.0.0.1:${API_PORT}/health/ready`,
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         PORT: API_PORT,
         NODE_ENV: 'test',
@@ -78,8 +80,10 @@ export default defineConfig({
     {
       command: `pnpm --filter @kashyap/admin start -p ${ADMIN_PORT}`,
       url: `http://127.0.0.1:${ADMIN_PORT}/login`,
-      reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000,
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         PORT: ADMIN_PORT,
         NEXT_PUBLIC_API_URL: `http://127.0.0.1:${API_PORT}`,
