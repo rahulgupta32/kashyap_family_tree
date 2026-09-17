@@ -23,7 +23,9 @@ import {
 import { ClaimsService } from './claims.service';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+
 import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('claims')
@@ -145,9 +147,9 @@ export class ClaimsController {
     return this.claimsService.withdrawClaim(id, user.id);
   }
   @Get('evidence/:assetId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   async streamEvidence(
-    @CurrentUser() viewer: AuthenticatedUser,
+    @CurrentUser() viewer: AuthenticatedUser | null,
     @Param('assetId') assetId: string,
     @Query('user') queryUser?: string,
     @Query('u') queryU?: string,
@@ -156,7 +158,7 @@ export class ClaimsController {
     @Res() res?: any,
   ) {
     const effectiveUser = queryUser || queryU;
-    const media = await this.claimsService.getEvidenceMediaAsset(assetId, viewer, effectiveUser, queryExpires, querySig);
+    const media = await this.claimsService.getEvidenceMediaAsset(assetId, viewer || undefined, effectiveUser, queryExpires, querySig);
     if (res && res.setHeader && res.sendFile) {
       res.setHeader('Content-Type', media.mimeType);
       res.sendFile(media.filePath);
@@ -165,3 +167,4 @@ export class ClaimsController {
     return media;
   }
 }
+

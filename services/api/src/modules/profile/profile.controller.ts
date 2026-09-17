@@ -25,6 +25,7 @@ import {
 import { ProfileService } from './profile.service';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 
 @Controller(['me', 'profile'])
 export class ProfileController {
@@ -142,7 +143,9 @@ export class ProfileController {
   }
 
   @Get('media/:assetId')
+  @UseGuards(OptionalJwtAuthGuard)
   async streamMedia(
+    @CurrentUser() user: AuthenticatedUser | null,
     @Param('assetId') assetId: string,
     @Query('user') queryUser?: string,
     @Query('u') queryU?: string,
@@ -151,7 +154,7 @@ export class ProfileController {
     @Res() res?: any,
   ) {
     const effectiveUser = queryUser || queryU;
-    const media = await this.profileService.getMediaAsset(assetId, undefined, effectiveUser, queryExpires, querySig);
+    const media = await this.profileService.getMediaAsset(assetId, user || undefined, effectiveUser, queryExpires, querySig);
     if (res && res.setHeader && res.sendFile) {
       res.setHeader('Content-Type', media.mimeType);
       res.sendFile(media.filePath);
@@ -160,4 +163,5 @@ export class ProfileController {
     return media;
   }
 }
+
 

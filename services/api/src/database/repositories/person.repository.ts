@@ -353,8 +353,9 @@ export class PersonRepository {
         if (viewer.personId) {
           params.push(viewer.personId);
           const pParam = paramIdx++;
-          immFamilyCond = ` OR (p.profile_visibility = 'IMMEDIATE_FAMILY' AND (p.id = $${pParam} OR p.id IN (SELECT spouse_id FROM spouse_links WHERE person_id = $${pParam} UNION SELECT person_id FROM spouse_links WHERE spouse_id = $${pParam} UNION SELECT parent_id FROM parent_links WHERE child_id = $${pParam} UNION SELECT child_id FROM parent_links WHERE parent_id = $${pParam})))`;
+          immFamilyCond = ` OR (p.profile_visibility = 'IMMEDIATE_FAMILY' AND (p.id = $${pParam} OR p.id IN (SELECT spouse_id FROM spouse_links WHERE person_id = $${pParam} AND (status IS NULL OR status <> 'CANCELLED') UNION SELECT person_id FROM spouse_links WHERE spouse_id = $${pParam} AND (status IS NULL OR status <> 'CANCELLED') UNION SELECT parent_id FROM parent_links WHERE child_id = $${pParam} AND confidence = 'VERIFIED' UNION SELECT child_id FROM parent_links WHERE parent_id = $${pParam} AND confidence = 'VERIFIED')))`;
         }
+
 
         if (branchAdminBranches.length > 0) {
           params.push(branchAdminBranches);

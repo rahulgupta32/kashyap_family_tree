@@ -38,7 +38,7 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     await page.goto('/claims');
     await expect(page.getByRole('heading', { name: /दाबी प्रमाणीकरण लाम|Profile Claims/i })).toBeVisible();
 
-    // Verify filter tabs are present and interactive
+    // Filter tabs interaction
     const pendingTier1Tab = page.locator('button:has-text("PENDING_TIER1")');
     if (await pendingTier1Tab.isVisible()) {
       await pendingTier1Tab.click();
@@ -49,30 +49,59 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
       await allTab.click();
     }
 
-    // Verify search / table presence
-    await expect(page.locator('table, .space-y-4')).toBeVisible();
+    await expect(page.locator('table')).toBeVisible();
+
+    // If claim records exist in queue, test opening review modal
+    const reviewBtn = page.locator('button:has-text("समीक्षा गर्नुहोस् (Review)")').first();
+    if (await reviewBtn.isVisible()) {
+      await reviewBtn.click();
+      await expect(page.locator('text=दाबी विवरण तथा समीक्षा (Claim Review)')).toBeVisible();
+      const closeBtn = page.locator('button:has-text("✕"), button:has-text("बन्द गर्नुहोस् (Close)")').first();
+      await closeBtn.click();
+    }
   });
 
   test('2. Governed Genealogy Change Requests Workflow (/change-requests)', async ({ page }) => {
     await page.goto('/change-requests');
     await expect(page.getByRole('heading', { name: /वंशावली परिमार्जन अनुरोधहरू|Change Requests/i })).toBeVisible();
 
-    // Verify status filter controls
     const pendingTab = page.locator('button:has-text("PENDING")');
     if (await pendingTab.isVisible()) {
       await pendingTab.click();
     }
 
-    // Verify table structure
-    await expect(page.locator('table, .space-y-4')).toBeVisible();
+    await expect(page.locator('table')).toBeVisible();
+
+    // If change requests exist, test opening visual diff modal
+    const diffBtn = page.locator('button:has-text("तुलनात्मक भिन्नता (Visual Diff)")').first();
+    if (await diffBtn.isVisible()) {
+      await diffBtn.click();
+      await expect(page.locator('text=तुलनात्मक भिन्नता समीक्षा (Visual Diff Review)')).toBeVisible();
+      const closeBtn = page.locator('button:has-text("✕"), button:has-text("बन्द गर्नुहोस् (Close)")').first();
+      await closeBtn.click();
+    }
   });
 
   test('3. Cultural & Family Calendar Events Workflow (/calendar)', async ({ page }) => {
     await page.goto('/calendar');
     await expect(page.getByRole('heading', { name: /कुल क्यालेन्डर तथा चाडपर्व|Kinship Observances Calendar/i })).toBeVisible();
 
-    // Verify calendar navigation or event list container
-    await expect(page.locator('button:has-text("नयाँ कार्यक्रम थप्नुहोस्"), button:has-text("Create Event")')).toBeVisible();
+    // Open event creation modal
+    const createBtn = page.locator('button:has-text("नयाँ कार्यक्रम थप्नुहोस्"), button:has-text("Create Event")');
+    await expect(createBtn).toBeVisible();
+    await createBtn.click();
+
+    // Fill event form fields
+    const titleInput = page.locator('input[placeholder*="उदा: कुल पूजा २०८३"]');
+    await expect(titleInput).toBeVisible();
+    await titleInput.fill('कुल पूजा २०८३ (E2E Verified)');
+
+    const submitBtn = page.locator('button[type="submit"]:has-text("सिर्जना गर्नुहोस् (Save)")');
+    await submitBtn.click();
+
+    // Assert success notification and event grid persistence
+    await expect(page.locator('text=/वार्षिक कार्यक्रम सफलतापूर्वक सिर्जना भयो/')).toBeVisible();
+    await expect(page.locator('text=कुल पूजा २०८३ (E2E Verified)')).toBeVisible();
   });
 
   test('4. Member Profile, Personal Details & Granular Privacy Settings (/profile)', async ({ page }) => {
@@ -108,3 +137,4 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     await expect(page.locator('text=एसएमएस सूचना (SMS Notifications)')).toBeVisible();
   });
 });
+

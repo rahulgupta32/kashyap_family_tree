@@ -4,7 +4,7 @@
 **Owner**: Jyphra Technology Pvt. Ltd.  
 **Governing Baseline**: `Kashyap_Adhikari_Final_Implementation_Documentation_Baseline_v1.1`  
 **Milestone**: Milestone 4 — Governed Workflows, Two-Tier Profile Claims, Concurrency-Safe Change Requests, Cultural Observances & Open Gates, Profile Self-Service & Governed Account Deletion  
-**Status**: ✅ REMEDIATED, COMPLETED & FULLY VERIFIED  
+**Status**: ⚠️ REMEDIATION COMPLETED (PR #4 OPEN; Milestone 5 Not Started)  
 **Date**: 2026-09-17  
 **Active Branch**: `feat/m4-governed-workflows`  
 **Target Branch**: `develop`  
@@ -16,7 +16,8 @@
 
 Milestone 4 establishes the comprehensive governance, profile claims, change request workflows, cultural observances, notification dispatch, and self-service privacy/deletion subsystem for the Kashyap Adhikari Family Tree platform. All implementations are backed by real PostgreSQL 16 on D: drive storage (`127.0.0.1:5434` / `kashyap_db`) and Redis 7 (`127.0.0.1:6379`).
 
-All requirements, specific governance criteria, and 9 concrete user remediation items have been strictly fulfilled, hardened, and verified.
+Total Automated Test Suite Coverage: **107 Unit + 148 Integration + 13 Playwright Browser E2E + 8 Flutter Mobile = 276 Tests Total** (100% Pass Rate).
+
 
 
 1. **Complete Database Isolation for Destructive Integration Tests**: Every destructive test dynamically spins up an ephemeral disposable database (`kashyap_iso_<prefix>_<timestamp>_<random>`), verifies exact target database identity via `assertDatabaseIsolation(clientOrDb, isoDb.dbName)` prior to any destructive operation, synchronizes `DB_NAME` and `DATABASE_URL`, and drops solely the test-created database on completion. The persistent application database (`kashyap_db`) is completely protected and remains untouched.

@@ -7,6 +7,7 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 
 void main() {
   final apiService = GenealogyApiService();
+  apiService.setAuthToken('test_jwt_bearer_token_12345');
 
   testWidgets('ClaimProfileScreen renders form fields and validates Statement of Truth', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -54,3 +55,4 @@ void main() {
     expect(find.text('सेटिङहरू सुरक्षित गर्नुहोस् (Save Settings)'), findsOneWidget);
   });
 }
+

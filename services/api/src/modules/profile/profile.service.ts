@@ -170,77 +170,105 @@ export class ProfileService {
   }
 
   async updateProfile(userId: string, dto: any) {
-    const userRes = await this.db.query('SELECT * FROM user_accounts WHERE id = $1', [userId]);
-    const user = userRes.rows[0];
-    if (!user) throw new NotFoundException('User not found');
+    return this.db.transaction(async (client) => {
+      const userRes = await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [userId]);
+      const user = userRes.rows[0];
+      if (!user) throw new NotFoundException('User not found');
 
-    if (dto.preferences) {
-      await this.updateNotificationPreferences(userId, dto.preferences);
-    }
-    if (dto.privacy || dto.privacySettings) {
-      await this.updatePrivacySettings(userId, dto.privacy || dto.privacySettings);
-    }
-
-    let personId = user.person_id;
-    let targetPerson: any = null;
-    if (personId) {
-      targetPerson = await this.personRepo.findById(personId);
-      if (!targetPerson) {
-        const resolved = await this.personRepo.resolveCanonicalPerson(personId);
-        targetPerson = resolved.person;
-        if (targetPerson) personId = targetPerson.id;
+      if (dto.preferences) {
+        await this.updateNotificationPreferences(userId, dto.preferences);
       }
-    }
-
-    if (personId && targetPerson) {
-      const updates: string[] = [];
-      const params: any[] = [];
-      let idx = 1;
-
-      if (dto.currentAddress !== undefined || dto.current_address !== undefined) {
-        updates.push(`current_address = $${idx++}`);
-        params.push(dto.currentAddress ?? dto.current_address);
-      }
-      if (dto.occupation !== undefined) {
-        updates.push(`occupation = $${idx++}`);
-        params.push(dto.occupation);
-      }
-      if (dto.education !== undefined) {
-        updates.push(`education = $${idx++}`);
-        params.push(dto.education);
-      }
-      if (dto.biography !== undefined) {
-        updates.push(`biography = $${idx++}`);
-        params.push(dto.biography);
+      if (dto.privacy || dto.privacySettings) {
+        await this.updatePrivacySettings(userId, dto.privacy || dto.privacySettings);
       }
 
-      if (updates.length > 0) {
-        updates.push(`version = version + 1`);
-        updates.push(`updated_at = NOW()`);
-        params.push(personId);
-        await this.db.query(
-          `UPDATE persons SET ${updates.join(', ')} WHERE id = $${idx}`,
-          params,
+      let personId = user.person_id;
+      let targetPerson: any = null;
+      if (personId) {
+        targetPerson = await this.personRepo.findById(personId, false, client);
+        if (!targetPerson) {
+          const resolved = await this.personRepo.resolveCanonicalPerson(personId);
+          targetPerson = resolved.person;
+          if (targetPerson) personId = targetPerson.id;
+        }
+      }
+
+      if (personId && targetPerson) {
+        const updates: string[] = [];
+        const params: any[] = [];
+        let idx = 1;
+
+        if (dto.currentAddress !== undefined || dto.current_address !== undefined) {
+          updates.push(`current_address = $${idx++}`);
+          params.push(dto.currentAddress ?? dto.current_address);
+        }
+        if (dto.occupation !== undefined) {
+          updates.push(`occupation = $${idx++}`);
+          params.push(dto.occupation);
+        }
+        if (dto.education !== undefined) {
+          updates.push(`education = $${idx++}`);
+          params.push(dto.education);
+        }
+        if (dto.biography !== undefined) {
+          updates.push(`biography = $${idx++}`);
+          params.push(dto.biography);
+        }
+
+        if (updates.length > 0) {
+          updates.push(`version = version + 1`);
+          updates.push(`updated_at = NOW()`);
+          params.push(personId);
+          await client.query(
+            `UPDATE persons SET ${updates.join(', ')} WHERE id = $${idx}`,
+            params,
+          );
+
+          await this.auditOutboxRepo.recordAuditIntent(
+            {
+              action: 'PROFILE_UPDATED',
+              entityType: 'PERSON_PROFILE',
+              entityId: personId,
+              actorId: userId,
+              actorRole: 'MEMBER',
+              oldValue: { currentAddress: targetPerson.current_address, occupation: targetPerson.occupation },
+              newValue: { currentAddress: dto.currentAddress, occupation: dto.occupation, biography: dto.biography },
+            },
+            client,
+          );
+        }
+      } else {
+        const currentUnlinked = typeof user.unlinked_profile === 'string'
+          ? JSON.parse(user.unlinked_profile)
+          : (user.unlinked_profile || {});
+        const updatedUnlinked = { ...currentUnlinked };
+        if (dto.currentAddress !== undefined) updatedUnlinked.currentAddress = dto.currentAddress;
+        if (dto.current_address !== undefined) updatedUnlinked.currentAddress = dto.current_address;
+        if (dto.occupation !== undefined) updatedUnlinked.occupation = dto.occupation;
+        if (dto.education !== undefined) updatedUnlinked.education = dto.education;
+        if (dto.biography !== undefined) updatedUnlinked.biography = dto.biography;
+
+        await client.query(
+          `UPDATE user_accounts SET unlinked_profile = $1, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify(updatedUnlinked), userId],
+        );
+
+        await this.auditOutboxRepo.recordAuditIntent(
+          {
+            action: 'UNLINKED_PROFILE_UPDATED',
+            entityType: 'USER_ACCOUNT',
+            entityId: userId,
+            actorId: userId,
+            actorRole: 'MEMBER',
+            oldValue: { unlinkedProfile: currentUnlinked },
+            newValue: { unlinkedProfile: updatedUnlinked },
+          },
+          client,
         );
       }
-    } else {
-      const currentUnlinked = typeof user.unlinked_profile === 'string'
-        ? JSON.parse(user.unlinked_profile)
-        : (user.unlinked_profile || {});
-      const updatedUnlinked = { ...currentUnlinked };
-      if (dto.currentAddress !== undefined) updatedUnlinked.currentAddress = dto.currentAddress;
-      if (dto.current_address !== undefined) updatedUnlinked.currentAddress = dto.current_address;
-      if (dto.occupation !== undefined) updatedUnlinked.occupation = dto.occupation;
-      if (dto.education !== undefined) updatedUnlinked.education = dto.education;
-      if (dto.biography !== undefined) updatedUnlinked.biography = dto.biography;
 
-      await this.db.query(
-        `UPDATE user_accounts SET unlinked_profile = $1, updated_at = NOW() WHERE id = $2`,
-        [JSON.stringify(updatedUnlinked), userId],
-      );
-    }
-
-    return this.getMe(userId);
+      return this.getMe(userId);
+    });
   }
 
   async updatePrivacySettings(userId: string, dto: PrivacySettingsDto & { dobVisibility?: string }): Promise<PrivacySettingsDto> {
@@ -411,7 +439,7 @@ export class ProfileService {
     queryExpires?: string,
     querySig?: string,
   ) {
-    if (!viewer || !viewer.id) {
+    if (!viewer && (!queryExpires || !querySig)) {
       throw new UnauthorizedException('Authentication required to access media asset');
     }
 
@@ -434,16 +462,22 @@ export class ProfileService {
 
     let isAuthorized = false;
 
-    if (viewer.roles && (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN'))) {
-      isAuthorized = true;
-    } else if (asset.uploader_user_id === viewer.id) {
-      isAuthorized = true;
+    if (viewer && viewer.id) {
+      if (viewer.roles && (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN'))) {
+        isAuthorized = true;
+      } else if (asset.uploader_user_id === viewer.id) {
+        isAuthorized = true;
+      }
     }
 
     if (!isAuthorized && queryUser && queryExpires && querySig) {
       const exp = parseInt(queryExpires, 10);
       if (!isNaN(exp) && exp >= Math.floor(Date.now() / 1000) && this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
-        if (viewer.id === queryUser || asset.uploader_user_id === queryUser) {
+        if (viewer && viewer.id) {
+          if (viewer.id === queryUser) {
+            isAuthorized = true;
+          }
+        } else if (asset.uploader_user_id === queryUser) {
           isAuthorized = true;
         }
       }
@@ -452,6 +486,7 @@ export class ProfileService {
     if (!isAuthorized) {
       throw new ForbiddenException('You do not have permission to access or stream this media asset');
     }
+
 
     if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
       throw new NotFoundException('Physical media file not found on storage volume');
@@ -642,7 +677,7 @@ export class ProfileService {
       const anonPhone = `+DEL_${crypto.randomBytes(6).toString('hex').slice(0, 14)}`;
       await client.query(
         `UPDATE user_accounts 
-         SET phone_number = $1, person_id = NULL, avatar_asset_id = NULL, is_active = FALSE,
+         SET phone_number = $1, person_id = NULL, avatar_asset_id = NULL, unlinked_profile = NULL, is_active = FALSE,
              privacy_settings = '{"profileVisibility":"PRIVATE","contactVisibility":"PRIVATE","addressVisibility":"PRIVATE"}'::jsonb,
              deleted_at = NOW(), updated_at = NOW()
          WHERE id = $2`,

@@ -347,6 +347,19 @@ export class CulturalRulesService {
     const path = await this.findShortestPathBfs(dto.observerPersonId, dto.deceasedPersonId);
     const rulesConfig = ruleset.rules_data || {};
 
+    if (
+      rulesConfig.sapindaMaxDegree === undefined ||
+      rulesConfig.sapindaMaxDegree === null ||
+      rulesConfig.samanodakaMaxDegree === undefined ||
+      rulesConfig.samanodakaMaxDegree === null
+    ) {
+      return {
+        status: 'UNAVAILABLE',
+        errorCode: ErrorCode.RULESET_NOT_APPROVED,
+        message: 'Active ruleset is missing required approved sapindaMaxDegree or samanodakaMaxDegree parameters (Open Gate HG-003).',
+      };
+    }
+
     let indicationClass: string;
     let ruleKey: string;
 
@@ -354,23 +367,23 @@ export class CulturalRulesService {
       const isPurelyPatrilineal = path.every((s) => s === 'F' || s === 'S' || s === 'B');
       const degree = path.length;
 
-      const sapindaMax = rulesConfig.sapindaMaxDegree ?? 7;
-      const samanodakaMax = rulesConfig.samanodakaMaxDegree ?? 10;
+      const sapindaMax = Number(rulesConfig.sapindaMaxDegree);
+      const samanodakaMax = Number(rulesConfig.samanodakaMaxDegree);
 
       if (isPurelyPatrilineal) {
         if (degree <= sapindaMax) {
           ruleKey = rulesConfig.SAPINDA ? 'SAPINDA' : 'SAPINDA_7_GEN';
-          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'SAPINDA_OBSERVANCE';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass;
         } else if (degree <= samanodakaMax) {
           ruleKey = rulesConfig.SAMANODAKA ? 'SAMANODAKA' : 'SAMANODAKA_10_GEN';
-          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'SAMANODAKA_OBSERVANCE';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass;
         } else {
           ruleKey = 'REMOTE_PATRILINEAL';
-          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'REMOTE_PATRILINEAL_OBSERVANCE';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass;
         }
       } else {
         ruleKey = 'AFFINE_RELATION';
-        indicationClass = rulesConfig[ruleKey]?.indicationClass || 'AFFINE_OBSERVANCE';
+        indicationClass = rulesConfig[ruleKey]?.indicationClass;
       }
     } else {
       ruleKey = 'NOT_APPLICABLE';
@@ -378,26 +391,27 @@ export class CulturalRulesService {
     }
 
     const matchedRule = rulesConfig[ruleKey];
-    if (!matchedRule || matchedRule.days === undefined || matchedRule.days === null) {
+    if (!matchedRule || matchedRule.days === undefined || matchedRule.days === null || (!indicationClass && ruleKey !== 'NOT_APPLICABLE')) {
       return {
         status: 'UNAVAILABLE',
         errorCode: ErrorCode.RULESET_NOT_APPROVED,
-        message: `Missing approved rule configuration for ${ruleKey} (Open Gate HG-003).`,
+        message: `Missing approved rule configuration or indication class for ${ruleKey} (Open Gate HG-003).`,
       };
     }
 
-    const classConfig = rulesConfig[indicationClass] || matchedRule;
+    const effectiveIndicationClass = indicationClass || 'NOT_APPLICABLE';
+    const classConfig = rulesConfig[effectiveIndicationClass] || matchedRule;
     if (!classConfig.observances || !classConfig.observancesNepali) {
       return {
         status: 'UNAVAILABLE',
         errorCode: ErrorCode.RULESET_NOT_APPROVED,
-        message: `Missing approved observances for ${indicationClass} (Open Gate HG-003).`,
+        message: `Missing approved observances for ${effectiveIndicationClass} (Open Gate HG-003).`,
       };
     }
 
     return {
       status: 'AVAILABLE',
-      indicationClass: matchedRule.indicationClass || indicationClass || 'CUSTOM_OBSERVANCE',
+      indicationClass: matchedRule.indicationClass || effectiveIndicationClass,
       daysOfImpurity: matchedRule.days,
       prescribedObservances: classConfig.observances,
       prescribedObservancesNepali: classConfig.observancesNepali,
