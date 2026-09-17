@@ -99,6 +99,7 @@ export class ProfileService {
           birthYearBs: person.birth_year_bs,
           birthDateBs: person.birth_date_bs,
           currentAddress: person.current_address,
+          current_address: person.current_address,
           occupation: person.occupation,
           education: person.education,
           biography: person.biography,
@@ -149,22 +150,44 @@ export class ProfileService {
     };
   }
 
-  async updateProfile(userId: string, dto: { occupation?: string; education?: string; biography?: string; currentAddress?: string }) {
+  async updateProfile(userId: string, dto: any) {
     const userRes = await this.db.query('SELECT * FROM user_accounts WHERE id = $1', [userId]);
     const user = userRes.rows[0];
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.person_id) {
+    const address = dto.currentAddress ?? dto.current_address ?? null;
+    const occ = dto.occupation ?? null;
+    const edu = dto.education ?? null;
+    const bio = dto.biography ?? null;
+
+    let personId = user.person_id;
+    if (!personId) {
+      const kaskiBranch = await this.db.query("SELECT id FROM branches WHERE code = 'KASKI'");
+      const branchId = kaskiBranch.rows[0]?.id;
+      const newPersonRes = await this.db.query(
+        `INSERT INTO persons (gender, living_status, generation, branch_id, occupation, education, biography, current_address, is_claimed, claimed_user_id)
+         VALUES ('MALE', 'LIVING', 5, $1, $2, $3, $4, $5, TRUE, $6)
+         RETURNING id`,
+        [branchId, occ, edu, bio, address, userId],
+      );
+      personId = newPersonRes.rows[0].id;
+      await this.db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [personId, userId]);
+      await this.db.query(
+        `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+         VALUES ($1, 'ne', 'प्रयोगकर्ता', 'अधिकारी', 'प्रयोगकर्ता अधिकारी', TRUE)`,
+        [personId],
+      );
+    } else {
       await this.db.query(
         `UPDATE persons 
-         SET occupation = COALESCE($1, occupation),
-             education = COALESCE($2, education),
-             biography = COALESCE($3, biography),
-             current_address = COALESCE($4, current_address),
+         SET occupation = $1,
+             education = $2,
+             biography = $3,
+             current_address = $4,
              version = version + 1,
              updated_at = NOW()
          WHERE id = $5`,
-        [dto.occupation ?? null, dto.education ?? null, dto.biography ?? null, dto.currentAddress ?? null, user.person_id],
+        [occ, edu, bio, address, personId],
       );
     }
     return this.getMe(userId);
@@ -368,7 +391,9 @@ export class ProfileService {
     if (!isAuthorized && queryUser && queryExpires && querySig) {
       const exp = parseInt(queryExpires, 10);
       if (!isNaN(exp) && this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
-        isAuthorized = true;
+        if (!viewer || viewer.id === queryUser || asset.uploader_user_id === queryUser) {
+          isAuthorized = true;
+        }
       }
     }
 
@@ -453,40 +478,50 @@ export class ProfileService {
       });
     }
 
+    // 1. Fetch active challenge outside transaction to validate OTP attempt and persist failed attempts
+    const chalQuery = reauthChallenge.challengeId
+      ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION'`
+      : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1`;
+    const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
+
+    const chalRes = await this.db.query(chalQuery, chalParams);
+    const challenge = chalRes.rows[0];
+
+    if (!challenge) {
+      throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
+    }
+
+    if (challenge.consumed_at) {
+      throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
+    }
+
+    if (new Date(challenge.expires_at).getTime() < Date.now()) {
+      throw new UnauthorizedException('Reauthentication challenge has expired');
+    }
+
+    if (challenge.attempts >= challenge.max_attempts) {
+      throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
+    }
+
+    const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
+    if (computedHash !== challenge.code_hash) {
+      // Persist failed attempt outside transaction so it is never rolled back
+      await this.db.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
+      throw new UnauthorizedException('Invalid reauthentication challenge OTP');
+    }
+
     const result = await this.db.transaction(async (client) => {
-      // 1. Lock challenge record for update inside transaction (prevents TOCTOU replay)
-      const chalQuery = reauthChallenge.challengeId
-        ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION' FOR UPDATE`
-        : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`;
-      const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
-
-      const chalRes = await client.query(chalQuery, chalParams);
-      const challenge = chalRes.rows[0];
-
-      if (!challenge) {
-        throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
-      }
-
-      if (challenge.consumed_at) {
-        throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
-      }
-
-      if (new Date(challenge.expires_at).getTime() < Date.now()) {
-        throw new UnauthorizedException('Reauthentication challenge has expired');
-      }
-
-      if (challenge.attempts >= challenge.max_attempts) {
-        throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
-      }
-
-      const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
-      if (computedHash !== challenge.code_hash) {
-        await client.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
-        throw new UnauthorizedException('Invalid reauthentication challenge OTP');
+      // Lock challenge record inside transaction for atomic single-use consumption (prevents TOCTOU replay)
+      const lockRes = await client.query(
+        `SELECT * FROM auth_challenges WHERE id = $1 AND consumed_at IS NULL FOR UPDATE`,
+        [challenge.id],
+      );
+      if (lockRes.rows.length === 0) {
+        throw new UnauthorizedException('Reauthentication challenge has already been consumed or invalidated');
       }
 
       // Mark challenge consumed atomically inside transaction
-      await client.query('UPDATE auth_challenges SET consumed_at = NOW() WHERE challenge_id = $1 OR id = $2', [challenge.challenge_id, challenge.id]);
+      await client.query('UPDATE auth_challenges SET consumed_at = NOW() WHERE id = $1', [challenge.id]);
 
       const userRes = await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [userId]);
       const user = userRes.rows[0];

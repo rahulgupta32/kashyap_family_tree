@@ -10,8 +10,8 @@ describe('Concurrent Migration Initialization Regression (Real PostgreSQL)', () 
   const originalEnv = process.env;
 
   beforeAll(async () => {
-    // Spin up disposable database without running up-front migrations (we will test initial migration run)
-    disposableDb = await createDisposableDatabase('mig_conc');
+    // Spin up disposable database with skipMigrations: true so it starts completely empty
+    disposableDb = await createDisposableDatabase('mig_conc', { skipMigrations: true });
   }, 60000);
 
   afterAll(async () => {
@@ -21,12 +21,16 @@ describe('Concurrent Migration Initialization Regression (Real PostgreSQL)', () 
     }
   }, 30000);
 
-  it('1. Deliberately overlapping migration initializers succeed cleanly without DDL conflicts', async () => {
-    // 1. Create real database service pointing to the empty disposable database
+  it('1. Deliberately overlapping migration initializers succeed cleanly on an empty database without DDL conflicts', async () => {
+    // 1. Connect to the empty disposable database
     const dbService = new DatabaseService();
     await dbService.onModuleInit();
 
-    // 2. Create multiple independent MigrationService instances representing concurrent workers/pods
+    // Assert initial database is empty: schema_migrations table does NOT exist yet
+    const initCheck = await dbService.query("SELECT to_regclass('public.schema_migrations') as tbl;");
+    expect(initCheck.rows[0].tbl).toBeNull();
+
+    // 2. Create multiple independent MigrationService instances representing concurrent worker processes
     const migrationServices = Array.from({ length: 5 }, () => new MigrationService(dbService));
 
     // 3. Fire overlapping concurrent runMigrations calls simultaneously
@@ -40,10 +44,13 @@ describe('Concurrent Migration Initialization Regression (Real PostgreSQL)', () 
 
     // 4. Verify exact application record in schema_migrations: each migration version applied EXACTLY ONCE
     const migrationRows = await dbService.query(
-      'SELECT version, COUNT(*) as cnt FROM schema_migrations GROUP BY version ORDER BY version',
+      'SELECT version, name, COUNT(*) as cnt FROM schema_migrations GROUP BY version, name ORDER BY version',
     );
 
-    expect(migrationRows.rows.length).toBeGreaterThan(0);
+    const expectedVersions = ['000', '001', '002', '003', '004', '005', '006', '007', '008', '009'];
+    const recordedVersions = migrationRows.rows.map((r) => r.version);
+
+    expect(recordedVersions).toEqual(expect.arrayContaining(expectedVersions));
     for (const row of migrationRows.rows) {
       expect(parseInt(row.cnt, 10)).toBe(1);
     }

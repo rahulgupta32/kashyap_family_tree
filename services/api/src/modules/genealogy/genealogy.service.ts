@@ -572,7 +572,7 @@ export class GenealogyService {
             phone_visibility: dto.phoneVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             address_visibility: dto.addressVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             dob_visibility: dto.dobVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
-            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility || PrivacyVisibility.PUBLIC,
+            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             is_minor_protected: dto.isMinorProtected ?? false,
           },
           dto.names.map((n) => ({

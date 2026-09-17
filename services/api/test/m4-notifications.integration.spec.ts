@@ -17,6 +17,7 @@ describe('Milestone 4: Durable Notification Outbox Dispatcher Integration', () =
   let testPersonId: string;
 
   beforeAll(async () => {
+    process.env.ALLOW_SIMULATED_NOTIFICATIONS = 'true';
     isoDb = await createDisposableDatabase('notif');
     await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     process.env.DB_NAME = isoDb.dbName;

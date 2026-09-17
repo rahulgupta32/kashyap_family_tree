@@ -27,7 +27,17 @@ export function getDatabaseHost(): string {
   return process.env.DB_HOST || '127.0.0.1';
 }
 
-export async function createDisposableDatabase(prefix: string, applyMigrationsUpTo?: string): Promise<DisposableDatabase> {
+export async function createDisposableDatabase(
+  prefix: string,
+  applyMigrationsUpToOrOptions?: string | { applyMigrationsUpTo?: string; skipMigrations?: boolean },
+): Promise<DisposableDatabase> {
+  const options =
+    typeof applyMigrationsUpToOrOptions === 'string'
+      ? { applyMigrationsUpTo: applyMigrationsUpToOrOptions }
+      : applyMigrationsUpToOrOptions;
+  const applyMigrationsUpTo = options?.applyMigrationsUpTo;
+  const skipMigrations = options?.skipMigrations === true;
+
   const host = getDatabaseHost();
   const port = parseInt(process.env.DB_PORT || '5434', 10);
   const user = process.env.DB_USER || 'kashyap_user';
@@ -62,9 +72,9 @@ export async function createDisposableDatabase(prefix: string, applyMigrationsUp
     throw new Error(`SAFETY_VIOLATION: Expected exact connection to ${isoDbName}, but got ${currentDb}`);
   }
 
-  // 5. Apply migrations
+  // 5. Apply migrations unless skipMigrations is set
   const migrationsDir = path.resolve(__dirname, '../../../../database/migrations');
-  if (fs.existsSync(migrationsDir)) {
+  if (!skipMigrations && fs.existsSync(migrationsDir)) {
     // Create schema_migrations
     await isoClient.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (

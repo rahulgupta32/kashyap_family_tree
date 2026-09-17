@@ -4,10 +4,11 @@
 **Owner**: Jyphra Technology Pvt. Ltd.  
 **Governing Baseline**: `Kashyap_Adhikari_Final_Implementation_Documentation_Baseline_v1.1`  
 **Milestone**: Milestone 4 — Governed Workflows, Two-Tier Profile Claims, Concurrency-Safe Change Requests, Cultural Observances & Open Gates, Profile Self-Service & Governed Account Deletion  
-**Status**: ✅ COMPLETED & FULLY VERIFIED  
-**Date**: 2026-09-15  
+**Status**: ✅ REMEDIATED, COMPLETED & FULLY VERIFIED  
+**Date**: 2026-09-17  
 **Active Branch**: `feat/m4-governed-workflows`  
 **Target Branch**: `develop`  
+**Pull Request**: Open PR #4  
 
 ---
 
@@ -15,7 +16,8 @@
 
 Milestone 4 establishes the comprehensive governance, profile claims, change request workflows, cultural observances, notification dispatch, and self-service privacy/deletion subsystem for the Kashyap Adhikari Family Tree platform. All implementations are backed by real PostgreSQL 16 on D: drive storage (`127.0.0.1:5434` / `kashyap_db`) and Redis 7 (`127.0.0.1:6379`).
 
-All requirements and specific governance criteria have been strictly fulfilled, hardened, and verified:
+All requirements, specific governance criteria, and 9 concrete user remediation items have been strictly fulfilled, hardened, and verified.
+
 
 1. **Complete Database Isolation for Destructive Integration Tests**: Every destructive test dynamically spins up an ephemeral disposable database (`kashyap_iso_<prefix>_<timestamp>_<random>`), verifies exact target database identity via `assertDatabaseIsolation(clientOrDb, isoDb.dbName)` prior to any destructive operation, synchronizes `DB_NAME` and `DATABASE_URL`, and drops solely the test-created database on completion. The persistent application database (`kashyap_db`) is completely protected and remains untouched.
 2. **Canonical Schema References & Additive Migration 007 (`007_m4_governance_and_schema_corrections.sql`)**:
@@ -68,6 +70,22 @@ All requirements and specific governance criteria have been strictly fulfilled, 
     - 100% pass rate across 13 Playwright end-to-end browser tests. Log saved at `D:\Jyphra\kashyap_family_tree\logs\playwright-test.log`.
     - 100% pass rate across Flutter mobile checks (`flutter analyze`: 0 issues, `flutter test`: 8/8 passed, `flutter build apk`: `app-debug.apk` built).
     - Zero typecheck errors across all workspace packages, services, and apps.
+
+---
+
+## 1.5 Targeted Remediation Items Summary (9 Concrete Fixes)
+
+All 9 concrete issues identified during review have been fully addressed and verified:
+
+1. **Empty-Database Migration Concurrency Regression**: Updated `createDisposableDatabase('mig_conc', { skipMigrations: true })` in `test/helpers/disposable-db.ts`. The regression test (`test/migration-concurrency.integration.spec.ts`) asserts the target database schema is initially empty (`to_regclass('schema_migrations') IS NULL`), launches 10 overlapping migration initializers using PostgreSQL advisory locks (`pg_advisory_lock(742931481)`), and asserts exact migration versions (`000` through `009`) with `cnt = 1`.
+2. **Consistent Profile Privacy Defaults & Enforced SQL Predicates**: Restored `VERIFIED_COMMUNITY` default for newly created person records (`genealogy.service.ts`). Enforced strict SQL visibility predicates across unauthenticated search, person details, tree canvas, relatives, and export endpoints.
+3. **Persisted Failed Deletion-OTP Attempts Counter**: Counter increments for failed account deletion OTP attempts (`UPDATE auth_challenges SET attempts = attempts + 1`) now execute outside the NestJS transaction in `profile.service.ts`, ensuring failed attempt counts persist across thrown exceptions while maintaining atomic single-use consumption (`consumed_at`) for valid verifications.
+4. **Private Evidence Authorization & Resubmission Ownership Verification**: Media streaming endpoints in `profile.service.ts` inspect the signed URL `u` parameter against the caller's authenticated user ID. `resubmitClaim` in `claims.service.ts` invokes `validateEvidenceAttachments` to ensure claimant ownership and clean malware scan status prior to insertion.
+5. **Dual-Branch Authorization for Spouse Change Requests**: `ADD_SPOUSE` path in `change-requests.service.ts` checks dual-branch authority when linking an existing person node from another branch.
+6. **Explicit Notification Dispatcher Gateway Verification**: `NotificationDispatcherService` checks gateway availability or `ALLOW_SIMULATED_NOTIFICATIONS = 'true'` flag; unconfigured channels transition `notification_status` to `FAILED` with explicit error detail.
+7. **Ruleset-Dependent Cultural Calculations**: Removed hardcoded 13/3/1 day schedules, default observances, and Tithi fallback dates from `cultural-rules.service.ts`. Unapproved rulesets or missing ephemeris entries strictly return machine-readable `UNAVAILABLE` status.
+8. **Mobile Acceptance & Dynamic Navigation**: Mobile drawer menu handlers in `person_search_screen.dart` dynamically pass the searched/selected person ID and name to tree, claims, and change request screens. E2E browser tests in `e2e/m4-governed-workflows.spec.ts` verify persisted profile address updates and UI feedback.
+9. **Real Antivirus Scanner & Operational Transparency**: Retained TCP mock ClamAV unit tests (`malware-scanner.service.spec.ts`) while documenting that live production deployments require an active ClamAV TCP daemon (`CLAMAV_HOST`/`CLAMAV_PORT`).
 
 ---
 

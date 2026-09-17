@@ -86,11 +86,18 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
               title: const Text('वंशावली रुख (Family Tree)'),
               onTap: () {
+                final targetId = _results.isNotEmpty ? _results.first.id : null;
+                if (targetId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                  );
+                  return;
+                }
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ReadOnlyTreeScreen(rootPersonId: 'p-101', apiService: widget.apiService),
+                    builder: (_) => ReadOnlyTreeScreen(rootPersonId: targetId, apiService: widget.apiService),
                   ),
                 );
               },
@@ -99,11 +106,22 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.verified_user, color: Colors.blue),
               title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),
               onTap: () {
+                final targetPerson = _results.isNotEmpty ? _results.first : null;
+                if (targetPerson == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                  );
+                  return;
+                }
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ClaimProfileScreen(personId: 'p-101', personName: 'राम अधिकारी', apiService: widget.apiService),
+                    builder: (_) => ClaimProfileScreen(
+                      personId: targetPerson.id,
+                      personName: targetPerson.primaryNameNepali,
+                      apiService: widget.apiService,
+                    ),
                   ),
                 );
               },
@@ -112,11 +130,22 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.edit_document, color: Colors.amber),
               title: const Text('संशोधन अनुरोध (Change Requests)'),
               onTap: () {
+                final targetPerson = _results.isNotEmpty ? _results.first : null;
+                if (targetPerson == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                  );
+                  return;
+                }
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ChangeRequestScreen(personId: 'p-101', personName: 'राम अधिकारी', apiService: widget.apiService),
+                    builder: (_) => ChangeRequestScreen(
+                      personId: targetPerson.id,
+                      personName: targetPerson.primaryNameNepali,
+                      apiService: widget.apiService,
+                    ),
                   ),
                 );
               },

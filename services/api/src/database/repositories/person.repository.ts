@@ -339,21 +339,27 @@ export class PersonRepository {
       conditions.push('p.is_archived = FALSE');
     }
 
-    // Exclude profile_visibility = 'PRIVATE' unless viewer is the person or authorized admin
+    // Profile visibility enforcement across search:
+    // Unauthenticated guest: strictly ONLY sees PUBLIC profiles
+    // Authenticated member: sees PUBLIC, VERIFIED_COMMUNITY, IMMEDIATE_FAMILY, their own claimed record, or branch admin scope
     if (!isSuperAdmin) {
       if (viewer?.userId) {
+        const isVerified = Boolean(viewer.isVerifiedMember || viewer.roles?.includes('VERIFIED_MEMBER') || viewer.roles?.includes('SUPER_ADMIN'));
+        const allowedVisibilities = isVerified ? "('PUBLIC', 'VERIFIED_COMMUNITY', 'IMMEDIATE_FAMILY')" : "('PUBLIC')";
         if (branchAdminBranches.length > 0) {
           params.push(branchAdminBranches);
           const bParam = paramIdx++;
           params.push(viewer.userId);
           const uParam = paramIdx++;
-          conditions.push(`(p.profile_visibility IS DISTINCT FROM 'PRIVATE' OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam}))`);
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam}))`);
         } else {
           params.push(viewer.userId);
-          conditions.push(`(p.profile_visibility IS DISTINCT FROM 'PRIVATE' OR p.claimed_user_id = $${paramIdx++})`);
+          const uParam = paramIdx++;
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam})`);
         }
       } else {
-        conditions.push(`p.profile_visibility IS DISTINCT FROM 'PRIVATE'`);
+        // Unauthenticated guests strictly only see PUBLIC profiles
+        conditions.push(`p.profile_visibility = 'PUBLIC'`);
       }
     }
 

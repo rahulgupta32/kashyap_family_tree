@@ -43,12 +43,13 @@ export default function ProfileAdminPage() {
     try {
       const data = await ApiClient.getProfile(accessToken);
       setProfile(data);
-      if (data.person) {
+      const p = data?.person || data?.personDetail || data;
+      if (p) {
         setProfileForm({
-          occupation: data.person.occupation || '',
-          education: data.person.education || '',
-          biography: data.person.biography || '',
-          currentAddress: data.person.currentAddress || '',
+          occupation: p.occupation || '',
+          education: p.education || '',
+          biography: p.biography || '',
+          currentAddress: p.currentAddress || p.current_address || '',
         });
       }
       if (data.privacySettings) {
@@ -69,9 +70,17 @@ export default function ProfileAdminPage() {
     setSaving(true);
     setMessage(null);
     try {
-      await ApiClient.updateProfile(accessToken, profileForm);
+      const updated = await ApiClient.updateProfile(accessToken, profileForm);
+      if (updated?.person) {
+        setProfile(updated);
+        setProfileForm({
+          occupation: updated.person.occupation || '',
+          education: updated.person.education || '',
+          biography: updated.person.biography || '',
+          currentAddress: updated.person.currentAddress || updated.person.current_address || '',
+        });
+      }
       setMessage({ type: 'success', text: 'व्यक्तिगत विवरण सफलतापूर्वक सुरक्षित गरियो ।' });
-      await loadProfile();
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
     } finally {

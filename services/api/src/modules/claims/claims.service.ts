@@ -439,6 +439,7 @@ export class ClaimsService {
       const updatedClaim = updatedRes.rows[0];
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
+        await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description)

@@ -150,10 +150,11 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
         moolGhar: overrides.moolGhar || 'कास्की',
         justificationReason: overrides.justificationReason || 'प्रशासनिक परीक्षण दर्ता - नयाँ व्यक्ति प्रविष्टि',
         allowDuplicateOverride: overrides.allowDuplicateOverride !== undefined ? overrides.allowDuplicateOverride : true,
+        profileVisibility: overrides.profileVisibility || PrivacyVisibility.PUBLIC,
         phoneVisibility: PrivacyVisibility.PUBLIC,
         addressVisibility: PrivacyVisibility.PUBLIC,
         dobVisibility: overrides.dobVisibility || PrivacyVisibility.PUBLIC,
-      },
+      } as any,
       {
         id: superAdminUser.id,
         roles: [Role.SUPER_ADMIN],

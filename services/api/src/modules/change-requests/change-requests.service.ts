@@ -777,6 +777,27 @@ export class ChangeRequestsService {
           throw new BadRequestException({ errorCode: ErrorCode.SELF_LINK_PROHIBITED, message: 'Self-link prohibited' });
         }
 
+        // Enforce dual-branch authorization if existing spouse belongs to a different branch
+        const spouseRes = await client.query('SELECT * FROM persons WHERE id = $1', [spouseId]);
+        const spousePerson = spouseRes.rows[0];
+        if (spousePerson && spousePerson.branch_id && spousePerson.branch_id !== targetPerson.branch_id) {
+          if (!reviewer.roles.includes(Role.SUPER_ADMIN)) {
+            const reviewerBranches = (reviewer.roleAssignments || [])
+              .filter((ra) => ra.role === Role.BRANCH_ADMIN)
+              .map((ra) => ra.branchId);
+
+            const hasSource = reviewerBranches.includes(targetPerson.branch_id);
+            const hasSpouseBranch = reviewerBranches.includes(spousePerson.branch_id);
+
+            if (!hasSource || !hasSpouseBranch) {
+              throw new ForbiddenException({
+                errorCode: ErrorCode.BRANCH_MISMATCH,
+                message: 'Cross-branch spouse linking requires administrative authority over both branches',
+              });
+            }
+          }
+        }
+
         const spouseProvenance = {
           changeRequestId: id,
           approvedBy: reviewer.id,

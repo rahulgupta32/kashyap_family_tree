@@ -76,20 +76,23 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     await page.goto('/profile');
     await expect(page.getByRole('heading', { name: /मेरो प्रोफाइल तथा गोपनीयता|Profile & Privacy Settings/i })).toBeVisible();
 
-    // Verify Personal Details form fields
+    // Fill Personal Details form fields
     const currentAddressInput = page.locator('input[placeholder*="पोखरा"]');
-    if (await currentAddressInput.isVisible()) {
-      await currentAddressInput.fill('काठमाडौँ, बागमती प्रदेश');
-      const saveProfileBtn = page.locator('button:has-text("विवरण सुरक्षित गर्नुहोस्")');
-      await saveProfileBtn.click();
-    }
+    await expect(currentAddressInput).toBeVisible();
+    await currentAddressInput.fill('काठमाडौँ, बागमती प्रदेश');
 
-    // Verify Granular Privacy dropdowns
+    const saveProfileBtn = page.locator('button:has-text("विवरण सुरक्षित गर्नुहोस्")');
+    await saveProfileBtn.click();
+
+    // Assert actual success message
+    await expect(page.locator('text=व्यक्तिगत विवरण सफलतापूर्वक सुरक्षित गरियो')).toBeVisible();
+
+    // Verify Granular Privacy controls
     await expect(page.locator('text=प्रोफाइल दृश्यता (Profile Visibility)')).toBeVisible();
     await expect(page.locator('text=सम्पर्क फोन नम्बर (Contact Phone)')).toBeVisible();
     await expect(page.locator('text=ठेगाना दृश्यता (Address Visibility)')).toBeVisible();
 
-    // Verify Notification preferences checkboxes
+    // Verify Notification preferences
     await expect(page.locator('text=मोबाइल पुश सूचना (Push Notifications)')).toBeVisible();
     await expect(page.locator('text=एसएमएस सूचना (SMS Notifications)')).toBeVisible();
   });

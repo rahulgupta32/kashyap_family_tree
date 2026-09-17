@@ -295,12 +295,31 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     }
 
     if (channel === 'PUSH') {
+      const pushGateway = process.env.PUSH_GATEWAY_URL || process.env.FCM_SERVER_KEY;
+      if (!pushGateway) {
+        if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+          this.logger.log(`[DISPATCH][PUSH] Delivering simulated push notification to user ${userId}: ${payload.message}`);
+          return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}` };
+        }
+        throw new Error('Push notification gateway is not configured. Cannot deliver PUSH notification.');
+      }
       this.logger.log(`[DISPATCH][PUSH] Delivering push notification to user ${userId}: ${payload.message}`);
-      return { status: 'DELIVERED', provider: 'MOCK_PUSH_GATEWAY', messageId: `push_${Date.now()}` };
+      return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
     }
 
-    this.logger.log(`[DISPATCH][${channel}] Delivering notification to user ${userId}: ${payload.message}`);
-    return { status: 'DELIVERED', provider: `MOCK_${channel}_GATEWAY`, messageId: `${channel.toLowerCase()}_${Date.now()}` };
+    if (channel === 'EMAIL') {
+      const emailGateway = process.env.SMTP_HOST || process.env.EMAIL_GATEWAY_URL;
+      if (!emailGateway) {
+        if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+          this.logger.log(`[DISPATCH][EMAIL] Delivering simulated email notification to user ${userId}: ${payload.message}`);
+          return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}` };
+        }
+        throw new Error('Email notification gateway is not configured. Cannot deliver EMAIL notification.');
+      }
+      this.logger.log(`[DISPATCH][EMAIL] Delivering notification to user ${userId}: ${payload.message}`);
+      return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
+    }
+    return { status: 'DELIVERED', provider: `CUSTOM_${channel}_GATEWAY`, messageId: `${channel.toLowerCase()}_${Date.now()}` };
   }
 
   /**

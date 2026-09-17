@@ -347,8 +347,8 @@ export class CulturalRulesService {
     const path = await this.findShortestPathBfs(dto.observerPersonId, dto.deceasedPersonId);
     const rulesConfig = ruleset.rules_data || {};
 
-    let days = 13;
-    let indicationClass = '13_DAYS';
+    let indicationClass: string;
+    let ruleKey: string;
 
     if (path) {
       const isPurelyPatrilineal = path.every((s) => s === 'F' || s === 'S' || s === 'B');
@@ -356,38 +356,48 @@ export class CulturalRulesService {
 
       if (isPurelyPatrilineal) {
         if (degree <= 7) {
-          days = rulesConfig['SAPINDA_7_GEN']?.days || 13;
+          ruleKey = 'SAPINDA_7_GEN';
           indicationClass = '13_DAYS';
         } else if (degree <= 10) {
-          days = rulesConfig['SAMANODAKA_10_GEN']?.days || 3;
+          ruleKey = 'SAMANODAKA_10_GEN';
           indicationClass = '3_DAYS';
         } else {
-          days = rulesConfig['REMOTE_PATRILINEAL']?.days || 1;
+          ruleKey = 'REMOTE_PATRILINEAL';
           indicationClass = '1_DAY';
         }
       } else {
-        days = rulesConfig['AFFINE_RELATION']?.days || 3;
+        ruleKey = 'AFFINE_RELATION';
         indicationClass = '3_DAYS';
       }
     } else {
-      days = rulesConfig['NOT_APPLICABLE']?.days || 0;
+      ruleKey = 'NOT_APPLICABLE';
       indicationClass = 'NOT_APPLICABLE';
+    }
+
+    const matchedRule = rulesConfig[ruleKey];
+    if (!matchedRule || matchedRule.days === undefined || matchedRule.days === null) {
+      return {
+        status: 'UNAVAILABLE',
+        errorCode: ErrorCode.RULESET_NOT_APPROVED,
+        message: `Missing approved rule configuration for ${ruleKey} (Open Gate HG-003).`,
+      };
+    }
+
+    const classConfig = rulesConfig[indicationClass] || matchedRule;
+    if (!classConfig.observances || !classConfig.observancesNepali) {
+      return {
+        status: 'UNAVAILABLE',
+        errorCode: ErrorCode.RULESET_NOT_APPROVED,
+        message: `Missing approved observances for ${indicationClass} (Open Gate HG-003).`,
+      };
     }
 
     return {
       status: 'AVAILABLE',
       indicationClass,
-      daysOfImpurity: days,
-      prescribedObservances: rulesConfig[indicationClass]?.observances || [
-        'Mourning attire',
-        'Salt restriction',
-        'Ritual purification',
-      ],
-      prescribedObservancesNepali: rulesConfig[indicationClass]?.observancesNepali || [
-        'सेतो वस्त्र धारण',
-        'नुन बन्देज',
-        'शुद्धिकरण',
-      ],
+      daysOfImpurity: matchedRule.days,
+      prescribedObservances: classConfig.observances,
+      prescribedObservancesNepali: classConfig.observancesNepali,
     };
   }
 
@@ -407,7 +417,7 @@ export class CulturalRulesService {
     const ephemeris = ruleset.rules_data?.ephemeris_table || ruleset.rules_data?.ephemeris || {};
     const key = `${dto.yearBs}_${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
     const fallbackKey = `${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
-    const day = ephemeris[key] ?? ephemeris[fallbackKey] ?? ruleset.rules_data?.default_day;
+    const day = ephemeris[key] ?? ephemeris[fallbackKey];
 
     if (!day) {
       return {
