@@ -97,7 +97,7 @@ describe('Milestone 4: Durable Notification Outbox Dispatcher Integration', () =
     const results = await dispatcherService.processOutboxBatch(10);
     expect(results.length).toBe(1);
     expect(results[0].channel).toBe('PUSH'); // Since sms_enabled = false
-    expect(results[0].status).toBe('SENT');
+    expect(results[0].status).toBe('SIMULATED');
 
     // 3. Verify audit_outbox independent notification_status was marked PROCESSED
     const checkOutbox = await db.query('SELECT notification_status, notification_processed_at FROM audit_outbox WHERE id = $1', [outboxId]);
@@ -109,7 +109,7 @@ describe('Milestone 4: Durable Notification Outbox Dispatcher Integration', () =
     expect(dispatches.rows.length).toBe(1);
     expect(dispatches.rows[0].recipient_user_id).toBe(testUserId);
     expect(dispatches.rows[0].channel).toBe('PUSH');
-    expect(dispatches.rows[0].delivery_status).toBe('SENT');
+    expect(dispatches.rows[0].delivery_status).toBe('SIMULATED');
   });
 
   it('2. should be strictly idempotent on reprocessing same record', async () => {

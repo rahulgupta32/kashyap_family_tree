@@ -21,6 +21,7 @@ class PersonSearchScreen extends StatefulWidget {
 class _PersonSearchScreenState extends State<PersonSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<PersonSummary> _results = [];
+  PersonSummary? _selectedPerson;
   bool _isLoading = false;
   String? _error;
 
@@ -86,7 +87,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
               title: const Text('वंशावली रुख (Family Tree)'),
               onTap: () {
-                final targetId = _results.isNotEmpty ? _results.first.id : null;
+                final targetId = _selectedPerson?.id ?? (_results.isNotEmpty ? _results.first.id : null);
                 if (targetId == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
@@ -106,7 +107,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.verified_user, color: Colors.blue),
               title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),
               onTap: () {
-                final targetPerson = _results.isNotEmpty ? _results.first : null;
+                final targetPerson = _selectedPerson ?? (_results.isNotEmpty ? _results.first : null);
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
@@ -130,7 +131,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.edit_document, color: Colors.amber),
               title: const Text('संशोधन अनुरोध (Change Requests)'),
               onTap: () {
-                final targetPerson = _results.isNotEmpty ? _results.first : null;
+                final targetPerson = _selectedPerson ?? (_results.isNotEmpty ? _results.first : null);
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
@@ -236,10 +237,15 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                             itemCount: _results.length,
                             itemBuilder: (context, index) {
                               final person = _results[index];
+                              final isSelected = _selectedPerson?.id == person.id;
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 8),
+                                color: isSelected ? AppTheme.saffron.withValues(alpha: 0.1) : null,
                                 child: ListTile(
                                   onTap: () {
+                                    setState(() {
+                                      _selectedPerson = person;
+                                    });
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(

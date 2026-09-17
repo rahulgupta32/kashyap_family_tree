@@ -160,7 +160,7 @@ export class PersonRepository {
           data.phone_visibility || 'VERIFIED_COMMUNITY',
           data.address_visibility || 'VERIFIED_COMMUNITY',
           data.dob_visibility || 'VERIFIED_COMMUNITY',
-          (data as any).profile_visibility || 'PUBLIC',
+          (data as any).profile_visibility || 'VERIFIED_COMMUNITY',
           data.is_minor_protected ?? false,
           data.is_claimed ?? false,
           data.claimed_user_id || null,
@@ -341,21 +341,27 @@ export class PersonRepository {
 
     // Profile visibility enforcement across search:
     // Unauthenticated guest: strictly ONLY sees PUBLIC profiles
-    // Authenticated member: sees PUBLIC, VERIFIED_COMMUNITY, IMMEDIATE_FAMILY, their own claimed record, or branch admin scope
+    // Authenticated member: sees PUBLIC, VERIFIED_COMMUNITY, their own claimed record, or branch admin scope; IMMEDIATE_FAMILY requires family relation
     if (!isSuperAdmin) {
       if (viewer?.userId) {
         const isVerified = Boolean(viewer.isVerifiedMember || viewer.roles?.includes('VERIFIED_MEMBER') || viewer.roles?.includes('SUPER_ADMIN'));
-        const allowedVisibilities = isVerified ? "('PUBLIC', 'VERIFIED_COMMUNITY', 'IMMEDIATE_FAMILY')" : "('PUBLIC')";
+        const allowedVisibilities = isVerified ? "('PUBLIC', 'VERIFIED_COMMUNITY')" : "('PUBLIC')";
+        params.push(viewer.userId);
+        const uParam = paramIdx++;
+
+        let immFamilyCond = '';
+        if (viewer.personId) {
+          params.push(viewer.personId);
+          const pParam = paramIdx++;
+          immFamilyCond = ` OR (p.profile_visibility = 'IMMEDIATE_FAMILY' AND (p.id = $${pParam} OR p.id IN (SELECT spouse_id FROM spouse_links WHERE person_id = $${pParam} UNION SELECT person_id FROM spouse_links WHERE spouse_id = $${pParam} UNION SELECT parent_id FROM parent_links WHERE child_id = $${pParam} UNION SELECT child_id FROM parent_links WHERE parent_id = $${pParam})))`;
+        }
+
         if (branchAdminBranches.length > 0) {
           params.push(branchAdminBranches);
           const bParam = paramIdx++;
-          params.push(viewer.userId);
-          const uParam = paramIdx++;
-          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam}))`);
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam})${immFamilyCond})`);
         } else {
-          params.push(viewer.userId);
-          const uParam = paramIdx++;
-          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam})`);
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam}${immFamilyCond})`);
         }
       } else {
         // Unauthenticated guests strictly only see PUBLIC profiles

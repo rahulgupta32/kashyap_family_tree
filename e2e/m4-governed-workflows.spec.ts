@@ -7,6 +7,9 @@ async function loginAsSuperAdmin(page: any) {
   await page.request.post(`${API_BASE}/auth/test-clear-cooldown`, {
     data: { phoneNumber: adminPhone },
   });
+  await page.request.post(`${API_BASE}/auth/test-ensure-linked-person`, {
+    data: { phoneNumber: adminPhone },
+  });
 
   await page.goto('/login');
   await page.fill('input[type="tel"]', adminPhone);
@@ -75,6 +78,7 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
   test('4. Member Profile, Personal Details & Granular Privacy Settings (/profile)', async ({ page }) => {
     await page.goto('/profile');
     await expect(page.getByRole('heading', { name: /मेरो प्रोफाइल तथा गोपनीयता|Profile & Privacy Settings/i })).toBeVisible();
+    await page.waitForTimeout(1000);
 
     // Fill Personal Details form fields
     const currentAddressInput = page.locator('input[placeholder*="पोखरा"]');
@@ -86,6 +90,13 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
 
     // Assert actual success message
     await expect(page.locator('text=व्यक्तिगत विवरण सफलतापूर्वक सुरक्षित गरियो')).toBeVisible();
+
+    // Reload page to verify backend persistence (Item 7 acceptance requirement)
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /मेरो प्रोफाइल तथा गोपनीयता|Profile & Privacy Settings/i })).toBeVisible();
+    await page.waitForTimeout(1000);
+    const reloadedAddressInput = page.locator('input[placeholder*="पोखरा"]');
+    await expect(reloadedAddressInput).toHaveValue('काठमाडौँ, बागमती प्रदेश');
 
     // Verify Granular Privacy controls
     await expect(page.locator('text=प्रोफाइल दृश्यता (Profile Visibility)')).toBeVisible();

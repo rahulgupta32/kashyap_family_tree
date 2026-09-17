@@ -145,9 +145,10 @@ export class ClaimsController {
     return this.claimsService.withdrawClaim(id, user.id);
   }
   @Get('evidence/:assetId')
+  @UseGuards(JwtAuthGuard)
   async streamEvidence(
+    @CurrentUser() viewer: AuthenticatedUser,
     @Param('assetId') assetId: string,
-    @CurrentUser() viewer?: AuthenticatedUser,
     @Query('user') queryUser?: string,
     @Query('u') queryU?: string,
     @Query('expires') queryExpires?: string,

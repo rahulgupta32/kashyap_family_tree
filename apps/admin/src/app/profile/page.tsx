@@ -6,7 +6,7 @@ import { ApiClient } from '../../lib/api-client';
 import { UpdateProfileDto, PrivacySettingsDto, VisibilityScope } from '@kashyap/contracts';
 
 export default function ProfileAdminPage() {
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, refreshSession, isLoading } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,11 +34,13 @@ export default function ProfileAdminPage() {
   });
 
   useEffect(() => {
+    if (isLoading) return;
     loadProfile();
-  }, [accessToken]);
+  }, [accessToken, isLoading]);
 
   async function loadProfile() {
-    if (!accessToken) return;
+    if (isLoading || !accessToken) return;
+
     setLoading(true);
     try {
       const data = await ApiClient.getProfile(accessToken);
@@ -66,11 +68,12 @@ export default function ProfileAdminPage() {
   }
 
   async function saveProfile() {
-    if (!accessToken) return;
+    const activeToken = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('kashyap_admin_access_token') : null);
+    if (!activeToken) return;
     setSaving(true);
     setMessage(null);
     try {
-      const updated = await ApiClient.updateProfile(accessToken, profileForm);
+      const updated = await ApiClient.updateProfile(activeToken, profileForm);
       if (updated?.person) {
         setProfile(updated);
         setProfileForm({
@@ -88,11 +91,12 @@ export default function ProfileAdminPage() {
     }
   }
   async function savePrivacy() {
-    if (!accessToken) return;
+    const activeToken = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('kashyap_admin_access_token') : null);
+    if (!activeToken) return;
     setSaving(true);
     setMessage(null);
     try {
-      await ApiClient.updatePrivacySettings(accessToken, privacy);
+      await ApiClient.updatePrivacySettings(activeToken, privacy);
       setMessage({ type: 'success', text: 'गोपनीयता सेटिङहरू सफलतापूर्वक अद्यावधिक गरियो ।' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });
@@ -102,11 +106,12 @@ export default function ProfileAdminPage() {
   }
 
   async function savePreferences() {
-    if (!accessToken) return;
+    const activeToken = accessToken || (typeof window !== 'undefined' ? localStorage.getItem('kashyap_admin_access_token') : null);
+    if (!activeToken) return;
     setSaving(true);
     setMessage(null);
     try {
-      await ApiClient.updateNotificationPreferences(accessToken, preferences);
+      await ApiClient.updateNotificationPreferences(activeToken, preferences);
       setMessage({ type: 'success', text: 'सूचना प्राथमिकताहरू सफलतापूर्वक सुरक्षित गरियो ।' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message });

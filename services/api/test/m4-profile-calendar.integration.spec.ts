@@ -96,6 +96,27 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
       expect(me.preferences).toBeDefined();
     });
 
+    it('1b. should update unlinked account profile metadata without creating synthetic person or altering claim links', async () => {
+      const pCountBefore = await db.query('SELECT COUNT(*) FROM persons');
+      const claimsBefore = await db.query('SELECT COUNT(*) FROM profile_claims');
+
+      await profileService.updateProfile(otherUserId, {
+        currentAddress: 'काठमाडौँ, बागमती प्रदेश',
+        occupation: 'इन्जिनियर',
+      });
+
+      const pCountAfter = await db.query('SELECT COUNT(*) FROM persons');
+      const claimsAfter = await db.query('SELECT COUNT(*) FROM profile_claims');
+
+      expect(pCountAfter.rows[0].count).toBe(pCountBefore.rows[0].count);
+      expect(claimsAfter.rows[0].count).toBe(claimsBefore.rows[0].count);
+
+      const me = await profileService.getMe(otherUserId);
+      expect(me.personId).toBeUndefined();
+      expect(me.person?.currentAddress).toBe('काठमाडौँ, बागमती प्रदेश');
+      expect(me.person?.occupation).toBe('इन्जिनियर');
+    });
+
     it('2. should update notification preferences', async () => {
       const updated = await profileService.updateNotificationPreferences(testUserId, {
         pushEnabled: false,
@@ -451,6 +472,52 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
       await expect(
         profileService.deleteAccount(testUserId, { otp: deletionChallenge.otp }),
       ).rejects.toThrow('already been consumed (single-use policy)');
+    });
+
+    it('17. should reject anonymous media streaming requests without an authenticated viewer', async () => {
+      const pngBuffer = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.alloc(64, 0x20),
+      ]);
+      const photo = await profileService.uploadPhoto(testUserId, 'image/png', pngBuffer.toString('base64'));
+
+      await expect(
+        profileService.getMediaAsset(photo.assetId, undefined),
+      ).rejects.toThrow('Authentication required');
+    });
+
+    it('18. should update unlinked user account profile without creating genealogy records', async () => {
+      const pCountBeforeRes = await db.query('SELECT COUNT(*)::int as count FROM persons');
+      const pCountBefore = pCountBeforeRes.rows[0].count;
+
+      const profile = await profileService.updateProfile(otherUserId, {
+        preferences: { pushEnabled: false, smsEnabled: true, emailEnabled: true },
+      });
+
+      expect(profile.id).toBe(otherUserId);
+      expect(profile.personId).toBeUndefined();
+
+      const pCountAfterRes = await db.query('SELECT COUNT(*)::int as count FROM persons');
+      const pCountAfter = pCountAfterRes.rows[0].count;
+      expect(pCountAfter).toBe(pCountBefore);
+    });
+
+    it('19. should safely handle concurrent OTP verifications under atomic SELECT FOR UPDATE locks', async () => {
+      const newChal = await profileService.requestAccountDeletionChallenge(otherUserId);
+      expect(newChal.otp).toBeDefined();
+
+      // Launch 2 overlapping deleteAccount attempts concurrently
+      const results = await Promise.allSettled([
+        profileService.deleteAccount(otherUserId, { otp: newChal.otp }),
+        profileService.deleteAccount(otherUserId, { otp: newChal.otp }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly 1 attempt should succeed and 1 should fail with single-use error
+      expect(fulfilled.length).toBe(1);
+      expect(rejected.length).toBe(1);
     });
   });
 });

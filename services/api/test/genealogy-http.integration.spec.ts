@@ -1001,6 +1001,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           education: 'प्राथमिक',
           address_visibility: PrivacyVisibility.PRIVATE,
           dob_visibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+          profile_visibility: PrivacyVisibility.PUBLIC,
           is_minor_protected: true,
           is_claimed: true,
           claimed_user_id: selfUser.id,
@@ -1113,6 +1114,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           living_status: LivingStatus.LIVING,
           generation: 4,
           is_archived: false,
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}व्यक्ति${i}`, last_name: 'अधिकारी', full_name: `${searchPrefix}व्यक्ति${i} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Person${i}`, last_name: 'Adhikari', full_name: `${searchPrefix}Person${i} Adhikari`, is_primary: false },
@@ -1128,6 +1130,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           generation: 4,
           is_archived: true,
           archive_reason: 'Archived duplicate fixture for search testing',
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}आर्काइभ${j}`, last_name: 'अधिकारी', full_name: `${searchPrefix}आर्काइभ${j} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Archive${j}`, last_name: 'Adhikari', full_name: `${searchPrefix}Archive${j} Adhikari`, is_primary: false },
@@ -1213,6 +1216,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Alice`, last_name: 'Adhikari', full_name: `${engPrefix}_Alice Adhikari`, is_primary: true },
       ]);
@@ -1225,6 +1229,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Bob`, last_name: 'Adhikari', full_name: `${engPrefix}_Bob Adhikari`, is_primary: true },
         { language: 'ne', first_name: 'बब', last_name: 'अधिकारी', full_name: 'बब अधिकारी', is_primary: false },
@@ -1238,6 +1243,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'ne', first_name: 'क्यारोल', last_name: 'अधिकारी', full_name: 'क्यारोल अधिकारी', is_primary: true },
         { language: 'en', first_name: `${engPrefix}_Carol`, last_name: 'Adhikari', full_name: `${engPrefix}_Carol Adhikari`, is_primary: false },

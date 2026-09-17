@@ -374,11 +374,49 @@ export class PrivacyEngineService {
    * Filters tree nodes recursively for viewer privacy
    */
   public filterTreeNode(node: TreeNodeDto, viewer?: ViewerContext): TreeNodeDto {
+    const isVisible = this.isRecordVisible({
+      id: node.id,
+      is_archived: (node as any).isArchived,
+      profile_visibility: (node as any).profileVisibility,
+      claimed_user_id: (node as any).claimedByUserId,
+      branch_id: (node as any).branchId,
+    }, viewer);
+
     const isMinor = this.isMinorOrUncertainAge({
       isMinorProtected: false,
       livingStatus: node.livingStatus,
     });
     const isAdmin = this.isAuthorizedAdmin(viewer);
+
+    const filteredSpouses = (node.spouses || [])
+      .filter((s) => this.isRecordVisible({ id: s.id, is_archived: (s as any).isArchived, profile_visibility: (s as any).profileVisibility, claimed_user_id: (s as any).claimedByUserId, branch_id: (s as any).branchId }, viewer))
+      .map((s) => this.filterTreeNode(s, viewer));
+
+    const filteredChildren = (node.children || [])
+      .filter((c) => this.isRecordVisible({ id: c.id, is_archived: (c as any).isArchived, profile_visibility: (c as any).profileVisibility, claimed_user_id: (c as any).claimedByUserId, branch_id: (c as any).branchId }, viewer))
+      .map((c) => this.filterTreeNode(c, viewer));
+
+    const filteredAncestors = (node.ancestors || [])
+      .filter((a) => this.isRecordVisible({ id: a.id, is_archived: (a as any).isArchived, profile_visibility: (a as any).profileVisibility, claimed_user_id: (a as any).claimedByUserId, branch_id: (a as any).branchId }, viewer))
+      .map((a) => this.filterTreeNode(a, viewer));
+
+    if (!isVisible && !isAdmin) {
+      return {
+        id: node.id,
+        nameNepali: 'गोप्य सदस्य',
+        nameEnglish: 'Private Member',
+        gender: node.gender,
+        generation: node.generation,
+        livingStatus: node.livingStatus,
+        isClaimed: false,
+        avatarUrl: undefined,
+        spouses: [],
+        children: [],
+        ancestors: [],
+        hasMoreAncestors: false,
+        hasMoreDescendants: false,
+      };
+    }
 
     return {
       id: node.id,
@@ -389,9 +427,9 @@ export class PrivacyEngineService {
       livingStatus: node.livingStatus,
       isClaimed: node.isClaimed,
       avatarUrl: isMinor && !isAdmin ? undefined : node.avatarUrl,
-      spouses: (node.spouses || []).map((s) => this.filterTreeNode(s, viewer)),
-      children: (node.children || []).map((c) => this.filterTreeNode(c, viewer)),
-      ancestors: (node.ancestors || []).map((a) => this.filterTreeNode(a, viewer)),
+      spouses: filteredSpouses,
+      children: filteredChildren,
+      ancestors: filteredAncestors,
       hasMoreAncestors: node.hasMoreAncestors,
       hasMoreDescendants: node.hasMoreDescendants,
     };

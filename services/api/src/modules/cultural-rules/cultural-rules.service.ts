@@ -354,20 +354,23 @@ export class CulturalRulesService {
       const isPurelyPatrilineal = path.every((s) => s === 'F' || s === 'S' || s === 'B');
       const degree = path.length;
 
+      const sapindaMax = rulesConfig.sapindaMaxDegree ?? 7;
+      const samanodakaMax = rulesConfig.samanodakaMaxDegree ?? 10;
+
       if (isPurelyPatrilineal) {
-        if (degree <= 7) {
-          ruleKey = 'SAPINDA_7_GEN';
-          indicationClass = '13_DAYS';
-        } else if (degree <= 10) {
-          ruleKey = 'SAMANODAKA_10_GEN';
-          indicationClass = '3_DAYS';
+        if (degree <= sapindaMax) {
+          ruleKey = rulesConfig.SAPINDA ? 'SAPINDA' : 'SAPINDA_7_GEN';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'SAPINDA_OBSERVANCE';
+        } else if (degree <= samanodakaMax) {
+          ruleKey = rulesConfig.SAMANODAKA ? 'SAMANODAKA' : 'SAMANODAKA_10_GEN';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'SAMANODAKA_OBSERVANCE';
         } else {
           ruleKey = 'REMOTE_PATRILINEAL';
-          indicationClass = '1_DAY';
+          indicationClass = rulesConfig[ruleKey]?.indicationClass || 'REMOTE_PATRILINEAL_OBSERVANCE';
         }
       } else {
         ruleKey = 'AFFINE_RELATION';
-        indicationClass = '3_DAYS';
+        indicationClass = rulesConfig[ruleKey]?.indicationClass || 'AFFINE_OBSERVANCE';
       }
     } else {
       ruleKey = 'NOT_APPLICABLE';
@@ -394,7 +397,7 @@ export class CulturalRulesService {
 
     return {
       status: 'AVAILABLE',
-      indicationClass,
+      indicationClass: matchedRule.indicationClass || indicationClass || 'CUSTOM_OBSERVANCE',
       daysOfImpurity: matchedRule.days,
       prescribedObservances: classConfig.observances,
       prescribedObservancesNepali: classConfig.observancesNepali,
@@ -416,8 +419,7 @@ export class CulturalRulesService {
 
     const ephemeris = ruleset.rules_data?.ephemeris_table || ruleset.rules_data?.ephemeris || {};
     const key = `${dto.yearBs}_${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
-    const fallbackKey = `${dto.monthBs}_${dto.paksha.toUpperCase()}_${dto.tithiNumber}`;
-    const day = ephemeris[key] ?? ephemeris[fallbackKey];
+    const day = ephemeris[key];
 
     if (!day) {
       return {

@@ -347,4 +347,15 @@ export class AuthController {
     await this.authService.clearCooldownForTest(normalized);
     return { success: true, phoneNumber: normalized };
   }
+
+  @Post('test-ensure-linked-person')
+  @ApiOperation({ summary: 'Ensure test user has a linked person record in test environment' })
+  async testEnsureLinkedPerson(@Body() body: { phoneNumber: string }) {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new NotFoundException();
+    }
+    const normalized = normalizeNepaliPhone(body.phoneNumber);
+    await this.authService.ensureLinkedPersonForTest(normalized);
+    return { success: true, phoneNumber: normalized };
+  }
 }

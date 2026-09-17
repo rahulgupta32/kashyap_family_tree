@@ -82,7 +82,11 @@ export class ProfileService {
 
     let personDetail: any = null;
     if (user.person_id) {
-      const person = await this.personRepo.findById(user.person_id);
+      let person = await this.personRepo.findById(user.person_id);
+      if (!person) {
+        const resolved = await this.personRepo.resolveCanonicalPerson(user.person_id);
+        person = resolved.person;
+      }
       if (person) {
         const names = await this.personRepo.findNamesByPersonId(person.id);
         const primaryNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name || names[0]?.full_name;
@@ -105,6 +109,21 @@ export class ProfileService {
           biography: person.biography,
         };
       }
+    }
+
+    if (!personDetail) {
+      const rawUnlinked = typeof user.unlinked_profile === 'string'
+        ? JSON.parse(user.unlinked_profile)
+        : (user.unlinked_profile || {});
+      personDetail = {
+        primaryNameNepali: rawUnlinked.primaryNameNepali || '',
+        primaryNameEnglish: rawUnlinked.primaryNameEnglish || '',
+        currentAddress: rawUnlinked.currentAddress || rawUnlinked.current_address || '',
+        current_address: rawUnlinked.currentAddress || rawUnlinked.current_address || '',
+        occupation: rawUnlinked.occupation || '',
+        education: rawUnlinked.education || '',
+        biography: rawUnlinked.biography || '',
+      };
     }
 
     const prefRes = await this.db.query('SELECT * FROM notification_preferences WHERE user_id = $1', [userId]);
@@ -155,41 +174,72 @@ export class ProfileService {
     const user = userRes.rows[0];
     if (!user) throw new NotFoundException('User not found');
 
-    const address = dto.currentAddress ?? dto.current_address ?? null;
-    const occ = dto.occupation ?? null;
-    const edu = dto.education ?? null;
-    const bio = dto.biography ?? null;
+    if (dto.preferences) {
+      await this.updateNotificationPreferences(userId, dto.preferences);
+    }
+    if (dto.privacy || dto.privacySettings) {
+      await this.updatePrivacySettings(userId, dto.privacy || dto.privacySettings);
+    }
 
     let personId = user.person_id;
-    if (!personId) {
-      const kaskiBranch = await this.db.query("SELECT id FROM branches WHERE code = 'KASKI'");
-      const branchId = kaskiBranch.rows[0]?.id;
-      const newPersonRes = await this.db.query(
-        `INSERT INTO persons (gender, living_status, generation, branch_id, occupation, education, biography, current_address, is_claimed, claimed_user_id)
-         VALUES ('MALE', 'LIVING', 5, $1, $2, $3, $4, $5, TRUE, $6)
-         RETURNING id`,
-        [branchId, occ, edu, bio, address, userId],
-      );
-      personId = newPersonRes.rows[0].id;
-      await this.db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [personId, userId]);
-      await this.db.query(
-        `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
-         VALUES ($1, 'ne', 'प्रयोगकर्ता', 'अधिकारी', 'प्रयोगकर्ता अधिकारी', TRUE)`,
-        [personId],
-      );
+    let targetPerson: any = null;
+    if (personId) {
+      targetPerson = await this.personRepo.findById(personId);
+      if (!targetPerson) {
+        const resolved = await this.personRepo.resolveCanonicalPerson(personId);
+        targetPerson = resolved.person;
+        if (targetPerson) personId = targetPerson.id;
+      }
+    }
+
+    if (personId && targetPerson) {
+      const updates: string[] = [];
+      const params: any[] = [];
+      let idx = 1;
+
+      if (dto.currentAddress !== undefined || dto.current_address !== undefined) {
+        updates.push(`current_address = $${idx++}`);
+        params.push(dto.currentAddress ?? dto.current_address);
+      }
+      if (dto.occupation !== undefined) {
+        updates.push(`occupation = $${idx++}`);
+        params.push(dto.occupation);
+      }
+      if (dto.education !== undefined) {
+        updates.push(`education = $${idx++}`);
+        params.push(dto.education);
+      }
+      if (dto.biography !== undefined) {
+        updates.push(`biography = $${idx++}`);
+        params.push(dto.biography);
+      }
+
+      if (updates.length > 0) {
+        updates.push(`version = version + 1`);
+        updates.push(`updated_at = NOW()`);
+        params.push(personId);
+        await this.db.query(
+          `UPDATE persons SET ${updates.join(', ')} WHERE id = $${idx}`,
+          params,
+        );
+      }
     } else {
+      const currentUnlinked = typeof user.unlinked_profile === 'string'
+        ? JSON.parse(user.unlinked_profile)
+        : (user.unlinked_profile || {});
+      const updatedUnlinked = { ...currentUnlinked };
+      if (dto.currentAddress !== undefined) updatedUnlinked.currentAddress = dto.currentAddress;
+      if (dto.current_address !== undefined) updatedUnlinked.currentAddress = dto.current_address;
+      if (dto.occupation !== undefined) updatedUnlinked.occupation = dto.occupation;
+      if (dto.education !== undefined) updatedUnlinked.education = dto.education;
+      if (dto.biography !== undefined) updatedUnlinked.biography = dto.biography;
+
       await this.db.query(
-        `UPDATE persons 
-         SET occupation = $1,
-             education = $2,
-             biography = $3,
-             current_address = $4,
-             version = version + 1,
-             updated_at = NOW()
-         WHERE id = $5`,
-        [occ, edu, bio, address, personId],
+        `UPDATE user_accounts SET unlinked_profile = $1, updated_at = NOW() WHERE id = $2`,
+        [JSON.stringify(updatedUnlinked), userId],
       );
     }
+
     return this.getMe(userId);
   }
 
@@ -361,6 +411,10 @@ export class ProfileService {
     queryExpires?: string,
     querySig?: string,
   ) {
+    if (!viewer || !viewer.id) {
+      throw new UnauthorizedException('Authentication required to access media asset');
+    }
+
     const assetRes = await this.db.query('SELECT * FROM media_assets WHERE id = $1', [assetId]);
     const asset = assetRes.rows[0];
     if (!asset) {
@@ -380,18 +434,16 @@ export class ProfileService {
 
     let isAuthorized = false;
 
-    if (viewer) {
-      if (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN')) {
-        isAuthorized = true;
-      } else if (asset.uploader_user_id === viewer.id) {
-        isAuthorized = true;
-      }
+    if (viewer.roles && (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN'))) {
+      isAuthorized = true;
+    } else if (asset.uploader_user_id === viewer.id) {
+      isAuthorized = true;
     }
 
     if (!isAuthorized && queryUser && queryExpires && querySig) {
       const exp = parseInt(queryExpires, 10);
-      if (!isNaN(exp) && this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
-        if (!viewer || viewer.id === queryUser || asset.uploader_user_id === queryUser) {
+      if (!isNaN(exp) && exp >= Math.floor(Date.now() / 1000) && this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
+        if (viewer.id === queryUser || asset.uploader_user_id === queryUser) {
           isAuthorized = true;
         }
       }
@@ -478,46 +530,39 @@ export class ProfileService {
       });
     }
 
-    // 1. Fetch active challenge outside transaction to validate OTP attempt and persist failed attempts
-    const chalQuery = reauthChallenge.challengeId
-      ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION'`
-      : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1`;
-    const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
-
-    const chalRes = await this.db.query(chalQuery, chalParams);
-    const challenge = chalRes.rows[0];
-
-    if (!challenge) {
-      throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
-    }
-
-    if (challenge.consumed_at) {
-      throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
-    }
-
-    if (new Date(challenge.expires_at).getTime() < Date.now()) {
-      throw new UnauthorizedException('Reauthentication challenge has expired');
-    }
-
-    if (challenge.attempts >= challenge.max_attempts) {
-      throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
-    }
-
-    const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
-    if (computedHash !== challenge.code_hash) {
-      // Persist failed attempt outside transaction so it is never rolled back
-      await this.db.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
-      throw new UnauthorizedException('Invalid reauthentication challenge OTP');
-    }
+    let isIncorrectOtp = false;
 
     const result = await this.db.transaction(async (client) => {
-      // Lock challenge record inside transaction for atomic single-use consumption (prevents TOCTOU replay)
-      const lockRes = await client.query(
-        `SELECT * FROM auth_challenges WHERE id = $1 AND consumed_at IS NULL FOR UPDATE`,
-        [challenge.id],
-      );
-      if (lockRes.rows.length === 0) {
-        throw new UnauthorizedException('Reauthentication challenge has already been consumed or invalidated');
+      // 1. Lock challenge record inside transaction FIRST for 100% atomic verification decision
+      const chalQuery = reauthChallenge.challengeId
+        ? `SELECT * FROM auth_challenges WHERE user_id = $1 AND challenge_id = $2 AND action = 'ACCOUNT_DELETION' FOR UPDATE`
+        : `SELECT * FROM auth_challenges WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`;
+      const chalParams = reauthChallenge.challengeId ? [userId, reauthChallenge.challengeId] : [userId];
+
+      const chalRes = await client.query(chalQuery, chalParams);
+      const challenge = chalRes.rows[0];
+
+      if (!challenge) {
+        throw new UnauthorizedException('No active account deletion challenge found. Request a challenge first.');
+      }
+
+      if (challenge.consumed_at) {
+        throw new UnauthorizedException('Reauthentication challenge has already been consumed (single-use policy)');
+      }
+
+      if (new Date(challenge.expires_at).getTime() < Date.now()) {
+        throw new UnauthorizedException('Reauthentication challenge has expired');
+      }
+
+      if (challenge.attempts >= challenge.max_attempts) {
+        throw new UnauthorizedException('Maximum verification attempts exceeded for this challenge');
+      }
+
+      const computedHash = crypto.createHash('sha256').update(reauthChallenge.otp + challenge.salt).digest('hex');
+      if (computedHash !== challenge.code_hash) {
+        await client.query('UPDATE auth_challenges SET attempts = attempts + 1 WHERE id = $1', [challenge.id]);
+        isIncorrectOtp = true;
+        return null;
       }
 
       // Mark challenge consumed atomically inside transaction
@@ -625,10 +670,14 @@ export class ProfileService {
       };
     });
 
+    if (isIncorrectOtp) {
+      throw new UnauthorizedException('Invalid reauthentication challenge OTP');
+    }
+
     // Durable post-commit physical media cleanup (strictly outside database transaction)
     await this.processMediaDeletionQueue();
 
-    return result;
+    return result!;
   }
 
   async processMediaDeletionQueue(): Promise<number> {
@@ -743,12 +792,12 @@ export class ProfileService {
         updated_at = NOW()`,
       [
         userId,
-        dto.pushEnabled,
-        dto.smsEnabled,
-        dto.emailEnabled,
-        dto.familyEventsEnabled,
-        dto.juthoAlertsEnabled,
-        dto.communityPostsEnabled,
+        dto.pushEnabled ?? true,
+        dto.smsEnabled ?? true,
+        dto.emailEnabled ?? false,
+        dto.familyEventsEnabled ?? true,
+        dto.juthoAlertsEnabled ?? true,
+        dto.communityPostsEnabled ?? true,
       ],
     );
     return dto;

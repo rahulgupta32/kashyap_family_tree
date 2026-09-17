@@ -185,18 +185,19 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           const dispatchId = insRes.rows[0].id;
 
           // Perform delivery
-          await this.deliverNotification(channel, userId, payload);
+          const providerOutcome = await this.deliverNotification(channel, userId, payload);
+          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
 
           await this.db.query(
-            "UPDATE notification_dispatches SET delivery_status = 'SENT', dispatched_at = NOW() WHERE id = $1",
-            [dispatchId],
+            "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2 WHERE id = $3",
+            [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, dispatchId],
           );
 
           results.push({
             outboxId: record.id,
             recipientUserId: userId,
             channel,
-            status: 'SENT',
+            status: finalStatus as any,
           });
         } catch (err: any) {
           this.logger.warn(`Delivery failed for dispatch outbox=${record.id} channel=${channel}: ${err.message}`);
@@ -252,17 +253,18 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     for (const job of claimRes.rows) {
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
+        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
         await this.db.query(
           `UPDATE notification_dispatches 
-           SET delivery_status = 'SENT', dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $1 
-           WHERE id = $2`,
-          [providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
+           SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
+           WHERE id = $3`,
+          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
         );
         retried++;
       } catch (err: any) {
         const newRetryCount = (job.retry_count || 0) + 1;
         const backoffSec = Math.min(Math.pow(2, newRetryCount), 300); // 2s, 4s, 8s, 16s... max 5m
-        const newStatus = newRetryCount >= maxRetries ? 'FAILED' : 'FAILED';
+        const newStatus = 'FAILED';
         await this.db.query(
           `UPDATE notification_dispatches 
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
@@ -296,28 +298,56 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
     if (channel === 'PUSH') {
       const pushGateway = process.env.PUSH_GATEWAY_URL || process.env.FCM_SERVER_KEY;
-      if (!pushGateway) {
-        if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
-          this.logger.log(`[DISPATCH][PUSH] Delivering simulated push notification to user ${userId}: ${payload.message}`);
-          return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}` };
+      if (pushGateway) {
+        if (pushGateway.startsWith('http://') || pushGateway.startsWith('https://')) {
+          try {
+            const response = await fetch(pushGateway, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, payload }),
+            });
+            if (!response.ok) {
+              throw new Error(`Push gateway HTTP ${response.status}: ${response.statusText}`);
+            }
+            return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
+          } catch (err: any) {
+            throw new Error(`Push gateway delivery failed: ${err.message}`);
+          }
         }
-        throw new Error('Push notification gateway is not configured. Cannot deliver PUSH notification.');
+        return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
       }
-      this.logger.log(`[DISPATCH][PUSH] Delivering push notification to user ${userId}: ${payload.message}`);
-      return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
+      if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+        this.logger.log(`[DISPATCH][PUSH] Delivering simulated push notification to user ${userId}: ${payload.message}`);
+        return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}` };
+      }
+      throw new Error('Push notification gateway is not configured. Cannot deliver PUSH notification.');
     }
 
     if (channel === 'EMAIL') {
       const emailGateway = process.env.SMTP_HOST || process.env.EMAIL_GATEWAY_URL;
-      if (!emailGateway) {
-        if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
-          this.logger.log(`[DISPATCH][EMAIL] Delivering simulated email notification to user ${userId}: ${payload.message}`);
-          return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}` };
+      if (emailGateway) {
+        if (emailGateway.startsWith('http://') || emailGateway.startsWith('https://')) {
+          try {
+            const response = await fetch(emailGateway, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, payload }),
+            });
+            if (!response.ok) {
+              throw new Error(`Email gateway HTTP ${response.status}: ${response.statusText}`);
+            }
+            return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
+          } catch (err: any) {
+            throw new Error(`Email gateway delivery failed: ${err.message}`);
+          }
         }
-        throw new Error('Email notification gateway is not configured. Cannot deliver EMAIL notification.');
+        return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
       }
-      this.logger.log(`[DISPATCH][EMAIL] Delivering notification to user ${userId}: ${payload.message}`);
-      return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
+      if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+        this.logger.log(`[DISPATCH][EMAIL] Delivering simulated email notification to user ${userId}: ${payload.message}`);
+        return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}` };
+      }
+      throw new Error('Email notification gateway is not configured. Cannot deliver EMAIL notification.');
     }
     return { status: 'DELIVERED', provider: `CUSTOM_${channel}_GATEWAY`, messageId: `${channel.toLowerCase()}_${Date.now()}` };
   }
