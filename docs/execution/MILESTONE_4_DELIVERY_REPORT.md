@@ -64,7 +64,7 @@ All requirements and specific governance criteria have been strictly fulfilled, 
     - Complete Next.js portal pages for `/claims`, `/change-requests`, `/calendar`, and `/profile` compiled cleanly with 12/12 static/dynamic routes.
 11. **Comprehensive Multi-Tier Verification**:
     - 100% pass rate across 14 unit test suites (107 tests).
-    - 100% pass rate across 13 integration test suites (143 tests). Log saved at `D:\Jyphra\kashyap_family_tree\logs\integration-test.log`.
+    - 100% pass rate across 14 integration test suites (144 tests), including concurrent migration initialization regression test (`migration-concurrency.integration.spec.ts`). Log saved at `D:\Jyphra\kashyap_family_tree\logs\integration-test.log`.
     - 100% pass rate across 13 Playwright end-to-end browser tests. Log saved at `D:\Jyphra\kashyap_family_tree\logs\playwright-test.log`.
     - 100% pass rate across Flutter mobile checks (`flutter analyze`: 0 issues, `flutter test`: 8/8 passed, `flutter build apk`: `app-debug.apk` built).
     - Zero typecheck errors across all workspace packages, services, and apps.

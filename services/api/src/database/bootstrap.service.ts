@@ -15,9 +15,14 @@ export class BootstrapService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    // 0. Ensure migrations have run before any seeding or repository operations
+    // 0. Explicitly await coordinated database migrations before any seeding or repository operations
     if (this.migrationService) {
-      await this.migrationService.runMigrations();
+      try {
+        await this.migrationService.runMigrations();
+      } catch (err: any) {
+        this.logger.error(`Database migration initialization failed: ${err.message}`, err.stack);
+        throw err;
+      }
     }
 
     // 1. Seed Core Reference Branches (needed for foreign keys and branch lookups)
@@ -98,43 +103,51 @@ export class BootstrapService implements OnModuleInit {
     ];
 
     const seededBranches: Record<string, string> = {};
+
     for (const b of branches) {
-      const created = await this.branchRepo.create(b);
-      seededBranches[b.code] = created.id;
+      const existing = await this.branchRepo.findByCode(b.code);
+      if (existing) {
+        seededBranches[b.code] = existing.id;
+      } else {
+        const created = await this.branchRepo.create(b);
+        seededBranches[b.code] = created.id;
+        this.logger.log(`Seeded reference branch: ${b.nameEnglish} (${b.code})`);
+      }
     }
+
     return seededBranches;
   }
 
   async bootstrapDevelopmentAccounts(): Promise<void> {
-    this.logger.log('Bootstrapping fictional development admin accounts (SEED_ADMINS=true)...');
+    this.logger.log('Bootstrapping development accounts (SEED_ADMINS=true)...');
 
-    const seededBranches = await this.seedReferenceBranches();
+    const kaskiBranch = await this.branchRepo.findByCode('KASKI');
+    const branchId = kaskiBranch?.id || null;
 
-    // 1. Super Admin: +9779800000001
-    const superAdmin = await this.userRepo.findOrCreateByPhone('+9779800000001');
+    // 1. Super Admin Account
+    const superAdminPhone = '+9779800000001';
+    const superAdmin = await this.userRepo.findOrCreateByPhone(superAdminPhone, 'ne');
     await this.userRepo.setPhoneVerified(superAdmin.id, true);
-    await this.userRepo.assignRole(superAdmin.id, Role.SUPER_ADMIN, null, superAdmin.id);
+    this.logger.log(`Ensured Super Admin account: ${superAdmin.id}`);
 
-    // 2. Branch Admin (Kaski): +9779800000002
-    const branchAdmin = await this.userRepo.findOrCreateByPhone('+9779800000002');
+    const superAdminRoles = await this.userRepo.getUserRoles(superAdmin.id);
+    if (!superAdminRoles.some((r) => r.role === Role.SUPER_ADMIN)) {
+      await this.userRepo.assignRole(superAdmin.id, Role.SUPER_ADMIN, null, null);
+      this.logger.log(`Assigned SUPER_ADMIN role to user ${superAdmin.id}`);
+    }
+
+    // 2. Branch Admin Account
+    const branchAdminPhone = '+9779800000002';
+    const branchAdmin = await this.userRepo.findOrCreateByPhone(branchAdminPhone, 'ne');
     await this.userRepo.setPhoneVerified(branchAdmin.id, true);
-    await this.userRepo.assignRole(branchAdmin.id, Role.BRANCH_ADMIN, seededBranches['KASKI'], superAdmin.id);
+    this.logger.log(`Ensured Branch Admin account: ${branchAdmin.id}`);
 
-    // 3. Branch Verifier (Kaski): +9779800000003
-    const verifier = await this.userRepo.findOrCreateByPhone('+9779800000003');
-    await this.userRepo.setPhoneVerified(verifier.id, true);
-    await this.userRepo.assignRole(verifier.id, Role.BRANCH_VERIFIER, seededBranches['KASKI'], branchAdmin.id);
+    const branchAdminRoles = await this.userRepo.getUserRoles(branchAdmin.id);
+    if (!branchAdminRoles.some((r) => r.role === Role.BRANCH_ADMIN)) {
+      await this.userRepo.assignRole(branchAdmin.id, Role.BRANCH_ADMIN, branchId, null);
+      this.logger.log(`Assigned BRANCH_ADMIN role (branch: ${branchId}) to user ${branchAdmin.id}`);
+    }
 
-    // 4. Verified Member: +9779800000004
-    const member = await this.userRepo.findOrCreateByPhone('+9779800000004');
-    await this.userRepo.setPhoneVerified(member.id, true);
-    await this.userRepo.assignRole(member.id, Role.VERIFIED_MEMBER, seededBranches['KASKI'], verifier.id);
-
-    // 5. Suspended Account (for testing AUTH-FR-010): +9779800000099
-    const suspended = await this.userRepo.findOrCreateByPhone('+9779800000099');
-    await this.userRepo.setPhoneVerified(suspended.id, true);
-    await this.userRepo.setSuspension(suspended.id, true, 'Test suspension for policy violation');
-
-    this.logger.log('Fictional development accounts seeded successfully.');
+    this.logger.log('Development account bootstrap completed.');
   }
 }
