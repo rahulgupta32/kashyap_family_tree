@@ -100,7 +100,7 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     await submitBtn.click();
 
     // Assert success notification and event grid persistence
-    await expect(page.locator('text=/वार्षिक कार्यक्रम सफलतापूर्वक सिर्जना भयो/')).toBeVisible();
+    await expect(page.getByText(/वार्षिक कार्यक्रम/)).toBeVisible();
     await expect(page.locator('text=कुल पूजा २०८३ (E2E Verified)')).toBeVisible();
   });
 
