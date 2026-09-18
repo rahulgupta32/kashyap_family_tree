@@ -48,8 +48,8 @@ Total Automated Test Suite Coverage: **107 Unit + 148 Integration + 13 Playwrigh
 6. **Multi-Stage Malware Scanning Pipeline (`MalwareScannerService`)**:
    - Inspects magic bytes (JPEG, PNG, WebP) and performs heuristic/signature scanning.
    - Detects standard EICAR antivirus test signatures, executable container headers (MZ, ELF), and malicious script injection (`<script>`, `<?php`, `eval(`).
-   - Fail-closed policy: scanner unavailability (`SIMULATE_SCANNER_FAILURE=true`) immediately rejects uploads with HTTP 503 and marks assets `SCANNER_FAILED` in quarantine, strictly preventing access.
-   - HMAC-SHA256 signed URLs enforce current user authorization on media streaming.
+   - **Live ClamAV Daemon Status**: **BLOCKED/UNVERIFIED** (No active ClamAV TCP daemon running on target environment; operating under fail-closed policy where unconfigured or failing scanner daemon immediately rejects uploads with HTTP 503 and marks assets `SCANNER_FAILED` in quarantine).
+   - Mandatory JWT authentication and current user asset permission enforcement required for all media streaming endpoints.
 7. **Governed Account Deletion & Precise Data Retention (`ProfileService`)**:
    - Single-use, expiring (5-minute), account-bound reauthentication challenge (`ACCOUNT_DELETION`). Consumption is tracked; challenge reuse is rejected.
    - Precise retention: no blanket retention of private files. Contested evidence attached to active `DISPUTED` claims is placed on `LEGAL_HOLD` and recorded in `data_retention_records` (holding authority: Central Genealogy Board, statutory basis, release conditions, 1095-day retention).

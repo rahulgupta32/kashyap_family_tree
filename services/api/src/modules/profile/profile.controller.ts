@@ -143,9 +143,9 @@ export class ProfileController {
   }
 
   @Get('media/:assetId')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async streamMedia(
-    @CurrentUser() user: AuthenticatedUser | null,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('assetId') assetId: string,
     @Query('user') queryUser?: string,
     @Query('u') queryU?: string,
@@ -154,7 +154,7 @@ export class ProfileController {
     @Res() res?: any,
   ) {
     const effectiveUser = queryUser || queryU;
-    const media = await this.profileService.getMediaAsset(assetId, user || undefined, effectiveUser, queryExpires, querySig);
+    const media = await this.profileService.getMediaAsset(assetId, user, effectiveUser, queryExpires, querySig);
     if (res && res.setHeader && res.sendFile) {
       res.setHeader('Content-Type', media.mimeType);
       res.sendFile(media.filePath);

@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class CalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 
-  @Post('events')
+  @Post(['', 'events'])
   async createEvent(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateCalendarEventDto,
@@ -30,7 +30,7 @@ export class CalendarController {
     return this.calendarService.createEvent(user.id, dto);
   }
 
-  @Get('events')
+  @Get(['', 'events'])
   async listEvents(
     @CurrentUser() user: AuthenticatedUser,
     @Query('branchId') branchId?: string,

@@ -13,12 +13,41 @@ class GenealogyApiService {
     _authToken = token;
   }
 
+  String? get authToken => _authToken;
+
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
     if (_authToken != null) {
       headers['Authorization'] = 'Bearer $_authToken';
     }
     return headers;
+  }
+
+  Future<Map<String, dynamic>> requestOtp(String phoneNumber) async {
+    final uri = Uri.parse('$baseUrl/auth/otp/request');
+    final body = json.encode({'phoneNumber': phoneNumber});
+    final response = await http.post(uri, headers: _headers, body: body);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('OTP अनुरोध असफल भयो (${response.statusCode})');
+    }
+  }
+
+  Future<String> verifyOtp(String phoneNumber, String otpCode) async {
+    final uri = Uri.parse('$baseUrl/auth/otp/verify');
+    final body = json.encode({'phoneNumber': phoneNumber, 'otpCode': otpCode});
+    final response = await http.post(uri, headers: _headers, body: body);
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = json.decode(response.body);
+      final token = data['accessToken'] as String?;
+      if (token != null) {
+        setAuthToken(token);
+      }
+      return token ?? '';
+    } else {
+      throw Exception('OTP प्रमाणीकरण असफल भयो (${response.statusCode})');
+    }
   }
 
   // Bilingual search

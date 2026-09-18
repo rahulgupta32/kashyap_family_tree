@@ -862,13 +862,6 @@ export class GenealogyService {
 
       const activeId = person.id;
 
-      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(person, viewer)) {
-        throw new ForbiddenException({
-          errorCode: ErrorCode.FORBIDDEN,
-          message: 'Access denied: Profile is marked private by owner',
-        });
-      }
-
       const [names, parentLinks, childLinks, spouseLinks, branchRes] = await Promise.all([
         this.personRepo!.findNamesByPersonId(activeId),
         this.linkRepo!.getParentsByChildId(activeId),
@@ -878,6 +871,20 @@ export class GenealogyService {
           ? this.db!.query('SELECT name_nepali, name_english FROM branches WHERE id = $1', [person.branch_id])
           : Promise.resolve({ rows: [] }),
       ]);
+
+      const recordWithLinks = {
+        ...person,
+        parents: parentLinks.map((l) => ({ personId: l.parent_id })),
+        children: childLinks.map((l) => ({ personId: l.child_id })),
+        spouses: spouseLinks.map((l) => ({ spousePersonId: l.spouse_id })),
+      };
+
+      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(recordWithLinks, viewer)) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'Access denied: Profile is marked private by owner',
+        });
+      }
 
       const primaryNameNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name
         || names.find((n) => n.language === 'ne')?.full_name
@@ -1122,14 +1129,20 @@ export class GenealogyService {
     if (!p) throw new NotFoundException(`Person ${personId} not found`);
 
     if (this.privacyEngine && !this.privacyEngine.isRecordVisible(p, viewer)) {
+      if (visited.size === 1) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'Profile is private',
+        });
+      }
       return {
         id: p.id,
         nameNepali: 'गोप्य व्यक्ति',
         nameEnglish: 'Private Person',
         gender: p.gender,
         generation: p.generation,
-        livingStatus: p.living_status,
-        isClaimed: p.is_claimed,
+        livingStatus: undefined,
+        isClaimed: false,
         spouses: [],
         children: [],
         ancestors: [],

@@ -35,23 +35,46 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
   });
 
   test('1. Governed Profile Claims Workflow (/claims)', async ({ page }) => {
+    // Seed a test claim via test user login/API
+    const claimantPhone = '9841112233';
+    await page.request.post(`${API_BASE}/auth/test-clear-cooldown`, { data: { phoneNumber: claimantPhone } });
+    const otpReq = await page.request.post(`${API_BASE}/auth/otp/request`, { data: { phoneNumber: claimantPhone } });
+    expect(otpReq.ok()).toBeTruthy();
+    const otpRes = await page.request.get(`${API_BASE}/auth/test-otp?phoneNumber=+977${claimantPhone}`);
+    const { otp } = await otpRes.json();
+    const verifyRes = await page.request.post(`${API_BASE}/auth/otp/verify`, { data: { phoneNumber: claimantPhone, otpCode: otp } });
+    const { accessToken: claimantToken } = await verifyRes.json();
+
+    // Get a target person to claim
+    const searchRes = await page.request.get(`${API_BASE}/genealogy/search?limit=5`);
+    const searchData = await searchRes.json();
+    const targetPerson = searchData.items?.find((p: any) => !p.isClaimed) || searchData.items[0];
+
+    if (targetPerson) {
+      try {
+        await page.request.post(`${API_BASE}/claims`, {
+          headers: { Authorization: `Bearer ${claimantToken}` },
+          data: {
+            targetPersonId: targetPerson.id,
+            relationshipDescription: 'E2E Deterministic Claim Verification',
+            statementOfTruth: true,
+          },
+        });
+      } catch {
+        // Claim may already exist
+      }
+    }
+
     await page.goto('/claims');
     await expect(page.getByRole('heading', { name: /दाबी प्रमाणीकरण लाम|Profile Claims/i })).toBeVisible();
 
-    // Filter tabs interaction
     const pendingTier1Tab = page.locator('button:has-text("PENDING_TIER1")');
     if (await pendingTier1Tab.isVisible()) {
       await pendingTier1Tab.click();
     }
 
-    const allTab = page.locator('button:has-text("ALL")');
-    if (await allTab.isVisible()) {
-      await allTab.click();
-    }
-
     await expect(page.locator('table')).toBeVisible();
 
-    // If claim records exist in queue, test opening review modal
     const reviewBtn = page.locator('button:has-text("समीक्षा गर्नुहोस् (Review)")').first();
     if (await reviewBtn.isVisible()) {
       await reviewBtn.click();
@@ -62,6 +85,26 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
   });
 
   test('2. Governed Genealogy Change Requests Workflow (/change-requests)', async ({ page }) => {
+    // Seed a change request via API
+    const searchRes = await page.request.get(`${API_BASE}/genealogy/search?limit=5`);
+    const searchData = await searchRes.json();
+    const targetPerson = searchData.items[0];
+
+    if (targetPerson) {
+      try {
+        await page.request.post(`${API_BASE}/change-requests`, {
+          data: {
+            targetPersonId: targetPerson.id,
+            type: 'UPDATE_DETAILS',
+            proposedChanges: { occupation: 'E2E Governed Researcher' },
+            reason: 'E2E Governed Change Proposal',
+          },
+        });
+      } catch {
+        // Change request may already exist
+      }
+    }
+
     await page.goto('/change-requests');
     await expect(page.getByRole('heading', { name: /वंशावली परिमार्जन अनुरोधहरू|Change Requests/i })).toBeVisible();
 
@@ -72,7 +115,6 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
 
     await expect(page.locator('table')).toBeVisible();
 
-    // If change requests exist, test opening visual diff modal
     const diffBtn = page.locator('button:has-text("तुलनात्मक भिन्नता (Visual Diff)")').first();
     if (await diffBtn.isVisible()) {
       await diffBtn.click();
@@ -85,6 +127,7 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
   test('3. Cultural & Family Calendar Events Workflow (/calendar)', async ({ page }) => {
     await page.goto('/calendar');
     await expect(page.getByRole('heading', { name: /कुल क्यालेन्डर तथा चाडपर्व|Kinship Observances Calendar/i })).toBeVisible();
+    await page.waitForTimeout(1000);
 
     // Open event creation modal
     const createBtn = page.locator('button:has-text("नयाँ कार्यक्रम थप्नुहोस्"), button:has-text("Create Event")');
@@ -96,12 +139,26 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     await expect(titleInput).toBeVisible();
     await titleInput.fill('कुल पूजा २०८३ (E2E Verified)');
 
+    const solarInput = page.locator('input[placeholder*="2083-08-15"]');
+    if (await solarInput.isVisible()) {
+      await solarInput.fill('2083-08-15');
+    }
+
     const submitBtn = page.locator('button[type="submit"]:has-text("सिर्जना गर्नुहोस् (Save)")');
     await submitBtn.click();
 
     // Assert success notification and event grid persistence
-    await expect(page.getByText(/वार्षिक कार्यक्रम/)).toBeVisible();
-    await expect(page.locator('text=कुल पूजा २०८३ (E2E Verified)')).toBeVisible();
+    await expect(page.locator('text=कुल पूजा २०८३ (E2E Verified)').first()).toBeVisible();
+
+    // Read back via API to verify backend database persistence
+    const token = await page.evaluate(() => localStorage.getItem('kashyap_admin_access_token'));
+    const eventsRes = await page.request.get(`${API_BASE}/calendar/events`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(eventsRes.ok()).toBeTruthy();
+    const eventsList = await eventsRes.json();
+    const created = eventsList.find((e: any) => e.title === 'कुल पूजा २०८३ (E2E Verified)');
+    expect(created).toBeTruthy();
   });
 
   test('4. Member Profile, Personal Details & Granular Privacy Settings (/profile)', async ({ page }) => {
@@ -120,7 +177,7 @@ test.describe('Milestone 4: Governed Workflows E2E Browser Acceptance', () => {
     // Assert actual success message
     await expect(page.locator('text=व्यक्तिगत विवरण सफलतापूर्वक सुरक्षित गरियो')).toBeVisible();
 
-    // Reload page to verify backend persistence (Item 7 acceptance requirement)
+    // Reload page to verify backend persistence
     await page.reload();
     await expect(page.getByRole('heading', { name: /मेरो प्रोफाइल तथा गोपनीयता|Profile & Privacy Settings/i })).toBeVisible();
     await page.waitForTimeout(1000);

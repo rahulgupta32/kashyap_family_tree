@@ -116,7 +116,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async query<R extends QueryResultRow = any, I extends any[] = any[]>(
     text: string,
     params?: I,
+    client?: PoolClient,
   ): Promise<QueryResult<R>> {
+    if (client) {
+      return client.query<R>(text, params);
+    }
     if (!this.pool) {
       throw new Error('Database pool is not initialized');
     }

@@ -69,11 +69,11 @@ export class ProfileService {
     }
   }
 
-  async getMe(userId: string) {
-    const user = await this.userRepo.findById(userId);
+  async getMe(userId: string, client?: any) {
+    const user = await this.userRepo.findById(userId, client);
     if (!user) throw new NotFoundException('User account not found');
 
-    const rolesRes = await this.db.query('SELECT role, branch_id FROM user_roles WHERE user_id = $1', [userId]);
+    const rolesRes = await this.db.query('SELECT role, branch_id FROM user_roles WHERE user_id = $1', [userId], client);
     const roles: Role[] = rolesRes.rows.map((r: any) => r.role as Role);
     const roleAssignments = rolesRes.rows.map((r: any) => ({
       role: r.role as Role,
@@ -82,13 +82,13 @@ export class ProfileService {
 
     let personDetail: any = null;
     if (user.person_id) {
-      let person = await this.personRepo.findById(user.person_id);
+      let person = await this.personRepo.findById(user.person_id, false, client);
       if (!person) {
         const resolved = await this.personRepo.resolveCanonicalPerson(user.person_id);
         person = resolved.person;
       }
       if (person) {
-        const names = await this.personRepo.findNamesByPersonId(person.id);
+        const names = await this.personRepo.findNamesByPersonId(person.id, client);
         const primaryNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name || names[0]?.full_name;
         const primaryEn = names.find((n) => n.language === 'en' && n.is_primary)?.full_name || names[0]?.full_name;
 
@@ -126,7 +126,7 @@ export class ProfileService {
       };
     }
 
-    const prefRes = await this.db.query('SELECT * FROM notification_preferences WHERE user_id = $1', [userId]);
+    const prefRes = await this.db.query('SELECT * FROM notification_preferences WHERE user_id = $1', [userId], client);
     const rawPrefs = prefRes.rows[0] || {};
     const preferences: NotificationPreferencesDto = {
       pushEnabled: rawPrefs.push_enabled ?? true,
@@ -176,10 +176,10 @@ export class ProfileService {
       if (!user) throw new NotFoundException('User not found');
 
       if (dto.preferences) {
-        await this.updateNotificationPreferences(userId, dto.preferences);
+        await this.updateNotificationPreferences(userId, dto.preferences, client);
       }
       if (dto.privacy || dto.privacySettings) {
-        await this.updatePrivacySettings(userId, dto.privacy || dto.privacySettings);
+        await this.updatePrivacySettings(userId, dto.privacy || dto.privacySettings, client);
       }
 
       let personId = user.person_id;
@@ -267,13 +267,17 @@ export class ProfileService {
         );
       }
 
-      return this.getMe(userId);
+      return this.getMe(userId, client);
     });
   }
 
-  async updatePrivacySettings(userId: string, dto: PrivacySettingsDto & { dobVisibility?: string }): Promise<PrivacySettingsDto> {
-    return this.db.transaction(async (client) => {
-      const updatedUserRes = await client.query(
+  async updatePrivacySettings(
+    userId: string,
+    dto: PrivacySettingsDto & { dobVisibility?: string },
+    client?: any,
+  ): Promise<PrivacySettingsDto> {
+    const runner = async (txClient: any) => {
+      const updatedUserRes = await txClient.query(
         `UPDATE user_accounts 
          SET privacy_settings = $1, updated_at = NOW() 
          WHERE id = $2 RETURNING person_id`,
@@ -283,7 +287,7 @@ export class ProfileService {
       if (!user) throw new NotFoundException('User not found');
 
       if (user.person_id) {
-        await client.query(
+        await txClient.query(
           `UPDATE persons 
            SET phone_visibility = $1,
                address_visibility = $2,
@@ -311,7 +315,7 @@ export class ProfileService {
           oldValue: null,
           newValue: dto,
         },
-        client,
+        txClient,
       );
 
       return {
@@ -319,7 +323,12 @@ export class ProfileService {
         contactVisibility: dto.contactVisibility,
         addressVisibility: dto.addressVisibility,
       };
-    });
+    };
+
+    if (client) {
+      return runner(client);
+    }
+    return this.db.transaction(runner);
   }
 
   async uploadPhoto(userId: string, mimeType: string, base64Data: string): Promise<MediaUploadResult> {
@@ -439,7 +448,7 @@ export class ProfileService {
     queryExpires?: string,
     querySig?: string,
   ) {
-    if (!viewer && (!queryExpires || !querySig)) {
+    if (!viewer || !viewer.id) {
       throw new UnauthorizedException('Authentication required to access media asset');
     }
 
@@ -460,30 +469,23 @@ export class ProfileService {
       throw new NotFoundException('Media asset has been permanently deleted');
     }
 
-    let isAuthorized = false;
-
-    if (viewer && viewer.id) {
-      if (viewer.roles && (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN'))) {
-        isAuthorized = true;
-      } else if (asset.uploader_user_id === viewer.id) {
-        isAuthorized = true;
+    if (queryUser || queryExpires || querySig) {
+      if (!queryUser || !queryExpires || !querySig) {
+        throw new UnauthorizedException('Incomplete media URL signature parameters');
       }
-    }
-
-    if (!isAuthorized && queryUser && queryExpires && querySig) {
       const exp = parseInt(queryExpires, 10);
-      if (!isNaN(exp) && exp >= Math.floor(Date.now() / 1000) && this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
-        if (viewer && viewer.id) {
-          if (viewer.id === queryUser) {
-            isAuthorized = true;
-          }
-        } else if (asset.uploader_user_id === queryUser) {
-          isAuthorized = true;
-        }
+      if (isNaN(exp) || exp < Math.floor(Date.now() / 1000) || !this.verifySignedMediaUrl(assetId, queryUser, exp, querySig)) {
+        throw new UnauthorizedException('Invalid or expired media URL signature');
+      }
+      if (queryUser !== viewer.id) {
+        throw new ForbiddenException('Signed URL user mismatch: signature was issued for another user account');
       }
     }
 
-    if (!isAuthorized) {
+    const isAdmin = viewer.roles && (viewer.roles.includes('SUPER_ADMIN') || viewer.roles.includes('CENTRAL_ADMIN'));
+    const isOwner = asset.uploader_user_id === viewer.id || asset.owner_user_id === viewer.id;
+
+    if (!isAdmin && !isOwner) {
       throw new ForbiddenException('You do not have permission to access or stream this media asset');
     }
 
@@ -811,6 +813,7 @@ export class ProfileService {
   async updateNotificationPreferences(
     userId: string,
     dto: NotificationPreferencesDto,
+    client?: any,
   ): Promise<NotificationPreferencesDto> {
     await this.db.query(
       `INSERT INTO notification_preferences (
@@ -834,6 +837,7 @@ export class ProfileService {
         dto.juthoAlertsEnabled ?? true,
         dto.communityPostsEnabled ?? true,
       ],
+      client,
     );
     return dto;
   }

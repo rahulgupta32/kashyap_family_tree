@@ -97,7 +97,7 @@ export class ClaimsService {
     queryExpires?: string,
     querySig?: string,
   ): Promise<{ filePath: string; fileName: string; mimeType: string; byteSize: number }> {
-    if (!viewer && (!queryExpires || !querySig)) {
+    if (!viewer || !viewer.id) {
       throw new UnauthorizedException('Authentication required to access evidence asset');
     }
 
@@ -115,56 +115,62 @@ export class ClaimsService {
       throw new NotFoundException('Media asset has been permanently deleted');
     }
 
-    let isAuthorized = false;
-
-    if (viewer && viewer.id) {
-      if (viewer.roles?.includes(Role.SUPER_ADMIN)) {
-        isAuthorized = true;
-      } else if (asset.uploader_user_id === viewer.id) {
-        isAuthorized = true;
-      } else {
-        const claimEvidenceRes = await this.db.query(
-          `SELECT pc.target_person_id, p.branch_id
-             FROM claim_evidence_attachments cea
-             JOIN profile_claims pc ON pc.id = cea.claim_id
-             JOIN persons p ON p.id = pc.target_person_id
-             WHERE cea.media_asset_id = $1
-             LIMIT 1`,
-          [assetId],
-        );
-        const branchId = claimEvidenceRes.rows[0]?.branch_id;
-        if (branchId) {
-          const hasBranchRole = (viewer.roleAssignments || []).some(
-            (ra) => (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) && ra.branchId === branchId,
-          );
-          if (hasBranchRole) {
-            isAuthorized = true;
-          }
+    if (queryUser || queryExpires || querySig) {
+      if (!queryUser || !queryExpires || !querySig) {
+        throw new UnauthorizedException('Incomplete evidence URL signature parameters');
+      }
+      const exp = parseInt(queryExpires, 10);
+      const now = Math.floor(Date.now() / 1000);
+      if (isNaN(exp) || exp < now) {
+        throw new UnauthorizedException('Expired evidence URL signature');
+      }
+      if (queryUser !== viewer.id) {
+        throw new ForbiddenException('Signed URL user mismatch: signature was issued for another user account');
+      }
+      const secret = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_chars_long_12345';
+      const payloadsToCheck = [
+        `${assetId}:${queryUser}:${exp}`,
+        `${assetId}:${exp}`,
+      ];
+      let validSig = false;
+      for (const p of payloadsToCheck) {
+        const expectedSig = crypto.createHmac('sha256', secret).update(p).digest('hex');
+        if (
+          expectedSig.length === querySig.length &&
+          crypto.timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(querySig, 'hex'))
+        ) {
+          validSig = true;
+          break;
         }
+      }
+      if (!validSig) {
+        throw new UnauthorizedException('Invalid evidence URL signature');
       }
     }
 
-    if (!isAuthorized && queryExpires && querySig && queryUser) {
-      const exp = parseInt(queryExpires, 10);
-      const now = Math.floor(Date.now() / 1000);
-      if (!isNaN(exp) && exp >= now) {
-        if (!viewer || viewer.id === queryUser) {
-          const secret = process.env.JWT_SECRET || 'test_jwt_secret_key_minimum_32_chars_long_12345';
-          const payloadsToCheck = [
-            `${assetId}:${queryUser}:${exp}`,
-            `${assetId}:${exp}`,
-          ];
+    let isAuthorized = false;
 
-          for (const p of payloadsToCheck) {
-            const expectedSig = crypto.createHmac('sha256', secret).update(p).digest('hex');
-            if (
-              expectedSig.length === querySig.length &&
-              crypto.timingSafeEqual(Buffer.from(expectedSig, 'hex'), Buffer.from(querySig, 'hex'))
-            ) {
-              isAuthorized = true;
-              break;
-            }
-          }
+    if (viewer.roles?.includes(Role.SUPER_ADMIN)) {
+      isAuthorized = true;
+    } else if (asset.uploader_user_id === viewer.id) {
+      isAuthorized = true;
+    } else {
+      const claimEvidenceRes = await this.db.query(
+        `SELECT pc.target_person_id, p.branch_id
+           FROM claim_evidence_attachments cea
+           JOIN profile_claims pc ON pc.id = cea.claim_id
+           JOIN persons p ON p.id = pc.target_person_id
+           WHERE cea.media_asset_id = $1
+           LIMIT 1`,
+        [assetId],
+      );
+      const branchId = claimEvidenceRes.rows[0]?.branch_id;
+      if (branchId) {
+        const hasBranchRole = (viewer.roleAssignments || []).some(
+          (ra) => (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) && ra.branchId === branchId,
+        );
+        if (hasBranchRole) {
+          isAuthorized = true;
         }
       }
     }

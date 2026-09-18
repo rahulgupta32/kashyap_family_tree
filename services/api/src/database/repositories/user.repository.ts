@@ -58,12 +58,12 @@ export class UserRepository {
     return res.rows[0] || null;
   }
 
-  async findById(id: string): Promise<UserAccountRecord | null> {
+  async findById(id: string, client?: any): Promise<UserAccountRecord | null> {
     const query = `
       SELECT * FROM user_accounts
       WHERE id = $1 AND deleted_at IS NULL;
     `;
-    const res = await this.db.query<UserAccountRecord>(query, [id]);
+    const res = await this.db.query<UserAccountRecord>(query, [id], client);
     return res.rows[0] || null;
   }
 

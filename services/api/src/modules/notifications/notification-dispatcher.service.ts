@@ -293,14 +293,20 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         throw new Error(result?.error || 'SMS provider delivery failed');
       }
       this.logger.log(`[DISPATCH][SMS] Dispatched notification to ${phone} via ${result.provider}`);
-      return result;
+      const isSimulated = Boolean((result as any).simulated || result.provider === 'TestSmsProviderAdapter');
+      return {
+        status: isSimulated ? 'SIMULATED' : 'DELIVERED',
+        provider: result.provider,
+        messageId: result.messageId,
+        simulated: isSimulated,
+      };
     }
 
     if (channel === 'PUSH') {
       const pushGateway = process.env.PUSH_GATEWAY_URL || process.env.FCM_SERVER_KEY;
       if (pushGateway && (pushGateway.startsWith('http://') || pushGateway.startsWith('https://'))) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         try {
           const response = await fetch(pushGateway, {
             method: 'POST',
@@ -320,7 +326,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       }
       if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
         this.logger.log(`[DISPATCH][PUSH] Delivering simulated push notification to user ${userId}: ${payload.message}`);
-        return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}` };
+        return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}`, simulated: true };
       }
       throw new Error('Push notification gateway is not configured or URL is invalid. Cannot deliver PUSH notification.');
     }
@@ -329,7 +335,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       const emailGateway = process.env.EMAIL_GATEWAY_URL || process.env.SMTP_HOST;
       if (emailGateway && (emailGateway.startsWith('http://') || emailGateway.startsWith('https://'))) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         try {
           const response = await fetch(emailGateway, {
             method: 'POST',
@@ -349,7 +355,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       }
       if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
         this.logger.log(`[DISPATCH][EMAIL] Delivering simulated email notification to user ${userId}: ${payload.message}`);
-        return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}` };
+        return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}`, simulated: true };
       }
       throw new Error('Email notification gateway is not configured or URL is invalid. Cannot deliver EMAIL notification.');
     }

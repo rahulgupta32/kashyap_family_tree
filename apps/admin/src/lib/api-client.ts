@@ -436,7 +436,7 @@ export class ApiClient {
     if (options?.yearBs) params.append('yearBs', String(options.yearBs));
     if (options?.monthBs) params.append('monthBs', String(options.monthBs));
 
-    const res = await fetch(`${API_BASE}/calendar?${params.toString()}`, {
+    const res = await fetch(`${API_BASE}/calendar/events?${params.toString()}`, {
       headers: this.getHeaders(token),
       credentials: 'include',
     });
@@ -446,7 +446,7 @@ export class ApiClient {
   }
 
   static async createCalendarEvent(token: string, dto: any): Promise<CalendarEventDetailDto> {
-    const res = await fetch(`${API_BASE}/calendar`, {
+    const res = await fetch(`${API_BASE}/calendar/events`, {
       method: 'POST',
       headers: this.getHeaders(token),
       credentials: 'include',

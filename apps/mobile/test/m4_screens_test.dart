@@ -54,5 +54,12 @@ void main() {
     expect(find.text('गोपनीयता दायरा (Privacy Scopes)'), findsOneWidget);
     expect(find.text('सेटिङहरू सुरक्षित गर्नुहोस् (Save Settings)'), findsOneWidget);
   });
+
+  test('GenealogyApiService handles session auth token state', () {
+    final service = GenealogyApiService();
+    expect(service.authToken, isNull);
+    service.setAuthToken('bearer_token_abc123');
+    expect(service.authToken, 'bearer_token_abc123');
+  });
 }
 
