@@ -13,6 +13,7 @@ export interface AuthenticatedUser {
   branchIds: string[];
   roleAssignments: UserRoleAssignment[];
   sessionId: string;
+  personId?: string;
 }
 
 export const CurrentUser = createParamDecorator(

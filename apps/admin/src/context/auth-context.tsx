@@ -163,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const newAccessToken = await refreshSession();
-        if (!newAccessToken && isMounted) {
+        if (!newAccessToken && !storedToken && isMounted) {
           setAccessToken(null);
           setUser(null);
         }

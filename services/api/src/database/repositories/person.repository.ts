@@ -28,6 +28,7 @@ export interface PersonRecord {
   phone_visibility: PrivacyVisibility;
   address_visibility: PrivacyVisibility;
   dob_visibility: PrivacyVisibility;
+  profile_visibility?: PrivacyVisibility;
   is_minor_protected: boolean;
   is_claimed: boolean;
   claimed_user_id?: string;
@@ -130,11 +131,11 @@ export class PersonRepository {
         `INSERT INTO persons (
           generation, gender, living_status, branch_id, birth_year_bs, birth_date_bs, birth_date_ad, birth_place,
           death_year_bs, death_date_bs, death_date_ad, death_place, gotra, kuldevata, mool_ghar, current_address,
-          occupation, education, biography, phone_visibility, address_visibility, dob_visibility, is_minor_protected,
+          occupation, education, biography, phone_visibility, address_visibility, dob_visibility, profile_visibility, is_minor_protected,
           is_claimed, claimed_user_id, is_archived, archive_reason, version
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
-          $24, $25, $26, $27, 1
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+          $25, $26, $27, $28, 1
         ) RETURNING *`,
         [
           data.generation || 1,
@@ -159,6 +160,7 @@ export class PersonRepository {
           data.phone_visibility || 'VERIFIED_COMMUNITY',
           data.address_visibility || 'VERIFIED_COMMUNITY',
           data.dob_visibility || 'VERIFIED_COMMUNITY',
+          (data as any).profile_visibility || 'VERIFIED_COMMUNITY',
           data.is_minor_protected ?? false,
           data.is_claimed ?? false,
           data.claimed_user_id || null,
@@ -240,6 +242,7 @@ export class PersonRepository {
         phone_visibility: data.phone_visibility,
         address_visibility: data.address_visibility,
         dob_visibility: data.dob_visibility,
+        profile_visibility: (data as any).profile_visibility,
         is_minor_protected: data.is_minor_protected,
         is_claimed: data.is_claimed,
         claimed_user_id: data.claimed_user_id,
@@ -334,6 +337,37 @@ export class PersonRepository {
     } else {
       // Regular users and guests only see active records
       conditions.push('p.is_archived = FALSE');
+    }
+
+    // Profile visibility enforcement across search:
+    // Unauthenticated guest: strictly ONLY sees PUBLIC profiles
+    // Authenticated member: sees PUBLIC, VERIFIED_COMMUNITY, their own claimed record, or branch admin scope; IMMEDIATE_FAMILY requires family relation
+    if (!isSuperAdmin) {
+      if (viewer?.userId) {
+        const isVerified = Boolean(viewer.isVerifiedMember || viewer.roles?.includes('VERIFIED_MEMBER') || viewer.roles?.includes('SUPER_ADMIN'));
+        const allowedVisibilities = isVerified ? "('PUBLIC', 'VERIFIED_COMMUNITY')" : "('PUBLIC')";
+        params.push(viewer.userId);
+        const uParam = paramIdx++;
+
+        let immFamilyCond = '';
+        if (viewer.personId) {
+          params.push(viewer.personId);
+          const pParam = paramIdx++;
+          immFamilyCond = ` OR (p.profile_visibility = 'IMMEDIATE_FAMILY' AND (p.id = $${pParam} OR p.id IN (SELECT spouse_id FROM spouse_links WHERE person_id = $${pParam} AND (status IS NULL OR status <> 'CANCELLED') AND confidence = 'VERIFIED' UNION SELECT person_id FROM spouse_links WHERE spouse_id = $${pParam} AND (status IS NULL OR status <> 'CANCELLED') AND confidence = 'VERIFIED' UNION SELECT parent_id FROM parent_links WHERE child_id = $${pParam} AND confidence = 'VERIFIED' UNION SELECT child_id FROM parent_links WHERE parent_id = $${pParam} AND confidence = 'VERIFIED')))`;
+        }
+
+
+        if (branchAdminBranches.length > 0) {
+          params.push(branchAdminBranches);
+          const bParam = paramIdx++;
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam} OR p.branch_id = ANY($${bParam})${immFamilyCond})`);
+        } else {
+          conditions.push(`(p.profile_visibility IN ${allowedVisibilities} OR p.claimed_user_id = $${uParam}${immFamilyCond})`);
+        }
+      } else {
+        // Unauthenticated guests strictly only see PUBLIC profiles
+        conditions.push(`p.profile_visibility = 'PUBLIC'`);
+      }
     }
 
     let searchScoreSql = '0.0 as similarity_score';

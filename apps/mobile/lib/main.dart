@@ -7,18 +7,33 @@ void main() {
   runApp(const KashyapApp());
 }
 
-class KashyapApp extends StatelessWidget {
-  const KashyapApp({super.key});
+class KashyapApp extends StatefulWidget {
+  final String? initialToken;
+  const KashyapApp({super.key, this.initialToken});
+
+  @override
+  State<KashyapApp> createState() => _KashyapAppState();
+}
+
+class _KashyapAppState extends State<KashyapApp> {
+  late final GenealogyApiService _apiService;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiService = GenealogyApiService();
+    if (widget.initialToken != null) {
+      _apiService.setAuthToken(widget.initialToken);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final apiService = GenealogyApiService();
-
     return MaterialApp(
       title: 'कश्यप अधिकारी वंशावली',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: PersonSearchScreen(apiService: apiService),
+      home: PersonSearchScreen(apiService: _apiService),
     );
   }
 }

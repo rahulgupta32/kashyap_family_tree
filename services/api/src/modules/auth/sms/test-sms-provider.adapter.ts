@@ -42,6 +42,7 @@ export class TestSmsProviderAdapter implements ISmsProvider {
       success: true,
       messageId: `test_msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       provider: 'TestSmsProviderAdapter',
+      simulated: true,
     };
   }
 

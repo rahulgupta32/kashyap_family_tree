@@ -13,6 +13,7 @@ import { DuplicateRepository } from '../src/database/repositories/duplicate.repo
 import { JwtService } from '@nestjs/jwt';
 import { Role, Gender, LivingStatus, PrivacyVisibility, ParentType, ErrorCode, DuplicateCandidateStatus } from '@kashyap/contracts';
 import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../src/modules/auth/auth.constants';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / PostgreSQL)', () => {
   let app: INestApplication;
@@ -25,6 +26,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   let sessionRepo: SessionRepository;
   let duplicateRepo: DuplicateRepository;
   let jwtService: JwtService;
+  let isoDb: DisposableDatabase;
 
   let superAdminToken: string;
   let branchAdminToken: string;
@@ -33,13 +35,15 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   let branch2Id: string;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('gen_http');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    process.env.DB_NAME = isoDb.dbName;
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
     process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'kashyap_jwt_secret_dev_key_super_secure';
@@ -53,6 +57,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     await app.init();
 
     db = moduleFixture.get<DatabaseService>(DatabaseService);
+    await assertDatabaseIsolation(db, isoDb.dbName);
+    console.log(`[DISPOSABLE DB TARGET] Genealogy HTTP test verified running exclusively against target: ${isoDb.dbName}`);
     auditOutboxRepo = moduleFixture.get<AuditOutboxRepository>(AuditOutboxRepository);
     personRepo = moduleFixture.get<PersonRepository>(PersonRepository);
     linkRepo = moduleFixture.get<GenealogyLinkRepository>(GenealogyLinkRepository);
@@ -184,7 +190,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     expect(ba2DbRoles.rows).toHaveLength(1);
     expect(ba2DbRoles.rows[0].branch_id).toBe(branch2Id);
 
-    // Clean up any test persons from previous runs
+    // Clean up any test persons from previous runs (strictly on disposable DB)
+    await assertDatabaseIsolation(db, isoDb.dbName);
     await db.query("DELETE FROM duplicate_candidates WHERE person_a_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR person_b_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
     await db.query("DELETE FROM parent_links WHERE parent_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR child_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
     await db.query("DELETE FROM spouse_links WHERE person_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR spouse_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
@@ -195,6 +202,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   afterAll(async () => {
     if (app) {
       await app.close();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 
@@ -790,8 +800,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
     it('should reject merge of two persons claimed by distinct user accounts (400 CANNOT_MERGE_CLAIMED_PERSONS)', async () => {
       // Create two distinct users in user_accounts linked to two persons
-      const u1 = await userRepo.findOrCreateByPhone('+9779849999011');
-      const u2 = await userRepo.findOrCreateByPhone('+9779849999012');
+      const randSuffix = Math.floor(100000 + Math.random() * 900000);
+      const u1 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}1`);
+      const u2 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}2`);
 
       const [claimedP1, claimedP2] = await Promise.all([
         personRepo.createPerson(
@@ -990,6 +1001,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           education: 'प्राथमिक',
           address_visibility: PrivacyVisibility.PRIVATE,
           dob_visibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+          profile_visibility: PrivacyVisibility.PUBLIC,
           is_minor_protected: true,
           is_claimed: true,
           claimed_user_id: selfUser.id,
@@ -1102,6 +1114,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           living_status: LivingStatus.LIVING,
           generation: 4,
           is_archived: false,
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}व्यक्ति${i}`, last_name: 'अधिकारी', full_name: `${searchPrefix}व्यक्ति${i} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Person${i}`, last_name: 'Adhikari', full_name: `${searchPrefix}Person${i} Adhikari`, is_primary: false },
@@ -1117,6 +1130,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           generation: 4,
           is_archived: true,
           archive_reason: 'Archived duplicate fixture for search testing',
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}आर्काइभ${j}`, last_name: 'अधिकारी', full_name: `${searchPrefix}आर्काइभ${j} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Archive${j}`, last_name: 'Adhikari', full_name: `${searchPrefix}Archive${j} Adhikari`, is_primary: false },
@@ -1202,6 +1216,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Alice`, last_name: 'Adhikari', full_name: `${engPrefix}_Alice Adhikari`, is_primary: true },
       ]);
@@ -1214,6 +1229,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Bob`, last_name: 'Adhikari', full_name: `${engPrefix}_Bob Adhikari`, is_primary: true },
         { language: 'ne', first_name: 'बब', last_name: 'अधिकारी', full_name: 'बब अधिकारी', is_primary: false },
@@ -1227,6 +1243,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'ne', first_name: 'क्यारोल', last_name: 'अधिकारी', full_name: 'क्यारोल अधिकारी', is_primary: true },
         { language: 'en', first_name: `${engPrefix}_Carol`, last_name: 'Adhikari', full_name: `${engPrefix}_Carol Adhikari`, is_primary: false },

@@ -4,6 +4,7 @@ export interface SmsSendResult {
   success: boolean;
   messageId?: string;
   provider: string;
+  simulated?: boolean;
   error?: string;
 }
 

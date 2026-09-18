@@ -23,6 +23,7 @@ export interface RoleAssignment {
 
 export interface ViewerContext {
   userId?: string;
+  personId?: string;
   roles: Role[];
   roleAssignments?: RoleAssignment[];
   branchId?: string;
@@ -259,19 +260,54 @@ export class PrivacyEngineService {
 
     // Adult Living Person Visibility Rules (PRIV-FR-001, PRIV-FR-002):
     if (!isDeceased) {
-      // Address visibility: PRIVATE is strictly for isSelf
+      const isImmediateFamily = isSelf || Boolean(viewer?.personId && (
+        (detail.parents || []).some((p) => p.personId === viewer?.personId) ||
+        (detail.children || []).some((c) => c.personId === viewer?.personId) ||
+        (detail.spouses || []).some((s) => s.spousePersonId === viewer?.personId)
+      ));
+
+      // Address visibility:
+      // - PRIVATE: strictly isSelf
+      // - IMMEDIATE_FAMILY: isSelf, isImmediateFamily, or authorized admin
+      // - VERIFIED_COMMUNITY: verified member or authorized admin
+      // - Unverified guest: ALWAYS redacted when IMMEDIATE_FAMILY, VERIFIED_COMMUNITY, or PRIVATE
+      const addrVis = detail.privacy?.addressVisibility;
       if (
-        detail.privacy?.addressVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy?.addressVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        addrVis === PrivacyVisibility.PRIVATE ||
+        (addrVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin) ||
+        (addrVis === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin) ||
+        (!isVerified && !isAdmin)
       ) {
         filtered.currentAddress = undefined;
       }
 
-      // DOB visibility: PRIVATE is strictly for isSelf
+      // DOB visibility:
+      // - PRIVATE: strictly isSelf
+      // - IMMEDIATE_FAMILY: isSelf, isImmediateFamily, or authorized admin
+      // - VERIFIED_COMMUNITY: isSelf, verified member, or authorized admin
+      // - Unverified guest: exact dates redacted, year only
+      const dobVis = detail.privacy?.dobVisibility;
       if (
-        detail.privacy?.dobVisibility === PrivacyVisibility.PRIVATE ||
-        (detail.privacy?.dobVisibility === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin)
+        dobVis === PrivacyVisibility.PRIVATE ||
+        (dobVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin) ||
+        (dobVis === PrivacyVisibility.VERIFIED_COMMUNITY && !isVerified && !isAdmin) ||
+        (!isVerified && !isAdmin)
       ) {
+        filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
+        filtered.birthDateAd = undefined;
+      }
+
+      // Profile visibility (separate from dobVisibility):
+      const profVis = (detail.privacy as any)?.profileVisibility || PrivacyVisibility.PUBLIC;
+      if (
+        (profVis === PrivacyVisibility.PRIVATE && !isSelf && !isAdmin) ||
+        (profVis === PrivacyVisibility.IMMEDIATE_FAMILY && !isSelf && !isImmediateFamily && !isAdmin)
+      ) {
+        filtered.biography = undefined;
+        filtered.occupation = undefined;
+        filtered.education = undefined;
+        filtered.avatarUrl = undefined;
+        filtered.currentAddress = undefined;
         filtered.birthDateBs = filtered.birthYearBs ? `${filtered.birthYearBs} B.S.` : undefined;
         filtered.birthDateAd = undefined;
       }
@@ -338,11 +374,49 @@ export class PrivacyEngineService {
    * Filters tree nodes recursively for viewer privacy
    */
   public filterTreeNode(node: TreeNodeDto, viewer?: ViewerContext): TreeNodeDto {
+    const isVisible = this.isRecordVisible({
+      id: node.id,
+      is_archived: (node as any).isArchived,
+      profile_visibility: (node as any).profileVisibility,
+      claimed_user_id: (node as any).claimedByUserId,
+      branch_id: (node as any).branchId,
+    }, viewer);
+
     const isMinor = this.isMinorOrUncertainAge({
       isMinorProtected: false,
       livingStatus: node.livingStatus,
     });
     const isAdmin = this.isAuthorizedAdmin(viewer);
+
+    const filteredSpouses = (node.spouses || [])
+      .filter((s) => this.isRecordVisible({ id: s.id, is_archived: (s as any).isArchived, profile_visibility: (s as any).profileVisibility, claimed_user_id: (s as any).claimedByUserId, branch_id: (s as any).branchId }, viewer))
+      .map((s) => this.filterTreeNode(s, viewer));
+
+    const filteredChildren = (node.children || [])
+      .filter((c) => this.isRecordVisible({ id: c.id, is_archived: (c as any).isArchived, profile_visibility: (c as any).profileVisibility, claimed_user_id: (c as any).claimedByUserId, branch_id: (c as any).branchId }, viewer))
+      .map((c) => this.filterTreeNode(c, viewer));
+
+    const filteredAncestors = (node.ancestors || [])
+      .filter((a) => this.isRecordVisible({ id: a.id, is_archived: (a as any).isArchived, profile_visibility: (a as any).profileVisibility, claimed_user_id: (a as any).claimedByUserId, branch_id: (a as any).branchId }, viewer))
+      .map((a) => this.filterTreeNode(a, viewer));
+
+    if (!isVisible && !isAdmin) {
+      return {
+        id: node.id,
+        nameNepali: 'गोप्य सदस्य',
+        nameEnglish: 'Private Member',
+        gender: node.gender,
+        generation: node.generation,
+        livingStatus: node.livingStatus,
+        isClaimed: false,
+        avatarUrl: undefined,
+        spouses: [],
+        children: [],
+        ancestors: [],
+        hasMoreAncestors: false,
+        hasMoreDescendants: false,
+      };
+    }
 
     return {
       id: node.id,
@@ -353,9 +427,9 @@ export class PrivacyEngineService {
       livingStatus: node.livingStatus,
       isClaimed: node.isClaimed,
       avatarUrl: isMinor && !isAdmin ? undefined : node.avatarUrl,
-      spouses: (node.spouses || []).map((s) => this.filterTreeNode(s, viewer)),
-      children: (node.children || []).map((c) => this.filterTreeNode(c, viewer)),
-      ancestors: (node.ancestors || []).map((a) => this.filterTreeNode(a, viewer)),
+      spouses: filteredSpouses,
+      children: filteredChildren,
+      ancestors: filteredAncestors,
       hasMoreAncestors: node.hasMoreAncestors,
       hasMoreDescendants: node.hasMoreDescendants,
     };
@@ -379,7 +453,22 @@ export class PrivacyEngineService {
    * Evaluates if a record is visible to the given viewer context
    */
   public isRecordVisible(
-    record: { is_archived?: boolean; isArchived?: boolean; branch_id?: string; branchId?: string; living_status?: LivingStatus; livingStatus?: LivingStatus },
+    record: {
+      is_archived?: boolean;
+      isArchived?: boolean;
+      branch_id?: string;
+      branchId?: string;
+      living_status?: LivingStatus;
+      livingStatus?: LivingStatus;
+      profile_visibility?: PrivacyVisibility;
+      profileVisibility?: PrivacyVisibility;
+      claimed_user_id?: string;
+      claimedByUserId?: string;
+      id?: string;
+      parents?: any[];
+      children?: any[];
+      spouses?: any[];
+    },
     viewer?: ViewerContext,
   ): boolean {
     const isArchived = Boolean(record.is_archived || record.isArchived);
@@ -387,6 +476,40 @@ export class PrivacyEngineService {
     if (isArchived) {
       return this.isAuthorizedAdmin(viewer, branchId);
     }
+
+    const profileVis = record.profile_visibility || record.profileVisibility || PrivacyVisibility.PUBLIC;
+    if (profileVis === PrivacyVisibility.PUBLIC) {
+      return true;
+    }
+
+    const isAdmin = this.isAuthorizedAdmin(viewer, branchId);
+    if (isAdmin) return true;
+
+    const claimedUser = record.claimed_user_id || record.claimedByUserId;
+    const isSelf = Boolean(
+      (viewer?.userId && claimedUser && viewer.userId === claimedUser) ||
+      (viewer?.personId && record.id && viewer.personId === record.id)
+    );
+    if (isSelf) return true;
+
+    if (profileVis === PrivacyVisibility.PRIVATE) {
+      return false;
+    }
+
+    if (profileVis === PrivacyVisibility.IMMEDIATE_FAMILY) {
+      if (viewer?.personId) {
+        const isParent = (record.parents || []).some((p: any) => (p.personId || p.person_id) === viewer.personId);
+        const isChild = (record.children || []).some((c: any) => (c.personId || c.person_id) === viewer.personId);
+        const isSpouse = (record.spouses || []).some((s: any) => (s.spousePersonId || s.spouse_person_id) === viewer.personId);
+        if (isParent || isChild || isSpouse) return true;
+      }
+      return false;
+    }
+
+    if (profileVis === PrivacyVisibility.VERIFIED_COMMUNITY) {
+      return Boolean(viewer?.isVerifiedMember || viewer?.roles?.includes(Role.VERIFIED_MEMBER));
+    }
+
     return true;
   }
 }

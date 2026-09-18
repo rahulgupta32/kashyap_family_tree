@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3000';
+const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
 
 test.describe('End-to-End Genealogy, Tree & Duplicate Governance Flow (Milestone 3)', () => {
   const adminPhone = '9800000001';
