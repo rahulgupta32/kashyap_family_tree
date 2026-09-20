@@ -76,6 +76,7 @@ export class GenealogyController {
     const branchIds = user.branchIds || (user.roleAssignments?.map((r) => r.branchId).filter(Boolean) as string[]) || [];
     return {
       id: user.id,
+      personId: user.personId,
       roles: user.roles as Role[],
       roleAssignments: user.roleAssignments,
       branchId: branchIds[0] || undefined,

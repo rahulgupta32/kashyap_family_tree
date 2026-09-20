@@ -40,6 +40,7 @@ export const GENEALOGY_TEST_FIXTURE_MODE = 'GENEALOGY_TEST_FIXTURE_MODE';
 
 export interface ActorContext {
   id: string;
+  personId?: string;
   roles: Role[];
   roleAssignments?: { role: Role; branchId?: string | null }[];
   branchId?: string;
@@ -849,8 +850,17 @@ export class GenealogyService {
     if (mem) mem.isArchived = true;
   }
 
+  private async withVerifiedFamily(viewer?: ViewerContext): Promise<ViewerContext | undefined> {
+    if (!viewer?.personId) return viewer;
+    return {
+      ...viewer,
+      verifiedFamilyPersonIds: await this.linkRepo!.getVerifiedImmediateFamilyIds(viewer.personId),
+    };
+  }
+
   async getPersonById(id: string, viewer?: ViewerContext): Promise<PersonDetailDto> {
     if (this.isDatabaseAvailable) {
+      viewer = await this.withVerifiedFamily(viewer);
       const canonicalRes = await this.personRepo!.resolveCanonicalPerson(id);
       const person = canonicalRes.person;
       if (!person) {
@@ -872,14 +882,7 @@ export class GenealogyService {
           : Promise.resolve({ rows: [] }),
       ]);
 
-      const recordWithLinks = {
-        ...person,
-        parents: parentLinks.map((l) => ({ personId: l.parent_id })),
-        children: childLinks.map((l) => ({ personId: l.child_id })),
-        spouses: spouseLinks.map((l) => ({ spousePersonId: l.spouse_id })),
-      };
-
-      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(recordWithLinks, viewer)) {
+      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(person, viewer)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.FORBIDDEN,
           message: 'Access denied: Profile is marked private by owner',
@@ -1091,7 +1094,11 @@ export class GenealogyService {
         });
       }
 
+      viewer = await this.withVerifiedFamily(viewer);
       const rawTree = await this.buildSubtreeFromDb(root.id, descDepth, ascDepth, new Set(), viewer);
+      if (!rawTree) {
+        throw new ForbiddenException({ errorCode: ErrorCode.FORBIDDEN, message: 'Profile is private' });
+      }
       if (this.privacyEngine) {
         return this.privacyEngine.filterTreeNode(rawTree, viewer);
       }
@@ -1116,7 +1123,7 @@ export class GenealogyService {
     ascDepthRemaining: number = 0,
     visited: Set<string> = new Set(),
     viewer?: ViewerContext,
-  ): Promise<TreeNodeDto> {
+  ): Promise<TreeNodeDto | null> {
     if (visited.size >= 500) {
       throw new BadRequestException({
         errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
@@ -1129,26 +1136,7 @@ export class GenealogyService {
     if (!p) throw new NotFoundException(`Person ${personId} not found`);
 
     if (this.privacyEngine && !this.privacyEngine.isRecordVisible(p, viewer)) {
-      if (visited.size === 1) {
-        throw new ForbiddenException({
-          errorCode: ErrorCode.FORBIDDEN,
-          message: 'Profile is private',
-        });
-      }
-      return {
-        id: p.id,
-        nameNepali: 'गोप्य व्यक्ति',
-        nameEnglish: 'Private Person',
-        gender: p.gender,
-        generation: p.generation,
-        livingStatus: undefined,
-        isClaimed: false,
-        spouses: [],
-        children: [],
-        ancestors: [],
-        hasMoreAncestors: false,
-        hasMoreDescendants: false,
-      };
+      return null;
     }
 
     const [names, childLinks, parentLinks, spouseLinks] = await Promise.all([
@@ -1168,7 +1156,7 @@ export class GenealogyService {
           const childP = await this.personRepo!.findById(cl.child_id);
           if (childP && (!this.privacyEngine || this.privacyEngine.isRecordVisible(childP, viewer))) {
             const childNode = await this.buildSubtreeFromDb(cl.child_id, descDepthRemaining - 1, 0, visited, viewer);
-            childNodes.push(childNode);
+            if (childNode) childNodes.push(childNode);
           }
         }
       }
@@ -1181,7 +1169,7 @@ export class GenealogyService {
           const parentP = await this.personRepo!.findById(pl.parent_id);
           if (parentP && (!this.privacyEngine || this.privacyEngine.isRecordVisible(parentP, viewer))) {
             const ancestorNode = await this.buildSubtreeFromDb(pl.parent_id, 0, ascDepthRemaining - 1, visited, viewer);
-            ancestorNodes.push(ancestorNode);
+            if (ancestorNode) ancestorNodes.push(ancestorNode);
           }
         }
       }
@@ -1290,19 +1278,23 @@ export class GenealogyService {
 
     const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
     const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+    const exportBranches = actor.roleAssignments !== undefined
+      ? actor.roleAssignments.filter((assignment) => assignment.role === Role.BRANCH_ADMIN)
+          .map((assignment) => assignment.branchId).filter((id): id is string => Boolean(id))
+      : actorBranches;
 
     let targetBranchId: string | undefined = undefined;
 
     if (isSuperAdmin) {
       targetBranchId = query.branchId;
     } else {
-      if (query.branchId && !actorBranches.includes(query.branchId)) {
+      if (query.branchId && !exportBranches.includes(query.branchId)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.BRANCH_MISMATCH,
           message: 'Branch administrators can only export genealogy data for their assigned branch',
         });
       }
-      targetBranchId = query.branchId || actorBranches[0];
+      targetBranchId = query.branchId || exportBranches[0];
       if (!targetBranchId) {
         throw new ForbiddenException({
           errorCode: ErrorCode.BRANCH_MISMATCH,
@@ -1343,7 +1335,9 @@ export class GenealogyService {
 
     const viewerContext: ViewerContext = {
       userId: actor.id,
+      personId: actor.personId,
       roles: actor.roles,
+      roleAssignments: actor.roleAssignments,
       branchId: targetBranchId,
       branchIds: actorBranches,
       isVerifiedMember: true,

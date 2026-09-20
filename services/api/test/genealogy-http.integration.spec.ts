@@ -912,6 +912,16 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
     });
 
+    it('exports only administratively assigned branches for a mixed-role account', async () => {
+      await request(app.getHttpServer()).get(`/genealogy/export?branchId=${branch2Id}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`).expect(403);
+      const allowed = await request(app.getHttpServer()).get(`/genealogy/export?branchId=${branch1Id}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`).expect(200);
+      expect(allowed.body.persons.some((p: any) => p.id === pBranch1Mixed)).toBe(true);
+      expect(allowed.body.persons.every((p: any) => p.branchId === branch1Id)).toBe(true);
+      expect(JSON.stringify(allowed.body)).not.toContain(pBranch2Mixed);
+    });
+
     it('should reject candidate resolution for mixed user without admin authority in branch B (403 BRANCH_MISMATCH)', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/genealogy/duplicates/candidates/${mixedCandidateId}`)
@@ -1092,6 +1102,94 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       expect(res.body.claimedByUserId).toBe(selfUserId);
       expect(res.body.birthDateBs).toBe('2075-02-15');
       expect(res.body.currentAddress).toBeUndefined(); // PRIVATE address is strictly for isSelf!
+    });
+  });
+
+  describe('Verified immediate-family privacy across HTTP read paths', () => {
+    let memberToken: string;
+    let self: string;
+    let parent: string;
+    let child: string;
+    let spouse: string;
+    let unverifiedParent: string;
+    const namePrefix = 'FamilyPrivacy' + Date.now();
+
+    beforeAll(async () => {
+      const makePerson = async (label: string, generation: number, visibility: PrivacyVisibility) => {
+        const person = await personRepo.createPerson(
+          { branch_id: branch1Id, gender: Gender.MALE, living_status: LivingStatus.LIVING,
+            generation, birth_year_bs: 2030, profile_visibility: visibility },
+          [{ language: 'ne', first_name: label, last_name: namePrefix,
+            full_name: `${label} ${namePrefix}`, is_primary: true }],
+        );
+        return person.id;
+      };
+      self = await makePerson('Self', 3, PrivacyVisibility.PUBLIC);
+      parent = await makePerson('Parent', 2, PrivacyVisibility.IMMEDIATE_FAMILY);
+      child = await makePerson('Child', 4, PrivacyVisibility.IMMEDIATE_FAMILY);
+      spouse = await makePerson('Spouse', 3, PrivacyVisibility.IMMEDIATE_FAMILY);
+      unverifiedParent = await makePerson('Unverified', 2, PrivacyVisibility.IMMEDIATE_FAMILY);
+      await db.query(`INSERT INTO parent_links (parent_id, child_id, parent_type, confidence)
+        VALUES ($1, $2, 'BIOLOGICAL', 'VERIFIED'), ($2, $3, 'BIOLOGICAL', 'VERIFIED'),
+               ($4, $2, 'BIOLOGICAL', 'UNVERIFIED')`, [parent, self, child, unverifiedParent]);
+      await db.query(`INSERT INTO spouse_links (person_id, spouse_id, status, confidence)
+        VALUES ($1, $2, 'CURRENT', 'VERIFIED'), ($2, $1, 'CURRENT', 'VERIFIED')`, [self, spouse]);
+      const user = await userRepo.findOrCreateByPhone('+9779849999077');
+      await userRepo.assignRole(user.id, Role.VERIFIED_MEMBER, branch1Id);
+      await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [self, user.id]);
+      await db.query('UPDATE persons SET claimed_user_id = $1, is_claimed = TRUE WHERE id = $2', [user.id, self]);
+      const session = await sessionRepo.createSession({
+        userId: user.id, refreshTokenHash: `family_${Date.now()}`, devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1', userAgent: 'family-privacy-regression', expiresAt: new Date(Date.now() + 86400000),
+      });
+      memberToken = jwtService.sign({ sub: user.id, sid: session.id, tokenType: 'access' }, {
+        secret: getJwtSecret(), issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: JWT_ALGORITHM,
+        expiresIn: '15m',
+      });
+    });
+
+    it('allows verified family in search, detail, relatives, ancestors, descendants and private tree roots', async () => {
+      const search = await request(app.getHttpServer()).get('/genealogy/search')
+        .query({ query: namePrefix, limit: 100 }).set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(search.body.items.map((p: any) => p.id).sort()).toEqual([self, parent, child, spouse].sort());
+      const detail = await request(app.getHttpServer()).get(`/genealogy/people/${self}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(detail.body.parents.map((p: any) => p.personId)).toEqual([parent]);
+      expect(detail.body.children.map((p: any) => p.personId)).toEqual([child]);
+      expect(detail.body.spouses.map((p: any) => p.spousePersonId)).toEqual([spouse]);
+      const tree = await request(app.getHttpServer()).get(`/genealogy/people/${self}/tree`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(tree.body.ancestors.map((p: any) => p.id)).toEqual([parent]);
+      expect(tree.body.children.map((p: any) => p.id)).toEqual([child]);
+      expect(tree.body.spouses.map((p: any) => p.id)).toEqual([spouse]);
+      expect(JSON.stringify(tree.body)).not.toContain(unverifiedParent);
+      for (const id of [parent, child, spouse]) {
+        await request(app.getHttpServer()).get(`/genealogy/people/${id}`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(200);
+        const root = await request(app.getHttpServer()).get(`/genealogy/people/${id}/tree`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(200);
+        expect(root.body.id).toBe(id);
+      }
+    });
+
+    it('denies unverified or revoked family access without exposing hidden IDs', async () => {
+      for (const suffix of ['', '/tree']) {
+        await request(app.getHttpServer()).get(`/genealogy/people/${unverifiedParent}${suffix}`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(403);
+        await request(app.getHttpServer()).get(`/genealogy/people/${parent}${suffix}`).expect(403);
+      }
+      await db.query("UPDATE spouse_links SET confidence = 'UNVERIFIED' WHERE person_id = ANY($1) AND spouse_id = ANY($1)", [[self, spouse]]);
+      await request(app.getHttpServer()).get(`/genealogy/people/${spouse}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(403);
+      const detail = await request(app.getHttpServer()).get(`/genealogy/people/${self}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(detail.body.spouses).toEqual([]);
+      const tree = await request(app.getHttpServer()).get(`/genealogy/people/${self}/tree`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(JSON.stringify(tree.body)).not.toContain(spouse);
+      const search = await request(app.getHttpServer()).get('/genealogy/search')
+        .query({ query: namePrefix, limit: 100 }).set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(search.body.items.map((p: any) => p.id).sort()).toEqual([self, parent, child].sort());
     });
   });
 

@@ -29,6 +29,8 @@ export interface ViewerContext {
   branchId?: string;
   branchIds?: string[];
   isVerifiedMember?: boolean;
+  /** Server-populated from current VERIFIED database links for this request. */
+  verifiedFamilyPersonIds?: ReadonlySet<string>;
 }
 
 @Injectable()
@@ -60,7 +62,7 @@ export class PrivacyEngineService {
     }
 
     // Authoritative roleAssignments check
-    if (viewer.roleAssignments && viewer.roleAssignments.length > 0) {
+    if (viewer.roleAssignments !== undefined) {
       if (
         viewer.roleAssignments.some(
           (a) => a.role === Role.SUPER_ADMIN || a.role === Role.CENTRAL_ADMIN,
@@ -260,11 +262,9 @@ export class PrivacyEngineService {
 
     // Adult Living Person Visibility Rules (PRIV-FR-001, PRIV-FR-002):
     if (!isDeceased) {
-      const isImmediateFamily = isSelf || Boolean(viewer?.personId && (
-        (detail.parents || []).some((p) => p.personId === viewer?.personId) ||
-        (detail.children || []).some((c) => c.personId === viewer?.personId) ||
-        (detail.spouses || []).some((s) => s.spousePersonId === viewer?.personId)
-      ));
+      const isImmediateFamily = isSelf || Boolean(
+        viewer?.personId && viewer.verifiedFamilyPersonIds?.has(detail.id),
+      );
 
       // Address visibility:
       // - PRIVATE: strictly isSelf
@@ -497,13 +497,7 @@ export class PrivacyEngineService {
     }
 
     if (profileVis === PrivacyVisibility.IMMEDIATE_FAMILY) {
-      if (viewer?.personId) {
-        const isParent = (record.parents || []).some((p: any) => (p.personId || p.person_id) === viewer.personId);
-        const isChild = (record.children || []).some((c: any) => (c.personId || c.person_id) === viewer.personId);
-        const isSpouse = (record.spouses || []).some((s: any) => (s.spousePersonId || s.spouse_person_id) === viewer.personId);
-        if (isParent || isChild || isSpouse) return true;
-      }
-      return false;
+      return Boolean(viewer?.personId && record.id && viewer.verifiedFamilyPersonIds?.has(record.id));
     }
 
     if (profileVis === PrivacyVisibility.VERIFIED_COMMUNITY) {
