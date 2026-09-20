@@ -14,6 +14,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
   bool _loading = true;
   List<dynamic> _events = [];
   String? _error;
+  final Set<String> _savingRsvps = {};
 
   @override
   void initState() {
@@ -28,18 +29,33 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
     });
 
     try {
-      final events = await widget.apiService.getCalendarEvents(yearBs: 2083);
-      setState(() {
+      final events = await widget.apiService.getCalendarEvents();
+      if (mounted) { setState(() {
         _events = events;
-      });
+      }); }
     } catch (e) {
-      setState(() {
+      if (mounted) { setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
-      });
+      }); }
     } finally {
-      setState(() {
+      if (mounted) { setState(() {
         _loading = false;
-      });
+      }); }
+    }
+  }
+
+  Future<void> _rsvp(String eventId, String response) async {
+    setState(() => _savingRsvps.add(eventId));
+    try {
+      await widget.apiService.rsvpEvent(eventId, response);
+      final events = await widget.apiService.getCalendarEvents();
+      if (mounted) { setState(() => _events = events); }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) { setState(() => _savingRsvps.remove(eventId)); }
     }
   }
 
@@ -69,7 +85,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                   ),
                 )
               : _events.isEmpty
-                  ? const Center(child: Text('यस वर्ष कुनै कार्यक्रम दर्ता गरिएको छैन।'))
+                  ? const Center(child: Text('कुनै कार्यक्रम दर्ता गरिएको छैन।'))
                   : ListView.builder(
                       itemCount: _events.length,
                       padding: const EdgeInsets.all(12),
@@ -93,6 +109,17 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                                 const SizedBox(height: 4),
                                 Text('मिति: ${ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
                                 if (ev['location'] != null) Text('स्थान: ${ev['location']}'),
+                                if (widget.apiService.authToken != null)
+                                  Wrap(spacing: 8, children: [
+                                    for (final option in const {'GOING': 'जानेछु (Going)', 'MAYBE': 'सम्भवतः (Maybe)', 'DECLINED': 'जान्न (Decline)'}.entries)
+                                      ChoiceChip(
+                                        key: ValueKey('rsvp-${ev['id']}-${option.key}'),
+                                        label: Text(option.value),
+                                        selected: ev['myRsvp'] == option.key,
+                                        onSelected: _savingRsvps.contains(ev['id']) ? null
+                                            : (_) => _rsvp(ev['id'] as String, option.key),
+                                      ),
+                                  ]),
                               ],
                             ),
                             trailing: ev['myRsvp'] != null

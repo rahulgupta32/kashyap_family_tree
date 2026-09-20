@@ -11,8 +11,10 @@ import 'profile_privacy_screen.dart';
 
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
+  final VoidCallback? onSignIn;
+  final Future<void> Function()? onSignOut;
 
-  const PersonSearchScreen({super.key, required this.apiService});
+  const PersonSearchScreen({super.key, required this.apiService, this.onSignIn, this.onSignOut});
 
   @override
   State<PersonSearchScreen> createState() => _PersonSearchScreenState();
@@ -24,6 +26,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
   PersonSummary? _selectedPerson;
   bool _isLoading = false;
   String? _error;
+  int _searchVersion = 0;
 
   @override
   void initState() {
@@ -32,6 +35,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
   }
 
   Future<void> _performSearch(String query) async {
+    final version = ++_searchVersion;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -39,25 +43,41 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
 
     try {
       final items = await widget.apiService.searchPersons(query: query);
+      if (!mounted || version != _searchVersion) { return; }
       setState(() {
         _results = items;
+        if (!_results.any((p) => p.id == _selectedPerson?.id)) { _selectedPerson = null; }
       });
     } catch (e) {
+      if (!mounted || version != _searchVersion) { return; }
       setState(() {
         _error = e.toString();
       });
     } finally {
-      setState(() {
+      if (mounted && version == _searchVersion) { setState(() {
         _isLoading = false;
-      });
+      }); }
     }
   }
+
+  @override
+  void dispose() { _searchController.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          if (widget.apiService.authToken == null && widget.onSignIn != null)
+            IconButton(tooltip: 'Sign in', onPressed: widget.onSignIn, icon: const Icon(Icons.login)),
+          if (widget.apiService.authToken != null && widget.onSignOut != null)
+            IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: () async {
+              try { await widget.onSignOut!(); }
+              catch (_) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Local session cleared; server logout could not be confirmed.'))); } }
+            }),
+        ],
       ),
       drawer: Drawer(
         child: ListView(
@@ -87,7 +107,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
               title: const Text('वंशावली रुख (Family Tree)'),
               onTap: () {
-                final targetId = _selectedPerson?.id ?? (_results.isNotEmpty ? _results.first.id : null);
+                final targetId = _selectedPerson?.id;
                 if (targetId == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
@@ -107,7 +127,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.verified_user, color: Colors.blue),
               title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),
               onTap: () {
-                final targetPerson = _selectedPerson ?? (_results.isNotEmpty ? _results.first : null);
+                final targetPerson = _selectedPerson;
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
@@ -131,7 +151,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               leading: const Icon(Icons.edit_document, color: Colors.amber),
               title: const Text('संशोधन अनुरोध (Change Requests)'),
               onTap: () {
-                final targetPerson = _selectedPerson ?? (_results.isNotEmpty ? _results.first : null);
+                final targetPerson = _selectedPerson;
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),

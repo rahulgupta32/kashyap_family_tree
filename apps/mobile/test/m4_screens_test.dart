@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/testing.dart';
+import 'native_session_test.dart' show jsonResponse;
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
 import 'package:kashyap_mobile/screens/change_request_screen.dart';
 import 'package:kashyap_mobile/screens/profile_privacy_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 
 void main() {
-  final apiService = GenealogyApiService();
+  final apiService = GenealogyApiService(client: MockClient((_) async => jsonResponse({'person': {}, 'privacy': {}})));
   apiService.setAuthToken('test_jwt_bearer_token_12345');
 
   testWidgets('ClaimProfileScreen renders form fields and validates Statement of Truth', (WidgetTester tester) async {
@@ -50,6 +52,7 @@ void main() {
       ),
     );
 
+    await tester.pumpAndSettle();
     expect(find.text('व्यक्तिगत विवरण (Personal Details)'), findsOneWidget);
     expect(find.text('गोपनीयता दायरा (Privacy Scopes)'), findsOneWidget);
     expect(find.text('सेटिङहरू सुरक्षित गर्नुहोस् (Save Settings)'), findsOneWidget);
@@ -62,4 +65,5 @@ void main() {
     expect(service.authToken, 'bearer_token_abc123');
   });
 }
+
 

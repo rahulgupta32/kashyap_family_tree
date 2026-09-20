@@ -21,7 +21,37 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
   String _addressVisibility = 'PRIVATE';
 
   bool _saving = false;
+  bool _loading = true;
+  bool _loaded = false;
   String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    setState(() { _loading = true; _message = null; });
+    try {
+      final profile = await widget.apiService.getMyProfile();
+      if (!mounted) { return; }
+      final person = profile['person'] as Map<String, dynamic>? ?? {};
+      final privacy = profile['privacy'] as Map<String, dynamic>? ?? {};
+      _addressController.text = person['currentAddress'] as String? ?? '';
+      _occupationController.text = person['occupation'] as String? ?? '';
+      _educationController.text = person['education'] as String? ?? '';
+      _bioController.text = person['biography'] as String? ?? '';
+      _profileVisibility = privacy['profileVisibility'] as String? ?? 'VERIFIED_COMMUNITY';
+      _contactVisibility = privacy['contactVisibility'] as String? ?? 'IMMEDIATE_FAMILY';
+      _addressVisibility = privacy['addressVisibility'] as String? ?? 'IMMEDIATE_FAMILY';
+      _loaded = true;
+    } catch (error) {
+      if (mounted) { _message = error.toString().replaceFirst('Exception: ', ''); }
+    } finally {
+      if (mounted) { setState(() => _loading = false); }
+    }
+  }
 
   @override
   void dispose() {
@@ -39,30 +69,29 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
     });
 
     try {
-      await widget.apiService.updateProfilePrivacy(
-        profileVisibility: _profileVisibility,
-        contactVisibility: _contactVisibility,
-        addressVisibility: _addressVisibility,
-      );
-
       await widget.apiService.updateProfileDetails(
         currentAddress: _addressController.text.trim(),
         occupation: _occupationController.text.trim(),
         education: _educationController.text.trim(),
         biography: _bioController.text.trim(),
+        privacy: {
+          'profileVisibility': _profileVisibility,
+          'contactVisibility': _contactVisibility,
+          'addressVisibility': _addressVisibility,
+        },
       );
 
-      setState(() {
+      if (mounted) { setState(() {
         _message = 'प्रोफाइल तथा गोपनीयता सेटिङ सफलतापूर्वक सुरक्षित गरियो।';
-      });
+      }); }
     } catch (e) {
-      setState(() {
+      if (mounted) { setState(() {
         _message = e.toString().replaceAll('Exception: ', '');
-      });
+      }); }
     } finally {
-      setState(() {
+      if (mounted) { setState(() {
         _saving = false;
-      });
+      }); }
     }
   }
 
@@ -72,7 +101,11 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
       appBar: AppBar(
         title: const Text('प्रोफाइल तथा गोपनीयता (Privacy)'),
       ),
-      body: SingleChildScrollView(
+      body: _loading ? const Center(child: CircularProgressIndicator())
+          : !_loaded ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(_message ?? 'Profile could not be loaded'),
+              TextButton(onPressed: _loadProfile, child: const Text('पुनः प्रयास (Retry)')),
+            ])) : SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,6 +155,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _profileVisibility,
               decoration: const InputDecoration(labelText: 'प्रोफाइल दृश्यता (Profile Visibility)', border: OutlineInputBorder()),
               items: const [
@@ -135,6 +169,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _contactVisibility,
               decoration: const InputDecoration(labelText: 'सम्पर्क दृश्यता (Contact Visibility)', border: OutlineInputBorder()),
               items: const [
@@ -148,6 +183,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
             const SizedBox(height: 12),
 
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _addressVisibility,
               decoration: const InputDecoration(labelText: 'ठेगाना दृश्यता (Address Visibility)', border: OutlineInputBorder()),
               items: const [
