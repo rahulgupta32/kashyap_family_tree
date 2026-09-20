@@ -28,11 +28,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _fetchDetail() async {
     try {
       final data = await widget.apiService.getPerson(widget.personId);
+      if (!mounted) { return; }
       setState(() {
         _person = data;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) { return; }
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -228,3 +230,4 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 }
+

@@ -54,3 +54,10 @@ M4 acceptance is distinct from completion of the entire application. The master 
 - Flutter checks now run independently from browser tests.
 - Added a real ClamAV CI service check: clean PNG, compressed EICAR (requiring daemon inspection), and fail-closed behavior after stopping the daemon. Live verification remains pending until this job passes; it does not install a daemon on the user's Windows machine.
 - Workspace typecheck passed locally. Previous checkpoint's backend tests passed; its two newly strengthened browser scenarios failed and are corrected here.
+
+## Checkpoint 5: reproducible Android acceptance
+
+- Checkpoint 4 remote platform job passed 107 unit, 161 PostgreSQL integration, and 13 browser tests. Live ClamAV 1.4.6 passed clean PNG, compressed EICAR, and stopped-daemon rejection (run 35499802070).
+- Flutter analysis passed; 18/19 tests passed. Updated the old startup smoke test to check the new empty-session sign-in behavior.
+- Added an Android API 35 CI job with a dedicated PostgreSQL database, fictional four-person fixture, real native OTP/session APIs, selected-person navigation, claim submission/two reviewers, governed change, profile persistence, RSVP, secure session restore and logout. Test SMS transport is explicitly simulated; business API responses are not mocked. This new device job is pending execution.
+- API and emulator logs, fixture identifiers and a debug APK are retained as CI artifacts. This job is limited to PR runs to avoid duplicating emulator builds for the same branch push.

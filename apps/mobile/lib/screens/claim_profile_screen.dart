@@ -56,19 +56,21 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
         relationshipDescription: _relDescController.text.trim(),
         statementOfTruth: true,
       );
+      if (!mounted) { return; }
       setState(() {
         _isSuccess = true;
         _message = 'तपाईंको प्रोफाइल दाबी सफलतापूर्वक दर्ता भयो। समीक्षा पश्चात् सूचित गरिनेछ।';
       });
     } catch (e) {
+      if (!mounted) { return; }
       setState(() {
         _isSuccess = false;
         _message = e.toString().replaceAll('Exception: ', '');
       });
     } finally {
-      setState(() {
+      if (mounted) { setState(() {
         _submitting = false;
-      });
+      }); }
     }
   }
 
@@ -192,3 +194,4 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen> {
     );
   }
 }
+

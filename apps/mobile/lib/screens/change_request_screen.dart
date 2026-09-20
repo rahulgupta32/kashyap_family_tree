@@ -62,19 +62,21 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         reason: _reasonController.text.trim(),
       );
 
+      if (!mounted) { return; }
       setState(() {
         _isSuccess = true;
         _message = 'वंशवृक्ष संशोधन अनुरोध सफलतापूर्वक दर्ता भयो। शाखा प्रशासकले परीक्षण गर्नेछन्।';
       });
     } catch (e) {
+      if (!mounted) { return; }
       setState(() {
         _isSuccess = false;
         _message = e.toString().replaceAll('Exception: ', '');
       });
     } finally {
-      setState(() {
+      if (mounted) { setState(() {
         _submitting = false;
-      });
+      }); }
     }
   }
 
@@ -189,3 +191,4 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
     );
   }
 }
+
