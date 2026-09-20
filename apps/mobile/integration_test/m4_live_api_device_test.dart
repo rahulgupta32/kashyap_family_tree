@@ -48,9 +48,14 @@ Future<void> until(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> press(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
+  // Dismiss the native keyboard before calculating scroll and hit-test positions.
+  FocusManager.instance.primaryFocus?.unfocus();
   await tester.pumpAndSettle();
-  await tester.tap(finder);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5,
+    duration: const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+  expect(finder.hitTestable(), findsWidgets, reason: 'The action must be visible and tappable');
+  await tester.tap(finder.hitTestable());
   await tester.pump();
 }
 
@@ -68,6 +73,7 @@ Future<void> drawer(WidgetTester tester, String label) async {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  WidgetController.hitTestWarningShouldBeFatal = true;
   testWidgets('Authenticated M4 workflows on Android with live API and PostgreSQL', (tester) async {
     expect([base, phone, search, rootId, parentId, childId, eventId].every((v) => v.isNotEmpty), isTrue,
       reason: 'Run the guarded fixture script and supply --dart-define-from-file');
@@ -181,7 +187,7 @@ void main() {
     debugPrint('[M4 DEVICE] Governed change and linked/unlinked profile save/reload passed');
 
     await drawer(tester, 'पात्रो तथा कार्यक्रम (Calendar)');
-    final going = find.byKey(ValueKey('rsvp-$eventId-GOING'));
+    final going = find.byKey(const ValueKey('rsvp-$eventId-GOING'));
     await until(tester, going);
     await press(tester, going);
     final rsvpDeadline = DateTime.now().add(const Duration(seconds: 20));
