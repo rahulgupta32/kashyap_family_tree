@@ -13,6 +13,8 @@ export default function ClaimsAdminPage() {
   const [activeClaim, setActiveClaim] = useState<ClaimDetailDto | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [downloadingAsset, setDownloadingAsset] = useState<string | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -66,6 +68,27 @@ export default function ClaimsAdminPage() {
       setMessage({ type: 'error', text: err.message });
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function downloadEvidence(assetId: string) {
+    if (!accessToken) return;
+    setDownloadingAsset(assetId);
+    setEvidenceError(null);
+    try {
+      const blob = await ApiClient.downloadClaimEvidence(accessToken, assetId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `claim-evidence-${assetId}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error: any) {
+      setEvidenceError(error.message);
+    } finally {
+      setDownloadingAsset(null);
     }
   }
 
@@ -217,15 +240,15 @@ export default function ClaimsAdminPage() {
                         <span className="font-semibold text-slate-800">{ev.documentType}</span>
                         {ev.description && <span className="text-slate-500 ml-2">— {ev.description}</span>}
                       </div>
-                      {ev.mediaUrl && (
-                        <a
-                          href={ev.mediaUrl}
-                          target="_blank"
-                          rel="noreferrer"
+                      {ev.mediaAssetId && (
+                        <button
+                          type="button"
+                          onClick={() => downloadEvidence(ev.mediaAssetId)}
+                          disabled={downloadingAsset !== null}
                           className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 font-medium"
                         >
-                          हेर्नुहोस् (View)
-                        </a>
+                          {downloadingAsset === ev.mediaAssetId ? 'डाउनलोड हुँदैछ…' : 'प्रमाण डाउनलोड (Download evidence)'}
+                        </button>
                       )}
                     </div>
                   ))}
@@ -234,6 +257,7 @@ export default function ClaimsAdminPage() {
             </div>
 
             {/* Review Decision Controls */}
+            {evidenceError && <p role="alert" className="text-sm text-rose-700">{evidenceError}</p>}
             <div className="space-y-3">
               <label className="block text-xs font-medium text-slate-700">
                 समीक्षा टिप्पणी (Reviewer Notes):

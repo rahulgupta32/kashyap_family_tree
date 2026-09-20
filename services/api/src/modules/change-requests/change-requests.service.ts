@@ -106,6 +106,11 @@ export class ChangeRequestsService {
           birthYearBs: person.birth_year_bs,
           deathDateBs: person.death_date_bs,
           deathYearBs: person.death_year_bs,
+          birthPlace: person.birth_place,
+          occupation: person.occupation,
+          education: person.education,
+          biography: person.biography,
+          currentAddress: person.current_address,
           version: person.version,
         };
       }
@@ -567,6 +572,11 @@ export class ChangeRequestsService {
                birth_year_bs = COALESCE($4, birth_year_bs),
                death_date_bs = COALESCE($5, death_date_bs),
                death_year_bs = COALESCE($6, death_year_bs),
+               birth_place = CASE WHEN $8 THEN $9 ELSE birth_place END,
+               occupation = CASE WHEN $10 THEN $11 ELSE occupation END,
+               education = CASE WHEN $12 THEN $13 ELSE education END,
+               biography = CASE WHEN $14 THEN $15 ELSE biography END,
+               current_address = CASE WHEN $16 THEN $17 ELSE current_address END,
                version = version + 1,
                updated_at = NOW()
            WHERE id = $7`,
@@ -578,6 +588,11 @@ export class ChangeRequestsService {
             changes.deathDateBs || null,
             changes.deathYearBs || null,
             targetPerson.id,
+            Object.prototype.hasOwnProperty.call(changes, 'birthPlace'), changes.birthPlace ?? null,
+            Object.prototype.hasOwnProperty.call(changes, 'occupation'), changes.occupation ?? null,
+            Object.prototype.hasOwnProperty.call(changes, 'education'), changes.education ?? null,
+            Object.prototype.hasOwnProperty.call(changes, 'biography'), changes.biography ?? null,
+            Object.prototype.hasOwnProperty.call(changes, 'currentAddress'), changes.currentAddress ?? null,
           ],
         );
       } else if (requestType === 'RECORD_DEATH') {

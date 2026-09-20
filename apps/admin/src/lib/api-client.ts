@@ -431,6 +431,30 @@ export class ApiClient {
   }
 
   // --- Milestone 4: Calendar Events ---
+  static async rsvpCalendarEvent(token: string, id: string, response: 'GOING' | 'MAYBE' | 'DECLINED'): Promise<void> {
+    const res = await fetch(`${API_BASE}/calendar/events/${encodeURIComponent(id)}/rsvp`, {
+      method: 'POST', headers: this.getHeaders(token), credentials: 'include',
+      body: JSON.stringify({ response }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.message || 'RSVP could not be saved');
+    }
+  }
+
+  static async downloadClaimEvidence(token: string, assetId: string): Promise<Blob> {
+    // The current authenticated reviewer is authorized by the API. Do not reuse
+    // claimant-bound signatures or navigate to a URL without the bearer token.
+    const res = await fetch(`${API_BASE}/claims/evidence/${encodeURIComponent(assetId)}`, {
+      headers: { Authorization: `Bearer ${token}` }, credentials: 'include', cache: 'no-store',
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.message || 'Evidence is not accessible');
+    }
+    return res.blob();
+  }
+
   static async listCalendarEvents(token: string, options?: { yearBs?: number; monthBs?: number }): Promise<CalendarEventDetailDto[]> {
     const params = new URLSearchParams();
     if (options?.yearBs) params.append('yearBs', String(options.yearBs));

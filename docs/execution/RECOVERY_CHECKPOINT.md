@@ -26,6 +26,15 @@ This file records executable progress so work can resume without a conversation 
 - Added mock-transport tests for authentication contracts, refresh concurrency, restoration, revocation and failed OTP, plus widget tests for sign-in, profile persistence, RSVP and second-result selection. These are not real-device acceptance evidence.
 - Flutter is unavailable in this isolated editing environment; CI must validate this checkpoint before it is accepted.
 
+## Checkpoint 3: actual governed browser actions
+
+- Browser acceptance now creates fictional records, submits a claim with evidence, downloads evidence with the reviewer's JWT, completes Tier 1 and Tier 2 with different users, and reads back account/person ownership.
+- Change-request acceptance approves both occupation and birthplace and checks persisted values and version advancement. This exposed and fixed ignored fields in the EDIT_PERSON write path; snapshots now retain the previous values.
+- Added portal RSVP controls and a non-host browser RSVP/reload check. Profile acceptance asserts the exact saved address after reload and API readback.
+- Added transaction consistency/rollback coverage for combined profile, privacy and notification updates.
+- Checkpoint 2 CI completed backend/browser tiers successfully (107 unit, 151 integration); Flutter analysis found one async-context lint. Corrected that lint here. Flutter tests were not run in that failed workflow.
+- Shared package build, workspace typecheck and 107 unit tests passed locally for these browser/backend corrections. Remote browser/integration/Flutter execution is still required for this checkpoint.
+
 ## Remaining M4 acceptance work
 
 1. Verify the new Flutter sign-in/session and self-service changes in CI, then against a live API on Android.

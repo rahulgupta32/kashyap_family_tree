@@ -10,6 +10,8 @@ export interface UpdateProfileDto {
   education?: string;
   biography?: string;
   currentAddress?: string;
+  privacy?: PrivacySettingsDto;
+  preferences?: NotificationPreferencesDto;
 }
 
 export type VisibilityScope = 'PUBLIC' | 'VERIFIED_COMMUNITY' | 'IMMEDIATE_FAMILY' | 'PRIVATE';

@@ -236,6 +236,8 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
       proposedChanges: {
         primaryNameNepali: 'सुरेश प्रसाद अधिकारी',
         livingStatus: 'LIVING',
+        occupation: 'Reviewed civil engineer',
+        birthPlace: 'Fictional Pokhara birthplace',
       },
       reason: 'Adding middle name Prasad',
     });
@@ -257,6 +259,8 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
     // Verify person version advanced
     const updatedPerson = await db.query('SELECT version FROM persons WHERE id = $1', [personId]);
     expect(updatedPerson.rows[0].version).toBe(currentVer + 1);
+    const details = await db.query('SELECT occupation, birth_place FROM persons WHERE id = $1', [personId]);
+    expect(details.rows[0]).toEqual({ occupation: 'Reviewed civil engineer', birth_place: 'Fictional Pokhara birthplace' });
 
     // Verify names updated
     const names = await db.query("SELECT full_name FROM person_names WHERE person_id = $1 AND language = 'ne'", [personId]);

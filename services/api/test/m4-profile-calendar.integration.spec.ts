@@ -117,6 +117,43 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
       expect(me.person?.occupation).toBe('इन्जिनियर');
     });
 
+    it('combined profile/privacy/preferences update returns its committed values without a nested-transaction deadlock', async () => {
+      const result = await profileService.updateProfile(testUserId, {
+        currentAddress: 'Combined update fictional address',
+        occupation: 'Teacher',
+        privacy: { profileVisibility: 'PRIVATE', contactVisibility: 'PRIVATE', addressVisibility: 'PRIVATE' },
+        preferences: { pushEnabled: false, smsEnabled: false, emailEnabled: false,
+          familyEventsEnabled: true, juthoAlertsEnabled: false, communityPostsEnabled: false },
+      });
+      expect(result.person.currentAddress).toBe('Combined update fictional address');
+      expect(result.privacy.profileVisibility).toBe('PRIVATE');
+      expect(result.preferences.pushEnabled).toBe(false);
+      const readback = await profileService.getMe(testUserId);
+      expect(readback.person).toEqual(result.person);
+      expect(readback.privacy).toEqual(result.privacy);
+      expect(readback.preferences).toEqual(result.preferences);
+      const partial = await profileService.updateProfile(testUserId, { biography: 'Only this field changed' });
+      expect(partial.person.currentAddress).toBe(result.person.currentAddress);
+      expect(partial.person.occupation).toBe('Teacher');
+    }, 10000);
+
+    it('rolls back all profile, privacy and preference writes when the final transaction read fails', async () => {
+      const before = await profileService.getMe(testUserId);
+      const readFailure = jest.spyOn(profileService, 'getMe').mockRejectedValueOnce(new Error('Injected final read failure'));
+      try {
+        await expect(profileService.updateProfile(testUserId, {
+          currentAddress: 'Must not persist',
+          privacy: { profileVisibility: 'PUBLIC', contactVisibility: 'PUBLIC', addressVisibility: 'PUBLIC' },
+          preferences: { pushEnabled: true, smsEnabled: true, emailEnabled: true,
+            familyEventsEnabled: false, juthoAlertsEnabled: true, communityPostsEnabled: true },
+        })).rejects.toThrow('Injected final read failure');
+      } finally { readFailure.mockRestore(); }
+      const after = await profileService.getMe(testUserId);
+      expect(after.person).toEqual(before.person);
+      expect(after.privacy).toEqual(before.privacy);
+      expect(after.preferences).toEqual(before.preferences);
+    });
+
     it('2. should update notification preferences', async () => {
       const updated = await profileService.updateNotificationPreferences(testUserId, {
         pushEnabled: false,

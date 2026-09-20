@@ -22,6 +22,7 @@ export default function CalendarAdminPage() {
     tithiNumber: 1,
   });
   const [actionLoading, setActionLoading] = useState(false);
+  const [rsvpPending, setRsvpPending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -82,6 +83,21 @@ export default function CalendarAdminPage() {
     }
   }
 
+  async function handleRsvp(id: string, response: 'GOING' | 'MAYBE' | 'DECLINED') {
+    if (!accessToken) return;
+    setRsvpPending(id);
+    setMessage(null);
+    try {
+      await ApiClient.rsvpCalendarEvent(accessToken, id, response);
+      await loadEvents();
+      setMessage({ type: 'success', text: 'उपस्थिति सुरक्षित गरियो (RSVP saved)' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setRsvpPending(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -113,7 +129,7 @@ export default function CalendarAdminPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {events.map((ev) => (
-            <div key={ev.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 hover:border-indigo-200 transition">
+            <article key={ev.id} aria-label={ev.title} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 hover:border-indigo-200 transition">
               <div className="flex justify-between items-start">
                 <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">
                   {ev.eventType}
@@ -141,7 +157,17 @@ export default function CalendarAdminPage() {
                   <div><span className="text-slate-400">स्थान:</span> <span className="text-slate-700">{ev.location}</span></div>
                 )}
               </div>
-            </div>
+              <div className="flex flex-wrap gap-2" aria-label="Attendance response">
+                {(['GOING', 'MAYBE', 'DECLINED'] as const).map((response) => (
+                  <button key={response} type="button" aria-pressed={ev.myRsvp === response}
+                    disabled={rsvpPending !== null}
+                    onClick={() => handleRsvp(ev.id, response)}
+                    className={`px-3 py-1.5 rounded text-xs font-semibold disabled:opacity-50 ${ev.myRsvp === response ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                    {response === 'GOING' ? 'जानेछु (Going)' : response === 'MAYBE' ? 'सम्भवतः (Maybe)' : 'जान्न (Decline)'}
+                  </button>
+                ))}
+              </div>
+            </article>
           ))}
         </div>
       )}

@@ -74,7 +74,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
           if (widget.apiService.authToken != null && widget.onSignOut != null)
             IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: () async {
               try { await widget.onSignOut!(); }
-              catch (_) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(
+              catch (_) { if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Local session cleared; server logout could not be confirmed.'))); } }
             }),
         ],
