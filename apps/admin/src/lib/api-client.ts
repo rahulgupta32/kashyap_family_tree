@@ -35,6 +35,16 @@ import {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
 export class ApiClient {
+  static async community<T = unknown>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE}/community${path}`, {
+      method, headers: this.getHeaders(token), credentials: 'include', cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `Community request failed (${response.status})`);
+    return data as T;
+  }
+
   private static getHeaders(token?: string): HeadersInit {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) {

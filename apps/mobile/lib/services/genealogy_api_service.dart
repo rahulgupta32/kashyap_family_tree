@@ -153,6 +153,16 @@ class GenealogyApiService {
     }
   }
 
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data}) async {
+    final response = await _send(method, Uri.parse('$baseUrl$path'),
+      body: data == null ? null : json.encode(data));
+    final decoded = response.body.isEmpty ? null : json.decode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
+    }
+    return decoded;
+  }
+
   // Bilingual search
   Future<List<PersonSummary>> searchPersons({
     String? query,

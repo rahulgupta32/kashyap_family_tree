@@ -8,6 +8,7 @@ import 'claim_profile_screen.dart';
 import 'change_request_screen.dart';
 import 'calendar_events_screen.dart';
 import 'profile_privacy_screen.dart';
+import 'community_screen.dart';
 
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -169,6 +170,15 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                     ),
                   ),
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.forum),
+              title: const Text('समुदाय (Community)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CommunityScreen(apiService: widget.apiService)));
               },
             ),
             ListTile(
