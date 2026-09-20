@@ -106,7 +106,7 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       expect(finalClaim.tier2ReviewedBy).toBeTruthy();
       const profile = await checkedJson(await api.get(`${API_BASE}/profile/me`, { headers: auth(member.accessToken) }));
       expect(profile.personId).toBe(person.id);
-      const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(adminToken) }));
+      const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(await browserToken(page)) }));
       expect(persisted.isClaimed).toBe(true);
       expect(persisted.claimedByUserId).toBe(member.user.id);
     } finally { await tier1Context.close(); await api.dispose(); }
@@ -126,14 +126,14 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       expect(request.status).toBe('PENDING');
       await page.goto('/change-requests');
       await page.getByRole('row').filter({ hasText: person.primaryNameEnglish }).getByRole('button', { name: /Visual Diff/ }).click();
-      await expect(page.getByText(occupation, { exact: true })).toBeVisible();
-      await expect(page.getByText('Original fictional occupation', { exact: true })).toBeVisible();
+      await expect(page.getByText(JSON.stringify(occupation), { exact: true })).toBeVisible();
+      await expect(page.getByText(JSON.stringify('Original fictional occupation'), { exact: true })).toBeVisible();
       await page.locator('textarea').fill('Reviewed both changed fields against fictional acceptance fixture.');
       const approval = page.waitForResponse(r => r.url().endsWith(`/change-requests/${request.id}/review`) && r.request().method() === 'POST');
       await page.getByRole('button', { name: /Approve & Merge/ }).click();
       expect((await approval).ok()).toBeTruthy();
       await expect(page.getByText('Change request approved successfully')).toBeVisible();
-      const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(adminToken) }));
+      const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(await browserToken(page)) }));
       expect(persisted.occupation).toBe(occupation);
       expect(persisted.birthPlace).toBe('Updated fictional birthplace');
       expect(persisted.version).toBe(person.version + 1);

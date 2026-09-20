@@ -433,6 +433,7 @@ export class ProfileService {
   }
 
   verifySignedMediaUrl(assetId: string, userId: string, expiresAt: number, signature: string): boolean {
+    if (!/^[a-f0-9]{64}$/i.test(signature)) return false;
     if (Math.floor(Date.now() / 1000) > expiresAt) {
       return false;
     }

@@ -119,6 +119,9 @@ export class ClaimsService {
       if (!queryUser || !queryExpires || !querySig) {
         throw new UnauthorizedException('Incomplete evidence URL signature parameters');
       }
+      if (!/^[a-f0-9]{64}$/i.test(querySig)) {
+        throw new UnauthorizedException('Invalid evidence URL signature');
+      }
       const exp = parseInt(queryExpires, 10);
       const now = Math.floor(Date.now() / 1000);
       if (isNaN(exp) || exp < now) {

@@ -107,10 +107,25 @@ jobs:
           ADMIN_PORT: '3002'
           CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002'
 
+      - name: Browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-${{ github.run_id }}
+          path: test-results/
+          retention-days: 7
+
+  flutter-checks:
+    name: Flutter analysis and mocked HTTP/widget tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.47.5'
           cache: true
 
       - name: Flutter Dependencies
@@ -125,3 +140,48 @@ jobs:
         run: flutter test
         working-directory: apps/mobile
 
+
+  live-clamav:
+    name: Live ClamAV clean, compressed EICAR and unavailable-engine checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      clamav:
+        image: clamav/clamav:1.4
+        ports:
+          - 127.0.0.1:3310:3310
+        options: >-
+          --health-interval 10s
+          --health-timeout 5s
+          --health-start-period 120s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
+      - name: Verify real daemon scanning
+        run: node scripts/verify-live-clamav.cjs
+        env:
+          NODE_ENV: production
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: 3310
+      - name: Verify fail-closed behavior after stopping the test daemon
+        run: |
+          docker stop "${{ job.services.clamav.id }}"
+          node scripts/verify-live-clamav.cjs --unavailable
+        env:
+          NODE_ENV: production
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: 3310
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clamav-verification-${{ github.run_id }}
+          path: test-results/clamav-*.json
+          retention-days: 14

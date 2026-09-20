@@ -46,3 +46,11 @@ This file records executable progress so work can resume without a conversation 
 ## Application release scope
 
 M4 acceptance is distinct from completion of the entire application. The master implementation plan also includes community/moderation, maps, messaging, offline synchronization, import, deployment and release verification. Cultural/legal/provider activation gates remain governed by `OPEN_GATES.md`; do not invent approvals or credentials. Keep test doubles identified as test doubles.
+
+## Checkpoint 4: isolated acceptance jobs
+
+- Corrected browser readbacks to use the current rotated session token, and English-only names in the change-review UI.
+- Added real PostgreSQL/HTTP private-media coverage for anonymous access, stolen signatures, role revocation, malformed/expired signatures, quarantine and retention state.
+- Flutter checks now run independently from browser tests.
+- Added a real ClamAV CI service check: clean PNG, compressed EICAR (requiring daemon inspection), and fail-closed behavior after stopping the daemon. Live verification remains pending until this job passes; it does not install a daemon on the user's Windows machine.
+- Workspace typecheck passed locally. Previous checkpoint's backend tests passed; its two newly strengthened browser scenarios failed and are corrected here.

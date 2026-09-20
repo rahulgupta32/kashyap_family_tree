@@ -116,7 +116,7 @@ export default function ChangeRequestsAdminPage() {
                       {req.type}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-800">
-                      {req.currentSnapshot?.primaryNameNepali ? `${req.currentSnapshot.primaryNameNepali} (${req.currentSnapshot.primaryNameEnglish || ''})` : (req.targetPersonId || 'नयाँ व्यक्ति प्रविष्टि')}
+                      {req.currentSnapshot?.primaryNameNepali ? `${req.currentSnapshot.primaryNameNepali} (${req.currentSnapshot.primaryNameEnglish || ''})` : (req.currentSnapshot?.primaryNameEnglish || req.targetPersonId || 'नयाँ व्यक्ति प्रविष्टि')}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 max-w-xs truncate">
                       {req.reason}
@@ -157,7 +157,7 @@ export default function ChangeRequestsAdminPage() {
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">तुलनात्मक भिन्नता समीक्षा (Visual Diff Review)</h3>
-                <p className="text-xs text-slate-500">Type: {activeRequest.type} • Target: {activeRequest.currentSnapshot?.primaryNameNepali || activeRequest.targetPersonId || 'New'}</p>
+                <p className="text-xs text-slate-500">Type: {activeRequest.type} • Target: {activeRequest.currentSnapshot?.primaryNameNepali || activeRequest.currentSnapshot?.primaryNameEnglish || activeRequest.targetPersonId || 'New'}</p>
               </div>
               <button onClick={() => setActiveRequest(null)} className="text-slate-400 hover:text-slate-600 text-xl font-bold">✕</button>
             </div>
@@ -242,3 +242,4 @@ export default function ChangeRequestsAdminPage() {
     </div>
   );
 }
+
