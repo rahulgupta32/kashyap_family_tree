@@ -44,16 +44,15 @@ Future<void> until(WidgetTester tester, Finder finder) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
   expect(finder, findsWidgets);
-  await tester.pumpAndSettle();
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
 }
 
 Future<void> press(WidgetTester tester, Finder finder) async {
   // Dismiss the native keyboard before calculating scroll and hit-test positions.
   FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pumpAndSettle();
-  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5,
-    duration: const Duration(milliseconds: 200));
-  await tester.pumpAndSettle();
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
   expect(finder.hitTestable(), findsWidgets, reason: 'The action must be visible and tappable');
   await tester.tap(finder.hitTestable());
   await tester.pump();
@@ -61,14 +60,14 @@ Future<void> press(WidgetTester tester, Finder finder) async {
 
 Future<void> back(WidgetTester tester) async {
   await press(tester, find.byType(BackButton));
-  await tester.pumpAndSettle();
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
 }
 
 Future<void> drawer(WidgetTester tester, String label) async {
   await press(tester, find.byTooltip('Open navigation menu'));
-  await tester.pumpAndSettle();
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
   await press(tester, find.text(label));
-  await tester.pumpAndSettle();
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
 }
 
 void main() {
