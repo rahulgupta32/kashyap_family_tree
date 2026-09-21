@@ -37,13 +37,13 @@ void main(){
   }));api.setAuthToken('fictional-session');addTearDown(api.dispose);
   await tester.pumpWidget(MaterialApp(home:ChatConversationScreen(api:api,conversation:const {'id':'conv','title':'Fictional family','type':'DIRECT'},userId:'viewer')));
   await tester.pump();connection.events.add({'type':'authenticated'});await tester.pump();
-  expect(connection.sent,contains({'type':'subscribe','conversationId':'conv'}));
+  expect(connection.sent,contains(equals({'type':'subscribe','conversationId':'conv'})));
   await tester.enterText(find.byType(TextField),'A fictional message');await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
   expect(find.textContaining('Temporary failure'),findsOneWidget);
   await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
   expect(requests.length,2);expect(requests[0]['clientMessageId'],requests[1]['clientMessageId']);expect(requests[0].keys,unorderedEquals(['content','clientMessageId']));
   connection.events.add({'type':'snapshot','conversationId':'conv','typingUserIds':[],'messages':[{'id':'m1','senderUserId':'viewer','sequence':1,'content':'A fictional message','isDeleted':false,'readByUserIds':['viewer','other']}]});await tester.pumpAndSettle();
-  expect(find.text('A fictional message'),findsOneWidget);expect(find.text('You · Read'),findsOneWidget);expect(connection.sent,contains({'type':'read','sequence':1}));
+  expect(find.text('A fictional message'),findsOneWidget);expect(find.text('You · Read'),findsOneWidget);expect(connection.sent,contains(equals({'type':'read','sequence':1})));
   await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
  });
 }

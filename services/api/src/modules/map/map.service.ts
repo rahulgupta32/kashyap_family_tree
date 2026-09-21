@@ -65,7 +65,7 @@ export class MapService {
   if(body.mapConsent&&(!Number.isFinite(body.latitude)||!Number.isFinite(body.longitude)||Math.abs(body.latitude)>90||Math.abs(body.longitude)>180))throw new BadRequestException('Valid manually selected locality coordinates are required');
   return this.db.transaction(async client=>{
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`household:${user.id}`]);
-   const person=(await client.query('SELECT * FROM persons WHERE id=$1 AND claimed_by_user_id=$2 AND NOT is_archived FOR UPDATE',[user.personId,user.id])).rows[0];
+   const person=(await client.query('SELECT * FROM persons WHERE id=$1 AND claimed_user_id=$2 AND NOT is_archived FOR UPDATE',[user.personId,user.id])).rows[0];
    if(!person||!person.branch_id||person.living_status!=='LIVING'||this.privacy.isMinorOrUncertainAge(person))throw new ForbiddenException('Household mapping requires an eligible adult profile');
    const old=(await client.query('SELECT * FROM household_locations WHERE owner_user_id=$1 FOR UPDATE',[user.id])).rows[0];
    if(old&&body.version!==old.version)throw new ConflictException('Household changed; reload before saving');

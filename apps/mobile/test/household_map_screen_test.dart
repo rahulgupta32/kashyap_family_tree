@@ -16,7 +16,7 @@ void main(){
    return http.Response(jsonEncode({'success':true,'data':consent?[{'id':'hh','title':'Fictional locality','district':'Kaski','municipality':'Pokhara','approxLatitude':28.2,'approxLongitude':84.0}]:[]}),200);
   }));api.setAuthToken('map-session');addTearDown(api.dispose);
   await tester.pumpWidget(MaterialApp(home:HouseholdMapScreen(apiService:api)));await tester.pumpAndSettle();expect(find.text('Fictional locality'),findsOneWidget);
-  await tester.ensureVisible(find.text('Withdraw map consent'));await tester.tap(find.text('Withdraw map consent'));await tester.pumpAndSettle();
+  await tester.scrollUntilVisible(find.text('Withdraw map consent'),200);await tester.tap(find.text('Withdraw map consent'));await tester.pumpAndSettle();
   expect(calls,contains('DELETE /map/mine'));expect(find.text('Fictional locality'),findsNothing);expect(find.text('Review status: WITHDRAWN'),findsOneWidget);
  });
 }

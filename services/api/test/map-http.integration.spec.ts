@@ -22,7 +22,7 @@ describe('Household consent, independent review and map disclosure (real Postgre
   branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('MAP_TEST','परीक्षण','Fictional Map Branch') RETURNING id")).rows[0].id;
   async function user(phone:string,role:Role){
    const u=await module.get(UserRepository).findOrCreateByPhone(phone);await module.get(UserRepository).assignRole(u.id,role,branch);
-   const p=(await db.query("INSERT INTO persons(branch_id,gender,living_status,generation,birth_year_bs,is_claimed,claimed_by_user_id,profile_visibility) VALUES($1,'FEMALE','LIVING',3,2040,true,$2,'PUBLIC') RETURNING id",[branch,u.id])).rows[0];
+   const p=(await db.query("INSERT INTO persons(branch_id,gender,living_status,generation,birth_year_bs,is_claimed,claimed_user_id,profile_visibility) VALUES($1,'FEMALE','LIVING',3,2040,true,$2,'PUBLIC') RETURNING id",[branch,u.id])).rows[0];
    await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[u.id,p.id]);
    const session=await module.get(SessionRepository).createSession({userId:u.id,refreshTokenHash:randomUUID(),devicePlatform:'WEB',ipAddress:'127.0.0.1',userAgent:'map-test',expiresAt:new Date(Date.now()+3600000)});
    const token=module.get(JwtService).sign({sub:u.id,sid:session.id,phoneNumber:phone,tokenType:'access'},{secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM});
