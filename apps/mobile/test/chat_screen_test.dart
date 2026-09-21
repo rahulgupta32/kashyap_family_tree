@@ -38,7 +38,7 @@ void main(){
   await tester.pumpWidget(MaterialApp(home:ChatConversationScreen(api:api,conversation:const {'id':'conv','title':'Fictional family','type':'DIRECT'},userId:'viewer')));
   await tester.pump();connection.events.add({'type':'authenticated'});await tester.pump();
   expect(connection.sent,contains(equals({'type':'subscribe','conversationId':'conv'})));
-  await tester.enterText(find.byType(TextField),'A fictional message');await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
+  await tester.enterText(find.byType(TextField),'A fictional message');await tester.pump();await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
   expect(find.textContaining('Temporary failure'),findsOneWidget);
   await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
   expect(requests.length,2);expect(requests[0]['clientMessageId'],requests[1]['clientMessageId']);expect(requests[0].keys,unorderedEquals(['content','clientMessageId']));
