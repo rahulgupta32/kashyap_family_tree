@@ -17,8 +17,10 @@ test('Branch messaging authenticates both browsers and persists messages, read r
   const current=await page.request.get(`${API}/chat/conversations`,{headers:await headers(page)});expect(current.ok()).toBeTruthy();
   const group=(await current.json()).find((c:any)=>c.type==='FAMILY_BRANCH'&&c.branchId===branch.id);expect(group).toBeTruthy();
   const reader=await otherContext.newPage();await login(reader);await reader.goto('/chat');
+  // Wait for session restoration before using the current access token.
+  await expect(reader.getByRole('heading',{name:'सन्देश (Messages)',exact:true})).toBeVisible();
   // Global reviewer deliberately joins via the same authenticated endpoint used by the UI.
-  const joined=await reader.request.post(`${API}/chat/conversations/${group.id}/join`,{headers:await headers(reader)});expect(joined.ok()).toBeTruthy();
+  const joined=await reader.request.post(`${API}/chat/conversations/${group.id}/join`,{headers:await headers(reader)});expect(joined.ok(),await joined.text()).toBeTruthy();
   await reader.getByRole('button',{name:'Refresh conversations',exact:true}).click();
   await reader.getByRole('button',{name:new RegExp(group.title)}).click();await expect(reader.getByRole('status')).toHaveText('Live');
   const content=`Persistent fictional message ${randomUUID()}`;

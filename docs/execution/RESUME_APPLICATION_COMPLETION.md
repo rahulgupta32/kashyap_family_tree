@@ -21,6 +21,12 @@ Local histories were reconstructed from GitHub files and must never be force-pus
 3. Dashboard uses actual role-scoped counts instead of demo numbers. Audit browsing now reads PostgreSQL metadata with central authority, pagination and bounded parameterized filters; no fake in-memory audit trail is returned.
 4. `RELEASE_ACCEPTANCE_LEDGER.csv` extracts all 229 functional and 31 nonfunctional requirements from the frozen master specification. All remain in mandatory Release 1 scope. Status is deliberately not inferred solely from a module test count.
 
+## Audit and browser continuation
+
+- Migration 014 and the version-2 audit writer serialize direct and outbox appends on one transaction lock; JSONB reordering no longer invalidates new digests. Historical hashes are preserved, with `LEGACY_UNVERIFIED` returned instead of claiming validation. The central-only console exposes integrity status without event payloads. New isolated PostgreSQL tests cover concurrent writers, outbox deduplication, transaction rollback, immutable records, fork prevention and fabricated digests.
+- Local verification: API/admin TypeScript passed; 110 unit tests passed in 15 suites. New PostgreSQL/browser tests require remote results.
+- Run 35630946205 confirms the dashboard redirects and chat selector are fixed, but found a chat token-read race in the browser test and a two-tab test that did not guarantee overlapping refresh calls. The corrections wait for session restoration and hold real network requests until both browser calls start; no responses are mocked.
+
 ## Validation completed locally
 
 - API and admin TypeScript typechecks passed after these changes.
@@ -35,5 +41,5 @@ Local histories were reconstructed from GitHub files and must never be force-pus
 3. Run frozen-lockfile install, full typecheck, builds, backend unit/integration suites, browser tests, Flutter analysis/widget tests and Android live API acceptance. Resolve actual failures rather than rerunning failed commands blindly. Keep command, exit status and saved artifact for each tier.
 4. Extend chat to complete group roles/management, media, reporting, delivered state and persistent offline outbox; verify reconnect pagination and load against NFR targets. Existing text chat is a checkpoint, not full CHAT-FR acceptance.
 5. Complete community attachments, edits/history, threaded replies, keyword/safety policy and moderation appeals; household multi-member consent reconciliation and chosen map-provider rendering; remaining calendar invitation/recurrence workflows; notifications inbox/follows/broadcast; cultural CMS with approved content; S3 storage/media derivatives; import dry-run/commit tooling; offline caches/sync; account/role and operations consoles; complete locale externalization and accessibility.
-6. Reconcile immutable audit hash writer concurrency and legacy-chain verification rather than claiming the metadata browser proves hash-chain integrity.
+6. Verify migration 014 and the audit chain in CI: shared transaction lock, canonical version-2 hashing, sequence ordering, rollback/outbox tests and central-only integrity console. Legacy records remain preserved and explicitly unverified; external checkpoint retention and complete event/access coverage still require acceptance.
 7. Finish production-like security/load/device tests and backup/restore rehearsal. Production provider credentials, approved cultural rules/content, actual genealogical data and human release sign-offs must be supplied/approved before deployment. Do not invent or enable unavailable authoritative rules.
