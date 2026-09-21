@@ -175,7 +175,7 @@ class _ChatGroupDialogState extends State<_ChatGroupDialog> {
   @override
   Widget build(BuildContext context)=>AlertDialog(
     title:const Text('शाखा समूह (Branch group)'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      DropdownButtonFormField<String>(value:_branch,decoration:const InputDecoration(labelText:'Branch'),items:widget.branches.map((b)=>DropdownMenuItem<String>(value:b['id'] as String,child:Text((b['nameNepali']??b['name_nepali']??b['code']).toString()))).toList(),onChanged:(value)=>setState(()=>_branch=value)),
+      DropdownButtonFormField<String>(initialValue:_branch,decoration:const InputDecoration(labelText:'Branch'),items:widget.branches.map((b)=>DropdownMenuItem<String>(value:b['id'] as String,child:Text((b['nameNepali']??b['name_nepali']??b['code']).toString()))).toList(),onChanged:(value)=>setState(()=>_branch=value)),
       TextField(controller:_name,maxLength:150,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Group title')),
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Cancel')),FilledButton(onPressed:_branch==null||_name.text.trim().isEmpty?null:()=>Navigator.pop(context,{'type':'FAMILY_BRANCH','branchId':_branch,'title':_name.text.trim()}),child:const Text('Create'))]);
 }

@@ -57,6 +57,8 @@ export default function RootLayout({
                     प्रोफाइल तथा गोपनीयता (Profile)
                   </Link>
                   <Link href="/community" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">समुदाय (Community)</Link>
+                  <Link href="/audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अडिट इतिहास (Audit history)</Link>
+                  <Link href="/map" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">परिवारको स्थान (Household map)</Link>
 <Link href="/chat" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सन्देश (Messages)</Link>
                 </nav>
               </div>
