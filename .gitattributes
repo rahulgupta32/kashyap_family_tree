@@ -1,0 +1,86 @@
+# ============================================================================
+# Kashyap Adhikari Family Tree - .gitattributes
+# Owner: Jyphra Technology Pvt. Ltd.
+# ============================================================================
+
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Source code
+*.dart text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.sql text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+*.env.example text eol=lf
+*.graphql text eol=lf
+*.proto text eol=lf
+
+# Windows specific
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Docker
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+
+# Configuration
+.editorconfig text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.jar binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.exe binary
+*.apk binary
+*.aab binary
+*.ipa binary
+*.db binary
+*.sqlite3 binary
+
+# Baseline documents (frozen)
+docs/baseline/v1.1/*.docx binary
+docs/baseline/v1.1/*.xlsx binary
+docs/baseline/source/*.zip binary
+
+# Lock files
+pubspec.lock text eol=lf linguist-generated
+package-lock.json text eol=lf linguist-generated
+pnpm-lock.yaml text eol=lf linguist-generated
+
+# Generated code
+*.g.dart linguist-generated
+*.freezed.dart linguist-generated

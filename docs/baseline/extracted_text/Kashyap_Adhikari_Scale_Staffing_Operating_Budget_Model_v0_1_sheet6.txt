@@ -1,0 +1,10 @@
+﻿Phase Funding and Approval Gates					
+Percentages apply to the chosen implementation scenario before contingency and tax.					
+Gate	Phase	Share	Release evidence	Approval owner
+G0	Mobilization and validated backlog	0.1	Signed charter, governance, architecture decisions, executable backlog	Jyphra Product Owner + Sponsor
+G1	UX, architecture and foundations	0.15	Approved prototype, threat model, environments and CI/CD	Jyphra Product + Technology
+G2	Core identity and genealogy	0.25	Demonstrated core workflows, audit and migration pilot	Jyphra Product + Genealogy Authority
+G3	Community, chat and administration	0.25	Feature-complete test build and operational controls	Jyphra Product + QA
+G4	Hardening and UAT	0.15	Security/performance tests, UAT acceptance, store package	Jyphra Release Board
+G5	Launch and stabilization	0.1	Production launch, monitoring, handover and warranty entry	Jyphra Sponsor
+Control	PASS — allocations equal 100%			

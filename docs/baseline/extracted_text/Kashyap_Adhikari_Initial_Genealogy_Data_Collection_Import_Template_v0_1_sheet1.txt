@@ -1,0 +1,17 @@
+﻿Initial Genealogy Dataset — Collection & Import Template							
+Kashyap Gotra Adhikari Genealogy & Community Platform | SDLC Stage 1 | Template v0.1 | No real personal records included							
+Control	Requirement	Operational rule
+Status	READY FOR CONTROLLED DATA COLLECTION	The structure is implementation-ready; real records must pass consent, evidence, duplicate, relationship, and branch-authority review.
+Golden rule	One person, one Person ID	Never create a second person record because spelling, address, marital status, or source differs. Record alternate names and sources separately.
+Required order	Branches → Persons → Relationships	Create approved branch codes first, then people, then parent-child and union records using their IDs.
+Identity	Use system IDs, not citizenship numbers	Person ID is an internal identifier. Do not place citizenship, passport, national ID, banking, medical, or biometric data in this workbook.
+Living people	Consent and least privilege	Private contact, exact address, full birth date, photos, and sensitive family status require documented consent and role-based access.
+Deceased people	Respect family/community policy	Record only necessary facts and sources; apply the approved legal/cultural retention and visibility policy.
+Dates	Preserve original calendar	Record date value plus Calendar Type (BS/AD/Tithi/Unknown), precision, and source. Do not silently convert approximate dates.
+Relationships	Use explicit typed edges	Biological, adoptive, step, guardian, unknown, and disputed relationships remain distinct. Never infer a biological link.
+Parentage	Maximum two active parent links is not assumed	The model supports legal/social complexity. Every edge has type, status, dates, evidence, and visibility.
+Marriage/union	History is preserved	Store start/end status and dates. Do not delete former relationships; restrict visibility when sensitive.
+Evidence	Every verified fact needs a source	Use Source ID links. Oral history is valid evidence when its recorder, date, scope, and consent are documented.
+Disputes	Do not overwrite competing claims	Create a dispute record, preserve both claims, restrict access, and resolve through authorized review.
+Import gate	No direct production import	First load into staging, run referential-integrity and duplicate checks, obtain branch approval, then promote in an audited transaction.
+Sample data	Training only	The Example Records sheet contains fictional data and must never be imported into production.

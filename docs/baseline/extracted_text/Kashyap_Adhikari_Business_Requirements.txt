@@ -1,0 +1,982 @@
+﻿KASHYAP GOTRA ADHIKARI
+Genealogy & Community Platform
+Final Business Requirements Document (BRD)
+Document purposeTo establish the authoritative business scope, governance, rules, priorities, controls, measurable outcomes, and acceptance conditions for the complete Android, iOS, administration, and genealogy platform release.
+
+Document information
+Approved baseline
+Status
+Final baseline for stakeholder validation and formal sign-off
+Version
+1.0
+Target community
+Kashyap/Kashyapa Gotra Adhikari community across Nepal
+Product surfaces
+Android app, iOS app, web administration portal, shared backend platform
+Release policy
+Complete feature scope in the first market release; staged engineering milestones are permitted
+Prepared for
+Business sponsors, community/religious representatives, product, design, engineering, QA, security and operations teams
+Date
+6 September 2026
+
+CONFIDENTIALITY
+Controlled project document. Distribution outside authorized stakeholders requires approval from the Product Owner or Governing Committee.
+
+Document Control
+Revision history
+Version
+Date
+Summary
+Owner
+0.1
+20 Aug 2026
+Initial draft for business validation
+Project stakeholders
+1.0
+6 Sep 2026
+Expanded complete-release BRD with governance, requirements, controls and acceptance criteria
+Product Owner / Governing Committee
+
+Approval and sign-off
+Role
+Name
+Decision
+Date / signature
+Business Sponsor
+To be appointed
+Pending
+
+Product Owner
+To be appointed
+Pending
+
+Genealogy Governance Lead
+To be appointed
+Pending
+
+Community/Religious Authority
+To be appointed
+Pending
+
+Technical Lead
+To be appointed
+Pending
+
+Privacy/Security Reviewer
+To be appointed
+Pending
+
+
+Approval ruleThe BRD becomes contractually authoritative only after all required approvers sign. Blank names are controlled governance fields, not permission for the delivery team to invent cultural or legal decisions.
+
+Document precedence
+Where documents conflict, approved change requests and the latest signed BRD take precedence over the PRD, SRS, designs, technical specifications and backlog. Cultural rule catalogues approved by the designated authority govern Nata/Saino, Jutho, Tithi, Shraddha and ritual calculations.
+Glossary
+Term
+Definition
+Person record
+Permanent genealogy identity independent of an application account.
+Member account
+Authenticated user identity permitted to use member features.
+Claim
+Verified linkage between a member account and a person record.
+Official genealogy
+Approved person and relationship records used by all calculations.
+Branch
+Governed lineage subdivision used for verification and visibility scope.
+Verifier
+Authorized reviewer for genealogy requests within an assigned scope.
+Nata/Saino
+Culturally approved relationship label calculated between people.
+Jutho
+Culturally governed mourning/ritual-observance information; not legal or medical advice.
+Tithi
+Lunar-calendar element used only through an approved authoritative rule/provider.
+Sensitive data
+Data requiring restricted access, consent and enhanced security.
+Soft deletion
+Logical removal that preserves controlled history and audit evidence.
+
+1. Executive Summary
+The platform will preserve and responsibly grow a nationwide, verified genealogy of Kashyap/Kashyapa Gotra Adhikari families while providing member profiles, culturally governed relationship identification, events, invitations, notifications, community publishing, household mapping, cultural knowledge and secure communication. The trusted genealogy is the shared foundation for every dependent service.
+Release decisionAll approved capabilities in this BRD are mandatory for the first public market release. Internal delivery may use milestones, feature flags and controlled pilots, but no listed capability is deferred merely as a future phase.
+
+1.1 Business problem
+Genealogy knowledge is fragmented across paper records, individual custodians and disconnected family branches.
+Unverified edits, duplicate identities and unclear relationship paths can damage community trust.
+Cultural knowledge and event information are difficult to maintain, validate and distribute consistently.
+Members lack one privacy-aware platform for discovery, invitations, announcements, support and communication.
+1.2 Intended outcomes
+One auditable source of truth for verified genealogy.
+Faster, governed member contribution without direct alteration of official records.
+Accurate relationship and cultural services based only on approved rule sets.
+Safe bilingual participation across Nepal and the diaspora.
+Sustainable administration, moderation, support, backup and recovery.
+2. Business Objectives and Success Measures
+ID
+Objective
+Business outcome
+Launch/operational measure
+OBJ-01
+Preserve genealogy
+Digitize and govern ancestral, deceased and living person records.
+≥95% of imported records reconciled; 100% retain provenance.
+OBJ-02
+Build trust
+Require approval and auditability for material genealogy changes.
+100% of official changes tied to request, reviewer and before/after record.
+OBJ-03
+Enable discovery
+Provide privacy-aware search, tree navigation and relationship paths.
+≥90% successful completion in usability testing.
+OBJ-04
+Serve the community
+Deliver content, events, invitations, announcements and communication.
+All mandatory modules pass UAT before release.
+OBJ-05
+Protect people
+Apply consent, least privilege, location safety and abuse controls.
+Zero unresolved critical security findings at launch.
+OBJ-06
+Operate reliably
+Maintain recoverable and observable services.
+Monthly availability ≥99.5%; tested RPO ≤24h and RTO ≤8h.
+OBJ-07
+Be inclusive
+Support Nepali and English, accessibility and low-bandwidth use.
+100% release strings localized; WCAG 2.2 AA target for applicable flows.
+
+3. Scope and Boundaries
+3.1 In-scope product surfaces
+Surface
+Mandatory capability
+Android and iOS member apps
+Registration, profile, genealogy, search, Nata/Saino, cultural content, calendars, follows, notifications, Jutho information, invitations/RSVP, posts, maps, 1:1 and group chat, safety and settings.
+Web administration portal
+Users, roles, branches, genealogy, requests, evidence, duplicates, cultural rules/content, events, notifications, posts, reports, chat-safety cases, audit, configuration and operational dashboards.
+Shared backend platform
+Identity, authorization, workflow, genealogy graph, relationship engine, calendar rules, content, search, notifications, media, messaging, maps, audit, analytics and backup services.
+
+3.2 Explicit scope decisions
+RSVP, advanced invite targeting and group chat are mandatory.
+All community posts require automated checks and moderator approval before broad publication; emergency notices receive a priority queue.
+Exact household coordinates are never public by default; approximate locality is the standard map display.
+Genealogy person records persist independently when an account is deleted, subject to correction, restriction and lawful governance.
+No payment, e-commerce or advertising billing capability is included unless approved through formal change control.
+The product supports Nepal-wide families and invited diaspora members; the primary legal and cultural operating context is Nepal.
+4. Stakeholders, Governance and Accountability
+Role
+Accountability
+Business Sponsor
+Funding, strategic mandate, final escalation
+Product Owner
+Scope, priority, acceptance and change control
+Governing Committee
+Policy, branch authority and dispute oversight
+Genealogy Governance Lead
+Integrity, provenance, duplicate/merge policy
+Family/Branch Verifier
+Scoped review of claims and genealogy requests
+Community/Religious Authority
+Approval of Nata/Saino, Jutho, Tithi, Shraddha, ritual and historical rules
+Content Editor/Reviewer
+Bilingual drafting, sourcing, review and publication
+Community Moderator
+Post review, reports, appeals and safety enforcement
+Super Admin
+Privileged administration, escalated disputes and configuration
+Support/Operations
+Member help, incident response, monitoring and recovery
+Member
+Consent-based participation and governed contribution
+Guardian
+Consent and controls for a minor’s account/profile
+
+4.1 Segregation of duties
+A requester cannot approve the same genealogy request.
+A content author cannot provide the final religious/cultural approval for their own authoritative rule.
+Production data access requires named accounts; shared administrator credentials are prohibited.
+Privileged actions are logged and reviewed. Emergency access is time-limited and retrospectively approved.
+Duplicate merging, rollback and bulk export require elevated authorization and secondary confirmation.
+5. Personas and Key Journeys
+Persona
+Primary goal
+New member
+Find or create identity, obtain verification and set privacy.
+Verified member
+Explore tree, calculate relationships, follow relatives and contribute.
+Family organizer
+Create events, target invitees, collect RSVP and send updates.
+Community contributor
+Submit announcements, help requests and culturally relevant material.
+Verifier
+Resolve claims, changes, evidence and branch integrity.
+Religious/content authority
+Approve sources, terminology and executable cultural rules.
+Moderator
+Assess posts, reports, blocks and appeals.
+Administrator
+Operate people, permissions, configuration, audit and recovery.
+
+5.1 Critical end-to-end journeys
+Register → OTP verify → discover/claim person → submit evidence → verifier decision → privacy setup → verified access.
+Search person → view permitted profile → calculate Nata/Saino → inspect relationship path → follow person/branch.
+Propose genealogy change → duplicate check → evidence → scoped review → approve/reject/return → official tree update → audit and notification.
+Create event → choose calendar basis → select relatives/branch → issue invitation → reminders → RSVP → update/cancel.
+Create community post → validation → moderation → publish → expire/archive → report/appeal if required.
+Record death → elevated verification → update person status → calculate only approved Jutho/related notifications → respect privacy and notification boundaries.
+6. Core Business Rules
+Rule ID
+Authoritative business rule
+BR-GOV-001
+Every genealogy person has an immutable Person ID; user accounts and person records remain separate.
+BR-GOV-002
+No member proposal changes the official genealogy before approval.
+BR-GOV-003
+Every material decision stores actor, timestamp, reason, evidence, prior value and resulting value.
+BR-GOV-004
+The system checks potential duplicates before creating a person.
+BR-GOV-005
+A merge preserves aliases, provenance, history and reversible linkage; hard deletion is prohibited.
+BR-GOV-006
+Verifier authority is restricted to assigned branches and action types.
+BR-GOV-007
+Disputes, cross-branch links, sensitive corrections and merge reversals escalate to Super Admin/Governance Lead.
+BR-GOV-008
+Derived relationships never become manually entered facts.
+BR-GOV-009
+Cultural calculations run only from an approved, versioned and effective rule set.
+BR-GOV-010
+Sensitive living-person fields are private by default and disclosed by explicit visibility rules.
+BR-GOV-011
+A minor’s account or sensitive profile management requires verified guardian authority.
+BR-GOV-012
+Exact household coordinates require explicit consent and restricted audience.
+BR-GOV-013
+Community posts require moderation before broad publication.
+BR-GOV-014
+Account deletion does not automatically erase governed historical genealogy; account linkage and private account data follow retention policy.
+BR-GOV-015
+All public-facing content must have an approved Nepali version and an English version or a recorded translation exception.
+
+7. Functional Requirements
+Requirement wording uses “shall” to indicate mandatory behaviour. Acceptance criteria are minimum release gates and are expanded in the SRS and traceability matrix.
+7.1 Identity, registration and access
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+AUTH-FR-001
+Register with a Nepal or permitted international mobile number using OTP.
+Valid number receives time-limited OTP; replay, excessive retries and abuse are blocked.
+AUTH-FR-002
+Require acceptance of Terms, Privacy Notice and community rules with versioned consent.
+Account cannot activate without required consent; timestamp/version are retained.
+AUTH-FR-003
+Search possible person matches before requesting a new person.
+Potential matches are displayed without exposing restricted data.
+AUTH-FR-004
+Claim an existing person through evidence and verifier approval.
+No profile ownership or private access is granted before approval.
+AUTH-FR-005
+Support secure session, device list, sign-out-all, number change and recovery.
+Member can review/revoke sessions; sensitive changes require re-verification.
+AUTH-FR-006
+Support account states pending, active, restricted, suspended, closed and deceased-holder review.
+Each transition is authorized, reasoned, logged and communicated.
+AUTH-FR-007
+Support guardian-managed minor onboarding.
+Guardian verification and consent are required before activation.
+
+7.2 Person profiles and privacy
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+PROF-FR-001
+Maintain names in Nepali and English, aliases, gender/relationship attributes, life status, dates, branch, locality, biography, work, achievements, publications, media and provenance.
+Field validation and visibility apply independently.
+PROF-FR-002
+Allow per-field visibility: private, approved relatives, branch, verified members, or public.
+Unauthorized users never receive restricted field values through UI, search, export or API.
+PROF-FR-003
+Distinguish exact, approximate, unknown and disputed dates/places.
+Uncertain facts are never presented as exact.
+PROF-FR-004
+Support living, deceased, historical, minor and non-user persons.
+No account is required for a valid genealogy record.
+PROF-FR-005
+Provide correction, restriction and dispute requests.
+Requests are traceable and decided by authorized roles.
+
+7.3 Genealogy and family tree
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+GEN-FR-001
+Store direct parent-child and spouse/partner facts with type, status, dates, evidence and confidence.
+Invalid self-links, impossible cycles and duplicate active facts are rejected.
+GEN-FR-002
+Support biological, adoptive, step and other approved relationship fact types.
+Type is explicit and privacy-aware.
+GEN-FR-003
+Display navigable ancestor, descendant, spouse, sibling and branch views.
+Large trees progressively load and maintain orientation.
+GEN-FR-004
+Submit add, correct, disconnect, death, claim and merge proposals.
+Every request follows the approved state machine.
+GEN-FR-005
+Detect likely duplicates using names, aliases, dates, places and relations.
+Matches are scored for review; the system never auto-merges.
+GEN-FR-006
+Import initial and subsequent governed datasets.
+Dry-run, mapping, validation, reconciliation and rollback reports are produced.
+GEN-FR-007
+Export permitted tree views and member-owned data.
+Export enforces visibility and logs sensitive/bulk operations.
+GEN-FR-008
+Preserve complete version history and enable authorized correction rollback.
+Rollback creates a new audited version and never destroys evidence.
+
+7.4 Nata/Saino relationship engine
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+REL-FR-001
+Calculate relationship from approved direct genealogy facts relative to the viewing member.
+Result includes label, direction, generation and explainable path.
+REL-FR-002
+Support bilingual, gender-aware, maternal/paternal, marriage-based, elder/younger and approved regional terminology.
+Outputs match the active approved rule catalogue.
+REL-FR-003
+Handle multiple paths, ambiguity and unknown relationships safely.
+System shows the approved priority result and alternatives or “not determinable”.
+REL-FR-004
+Version, test, approve and activate rule sets without an app release.
+Past calculations can be traced to the applied version.
+REL-FR-005
+Restrict displayed relationship paths according to privacy.
+A label may be shown without exposing hidden intermediate profiles.
+
+7.5 Cultural and historical content
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+CONT-FR-001
+Manage Kashyap Rishi, Bindabasini Devi, Adhikari history, Goth Puja, Dewali/Devali, Shraddha and other approved content.
+Content is remotely managed and categorized.
+CONT-FR-002
+Provide draft, review, cultural approval, translation, publish, revise and archive states.
+Only approved versions are publicly visible.
+CONT-FR-003
+Store authors, reviewers, sources, media rights, version and effective dates.
+Published content displays appropriate provenance.
+CONT-FR-004
+Support text, image, audio, video and downloadable references with accessibility metadata.
+Unsafe or unsupported files are rejected.
+CONT-FR-005
+Make selected approved content available offline.
+Cached content shows version/date and refreshes safely.
+
+7.6 Calendar, events, invitations and RSVP
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+EVT-FR-001
+Support Gregorian, Bikram Sambat and approved Tithi-based event representation.
+Canonical storage and displayed conversions remain traceable.
+EVT-FR-002
+Create birthdays, death/Shraddha, 84 Puja, marriage, Bratabandha, Dewali/Goth Puja, gatherings and community events.
+Type-specific fields and permissions apply.
+EVT-FR-003
+Support public, verified-member, branch, relatives and invitation-only audiences.
+Unauthorized users cannot discover restricted events.
+EVT-FR-004
+Select invitees by person, approved relationship, descendants, branch, generation or saved group.
+Selection is previewed and respects privacy/exclusions.
+EVT-FR-005
+Deliver invitation card, event details, venue/map, updates, cancellation and reminders.
+Recipients receive current status and duplicate notifications are prevented.
+EVT-FR-006
+Collect RSVP: attending, not attending, maybe, guest count and note.
+Organizer sees authorized aggregate/detail and response history.
+EVT-FR-007
+Export or add permitted events to device calendar.
+Timezone and date-basis information are retained.
+
+7.7 Jutho, death and ritual information
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+JUT-FR-001
+Record death through an elevated verification workflow.
+Death status and notifications are not published before required approval.
+JUT-FR-002
+Calculate applicable Jutho only from verified relationship and approved rules.
+No result is produced from draft/disputed links or unapproved rules.
+JUT-FR-003
+Show duration, start/end basis, rule version, plain-language reason and disclaimer.
+User can understand the basis without seeing restricted data.
+JUT-FR-004
+Support authorized correction, exception and regional/branch rule variants.
+Override requires authority, reason and audit.
+JUT-FR-005
+Control who receives death, Shraddha and Jutho notifications.
+Privacy, family scope and quiet-hour preferences are enforced.
+
+7.8 Follow preferences and notifications
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+NOT-FR-001
+Follow permitted people, branches, generations, event types and content categories.
+Member can follow/unfollow and see consequences.
+NOT-FR-002
+Provide push and in-app notifications; SMS is limited to critical authentication or approved priority use.
+Every message records channel, status and preference decision.
+NOT-FR-003
+Support category, quiet-hour, language, frequency and digest preferences.
+Non-mandatory notifications honor preferences.
+NOT-FR-004
+Prevent duplicate, stale and privacy-revoked notifications.
+Revoked access removes unavailable content from notification destinations.
+NOT-FR-005
+Provide administrative priority broadcasts with approval and audience preview.
+Broadcast actor, rationale, audience and delivery summary are audited.
+
+7.9 Community posts and moderation
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+POST-FR-001
+Submit missing-person, property/room, assistance, program, announcement and approved category posts.
+Required fields, expiry and category warnings apply.
+POST-FR-002
+Support text, images, locality, contact method and consent-based location.
+Sensitive contact/location defaults are protected.
+POST-FR-003
+Require automated validation and moderator approval before broad publication.
+Rejected/returned posts provide reason; emergency posts enter priority queue.
+POST-FR-004
+Support edit, expiry, renewal, removal, report, block and appeal.
+State changes are logged and communicated.
+POST-FR-005
+Enforce prohibited-content, fraud, impersonation, privacy and repeat-abuse policies.
+Moderators have consistent reason codes and escalation paths.
+
+7.10 Household and event maps
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+MAP-FR-001
+Show consenting households by approximate locality by default.
+Public/standard views do not disclose exact coordinates.
+MAP-FR-002
+Allow verified household managers to submit/correct location and visibility.
+Changes require consent and validation.
+MAP-FR-003
+Show event venues and directions based on event audience.
+Venue disappears when access is revoked or event removed.
+MAP-FR-004
+Prevent unrestricted bulk scraping/export of household locations.
+Rate limits, authorization and audit controls are applied.
+
+7.11 Private and group communication
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+CHAT-FR-001
+Provide 1:1 chat between eligible verified members.
+Blocked/restricted users cannot initiate or continue disallowed conversations.
+CHAT-FR-002
+Provide groups with owner/admin/member roles, invite approval and member removal.
+Role changes and membership history are controlled.
+CHAT-FR-003
+Support text, image, document, reply, reaction, delivery/read state and notifications.
+File type/size scanning and privacy controls apply.
+CHAT-FR-004
+Support user-side edit/delete subject to retention and abuse evidence policy.
+UI state and retained moderation evidence are distinguished.
+CHAT-FR-005
+Support block, report, mute, leave and administrator safety escalation.
+Reporter safety is protected; admins cannot casually browse private messages.
+CHAT-FR-006
+Apply retention, backup and lawful-access policy.
+Retention is documented and consistently enforced.
+
+7.12 Administration, reporting and support
+Requirement ID
+Mandatory requirement
+Minimum acceptance criterion
+ADM-FR-001
+Manage users, roles, scopes, branches, verifiers and privileged access.
+Every privilege change is approved and audited.
+ADM-FR-002
+Operate queues for claims, genealogy changes, duplicates, content, posts, reports and appeals.
+Queues support assignment, SLA, history and escalation.
+ADM-FR-003
+Manage approved rules, taxonomies, translations, templates and configuration.
+Changes are versioned, validated and reversible.
+ADM-FR-004
+Search and export audit evidence according to authority.
+Exports are watermarked/logged and privacy-filtered.
+ADM-FR-005
+Provide operational dashboards for adoption, integrity, moderation, delivery and system health.
+Metrics exclude unnecessary personal data.
+ADM-FR-006
+Support member help requests, status, assignment, response and closure.
+Sensitive support access is minimized and audited.
+ADM-FR-007
+Provide backup/restore status and controlled incident functions.
+Only authorized operations roles can execute recovery actions.
+
+8. Workflow and State Requirements
+Object
+Required states
+Key control
+Genealogy request
+Draft → Submitted → Assigned → Under review → Returned / Approved / Rejected → Applied → Closed
+Only Applied updates the official tree.
+Profile claim
+Submitted → Match review → Evidence review → Approved / Returned / Rejected → Linked
+One active verified claim per permitted person/account context.
+Content
+Draft → Editorial review → Cultural review → Translation review → Scheduled / Published → Revised / Archived
+Author cannot provide all final approvals.
+Post
+Draft → Submitted → Automated check → Moderation → Published / Returned / Rejected → Expired / Removed → Appealed / Closed
+No broad publication before moderation.
+Event
+Draft → Published → Updated / Cancelled → Completed → Archived
+Audience and notifications re-evaluated after changes.
+Report/appeal
+Open → Triaged → Investigating → Actioned / No action → Appealed → Final → Closed
+Reason, evidence, SLA and reviewer recorded.
+Account
+Pending → Active → Restricted / Suspended → Restored / Closed
+High-impact transitions require reason and notice.
+
+9. Data Requirements and Governance
+9.1 Sources of truth
+Data domain
+Source of truth
+Steward
+Identity/account
+Authenticated identity service and consent ledger
+Product Operations
+Genealogy person/relations
+Approved genealogy repository
+Genealogy Governance Lead
+Cultural rules/content
+Approved versioned catalogue/CMS
+Community/Religious Authority
+Events/invitations
+Event service
+Authorized organizer / Operations
+Posts/moderation
+Community service and case log
+Moderation Lead
+Messages
+Messaging service subject to retention controls
+Security/Operations
+Audit
+Append-only audit service
+Security and Governance
+
+9.2 Data quality rules
+Mandatory provenance for imported and historically significant facts.
+Unicode support for Nepali and English; normalized searchable forms must not replace original spelling.
+Dates store calendar basis, precision, timezone where relevant and conversion version.
+Unknown data remains unknown; placeholder guesses are prohibited.
+Conflicting facts remain reviewable with status and evidence instead of silent overwrite.
+Soft deletion and retention markers apply to governed records.
+9.3 Data classification
+Class
+Examples
+Default handling
+Public
+Approved cultural articles, public events
+Accessible without exposing member analytics.
+Community
+Approved member-visible profiles/posts
+Verified-member access; no bulk export.
+Restricted
+Phone, exact address/location, private relationships, minor data
+Explicit consent and scoped authorization.
+Highly restricted
+OTP/security data, admin evidence, abuse reports, recovery material
+Least privilege, encryption, enhanced audit and short retention where possible.
+
+9.4 Retention baseline
+Record
+Baseline rule
+Official genealogy and provenance
+Long-term community archive; corrections/versioning rather than destructive deletion.
+Account and consent
+Account life plus approved legal/operational retention; detach from person record on closure.
+OTP/security events
+Shortest period necessary for security investigation and compliance.
+Unapproved drafts
+Auto-expire after configured inactivity with notice.
+Posts and moderation cases
+Published life plus appeal/evidence period defined in policy.
+Messages and attachments
+Documented configurable retention; deletion semantics disclosed to users.
+Audit and privileged activity
+Tamper-evident retention aligned to governance, security and legal review.
+Backups
+Encrypted rotating schedule; expiry consistently deletes superseded copies.
+
+10. Privacy, Safety and Legal Requirements
+The solution shall undergo Nepal-qualified legal review before production. The design baseline considers the Privacy Act, 2075; Individual Privacy Regulation, 2077; Electronic Transactions Act, 2063; and Act Relating to Children, 2075. This BRD records product controls, not legal advice.
+Use clear purpose notices and obtain versioned consent before collecting optional sensitive data.
+Collect only fields necessary for defined purposes; prohibit secondary use without authorization and notice.
+Provide access, correction, restriction, account closure and complaint channels.
+Use privacy-by-default for living people, minors, phone numbers, addresses and exact locations.
+Prohibit sale of member data and behavioral advertising based on genealogy or cultural participation.
+Conduct privacy impact and threat assessments before launch and for material changes.
+Publish Terms of Use, Privacy Notice, Community Standards, Child Safety, Moderation and Retention notices in Nepali and English.
+Define breach triage, containment, notification assessment, evidence preservation and post-incident review.
+10.1 Child and vulnerable-person safeguards
+Age declaration and guardian workflow where applicable.
+No public exact location, school/contact information or open messaging for minors by default.
+Guardian ability to review permitted visibility and account relationships.
+Rapid reporting/escalation for exploitation, threats, doxxing or self-harm concerns.
+Safety decisions override engagement objectives.
+11. Non-Functional Requirements
+ID
+Quality
+Measurable requirement
+NFR-PERF-001
+Performance
+95th percentile API response ≤2 seconds for standard reads under agreed launch load; core screen usable within 3 seconds on representative Nepal mobile networks.
+NFR-SCALE-001
+Scalability
+Capacity test at 3× forecast peak concurrent usage and 2× first-year data volume.
+NFR-AVL-001
+Availability
+Monthly production availability ≥99.5%, excluding approved maintenance.
+NFR-REL-001
+Reliability
+No acknowledged write is silently lost; background jobs are idempotent/retry-safe.
+NFR-DR-001
+Recovery
+RPO ≤24 hours and RTO ≤8 hours; restore test at least twice yearly.
+NFR-SEC-001
+Security
+Encryption in transit and at rest; MFA for privileged administrators; zero unresolved critical/high launch vulnerabilities unless formally risk-accepted.
+NFR-PRV-001
+Privacy
+Server-side authorization for every protected resource; privacy tests cover search, export, notification and relationship paths.
+NFR-A11Y-001
+Accessibility
+Target WCAG 2.2 AA for applicable mobile/web flows; screen-reader, contrast, scaling and keyboard testing.
+NFR-LOC-001
+Localization
+100% user-facing release strings available in Nepali and English; dates/numbers preserve selected locale and calendar basis.
+NFR-COMP-001
+Compatibility
+Support vendor-supported Android/iOS versions covering ≥95% of target active devices; current and previous major versions of major admin browsers.
+NFR-OBS-001
+Observability
+Structured logs, metrics, traces, alerting and correlation IDs without logging secrets or unnecessary personal data.
+NFR-MAINT-001
+Maintainability
+Automated tests, documented interfaces, code review and controlled deployment/rollback.
+NFR-LOW-001
+Low bandwidth
+Pagination, caching, compression, resumable media upload and graceful offline/poor-network states.
+NFR-UX-001
+Usability
+≥90% task completion for registration/claim, tree search, request submission, event invitation and privacy setup in moderated testing.
+
+12. Security Requirements
+Threat model identity, genealogy, content, messaging, media, maps, notifications, admin and integrations.
+OTP rate limits, anti-enumeration, bot protection and suspicious-login controls.
+Role- and attribute-based authorization with branch scope and deny-by-default policy.
+Privileged MFA, step-up authentication, session timeout and periodic access review.
+Secrets stored outside source code; key rotation and environment separation.
+Input validation, output encoding, parameterized queries and malware/file-type scanning.
+Signed or short-lived media access; prevent insecure direct object references.
+Tamper-evident audit logs for sensitive reads, writes, exports, role changes, impersonation and recovery.
+Security testing includes SAST, dependency/container scanning, DAST and independent penetration testing.
+Document incident severity, on-call ownership, containment, recovery and post-incident actions.
+13. Integration Requirements
+Integration
+Purpose
+Mandatory controls
+SMS/OTP provider
+Phone verification and approved critical messages
+Nepal delivery capability, rate limits, failover, cost monitoring and privacy terms.
+Push notification services
+Android/iOS notifications
+Token lifecycle, preference checks, minimal lock-screen content.
+Map/geocoding provider
+Household locality and event directions
+Consent, minimized coordinates, quota/cost/fallback and provider terms.
+Calendar conversion/Tithi source
+BS/Gregorian/Tithi representation
+Authoritative approval, versioning, test cases, fallback and disclaimer.
+Object/media storage
+Images, documents, audio/video
+Encryption, scanning, signed access, lifecycle and backup policy.
+Email service, if enabled
+Administrative and invitation support
+Verified domain, opt-out and anti-abuse controls.
+Analytics/crash reporting
+Product quality and diagnostics
+Data minimization, masking, retention and environment separation.
+
+14. Reporting, Analytics and Audit
+Adoption: registrations, verified claims, active members and language usage.
+Integrity: pending requests, approval time, duplicate rate, disputes and merge reversals.
+Community: posts by category/status, moderation SLA, reports and appeals.
+Events: invitations, delivery, RSVP and reminder outcomes.
+Reliability: latency, errors, job failures, notification delivery, availability and recovery tests.
+Privacy/security: access reviews, sensitive exports, suspicious activity, consent/version coverage and incidents.
+Analytics limitationDashboards use aggregate or pseudonymized data whenever possible. Product analytics may not expose private genealogy, exact location, message content or cultural observance data merely for engagement reporting.
+
+15. Migration and Initial Genealogy Onboarding
+Step
+Required action
+1
+Inventory sources and owners; record licensing/permission and provenance.
+2
+Define canonical mapping for person, alias, date precision, place, branch, relationship and evidence.
+3
+Normalize without destroying original text.
+4
+Run duplicate and structural validation, including cycles and impossible dates.
+5
+Perform at least two dry runs and produce exception reports.
+6
+Obtain branch/verifier sampling approval before production import.
+7
+Reconcile counts and checksums; retain rejected/uncertain records separately.
+8
+Maintain rollback plan and immutable import audit report.
+
+16. Operations, Support and Continuity
+Capability
+Business requirement
+Environments
+Separate development, test/staging and production; production data is not copied to lower environments without approved anonymization.
+Release
+Documented readiness checklist, approvals, app-store preparation, rollback and communication.
+Monitoring
+24×7 automated monitoring for critical availability/security signals; documented business-hours and on-call response.
+Support
+Bilingual help content and support workflow with severity, ownership, response targets and escalation.
+Backup
+Encrypted automated backups, monitored success, rotation and off-site/logical separation.
+Recovery
+Documented restore and disaster-recovery runbooks; scheduled exercises and evidence.
+Vendor continuity
+Exit/export plan for identity, messaging, maps, notification, storage and calendar providers.
+Handover
+Source, credentials, architecture, runbooks, training, licences and asset ownership transferred to the authorized operator.
+
+17. Assumptions, Dependencies and Constraints
+Type
+Statement
+Owner / treatment
+Dependency
+Community authorities provide approved cultural terminology and rule tables.
+Governance Committee; required before production activation.
+Dependency
+Branch verifiers and moderation staff are appointed and trained.
+Business Sponsor.
+Dependency
+Existing genealogy sources are lawfully available and interpretable.
+Genealogy Governance Lead.
+Constraint
+Users may have low bandwidth, older devices and mixed digital literacy.
+Design and engineering must optimize accordingly.
+Constraint
+Nepali/English content and multiple calendar systems increase review complexity.
+Localization and cultural QA are release gates.
+Assumption
+The organization will fund ongoing SMS, storage, moderation, support and security operations.
+Validate in operating budget.
+Assumption
+No monetary transactions are required in this baseline.
+Change control if introduced.
+
+18. Risks and Mitigations
+ID
+Risk
+Rating
+Required mitigation
+R-01
+Incorrect genealogy or cultural result
+High
+Approval, evidence, versioned rules, dispute and rollback.
+R-02
+Exposure of living-person or household data
+Critical
+Privacy defaults, consent, server authorization, audit and testing.
+R-03
+Duplicate or fraudulent identity claims
+High
+Match checks, evidence, scoped verification and rate limits.
+R-04
+Community abuse, fraud or misinformation
+High
+Pre-moderation, reporting, escalation, expiry and appeals.
+R-05
+Rule disagreement across branches
+High
+Named authority, variants, effective dates and transparent explanation.
+R-06
+Operational burden exceeds capacity
+High
+Staffing plan, queue SLAs, dashboards, training and automation.
+R-07
+Vendor cost or outage
+Medium
+Quotas, monitoring, fallback, export and exit plan.
+R-08
+Loss/corruption of irreplaceable genealogy
+Critical
+Backups, append-only history, restore exercises and reconciliation.
+R-09
+Low adoption or accessibility barriers
+Medium
+Bilingual onboarding, usability testing, low-bandwidth and accessibility.
+R-10
+Scope ambiguity returns during development
+High
+Signed BRD, unique IDs, traceability and formal change control.
+
+19. Release Acceptance and Quality Gates
+Gate
+Evidence required
+Scope
+Every mandatory BRD requirement maps to design, implementation and test evidence; no unexplained gaps.
+Business UAT
+Business Sponsor/Product Owner accepts all critical journeys and module acceptance criteria.
+Genealogy
+Import reconciliation, duplicate handling, approvals, versioning and rollback pass governed scenarios.
+Cultural accuracy
+Approved Nata/Saino and cultural rule catalogues pass authority-signed test examples.
+Privacy
+Privacy impact assessment, consent/visibility tests and data-rights workflows pass.
+Security
+Threat model, code/dependency scans and independent penetration test have no unresolved critical issue.
+Performance
+Load and low-bandwidth tests meet NFR thresholds.
+Accessibility/localization
+Nepali/English QA and accessibility testing pass release criteria.
+Operations
+Monitoring, support, backups, restore, incident, rollback and ownership handover are demonstrated.
+Legal/policy
+Nepal-qualified review and publication of required user policies are complete.
+App distribution
+Store metadata, permissions, privacy declarations, signing and production configuration are approved.
+
+20. Change Control
+Step
+Required action
+1
+Every requested change records originator, rationale, affected requirement IDs, urgency and evidence.
+2
+Product, privacy, cultural, security, cost, schedule and operational impacts are assessed.
+3
+The Product Owner recommends; required domain authorities approve within their authority.
+4
+Approved changes update the BRD version, traceability matrix, designs, tests and release plan.
+5
+Emergency changes are time-bounded, logged and retrospectively reviewed.
+
+21. Open Decisions Requiring Named Authority
+These are not deferred features. They are controlled decision inputs required before configuration or production activation.
+ID
+Decision
+Accountable authority
+Deadline
+OD-01
+Authoritative Nata/Saino terminology, priority and regional variants
+Community/Religious Authority
+Before relationship-engine UAT
+OD-02
+Jutho relationship matrix, durations, exceptions, colors and interpretation
+Community/Religious Authority
+Before Jutho UAT
+OD-03
+Tithi/BS/Gregorian source, conversion and recurrence rules
+Community/Religious Authority + Product Owner
+Before calendar UAT
+OD-04
+Cultural/historical source canon and approval panel
+Governing Committee
+Before content publication
+OD-05
+Named role holders and branch scopes
+Business Sponsor
+Before admin UAT
+OD-06
+Detailed retention periods after legal review
+Privacy/Security Reviewer
+Before production
+OD-07
+Forecast volumes, staffing and operating budget
+Business Sponsor/Product Owner
+Before vendor commitments
+
+Appendix A — Requirements Traceability Starter
+BRD item
+Downstream artifact
+Minimum link
+Business objective
+PRD / roadmap / KPI plan
+Objective → capability → measure
+Functional requirement
+Use case / screen / API / test
+Requirement ID → design/API → test case
+Business rule
+Rule catalogue / engine test
+Rule ID → approved rule version → examples
+NFR
+Architecture / test / operations
+NFR ID → control → evidence
+Privacy/security
+DPIA / threat model / security test
+Control → risk → test/evidence
+Open decision
+Decision log / ADR / configuration
+Decision ID → authority → effective version
+
+Appendix B — Required Downstream Documentation
+Product Vision and Product Requirements Document
+Software Requirements Specification with detailed acceptance criteria
+Use cases, user stories and user journeys
+Roles and permissions matrix
+Requirements traceability matrix
+Information architecture, flows, screen inventory and design system
+Localization and content style guide
+Domain model, business-rule catalogue and state machines
+Conceptual/logical/physical data models, ERD and data dictionary
+Migration/import and backup/recovery plans
+System architecture, diagrams and Architecture Decision Records
+Integration specification and measurable NFR specification
+OpenAPI contract, error catalogue and sequence diagrams
+Security requirements, threat model, privacy impact assessment and retention schedule
+Test strategy, UAT plan, release plan, incident response and operational runbooks
+Coding standards, repository strategy, CI/CD and handover plan
+
+Appendix C — Authoritative Reference Register
+Reference
+Relevance
+Nepal Law Commission — Privacy Act, 2075
+Privacy of personal/family information and processing controls; verify current applicability with counsel.
+Nepal Law Commission — Individual Privacy Regulation, 2077
+Operational privacy requirements; verify implementation duties with counsel.
+Nepal Law Commission — Electronic Transactions Act, 2063
+Electronic records/transactions and cyber-related legal context; verify current amendments.
+Nepal Law Commission — Act Relating to Children, 2075
+Child rights and safeguards relevant to minor profiles/accounts.
+Approved Kashyap/Adhikari cultural rule catalogue
+Binding domain source for Nata/Saino, Jutho, Tithi, Shraddha and ritual behavior.
+Signed BRD and approved change log
+Primary product scope and business acceptance authority.
+
+Official sources accessed for drafting on 6 September 2026. Legal interpretation and current amendments must be confirmed by Nepal-qualified counsel before launch.

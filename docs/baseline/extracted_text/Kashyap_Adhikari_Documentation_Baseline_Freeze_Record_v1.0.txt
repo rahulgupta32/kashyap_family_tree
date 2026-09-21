@@ -1,0 +1,217 @@
+﻿KASHYAP ADHIKARIGENEALOGY & COMMUNITY PLATFORM
+Documentation Baseline & Freeze Record
+Development Baseline v1.0 • Scope freeze and configuration-control authority
+
+Control
+Value
+Product owner
+Jyphra Technology Pvt. Ltd.
+Approving organization
+Jyphra Technology Pvt. Ltd.
+Baseline status
+FROZEN FOR DEVELOPMENT
+Effective date
+8 September 2026
+Release governed
+Complete Release 1.0
+Delivery model
+Jyphra-led hybrid development; external development agency managed by Jyphra
+Change authority
+Jyphra Product Owner under formal change control
+Production status
+Not production approval; launch gates remain binding
+
+1. Freeze decision
+Jyphra Technology Pvt. Ltd. establishes this package as the authoritative Development Baseline v1.0 for the Kashyap Adhikari Genealogy & Community Platform. The documented Release 1.0 scope is frozen. Engineering, design, procurement, data preparation, testing and agency delivery must trace to this baseline. No feature, rule, control or quality target may be removed, deferred or materially altered without an approved change request.
+The freeze locks scope and approved planning assumptions. It does not convert pending cultural, legal, personnel, procurement, test or store validations into completed approvals.
+2. Authority and ownership
+Jyphra Technology Pvt. Ltd. owns the product, documentation, source code, design assets, repositories, cloud accounts, credentials, data-control decisions and intellectual property.
+Jyphra is the final business acceptance and release authority.
+An external development agency may execute contracted work only within the Jyphra-approved baseline, repositories, security controls, quality gates and acceptance process.
+Community, cultural, genealogy, privacy and security authorities retain the specialist approval powers defined in the governance framework.
+No supplier, developer or individual administrator may unilaterally amend the baseline.
+3. Controlled baseline register
+ID
+Artifact
+Filename
+Version
+Freeze status
+Governing purpose
+DOC-001
+Business Requirements Document
+Kashyap_Adhikari_Business_Requirements.docx
+v1.0
+Frozen
+Business scope, outcomes, governance and Release 1.0 requirements
+DOC-002
+Master Requirements & SDLC Specification
+Kashyap_Adhikari_Master_Requirements_SDLC_Specification.docx
+v1.1
+Frozen / governing
+Primary implementation source of truth; 292 controls and requirements
+DOC-003
+Nata/Saino Rule Catalogue
+Kashyap_Adhikari_Nata_Saino_Desk_Validated_Draft_v0.2.xlsx
+v0.2
+Controlled provisional
+Technical baseline; human cultural approval required before authoritative production output
+DOC-004
+Genealogy Data Collection & Import Template
+Kashyap_Adhikari_Initial_Genealogy_Data_Collection_Import_Template_v0.1.xlsx
+v0.1
+Controlled template
+Required structure for real data inventory, cleansing, consent, provenance and import
+DOC-005
+Administrator & Branch Authority Framework
+Kashyap_Adhikari_Administrator_Branch_Authority_Governance_Framework_v0.1.xlsx
+v0.1
+Controlled framework
+Role and permission design; named appointments required before production
+DOC-006
+Privacy & Data Retention Policy
+Kashyap_Adhikari_Privacy_Data_Retention_Policy_v1.0.docx
+v1.0
+Approved for SDLC
+Owner-approved controls; Nepal-qualified legal validation required before publication/production
+DOC-007
+Scale, Staffing & Operating Budget Plan
+Kashyap_Adhikari_Scale_Staffing_Operating_Budget_Plan_v0.1.docx
+v0.1
+Approved planning baseline
+100k+ scale, 12–15 months, recommended budget baseline and funding controls
+DOC-008
+Scale, Staffing & Operating Budget Model
+Kashyap_Adhikari_Scale_Staffing_Operating_Budget_Model_v0.1.xlsx
+v0.1
+Controlled financial model
+Auditable scenario calculations; quotations and tax confirmation required
+DOC-009
+Documentation Baseline & Freeze Record
+Kashyap_Adhikari_Documentation_Baseline_Freeze_Record_v1.0.docx
+v1.0
+Frozen / governing
+Package authority, precedence, change control, gates and acceptance
+DOC-010
+SHA-256 Manifest
+SHA256SUMS.txt
+v1.0
+Immutable integrity record
+File-level checksums for the exact frozen bytes
+4. Precedence rules
+Priority
+Authority
+Rule
+1
+Approved change record
+A later Jyphra-approved change applies only to the explicitly identified requirements and files.
+2
+Freeze Record v1.0
+Controls package status, ownership, precedence, exceptions and changes.
+3
+Master Specification v1.1
+Governs detailed functional, non-functional, architecture, security, test and SDLC requirements.
+4
+BRD v1.0
+Governs business intent, complete Release 1.0 scope and outcomes.
+5
+Approved domain policies/catalogues
+Govern privacy, cultural rules, genealogy data and authority within their defined domains.
+6
+Budget plan and model
+Govern planning assumptions and cost envelope, not product behaviour.
+7
+Meeting notes, prompts or supplier proposals
+Inform work only; they cannot override controlled documents without change approval.
+5. Frozen decisions
+All documented features are included in Release 1.0; there is no approved feature deferral.
+Target platforms include Android, iOS and the web administration portal, with Nepali and English localization.
+Architecture must support at least 100,000 registered users at launch and growth toward 500,000 without core redesign.
+Planning baseline: 20,000 MAU, 5,000 DAU and approximately 1,000 normal-peak concurrent users.
+Delivery period: 12–15 months.
+Delivery: Jyphra-led hybrid team with external development-agency capacity managed by Jyphra.
+Support: business-hours monitoring and user support, with an emergency contact route outside business hours and no 24/7 user-support SLA.
+Cloud: managed critical services combined with cost-efficient compute/containers.
+Minimum availability objective: 99.5%, subject to the detailed SLOs in the Master Specification.
+Financial planning: NPR, individual compensation undisclosed, 15% implementation contingency, taxes separate, three-year TCO, no revenue model.
+Recommended Production-Grade scenario is the approved financial planning baseline.
+6. Non-negotiable production gates
+Gate
+Required evidence before production
+Cultural authority
+Two-person approval of authoritative Nata/Saino rules and any ritual-sensitive calculations; approved sources and effective versions.
+Named governance
+Mandatory central and branch roles filled, scoped, trained and tested; deputies and recusal controls active.
+Legal/privacy
+Nepal-qualified legal validation of notices, retention, minors, consent, deletion, processor terms and cross-border handling.
+Real genealogy data
+Inventory, consent/provenance, normalization, duplicate analysis, pilot migration, reconciliation and authority sampling.
+Commercial
+Live vendor quotations, tax/withholding confirmation, approved contracts, IP assignment and agency exit/handover terms.
+Technical contracts
+Version-controlled physical schema, OpenAPI, WebSocket/event contracts, ADRs and infrastructure-as-code completed during engineering.
+Assurance
+Threat model/DPIA, security test, performance test, accessibility evidence, test traceability and accepted UAT.
+Operations
+Monitoring, alerts, support rota, incident response, backup/restore evidence, DR exercise, runbooks and handover.
+Distribution
+Google Play and Apple App Store privacy, deletion, content and release requirements passed.
+Executive release
+Formal Jyphra go/no-go record with accepted residual risks.
+7. Implementation artifacts after freeze
+The baseline is sufficient to begin development. The following are executable delivery artifacts, not missing product-scope decisions. They must be produced, reviewed and version-controlled during the SDLC without reopening the frozen scope:
+Final screen designs, design system, navigation maps and clickable prototypes.
+Product backlog, sprint-ready user stories and requirement traceability.
+Physical database schema, migrations, data dictionary and final ERD.
+OpenAPI specification, event/WebSocket contracts and error catalogue.
+Architecture decision records, environment design and infrastructure-as-code.
+Threat model, DPIA, security test plan and privacy engineering evidence.
+Automated test suites, test cases, UAT scripts and release evidence.
+CI/CD configuration, monitoring rules, backup/restore and disaster-recovery runbooks.
+Support, moderation, content-governance, training and operational handover materials.
+8. Change-control procedure
+Step
+Mandatory control
+1. Raise
+Assign a unique change ID and state reason, affected requirement IDs, requested outcome and proposer.
+2. Analyse
+Document product, cultural, privacy, security, data, cost, schedule, testing and operational impact.
+3. Review
+Obtain domain-owner reviews and agency estimate where applicable.
+4. Decide
+Jyphra Product Owner approves/rejects; high-risk, cultural, legal, security or budget changes require the defined specialist authority.
+5. Version
+Create a new controlled version; never silently overwrite frozen history.
+6. Trace
+Update affected requirements, backlog, tests, designs, APIs, data rules, budget and release notes.
+7. Communicate
+Notify delivery, governance and operational stakeholders before implementation.
+8. Verify
+Confirm implementation and acceptance evidence against the approved change.
+9. Baseline integrity and storage
+SHA-256 checksums identify the exact bytes included in the freeze package.
+The ZIP archive is a transport copy; the manifest and controlled source files remain the authority.
+Working files, render outputs, superseded drafts and training examples are excluded unless explicitly registered.
+A changed checksum requires a new controlled version and updated manifest.
+Jyphra must store the baseline in a restricted, backed-up repository with read access for the delivery team and write access limited to authorized document controllers.
+10. Development readiness declaration
+Development readiness: APPROVED. Production readiness: NOT YET APPROVED. The complete Release 1.0 scope and planning baseline are sufficiently defined to authorize design and engineering. Production remains prohibited until every applicable gate in Section 6 has objective evidence and formal acceptance.
+11. Formal freeze approval
+Approval field
+Recorded decision
+Owner
+Jyphra Technology Pvt. Ltd.
+Approving organization
+Jyphra Technology Pvt. Ltd.
+Decision
+Approve and freeze Development Baseline v1.0
+Effective date
+8 September 2026
+Scope
+Complete Release 1.0 documentation and planning baseline
+Change policy
+No modification except through Section 8 change control
+Development authorization
+Approved
+Production authorization
+Withheld pending Section 6 gates
+This record freezes the documentation baseline under organizational authority. Named individual signatures may be appended to the approval register without altering the frozen scope.

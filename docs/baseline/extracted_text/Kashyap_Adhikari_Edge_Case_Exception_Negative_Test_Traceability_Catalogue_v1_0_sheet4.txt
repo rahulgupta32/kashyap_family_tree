@@ -1,0 +1,11 @@
+﻿Coverage Dashboard							
+Formula-driven catalogue and test-execution readiness.							
+Metric	Value
+Total frozen cases	260
+Critical cases	20
+High cases	52
+Medium cases	188
+Passed executions	0
+Failed executions	0
+Catalogue status	PASS — complete baseline
+Production remains gated until required tests pass and all cultural, legal, governance, data, operational and store approvals are complete.							

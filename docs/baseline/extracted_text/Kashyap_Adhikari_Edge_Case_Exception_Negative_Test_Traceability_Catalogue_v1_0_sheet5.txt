@@ -1,0 +1,25 @@
+﻿Module Coverage Matrix				
+Counts reconcile to the frozen catalogue.				
+Module	Total	Critical	High	Requirement family
+Installation & Compatibility	10	2	0	FR-PLATFORM
+Registration, OTP & Sessions	12	2	2	FR-AUTH
+Profiles, Claims & Privacy	12	1	8	FR-PROFILE
+Genealogy Person & Relationships	16	1	5	FR-GEN
+Duplicate Detection & Merge	12	0	8	FR-MERGE
+Search, Tree & Relationship Paths	12	1	3	FR-SEARCH
+Nata/Saino Engine	12	0	1	FR-NATA
+Calendar, Tithi, Jutho & Shraddha	12	0	2	FR-CULTCAL
+Content, Rituals & Localization	10	0	0	FR-CONTENT
+Events, Invitations & RSVP	12	1	4	FR-EVENT
+Community Posts & Moderation	12	0	4	FR-COMMUNITY
+Map & Location	10	0	1	FR-MAP
+Chat, Groups & Presence	16	1	0	FR-CHAT
+Notifications & Background Jobs	10	0	2	FR-NOTIFY
+Media & Files	10	0	3	FR-MEDIA
+Administration, Roles & Audit	12	3	2	FR-ADMIN
+Offline, Sync & Concurrency	10	0	1	NFR-SYNC
+API, Integrations & Errors	12	1	2	NFR-API
+Migration & Import	12	1	3	FR-MIG
+Security, Abuse & Privacy Incidents	12	4	1	NFR-SEC
+Operations, Release & Retirement	12	2	0	NFR-OPS
+Accessibility & User Experience	12	0	0	NFR-A11Y

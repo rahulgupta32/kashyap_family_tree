@@ -1,0 +1,11 @@
+﻿Three-Year Total Cost of Ownership					
+Decision view; NPR millions. Recommended is the approved planning baseline, not a vendor quotation.					
+Cost layer	Minimum professional	Recommended baseline	Enterprise strengthened
+Implementation subtotal	19	37.7	61.099999999999994
+Implementation contingency	2.85	5.655	9.165
+Implementation incl. contingency, excl. VAT	21.85	43.355000000000004	70.26499999999999
+Three-year operations, excl. VAT	29	58.8	105.2
+Three-year TCO, excl. VAT	50.85	102.155	175.46499999999997
+Illustrative VAT if fully applicable	6.6105	13.28015	22.810449999999996
+Three-year TCO incl. illustrative VAT	57.4605	115.43515000000001	198.27544999999998
+PLANNING RECOMMENDATION: Adopt the Recommended baseline. Release funds by gated phases; procure cloud/SMS/map services using live quotations; and reforecast quarterly against actual usage.			

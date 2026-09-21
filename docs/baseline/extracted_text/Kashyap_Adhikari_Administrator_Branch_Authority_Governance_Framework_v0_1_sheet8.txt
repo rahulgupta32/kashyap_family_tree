@@ -1,0 +1,9 @@
+﻿Operational & Governance Escalation Matrix											
+Escalation routes are role-based until names and on-call contacts are appointed.											
+Class	Trigger	Acknowledge	Initial Owner	Response Team	Executive Escalation	Target Ownership	Update Cadence	Immediate Action	Public Communication	Closure Requirement	Gate
+SEV-1	Security breach, major outage, irreversible data risk	Immediate	Incident Commander	Security Admin; System Admin	Sponsor; DPO; Legal; Board	15 min	Continuous/30 min	Service containment and evidence preservation	No	Post-incident review within 5 business days	Mandatory
+SEV-2	Serious degradation, privacy incident, large verification error	15 minutes	Incident Commander / Operations	Security; DPO; Product	Sponsor; affected authorities	30 min	Hourly	Contain impact and restore safely	Restricted	Review within 10 business days	Mandatory
+SEV-3	Normal defect, local data issue, moderation escalation	4 business hours	Operations Lead	Support/Engineering/Moderator	Product or Branch Authority	1 business day	Daily	Workaround and scheduled correction	As needed	Problem record if recurring	Operational
+CULTURAL	Disputed terminology or ritual rule	Before publication	Cultural Reviewer	Senior Community Authority	Board if unresolved	5 business days	Weekly	Keep unpublished/neutral fallback	No	Reasoned decision + version	Mandatory
+GENEALOGY	Cross-branch lineage dispute or duplicate merge	Before approval	Central Genealogy Authority	Independent panel	Board/Legal/DPO	5 business days	Weekly	Restrict contested record	No	Decision + rollback evidence	Mandatory
+PRIVACY	Rights request, consent withdrawal, child-data issue	Immediately route	DPO	Legal; Data owner	Board if high risk	1 business day	Per legal/policy SLA	Restrict processing as needed	Restricted	Case evidence and closure	Mandatory

@@ -1,0 +1,305 @@
+﻿KASHYAP ADHIKARIGENEALOGY & COMMUNITY PLATFORM
+Scale, Staffing and Operating Budget Plan
+Three-scenario implementation budget and three-year total cost of ownership
+
+Document control
+Value
+Owner and approving organization
+Jyphra Technology Pvt. Ltd.
+Status
+Approved planning baseline for budgeting and procurement
+Version / date
+0.1 / 8 September 2026
+Delivery model
+Jyphra-led hybrid team with an external development agency managed by Jyphra
+Planning horizon
+12–15 months implementation plus three post-launch years
+Currency
+NPR; taxes shown separately
+Confidentiality
+Workstream totals only; no individual compensation disclosure
+
+1. Executive decision
+Jyphra Technology Pvt. Ltd. should adopt the Recommended Production-Grade scenario as the formal financial baseline for Release 1.0. It balances nationwide readiness, professional assurance and controlled operating cost. The Minimum scenario remains a constrained fallback; the Enterprise scenario adds resilience, delivery capacity and deeper assurance but is not required to begin.
+Scenario
+Implementation incl. 15% contingency, excl. VAT
+3-year operations, excl. VAT
+3-year TCO, excl. VAT
+Minimum professional
+NPR 21.85m
+NPR 29.00m
+NPR 50.85m
+Recommended baseline
+NPR 43.36m
+NPR 58.80m
+NPR 102.16m
+Enterprise strengthened
+NPR 70.27m
+NPR 105.20m
+NPR 175.47m
+These figures are planning estimates, not vendor quotations. VAT is excluded from the decision totals and must be applied only after Jyphra Finance confirms the taxable base, withholding, exemptions and contract structure.
+2. Binding planning assumptions
+Capacity for at least 100,000 registered users at launch, with a path to 500,000 without redesigning the core architecture.
+Baseline demand: 20,000 monthly active users, 5,000 daily active users and approximately 1,000 normal-peak concurrent users.
+Twelve-to-fifteen-month full Release 1.0 delivery; no documented product feature is intentionally deferred.
+Jyphra owns the product, approvals, source repositories, cloud accounts, credentials, intellectual property and acceptance decisions.
+A contracted external development agency may supply implementation capacity, but remains governed and accepted by Jyphra.
+Business-hours monitoring and user support; severe incidents use an emergency contact path outside hours without a guaranteed 24/7 SLA.
+Hybrid cloud: managed services for critical data/identity/storage/backup components and cost-efficient compute or containers for suitable services.
+A 15% implementation contingency is held separately. Three-year operating forecasts exclude a second contingency to avoid double counting; Jyphra should reforecast quarterly.
+No revenue, subscription, advertising or sponsorship assumptions are included.
+3. Scale and service targets
+Dimension
+Launch baseline
+Scale target / control
+Registered users
+100,000+
+500,000 without core redesign
+Monthly active users
+20,000
+Autoscale and reforecast above 30,000
+Daily active users
+5,000
+Load-test seasonal and emergency spikes
+Concurrent users
+1,000 normal peak
+Burst capacity at least 3× normal peak
+Availability
+99.5% minimum service objective
+99.9% for enterprise strengthened
+Recovery
+Tiered RPO/RTO by system criticality
+Restore exercises at least twice yearly
+Environments
+Development, test, staging, production
+Strict isolation and separate secrets
+Data growth
+Usage-measured
+Storage lifecycle, compression and archival
+4. Staffing model
+Staffing is expressed as capability and concurrent full-time-equivalent ranges, not salaries. Jyphra may fill a capability internally, through its managed agency, or with an independent specialist, provided accountability and separation-of-duties controls remain intact.
+Capability group
+Primary sourcing
+Minimum
+Recommended
+Enterprise
+Product, program and analysis
+Jyphra-led hybrid
+3–5
+4–6
+6–8
+UX/UI/accessibility
+Hybrid
+1–2
+2–3
+3–4
+Mobile engineering
+Hybrid
+3–4
+5–7
+7–10
+Backend/admin engineering
+Hybrid
+4–6
+7–10
+11–16
+QA and automation
+Hybrid / independent
+2–3
+3–5
+5–7
+DevOps, SRE and security
+Hybrid / specialist
+1–2
+2–3
+3–5
+Data, genealogy and cultural operations
+Jyphra/community-led
+4–7
+7–12
+12–20
+Peak staffing varies by phase. Named governance authorities, cultural approvers and branch verifiers are tracked separately from the software delivery FTE estimate.
+5. Implementation budget
+Workstream
+Minimum
+Recommended
+Enterprise
+Discovery, governance and business analysis
+1.40
+2.80
+4.50
+UX/UI/accessibility
+1.00
+2.00
+3.20
+Mobile applications
+3.40
+6.20
+9.50
+Backend and integrations
+3.60
+6.80
+10.50
+Admin portal
+1.50
+2.80
+4.50
+Genealogy and cultural-rule framework
+1.80
+3.60
+5.80
+Chat, notifications, media and maps
+1.40
+2.80
+4.80
+QA, performance and UAT
+1.50
+3.20
+5.20
+Security and privacy assurance
+0.80
+2.00
+3.80
+DevOps and environments
+0.90
+1.80
+3.00
+Migration tooling and pilot
+1.00
+2.20
+3.80
+Training, launch and stabilization
+0.70
+1.50
+2.50
+Subtotal
+19.00
+37.70
+61.10
+15% contingency
+2.85
+5.66
+9.17
+Total excl. VAT
+21.85
+43.36
+70.27
+Amounts are NPR millions. Apparent rounding differences may occur because the spreadsheet model retains two decimals.
+6. Three-year operating costs
+Scenario
+Year 1
+Year 2
+Year 3
+Three-year total
+Minimum professional
+7.8
+9.6
+11.6
+29.0
+Recommended baseline
+16.0
+19.3
+23.5
+58.8
+Enterprise strengthened
+28.6
+34.5
+42.1
+105.2
+Operating costs cover cloud and managed services, storage and backup, OTP/notifications/maps, maintenance, business-hours support, monitoring/security, content and genealogy operations, licences and training. The auditable workbook is authoritative for detailed calculations; this report summarizes rounded planning values.
+7. Scenario interpretation
+7.1 Minimum professional
+Suitable only if funding is constrained and Jyphra accepts slower delivery, smaller device coverage, limited parallelism, narrower independent assurance and greater dependency on carefully controlled rollout. It must not reduce privacy, audit, backup or core security controls.
+7.2 Recommended production-grade
+The approved planning baseline. It provides sufficient delivery capacity for the full Release 1.0 scope, structured migration, automated testing, independent security work, multi-environment deployment and sustainable business-hours operations for the initial 100,000-user target.
+7.3 Enterprise strengthened
+Adds delivery parallelism, stronger high-availability engineering, broader device and performance assurance, deeper operational coverage and additional data/community operations. Select this scenario if launch commitments, geographic rollout or public visibility make reduced delivery risk more valuable than the additional cost.
+8. Funding and procurement controls
+Gate
+Share
+Release evidence
+G0 Mobilization
+10%
+Charter, governance, validated backlog and procurement plan
+G1 Design/foundation
+15%
+Approved prototype, architecture, threat model, environments and CI/CD
+G2 Core identity/genealogy
+25%
+Demonstrated core workflows, audit controls and migration pilot
+G3 Community/admin
+25%
+Feature-complete test build and operational controls
+G4 Hardening/UAT
+15%
+Security and performance evidence, UAT acceptance and store package
+G5 Launch/stabilization
+10%
+Production launch, monitoring, handover and warranty entry
+Tie supplier payments to accepted evidence, not elapsed time alone.
+Keep source code, infrastructure-as-code, design files, credentials and documentation in Jyphra-controlled systems from the first sprint.
+Require transparent change requests with scope, schedule, cost, risk and acceptance impact.
+Obtain at least comparable commercial quotations for major outsourced work and recurring vendors.
+Set cloud budget alerts, OTP abuse limits, storage lifecycle rules and monthly unit-cost reporting.
+Reforecast at architecture approval, feature-complete build, UAT entry, launch and quarterly after launch.
+9. Cost risks and responses
+Risk
+Potential effect
+Required response
+Incomplete genealogy data
+Migration rework and delayed verification
+Pilot early; price bulk cleansing separately after inventory
+Unapproved cultural rules
+Blocked Nata/Saino or ritual outputs
+Use neutral fallbacks; do not automate unapproved rules
+OTP and media abuse
+Variable vendor cost
+Rate limits, quotas, monitoring and verified-member controls
+Agency lock-in
+Higher maintenance cost
+Jyphra-owned repositories, open contracts and documented handover
+App-store or security findings
+Launch delay
+Pre-submission compliance and independent assessment
+Peak-event traffic
+Cloud cost/performance spike
+Load tests, autoscaling limits, queues and CDN
+USD/NPR volatility
+Recurring vendor-price change
+Use NRB reference and quarterly reforecast
+Scope change after baseline
+Schedule and budget increase
+Formal change control and contingency governance
+10. Acceptance and approval conditions
+Jyphra approves one scenario as the active funding baseline and records its budget authority.
+Finance and procurement confirm VAT, withholding, payment currency and supplier terms before signing.
+Technology leadership converts the selected scenario into a bill of quantities and live vendor quotations.
+The agency contract includes intellectual-property assignment, confidentiality, privacy/security duties, acceptance criteria, warranty, handover and exit assistance.
+Release funding is stopped or rebaselined if gate evidence fails, material scope changes, or forecast variance exceeds the approved tolerance.
+Operating budget ownership is assigned before production and includes backup restore tests, incident handling, patching, moderation and support.
+
+11. Sources and limitations
+The model uses public market signals and official vendor pricing structures only as benchmarks. Cloud, SMS, maps, tax and agency charges remain usage- and contract-specific. The USD/NPR planning reference uses Nepal Rastra Bank’s 8 September 2026 selling rate of NPR 151.48 per USD. Vendor pricing should be refreshed immediately before procurement.
+Nepal Rastra Bank foreign exchange: https://www.nrb.org.np/forex/
+Google Firebase pricing: https://firebase.google.com/pricing
+Amazon EC2 pricing: https://aws.amazon.com/ec2/pricing/
+Amazon RDS pricing: https://aws.amazon.com/rds/pricing/
+Nepal software engineer market signal: https://www.levels.fyi/t/software-engineer/locations/nepal
+Nepal outsourcing benchmark: https://bytecodedevelopers.com/blog/why-outsourcing-to-nepal-saves-big
+Nepal Inland Revenue Department: https://ird.gov.np/
+12. Formal planning approval
+Field
+Approved value
+Owner
+Jyphra Technology Pvt. Ltd.
+Approving organization
+Jyphra Technology Pvt. Ltd.
+Approved planning scenario
+Recommended Production-Grade
+Approval scope
+Internal SDLC, budgeting, procurement preparation and vendor negotiation
+Approval date
+8 September 2026
+Remaining condition
+Live quotations, tax confirmation and contract approval before financial commitment
+This approval establishes the planning baseline; it does not itself authorize supplier purchase orders or replace contractual due diligence.

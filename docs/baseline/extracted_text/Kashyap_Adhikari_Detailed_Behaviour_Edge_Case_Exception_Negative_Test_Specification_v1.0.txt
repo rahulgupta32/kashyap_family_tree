@@ -1,0 +1,1331 @@
+﻿KASHYAP ADHIKARIGENEALOGY & COMMUNITY PLATFORM
+Detailed Behaviour, Edge Case, Exception & Negative-Test Specification
+Frozen Implementation Baseline v1.0 • 260 traceable edge cases
+Control
+Approved value
+Owner/approver
+Jyphra Technology Pvt. Ltd.
+Effective date
+8 September 2026
+Status
+FROZEN FOR DEVELOPMENT AND QA
+Scope
+Complete Release 1.0; supplements Master Specification v1.1 and Final SDLC Baseline v1.0
+Authority
+Does not change scope; defines expected negative/exception behaviour
+Production
+Still subject to cultural, legal, named-role, data, assurance and store gates
+
+1. How to use this specification
+Every row is a mandatory design, implementation and test consideration. Developers must implement the expected behaviour and QA must convert the Given/When/Then statement into automated or controlled manual evidence. Product, privacy, security, genealogy and cultural authorities remain responsible for domain approval. Newly discovered cases are added through versioned change control; absence from this catalogue never authorizes unsafe behaviour.
+Server-side authorization overrides client display state.
+No error may silently corrupt, overwrite, duplicate or expose authoritative data.
+Retry is automatic only when bounded and idempotent.
+Unapproved cultural rules use neutral/disabled behaviour.
+Sensitive error responses are generic to the user but traceable through safe correlation and audit.
+All user-facing final messages require professional Nepali-language review before production.
+2. Cross-cutting exception contract
+Concern
+Frozen rule
+Validation
+Reject invalid input before mutation and return stable field/error codes.
+Authorization
+Evaluate current server-side role, scope and privacy at execution time.
+Concurrency
+Use version/idempotency controls; do not use silent last-write-wins for governed data.
+Transactions
+Commit all authoritative changes atomically or preserve a recoverable, explicitly incomplete state.
+Audit
+Record safe attributable evidence for governed and privileged outcomes.
+Offline/retry
+Never display success before server confirmation; preserve safe drafts and reconcile on reconnect.
+Localization
+English and Nepali messages must convey the same action and consequence.
+Accessibility
+Error focus, announcements, contrast and recovery action must remain usable.
+Observability
+Every unexpected failure has correlation, metric and operational ownership.
+Recovery
+Provide retry, correction, appeal, reassignment, rollback or support path.
+3. Coverage summary
+Module
+Cases
+Critical
+High
+Installation & Compatibility
+10
+2
+0
+Registration, OTP & Sessions
+12
+2
+2
+Profiles, Claims & Privacy
+12
+1
+8
+Genealogy Person & Relationships
+16
+1
+5
+Duplicate Detection & Merge
+12
+0
+8
+Search, Tree & Relationship Paths
+12
+1
+3
+Nata/Saino Engine
+12
+0
+1
+Calendar, Tithi, Jutho & Shraddha
+12
+0
+2
+Content, Rituals & Localization
+10
+0
+0
+Events, Invitations & RSVP
+12
+1
+4
+Community Posts & Moderation
+12
+0
+4
+Map & Location
+10
+0
+1
+Chat, Groups & Presence
+16
+1
+0
+Notifications & Background Jobs
+10
+0
+2
+Media & Files
+10
+0
+3
+Administration, Roles & Audit
+12
+3
+2
+Offline, Sync & Concurrency
+10
+0
+1
+API, Integrations & Errors
+12
+1
+2
+Migration & Import
+12
+1
+3
+Security, Abuse & Privacy Incidents
+12
+4
+1
+Operations, Release & Retirement
+12
+2
+0
+Accessibility & User Experience
+12
+0
+0
+Installation & Compatibility
+10 frozen cases. Requirement family: FR-PLATFORM. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0001Medium
+Unsupported OS version
+Block installation/use and show minimum supported version; do not attempt an unsafe partial start.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0002Medium
+Required permission denied
+Continue only with features that do not need the permission; explain impact and provide settings route.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0003Medium
+Optional permission denied
+Keep core application usable and request permission only at point of need.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0004Medium
+App update available
+Allow normal use for compatible optional update; show non-blocking release information.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0005Medium
+Minimum supported version retired
+Require upgrade before authenticated use; preserve unsent local drafts where safe.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0006Medium
+Corrupted local cache after upgrade
+Discard rebuildable cache, retain protected drafts, resynchronize from server and report diagnostics.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0007Critical
+Device clock incorrect
+Use server time for security and authoritative timestamps; warn when calendar display may be unreliable.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0008Medium
+Device storage exhausted
+Stop download/upload safely, retain server state, identify storage problem and permit retry.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0009Critical
+Rooted or compromised device detected
+Apply risk policy, protect secrets and privileged actions, and log a security signal without exposing detection logic.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0010Medium
+Deep link opened before authentication
+Preserve validated destination, authenticate, then authorize destination; never reveal content before access check.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Registration, OTP & Sessions
+12 frozen cases. Requirement family: FR-AUTH. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0011Medium
+Invalid phone format
+Reject locally and server-side using normalized Nepal/international format; create no account.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0012Medium
+OTP requested repeatedly
+Rate-limit by phone, device, network and risk; return generic cooldown without confirming account existence.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0013Medium
+Older OTP entered after newer OTP
+Reject older code even if within original expiry; only newest challenge is valid.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0014Medium
+OTP arrives after expiry
+Reject and offer a new challenge after cooldown; never extend expiry client-side.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0015Medium
+Correct OTP entered after maximum attempts
+Challenge remains locked/invalid; require a fresh OTP.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0016High
+SMS provider timeout
+Return pending/retry-safe state; do not create duplicate challenges or charge uncontrolled retries.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0017Medium
+Same phone already registered
+Route to sign-in/account recovery without disclosing sensitive profile data.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0018Critical
+Phone number recycled
+Require enhanced identity recovery and genealogy-claim review; do not grant prior owner access automatically.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0019Medium
+Session revoked on another device
+Reject next protected request, clear local secrets and return to sign-in with explanation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0020Critical
+Refresh token replay
+Revoke token family, record security event and require reauthentication.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0021Medium
+Multiple active devices
+Show device sessions and permit selective/all-session revocation according to policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0022High
+User offline during OTP verification
+Do not claim success; retain phone input only and retry challenge status when connectivity returns.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Profiles, Claims & Privacy
+12 frozen cases. Requirement family: FR-PROFILE. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0023Medium
+Account exists without genealogy Person
+Allow account completion and guided search/create request; never fabricate a Person link.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0024High
+Person exists without account
+Keep genealogy record valid; allow controlled claim workflow.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0025High
+Two accounts claim same Person
+Place later/conflicting claims in review; do not auto-link either if conflict exists.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0026High
+One account claims multiple Persons
+Block or route exceptional representation/guardian workflow; preserve audit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0027High
+Claimant details partially match
+Require additional evidence and verifier review; display no hidden Person fields.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0028High
+Claim rejected
+Keep account active, provide reason category and appeal/correction route without exposing reviewer notes.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0029Critical
+Profile field hidden from requester
+Return field omitted/redacted, not a misleading empty value; log privileged access only where required.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0030Medium
+Minor reaches age threshold
+Trigger consent/visibility review and transfer of controls according to approved policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0031High
+Guardian authority expires or is disputed
+Suspend guardian-only actions pending review; preserve the minor record.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0032Medium
+User withdraws optional consent
+Stop future optional processing and update visibility; retain only legally/operationally justified records.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0033High
+Account deletion requested with pending claim
+Complete account-deletion workflow while preserving genealogy Person and governed claim evidence as policy permits.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0034High
+Deceased Person has active account
+Revoke access after verified death workflow; retain genealogy and memorial/privacy state under policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Genealogy Person & Relationships
+16 frozen cases. Requirement family: FR-GEN. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0035Medium
+Self-parent or self-spouse link
+Reject synchronously; create no edge and audit repeated malicious attempts.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0036Critical
+Relationship creates ancestry cycle
+Reject proposal before approval and show the conflicting path to authorized verifier.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0037Medium
+More than allowed biological parents
+Route as conflict; do not overwrite existing parents or silently convert relationship type.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0038Medium
+Same persons linked as sibling and parent-child
+Flag structural contradiction and prevent authoritative publication until resolved.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0039High
+Parent birth date after child birth
+Flag temporal impossibility/uncertainty; permit evidence-backed exception only through authority workflow.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0040Medium
+Child predates parent beyond plausible threshold
+Flag for review using configurable non-authoritative plausibility rule.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0041Medium
+Unknown parent
+Represent explicitly as unknown; do not create placeholder identity that can be mistaken for a real Person.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0042High
+Adopted, step or guardian relationship
+Store distinct typed edge and privacy/evidence rules; never silently treat as biological.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0043Medium
+Half-sibling relationship
+Derive only from shared verified parent or approved explicit edge; label descriptively until approved terminology.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0044Medium
+Former spouse after divorce
+Preserve historical union dates/status and relevant child paths; do not present current spouse status.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0045Medium
+Multiple concurrent spouses
+Represent evidence-backed unions without moral inference; apply visibility and cultural-rule approval.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0046Medium
+Person has uncertain name or date
+Preserve original text, normalized value, certainty flag and source; do not invent precision.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0047High
+Relationship proposal duplicates existing edge
+Return existing/pending status idempotently; do not create a second edge.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0048Medium
+Record edited while approval pending
+Version the new proposal or require withdrawal; reviewer decision must target immutable submitted version.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0049High
+Approved edge later disputed
+Keep prior history, mark disputed according to policy and restrict sensitive calculation/publication if necessary.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0050High
+Person split after incorrect merge
+Use governed compensating workflow restoring identities, edges, sources, claims and audit; never delete history.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Duplicate Detection & Merge
+12 frozen cases. Requirement family: FR-MERGE. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0051High
+Exact duplicate candidate
+Suggest merge but require authorized review unless approved deterministic import rule applies.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0052High
+Fuzzy name match only
+Do not merge; use as low-confidence candidate with privacy-safe comparison.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0053High
+Same name and birth date, different branches
+Require evidence; avoid cross-branch false merge.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0054High
+Both duplicates have active claims
+Suspend merge until claim ownership and account links are resolved.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0055High
+One record disputed
+Block automatic merge and escalate to independent authority.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0056Medium
+Conflicting parents or spouses
+Present conflicts explicitly; approver chooses canonical facts or preserves unresolved state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0057High
+Merge requested twice
+Return existing merge case/result idempotently.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0058High
+Merge partially fails
+Rollback transaction or enter recoverable failed state; never leave dangling edges/indexes.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0059High
+Search index stale after merge
+Authoritative reads use canonical redirect; rebuild index and monitor lag.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0060Medium
+Notification references retired Person ID
+Resolve through canonical redirect while preserving historical link.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0061Medium
+Undo requested after downstream edits
+Require impact analysis and controlled split/compensation; do not simple-restore snapshot blindly.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0062Medium
+Approver related to affected Person
+Require recusal and reassignment before decision.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Search, Tree & Relationship Paths
+12 frozen cases. Requirement family: FR-SEARCH. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0063Medium
+No search result
+Show helpful empty state and create/request path without implying person absence.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0064High
+Many identical names
+Use privacy-safe disambiguators; never expose hidden contact or precise location.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0065Medium
+Typographical/variant spelling
+Return ranked aliases/transliterations while retaining exact-match distinction.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0066Medium
+Very large tree branch
+Paginate/lazy-load with stable anchors; avoid loading the complete graph on device.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0067Medium
+Private intermediary in path
+Calculate only when authorized; hide identity/details while explaining restricted path.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0068Medium
+Multiple shortest paths
+Apply approved deterministic priority and expose alternative valid paths.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0069Medium
+Graph disconnected
+Return not determinable and explain missing connection; never guess.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0070Critical
+Cycle reaches legacy/import data
+Stop traversal, flag integrity incident and prevent misleading relationship result.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0071Medium
+Search index unavailable
+Use approved degraded search or clear unavailable response; never treat outage as no data.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0072High
+Person merged during tree view
+Redirect/refetch canonical record and preserve user context.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0073Medium
+Concurrent tree corrections
+Use version checks and show refreshed conflict rather than last-write-wins.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0074High
+Export/print requested with hidden fields
+Apply field-level privacy to generated output exactly as screen access.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Nata/Saino Engine
+12 frozen cases. Requirement family: FR-NATA. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0075Medium
+Rule catalogue not approved
+Disable authoritative term and show verified neutral relationship path.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0076Medium
+Path has no approved term
+Show neutral path plus “terminology awaiting approval”; do not estimate.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0077Medium
+Multiple valid terms by region
+Show standard primary term and expandable sourced variants.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0078Medium
+Age order unknown
+Use non-age-specific approved fallback or neutral path; do not infer older/younger.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0079Medium
+Gender unknown/restricted
+Use approved neutral wording or path description without forcing a value.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0080Medium
+Adoptive/step/half path
+Keep relationship type explicit and apply only approved rule.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0081Medium
+Marriage path includes former spouse
+Apply temporal/status rule; do not label current in-law relationship automatically.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0082Medium
+Rule version changes
+Recalculate derived display, retain prior version/result evidence and notify administrators of material impact.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0083Medium
+Path exceeds supported depth
+Return unsupported/not determinable with path depth; do not time out silently.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0084Medium
+Two rules have equal priority
+Treat catalogue as invalid configuration and block publication until resolved.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0085High
+Intermediate record disputed
+Display qualified/pending result or withhold according to approved policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0086Medium
+Reciprocal term mismatch
+Fail reference test and block rule version activation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Calendar, Tithi, Jutho & Shraddha
+12 frozen cases. Requirement family: FR-CULTCAL. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0087Medium
+Calendar provider unavailable
+Use cached approved data only within validity; otherwise mark calculation unavailable.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0088Medium
+BS/Gregorian conversion conflict
+Preserve original input and provider/version; require correction rather than silent conversion.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0089Medium
+Death time unknown
+Use approved uncertainty workflow; never invent exact tithi or Jutho boundary.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0090Medium
+Death near Nepal midnight
+Calculate with Asia/Kathmandu timezone and approved boundary rule.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0091Medium
+Tithi spans civil dates
+Show source/calculation explanation and approved applicable date.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0092Medium
+Adhik Maas or exceptional month
+Apply only approved versioned rule; otherwise withhold result.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0093High
+Relationship is disputed
+Do not issue authoritative ritual consequence until relationship status permits.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0094Medium
+Multiple deaths overlap Jutho periods
+Apply approved combination/precedence table; show explanation and sources.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0095Medium
+Rule corrected after notification sent
+Recalculate, retain history and issue governed correction notice where material.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0096Medium
+User device timezone differs
+Display Nepal-authoritative calculation and optionally local viewing time clearly labelled.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0097High
+Manual authority override
+Require reason, evidence, dual approval, effective scope and audit; preserve computed value.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0098Medium
+Rule table incomplete
+Activation validation fails; existing approved version remains active.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Content, Rituals & Localization
+10 frozen cases. Requirement family: FR-CONTENT. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0099Medium
+Draft published without second approval
+Block publication and audit attempted bypass.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0100Medium
+Citation missing or broken
+Prevent authoritative cultural publication or mark non-authoritative content according to policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0101Medium
+Nepali and English versions diverge
+Flag translation mismatch; identify governing source language and block affected publication if material.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0102Medium
+Content updated while under review
+Create new version; reviewer decision applies only to reviewed version.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0103Medium
+Published content withdrawn
+Remove from normal display, preserve archive/audit and issue correction if required.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0104Medium
+Unsupported Unicode/font rendering
+Use tested fallback font and report; never replace characters with misleading text.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0105Medium
+Very long translated label
+Wrap/reflow without truncating meaning; test dynamic text sizing/accessibility.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0106Medium
+Regional ritual variation submitted
+Store as sourced proposal with applicability; do not replace standard content automatically.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0107Medium
+Search finds restricted draft
+Return no content to unauthorized users; do not leak title/snippet.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0108Medium
+External link unsafe/unavailable
+Validate scheme, warn/disable unsafe link and keep cited metadata.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Events, Invitations & RSVP
+12 frozen cases. Requirement family: FR-EVENT. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0109Medium
+Event end precedes start
+Reject and retain draft input for correction.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0110Medium
+Event timezone omitted
+Default only to documented Nepal timezone and display it explicitly.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0111Medium
+Audience genealogy changes after send
+Freeze sent audience snapshot; new invitations require governed resend/update decision.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0112High
+Invitee has no account
+Create privacy-safe invitation token/notification route without creating an account.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0113High
+Invitation link forwarded
+Validate intended audience/claim and avoid revealing private event details before authorization.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0114Medium
+RSVP submitted repeatedly
+Process idempotently and retain latest permitted status with audit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0115Medium
+Capacity reached concurrently
+Use atomic capacity rule; waitlist/reject deterministically without overbooking.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0116Medium
+Event cancelled after reminders queued
+Cancel pending reminders and send cancellation once.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0117High
+Organizer loses authority
+Suspend edits/sends and transfer through approved admin workflow.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0118Critical
+Group chat tied to event expires
+Apply approved lifecycle and retention; preserve required audit/evidence.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0119Medium
+Invitation delivery fails
+Record per-recipient failure, retry policy and organizer summary without exposing other recipients.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0120High
+Minor invited
+Apply guardian/privacy and visibility rules before delivery.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Community Posts & Moderation
+12 frozen cases. Requirement family: FR-COMMUNITY. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0121Medium
+Post contains prohibited file
+Reject/quarantine before publication and provide safe reason.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0122Medium
+Post edited after report
+Preserve reported version and review evidence; display only permitted current state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0123Medium
+Author deletes reported post
+Hide from members but retain moderation/legal evidence per policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0124High
+Duplicate emergency announcement
+Detect/flag duplicate; authorized moderator decides consolidation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0125Medium
+Reporter blocks author
+Apply block immediately to member interaction while moderation proceeds independently.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0126Medium
+Moderator reviews own/direct-family case
+Require recusal and reassignment.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0127Medium
+Mass reporting attack
+Rate-limit and detect abuse without automatically punishing target solely by report count.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0128Medium
+Appeal filed after action
+Create independent review with original content, decision and reason preserved.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0129High
+Location/contact in public post
+Warn/redact/block according to privacy and safety rules.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0130High
+Scheduled post publisher loses authority
+Cancel/pause scheduled publication pending reassignment.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0131Medium
+Comment arrives as post is locked
+Reject atomically and preserve client draft for user.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0132High
+Legal hold applies
+Prevent destructive deletion while restricting normal visibility and auditing access.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Map & Location
+10 frozen cases. Requirement family: FR-MAP. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0133Medium
+Precise location not consented
+Store/show approved approximate locality only.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0134Medium
+Location permission denied
+Permit manual locality selection; keep map core optional.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0135Medium
+Household members choose different visibility
+Apply most restrictive applicable household/person rule without exposing dissent.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0136Medium
+Coordinates outside Nepal
+Allow evidence-backed residence where scope permits; flag invalid/geocoding anomalies.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0137Medium
+Geocoder returns multiple matches
+Require user selection; never silently choose precise address.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0138Medium
+Map provider unavailable
+Show list/degraded view and clear unavailable state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0139Medium
+Restricted person appears in cluster count
+Apply approved aggregation threshold so count does not enable re-identification.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0140High
+User screenshots map
+Display privacy warning where appropriate; server still enforces minimum detail.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0141Medium
+Household moved
+Version residence history and update current map without erasing provenance.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0142Medium
+Location deletion requested
+Remove/restrict derived map data and rebuild indexes/caches according to retention policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Chat, Groups & Presence
+16 frozen cases. Requirement family: FR-CHAT. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0143Medium
+Message sent twice after retry
+Use client/idempotency key and show one message.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0144Medium
+Message saved but push fails
+Keep message delivered state independent; retry notification without duplicating message.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0145Critical
+Attachment upload succeeds but message fails
+Expire/delete orphan asset or attach on safe retry according to lifecycle.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0146Medium
+Recipient blocks sender during send
+Enforce current server-side block; do not deliver newly unauthorized message.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0147Medium
+User removed from group while offline
+Deny later synchronization beyond authorized history/retention policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0148Medium
+Admin deletes member account
+Preserve conversation integrity with anonymized/deleted-member representation as policy requires.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0149Medium
+Message edited after quoted/replied
+Preserve version semantics and indicate edit without altering quoted historical meaning.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0150Medium
+Clock skew changes ordering
+Use server sequence/timestamp, not device time.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0151Medium
+Two admins change group membership
+Use atomic/versioned membership and deterministic conflict response.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0152Medium
+Media scan pending
+Do not make file downloadable until approved scan state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0153Medium
+Unsupported attachment type
+Reject before upload or quarantine; explain allowed types/size.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0154Medium
+Connection drops mid-upload
+Resume only with validated session/chunks; otherwise clean partial upload.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0155Medium
+Read receipt disabled
+Do not emit or infer receipt; preserve sender-neutral state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0156Medium
+Group reaches size limit
+Reject add atomically and show limit/administrative options.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0157Medium
+Message retention expires
+Delete/transform according to policy across primary, indexes and caches; retain only justified audit metadata.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0158Medium
+Abuse report on encrypted/private content
+Collect minimum report evidence explicitly submitted by reporter; do not expose unrelated messages.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Notifications & Background Jobs
+10 frozen cases. Requirement family: FR-NOTIFY. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0159Medium
+Push token invalid
+Deactivate token and continue other channels/devices.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0160High
+Same event triggers duplicate job
+Deduplicate using event/idempotency identity.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0161Medium
+Notification permission denied
+Keep in-app notification center and preferences; do not repeatedly nag.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0162Medium
+Recipient preference changes while queued
+Re-evaluate at send time where required; honor mandatory safety notices separately.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0163Medium
+Quiet hours cross timezone/date
+Apply documented user/Nepal policy and delay non-urgent delivery.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0164Medium
+Bulk announcement partially fails
+Retry failed recipients only; reconcile totals and expose admin report.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0165Medium
+Job exceeds retry limit
+Move to dead-letter/exception queue with alert and safe replay control.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0166Medium
+Template missing translation
+Use approved fallback language or block campaign; never send raw key.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0167Medium
+Deep link target deleted/restricted
+Open safe fallback and do not reveal removed content.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0168High
+Provider reports success but device never receives
+Treat provider acceptance separately from actual/open metrics; avoid false delivery claim.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Media & Files
+10 frozen cases. Requirement family: FR-MEDIA. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0169Medium
+File extension differs from content
+Use content inspection; reject/quarantine mismatch.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0170Medium
+File exceeds size/dimension
+Reject before or during controlled upload with clear limit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0171Medium
+Malware scan unavailable
+Keep quarantined; never publish by default.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0172Medium
+EXIF contains precise location
+Strip sensitive metadata unless explicitly required and consented.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0173High
+Duplicate upload
+Reuse/deduplicate only when privacy and ownership boundaries permit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0174Medium
+Thumbnail generation fails
+Keep original restricted and show safe placeholder; retry job.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0175Medium
+User deletes referenced media
+Remove display references consistently and apply retention/legal-hold rules.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0176Medium
+Signed URL forwarded or expired
+Require authorization and short-lived URL; expired URL reveals nothing.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0177High
+Copyright/consent disputed
+Restrict media pending moderation/legal decision and preserve evidence.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0178High
+Storage object missing
+Show unavailable state, alert integrity process and avoid broken metadata claims.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Administration, Roles & Audit
+12 frozen cases. Requirement family: FR-ADMIN. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0179Critical
+Role assignment lacks second approval
+Keep pending; grant no privilege.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0180Critical
+Branch scope omitted
+Deny scoped privilege by default.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0181Critical
+Privilege expires during active session
+Reauthorize next action and remove access immediately.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0182Medium
+Administrator acts on own family case
+Block/require recusal and reassign.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0183Medium
+Last critical administrator removed
+Require successor/deputy or break-glass governance before change.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0184Medium
+Break-glass access used
+Require incident/reason, short expiry, enhanced monitoring and independent review.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0185Medium
+Audit store unavailable
+Fail closed for high-risk mutations or queue only under approved durable design.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0186Medium
+Audit event contains sensitive value
+Store safe delta/reference, not unnecessary secret/content.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0187Medium
+Bulk action includes unauthorized rows
+Reject unauthorized items and report per-row outcomes without partial hidden bypass.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0188High
+Configuration changed during release
+Version and gate change; production candidate references immutable configuration set.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0189Medium
+Cultural rule proposer attempts approval
+Block self-approval.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0190High
+Delegation ends with pending tasks
+Remove access and reassign tasks explicitly; do not keep implicit authority.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Offline, Sync & Concurrency
+10 frozen cases. Requirement family: NFR-SYNC. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0191Medium
+Same record edited on two devices
+Use version conflict; show comparison/reload and never silent last-write-wins for governed data.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0192Medium
+Offline draft references deleted record
+Keep draft, explain target change and require user resolution before submit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0193Medium
+Queued action authorization revoked
+Reject during server replay and notify user safely.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0194Medium
+Network response lost after server success
+Client retry is idempotent and retrieves existing result.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0195Medium
+Connectivity flaps repeatedly
+Use bounded exponential backoff with jitter and visible state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0196Medium
+Device local database migration fails
+Protect local data, attempt safe recovery and require re-sync; no false success.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0197Medium
+Offline message exceeds retention window
+Require explicit resend rather than unexpected late delivery.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0198High
+Stale privacy cache
+Server authorization prevails; purge/refetch affected cached content.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0199Medium
+Background sync interrupted by OS
+Resume from durable cursor/checkpoint without duplicating mutations.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0200Medium
+Conflict resolution itself conflicts
+Require fresh version and authorized review; preserve both proposals.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+API, Integrations & Errors
+12 frozen cases. Requirement family: NFR-API. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0201Medium
+Malformed request
+Return stable validation code and field errors; make no state change.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0202Medium
+Unsupported API version
+Return upgrade-required contract; do not reinterpret payload.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0203Medium
+Dependency timeout
+Apply bounded timeout/retry/circuit breaker according to idempotency.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0204Medium
+Partial multi-service success
+Compensate or persist recoverable state with correlation; never report complete success.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0205Critical
+Unknown webhook signature
+Reject, record security signal and disclose no processing detail.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0206High
+Webhook duplicated/out of order
+Verify signature, deduplicate and apply version/order rules.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0207Medium
+Rate limit exceeded
+Return retry guidance without leaking threshold internals.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0208High
+Response serialization fails after commit
+Retry/read by idempotency key; avoid duplicate mutation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0209Medium
+Database deadlock/transient conflict
+Retry bounded safe transaction or return conflict; never lose audit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0210Medium
+External identifier changes
+Maintain mapping/version history and reconcile before updating authoritative references.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0211Medium
+Provider returns invalid data
+Quarantine/reject and alert; do not propagate into authoritative state.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0212Medium
+Correlation ID supplied maliciously
+Validate/replace unsafe value while maintaining internal traceability.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Migration & Import
+12 frozen cases. Requirement family: FR-MIG. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0213Medium
+Required source column absent
+Fail preflight before any import mutation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0214Medium
+Unknown controlled value
+Place row in exception queue; do not coerce silently.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0215High
+Duplicate source identifier
+Reject/flag batch according to mapping contract.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0216Critical
+Import creates genealogy cycle
+Reject affected relationship and continue/stop according to atomic batch policy.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0217Medium
+Date cannot be converted
+Preserve original and uncertainty; do not invent converted date.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0218Medium
+Batch partially commits
+Use checkpointed atomic units, reconciliation and safe resume/rollback.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0219Medium
+Same batch submitted again
+Detect batch hash/idempotency key and return prior outcome.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0220High
+Source changes after dry run
+Invalidate approval and rerun comparison before production import.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0221High
+Authority sample fails threshold
+Block production import and return to cleansing.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0222Medium
+Media file missing for metadata row
+Import controlled metadata exception; do not create broken public reference.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0223Medium
+Import user lacks branch scope
+Reject unauthorized rows/batch and audit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0224Medium
+Post-import totals differ
+Fail reconciliation gate and restrict release until explained/approved.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Security, Abuse & Privacy Incidents
+12 frozen cases. Requirement family: NFR-SEC. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0225Medium
+Credential stuffing/OTP enumeration
+Rate-limit and use generic responses; alert on risk pattern.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0226Critical
+IDOR/object identifier manipulation
+Server denies by object/field scope and records security signal.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0227Medium
+Malicious file or script content
+Reject/quarantine and render user content safely.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0228Medium
+Sensitive data in logs
+Redact/prevent at source, restrict incident copy and remediate historical exposure.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0229Medium
+Mass scraping pattern
+Throttle/block by risk while preserving legitimate accessibility/search.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0230Critical
+Privilege escalation attempt
+Deny, alert and review session/account.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0231Medium
+Lost administrator device
+Revoke sessions/keys, review activity and rotate affected credentials.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0232Medium
+Data export unusually large
+Require enhanced authorization, purpose, approval and monitored delivery.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0233Critical
+Suspected breach
+Activate incident command, containment, evidence preservation and privacy/legal assessment.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0234Critical
+Minor safety complaint
+Prioritize safeguarding, restrict exposure and route to trained authority.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0235High
+Deletion request during legal hold
+Restrict normal use, explain limitation and retain only held scope.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0236Medium
+Backup contains data past retention
+Apply approved backup expiry/restore-deletion procedure and document limitation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Operations, Release & Retirement
+12 frozen cases. Requirement family: NFR-OPS. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0237Medium
+Health check green but business journey fails
+Use synthetic business checks; treat as incident despite infrastructure health.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0238Critical
+Database backup succeeds but restore fails
+Fail recovery control and remediate before release/retention claim.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0239Critical
+Deployment migration fails
+Stop rollout and execute tested rollback/forward-fix without data loss.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0240Medium
+Canary metrics degrade
+Pause/rollback before broad rollout.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0241Medium
+Monitoring alert has no owner
+Treat operational readiness gate as failed.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0242Medium
+Third-party cost spikes
+Trigger budget alert, abuse check and controlled throttling/reforecast.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0243Medium
+Certificate/domain/signing key nearing expiry
+Alert with sufficient lead time and tested rotation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0244Medium
+App store rejects release
+Correct compliance issue without bypassing frozen requirements; retain candidate evidence.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0245Medium
+Critical defect found after launch
+Incident/hotfix process with regression, audit and post-review.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0246Medium
+Vendor contract terminates
+Execute exit/handover plan using Jyphra-controlled assets and replacement adapters.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0247Medium
+Feature/system retirement proposed
+Require change approval, user notice, export/retention/deletion plan and dependency removal.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0248Medium
+Final shutdown
+Revoke access, archive required evidence, delete data per policy, verify backups/keys/vendors and issue closure record.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+Accessibility & User Experience
+12 frozen cases. Requirement family: NFR-A11Y. The workbook contains the complete implementation fields, bilingual messages, audit, privacy, retry, recovery and Given/When/Then test statement.
+ID / priority
+Trigger
+Required behaviour
+User recovery
+EC-0249Medium
+Screen reader label missing
+Fail accessibility acceptance; provide semantic label and test.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0250Medium
+Large text causes clipping
+Reflow/scroll without loss of action or meaning.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0251Medium
+Color-only status indicator
+Add text/icon semantics and contrast-compliant presentation.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0252Medium
+Keyboard focus trapped in admin dialog
+Correct focus order/escape and block release of affected critical flow.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0253Medium
+Nepali text expansion breaks control
+Resize/wrap and test both languages at supported text scales.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0254Medium
+Loading never completes
+Timeout to actionable error/retry state; no indefinite spinner.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0255Medium
+Empty state confused with error
+Use distinct message, action and telemetry.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0256Medium
+Destructive action accidental
+Require clear confirmation and reversible/compensating path where feasible.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0257Medium
+Form loses data after validation error
+Preserve safe fields and focus first error; never retain OTP/password values.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0258Medium
+User double taps submit
+Disable/reconcile using idempotency; show one result.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0259Medium
+Session expires mid-form
+Preserve non-sensitive draft, reauthenticate and revalidate authorization before submit.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+EC-0260Medium
+RTL/unsupported locale selected
+Use supported Nepali/English fallback without corrupting stored preference.
+Provide actionable retry, correction, appeal, reassignment, reconciliation, rollback or support route appropriate to the expected behaviour.
+
+Final acceptance and freeze declaration
+This baseline contains 260 explicit exception and negative-test cases across 22 modules. It closes the previously identified absence of a row-by-row edge-case catalogue for the defined Release 1.0 system. It cannot predict every future defect, vendor behaviour or newly discovered abuse technique; therefore discovery of a new case triggers controlled catalogue and test updates rather than informal interpretation.
+Approval field
+Frozen value
+Owner
+Jyphra Technology Pvt. Ltd.
+Approving organization
+Jyphra Technology Pvt. Ltd.
+Decision
+Approve and freeze Detailed Behaviour & Edge-Case Baseline v1.0
+Development/QA
+Mandatory
+Scope change
+None; clarification and negative-behaviour supplement only
+Production authorization
+Withheld until all previously documented gates close

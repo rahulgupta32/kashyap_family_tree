@@ -1,0 +1,10 @@
+﻿Research & Evidence Source Register									
+Research references support expert review but do not constitute approval by the Adhikari community.									
+Source ID	Source Type	Title	Organization / Author	URL or Repository	Use in Draft	Authority Level	Verification Status	Evidence Owner	Notes
+SRC-001	Academic paper	Nepali kinship terminology / computational representation	International Journal of Computer Applications	https://research.ijcaonline.org/volume58/number9/pxc3883546.pdf	Terminology structure and computational concepts	Research reference only	To be reviewed		Confirm relevance and methodology
+SRC-002	Academic paper	Call me uncle: An outsider's experience of kinship in Nepal	HAL / academic repository	https://shs.hal.science/halshs-03083401/document	Sociolinguistic context and address practices	Research reference only	To be reviewed		Do not treat observations as Adhikari authority
+SRC-003	Educational reference	Nepali family and relationship vocabulary	Omniglot	https://www.omniglot.com/language/kinship/nepali.htm	Candidate spellings and common terms	Supplementary	To be reviewed		Cross-check every term
+SRC-004	Educational resource	Nepali Familial Relationships: Immediate Family	University of Wisconsin Pressbooks	https://wisc.pb.unizin.org/lctlresources/chapter/nepali-familial-relationships-immediate-family/	Immediate-family vocabulary	Supplementary	To be reviewed		Language-learning source
+SRC-005	Media article	Nepali kinship terminology article	Gorkhapatra	https://gorkhapatraonline.com/news/199904	Public-language context	Supplementary	To be reviewed		Record publication date during review
+SRC-006	Community resolution	Adhikari cultural authority approval record	To be supplied		Final rule authority	Required project authority	Missing		Attach meeting minute/resolution ID
+SRC-007	Expert statement	Nata/Saino expert validation statement	To be supplied		Reviewer validation	Required project authority	Missing		Identify expert, date, scope, signature/record

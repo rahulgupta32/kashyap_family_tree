@@ -1,0 +1,18 @@
+﻿Controlled Values & Identifier Rules					
+Reference catalogue for collectors, migration developers, validators and API contracts.					
+Domain	Value/Field	Allowed format/value	Meaning	Validation rule
+Identifier	Person ID	PER-########	Immutable; system generated in production	Never recycle deleted IDs
+Identifier	Branch ID	BR-####	Assigned after branch authority review	Parent Branch ID may be blank
+Identifier	Relationship ID	PCR-########	One directed parent-child edge	Unique Parent ID + Child ID + Type
+Identifier	Union ID	UNI-########	One union history record	Partners cannot be identical
+Identifier	Source ID	SRC-########	One evidence item or interview	File may support multiple facts
+Identifier	Residence ID	RES-########	One person-location-period record	Exact address is restricted
+Identifier	Contact ID	CON-########	One contact method	Always private
+Identifier	Case ID	DSP-########	One dispute or claim set	Must have audit owner
+Null handling	Unknown	Unknown	Fact is not known	Different from blank/not collected
+Null handling	Not applicable	Not applicable	Field does not apply	Do not use Unknown
+Date	Calendar	BS / AD / Tithi / Unknown	Preserve original source calendar	Conversion is a derived value
+Date	Precision	Exact / Month known / Year known / Approximate / Unknown	Prevents false precision	Approximate dates need notes
+Privacy	Visibility	Private / Family / Branch / Verified members / Public	Default living-person facts to Private	Public requires approved policy
+Workflow	Verification	Draft / Submitted / Under review / Verified / Rejected / Disputed / Restricted	Only authorized reviewers verify	All transitions audited
+Relationship	Type	Biological / Adoptive / Step / Guardian / Social-customary / Unknown / Disputed	Explicit edge semantics	Never collapse types

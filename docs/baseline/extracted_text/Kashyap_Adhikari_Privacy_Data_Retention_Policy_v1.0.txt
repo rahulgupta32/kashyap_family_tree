@@ -1,0 +1,558 @@
+﻿POLICY & COMPLIANCE PACKAGE
+Privacy, Personal Data Protectionand Data Retention Policy
+Kashyap Gotra Adhikari Genealogy & Community Platform
+Document control
+Value
+Version
+1.0 - owner-approved SDLC baseline
+Prepared
+8 September 2026
+Applies to
+Mobile apps, web administration, APIs, databases, backups, analytics, messaging and operational support
+Release
+Release 1.0 - mandatory launch governance
+Owner
+Jyphra Technology Pvt. Ltd.
+Approval
+Jyphra Technology Pvt. Ltd.
+Status
+APPROVED BY OWNER FOR SDLC USE
+Review cycle
+At least annually and upon any material legal, product, processor or data-flow change
+Legal validation
+Nepal-qualified legal review remains mandatory before production release
+
+Approval scope: Jyphra Technology Pvt. Ltd. has approved this document as the internal SDLC privacy and data-retention baseline. This owner approval is not external legal advice. Nepal-qualified legal validation of statutory interpretation, notices, consent language, children's data rules, cross-border processing and retention periods remains a mandatory production-release condition.
+
+Document purpose
+This package translates the project requirements into a privacy operating model, user-facing notice baseline, retention schedule, rights workflow, breach process and engineering acceptance criteria. It deliberately applies stricter controls where genealogy, family disputes, children, exact location, contact details or cultural relationships can create lasting harm.
+
+1. Executive policy decision
+The platform shall operate as a privacy-by-design, evidence-based genealogy and community service. Personal data is collected only for defined purposes, access is scoped by role and branch, sensitive relationships are protected, and every privileged action is auditable. Public visibility is never the default for a living person.
+Release decision: Privacy, retention, account deletion, consent, children's protections, processor contracts, incident response and store disclosures are Release 1.0 launch requirements. They are not post-launch enhancements.
+
+1.1 Non-negotiable rules
+No genealogy fact is automatically public merely because it concerns family history.
+No biological, adoptive, step, guardian, disputed or former-spouse relationship is inferred or collapsed into another category.
+No precise location, private contact, identity document, private message or minor's profile is exposed through search, maps or exports by default.
+No account deletion request is treated as permission to corrupt shared genealogy; the account and private data are deleted or anonymized while necessary shared historical claims are separated, minimized and retained only under an approved basis.
+No production database, log, backup or analytics export may have an undefined owner or indefinite retention period.
+No administrator may bypass consent, disclosure, retention or audit controls without a recorded, time-limited emergency authorization.
+1.2 Approval conditions
+Jyphra Technology Pvt. Ltd. is the policy owner and approving organization, and this version is effective as the internal SDLC baseline from 8 September 2026. Before production release, the company must record its official address, privacy contact, complaint channel, authorized legal representative and data-hosting/processor locations. A Nepal-qualified lawyer must validate the final legal basis, statutory mappings and public-facing notices.
+2. Legal and platform baseline
+The following sources form the current compliance baseline. The final legal register must be refreshed immediately before launch because laws, regulations and platform policies can change.
+Source
+Relevance
+Required action
+Constitution of Nepal
+Constitutional privacy right, including privacy of person, residence, property, documents, data and correspondence.
+Confirm exact scope and remedies with counsel.
+Privacy Act, 2075 (2018)
+Primary Nepal statute for individual privacy and handling of personal information.
+Map every collection, consent, use, disclosure, correction and security obligation to the final product.
+Electronic Transactions Act, 2063 (2008) and Rules, 2064
+Electronic records, unlawful access and computer-related conduct.
+Validate electronic consent, records, security and incident provisions.
+Act Relating to Children, 2075 (2018)
+Child rights, dignity, best interests and protections relevant to minors' profiles and content.
+Adopt child-specific consent, visibility, reporting and deletion rules.
+National Civil Code, 2074
+Family status, adoption, guardianship, marriage and other civil relationships.
+Verify terminology and evidence handling; never adjudicate legal status through the app.
+Muluki Criminal Code, 2074
+Potential offences affecting privacy, identity, harassment, threats, defamation and harmful publication.
+Confirm moderation, evidence preservation and law-enforcement response.
+Google Play User Data policy
+Data safety disclosure, account/data deletion paths and handling of user data.
+In-app and web deletion request paths; accurate Data Safety form.
+Apple App Review Guideline 5.1 and privacy disclosures
+Privacy policy, collection/use disclosure, consent controls and in-app account deletion.
+Accurate App Privacy responses and deletion initiation within the app.
+
+3. Roles and accountability
+Role
+Accountability
+Governing Board
+Approves policy, risk acceptance and senior appointments; receives material incident reports.
+Privacy / Data Protection Officer
+Maintains the data inventory, DPIA, rights requests, retention, complaints, processor review and privacy training.
+Security Authority
+Owns technical safeguards, access review, incident containment, security testing, key management and log integrity.
+Product Owner
+Ensures each feature has documented purpose, minimum data, notice, consent and acceptance criteria.
+Branch Authority
+Reviews branch-scoped genealogy while respecting recusals, evidence, visibility and dispute controls.
+System/Support Staff
+Act only within case-based access; cannot bulk export or independently approve sensitive changes.
+Processors
+Act only on contract instructions, protect data, report incidents and delete/return data at termination.
+Members and Contributors
+Provide accurate information, respect others' privacy and use reporting/correction channels.
+
+4. Data inventory and classification
+Class
+Examples
+Default access
+Mandatory controls
+Public
+Approved cultural/history content; intentionally public deceased-person facts where permitted
+Public web/app
+Integrity, moderation and copyright controls
+Member-restricted
+Member profile basics, branch affiliation, approved family-tree views, events
+Verified members / approved relatives
+Authentication, scoped queries, anti-scraping
+Confidential
+Full birth date, contact details, exact address, relationship evidence, private photos
+Self, authorized verifier, DPO/support as needed
+Encryption, field-level authorization, access logs
+Highly sensitive
+Adoption/guardianship, disputed parentage, minors, consent records, private messages, moderation evidence, location coordinates
+Named case roles only
+Strong encryption, reason-based access, no bulk export, heightened monitoring
+Security secret
+Passwords/hashes, OTP material, tokens, encryption keys, recovery secrets
+Dedicated security systems/personnel
+Never log plaintext; rotation, hardware-backed custody, strict expiry
+
+4.1 Prohibited collection
+The platform shall not collect citizenship/passport scans, financial credentials, payment-card data, medical information, biometrics, political affiliation, unrelated device contacts, continuous background location or advertising identifiers unless a separately approved Release 1.0 function demonstrates necessity, legal authority and a completed DPIA. Passwords are never stored in readable form.
+5. Purpose and minimum data rules
+Purpose
+Minimum data
+Use
+Provisional basis
+Constraint
+Account and authentication
+Phone/email, account ID, authentication events
+Create, secure and recover an account
+Account performance; consent where optional
+No unrelated contact import
+Membership verification
+Name, branch claim, limited evidence, verifier decision
+Restrict community features to eligible users
+Legitimate organizational function + explicit notice
+Evidence access limited to verifier
+Genealogy
+Identity facts, typed relationships, dates with precision, sources
+Create an evidence-based family tree
+Consent/participation and approved historical/community basis
+Living-person visibility private by default
+Nata/Saino and cultural engines
+Approved relationship graph and versioned rules
+Calculate explainable relationships/cultural outputs
+Requested service under approved rules
+No inference from hidden/disputed edges
+Community and events
+Posts, RSVP, reports, media
+Community communication and safety
+User action/consent; moderation necessity
+Audience controls and reporting
+Messaging
+Message content, participants, delivery/security metadata
+Private communication
+User-requested service
+No advertising profiling; tightly limited admin access
+Map
+Coarse, consented location or manually selected locality
+Privacy-preserving branch/community map
+Separate opt-in consent
+No exact home pin by default
+Operations and security
+Device/session, audit, crash and security events
+Reliability, abuse prevention and incident response
+Security necessity
+Minimized, short retention, access-controlled
+
+6. Consent, notice and choice
+Consent must be specific, informed, freely given where relied upon, recorded and withdrawable. Consent is not bundled with unrelated processing. A withdrawal stops future optional processing without invalidating necessary prior records or approved legal retention.
+Show a concise notice at the point of collection, with a link to the full policy.
+Separate choices for public profile visibility, exact/coarse location, photos/media, notifications, research/analytics and optional directory listing.
+Record notice version, language, purpose, decision, timestamp, actor and withdrawal history.
+Provide Nepali and English notices with equivalent meaning; resolve any legal-language precedence explicitly.
+Do not use preselected optional consent or make optional visibility a condition of account creation.
+When one member submits information about another person, treat it as a claim requiring notice, verification and appropriate visibility—not as the other person's consent.
+6.1 Children and young persons
+Until legal counsel approves a specific age and verification model, accounts identified as belonging to minors are restricted. The system must prioritize the child's best interests, obtain verified parent/guardian authorization where required, limit discoverability, disable exact location and public contact, restrict direct messaging from unknown adults, and provide rapid reporting/removal channels. Age must not be inferred solely from appearance or name.
+7. Genealogy-specific privacy controls
+Display only the minimum fields allowed by the viewer's relationship, branch, consent and authority scope.
+Represent claims, sources, confidence and disputes separately; do not overwrite competing evidence.
+Hide sensitive edge types from unauthorized viewers even when adjacent people are visible.
+Apply anti-enumeration controls to search and APIs; rate-limit traversal and prevent bulk graph extraction.
+For deceased persons, still protect surviving relatives, private correspondence, disputed claims and restricted sources.
+When a person requests account deletion, separate account credentials and contributed content from independently sourced shared genealogy. Delete or anonymize what is not required; retain only approved minimum facts with a documented reason and challenge mechanism.
+Nata/Saino, Jutho, Tithi/Shraddha and other cultural outputs must show the rule version and must not reveal hidden relationships through inference.
+8. Transparency notice baseline
+The production privacy notice must clearly identify the organization, contact details, categories of information, sources, purposes, recipients, hosting locations, retention, security, user choices, complaint method, children's protections, deletion/correction process and effective date. It must be available before sign-up and from app settings and the public website.
+Confirmed: legal entity / policy owner - Jyphra Technology Pvt. Ltd.; internal SDLC effective date - 8 September 2026. Remaining publication placeholders: [REGISTRATION/ADDRESS], [PRIVACY CONTACT], [COMPLAINT CHANNEL], [HOSTING COUNTRIES], [PROCESSOR LIST] and [COUNSEL APPROVAL REFERENCE]. These must be completed before production publication.
+
+9. Data-subject and member request workflow
+Receive: provide in-app and web routes for access, correction, consent withdrawal, objection/restriction, portability where offered, and account/data deletion.
+Authenticate: verify identity proportionately without collecting excessive new documentation.
+Scope: identify account data, genealogy claims, messages, media, audit/security records, processors and backups affected.
+Assess: determine what can be fulfilled, what must be retained, and whether another person's rights would be affected.
+Approve: DPO or delegated privacy authority records the decision and legal/policy basis.
+Execute: delete, anonymize, correct, restrict or export across production systems and instruct processors.
+Communicate: confirm outcome, retained categories/reasons, expected backup expiry and appeal/complaint route.
+Audit: retain a minimal request record without retaining the deleted content itself.
+Target service standard: acknowledge within 3 business days and complete ordinary verified requests within 30 calendar days. This is an internal service target, not a statement of Nepal's statutory deadline; legal counsel must confirm applicable deadlines and exceptions.
+10. Account deletion design
+Because the app creates accounts, Release 1.0 must provide an in-app deletion initiation path, plus a functional public web route suitable for Google Play. The process must delete or anonymize associated data that is not legally or operationally required, request deletion from processors, and clearly explain any narrowly retained categories and periods.
+Stage
+System behavior
+Evidence
+Request
+User selects Delete account; sees consequences and genealogy distinction
+Request ID, policy version, timestamp
+Verification
+Recent authentication or proportionate identity check
+Verification event; no plaintext credentials
+Cooling-off
+Optional short recovery period only if disclosed and legally approved
+Scheduled execution date
+Execution
+Disable credentials; remove tokens/contact/private profile; anonymize eligible contributions; queue processor deletion
+Deletion job results by system
+Shared genealogy review
+Assess independently sourced historical facts and other people's rights; minimize/restrict retained claims
+DPO decision and source IDs
+Backups
+Data becomes unavailable to normal systems and expires through backup rotation unless legal hold applies
+Backup cohort and expiry
+Closure
+Notify requester without exposing retained security evidence
+Closure timestamp and appeal route
+
+11. Retention and deletion schedule
+The periods below are conservative product-policy defaults, not confirmed statutory minima. Counsel and the DPO must approve or revise them before launch. “After closure” means after the relevant account, case, union, processor relationship or legal hold ends.
+Data category
+Active period
+Deletion trigger / period
+Purpose
+Special rule
+Account credentials and active profile
+Life of account
+Delete/anonymize within 30 days after verified deletion request, subject to approved exceptions
+Account/security service
+Credentials removed immediately from active use
+Phone/email verification tokens
+Minutes to 24 hours
+Automatic expiry/deletion
+Authentication
+Never store OTP plaintext in logs
+Authentication/session logs
+12 months
+Rolling deletion
+Security/fraud prevention
+Extend only under incident/legal hold
+Privilege and approval audit logs
+7 years
+Delete/anonymize after period and holds
+Accountability and disputes
+Immutable, access-restricted
+Genealogy records - living person
+Until withdrawal/deletion review or demonstrated continuing approved purpose
+Delete, anonymize or restrict after rights assessment
+Genealogy service
+Reassess at least every 3 years
+Genealogy records - deceased/historical
+Indefinite only when archival/community purpose is approved
+Periodic necessity/source/visibility review
+Historical genealogy
+Protect living relatives and disputed facts
+Relationship proposals/rejections
+3 years after final decision
+Delete or anonymize; retain minimal decision audit if needed
+Dispute prevention
+Sensitive edges restricted
+Consent and notice records
+7 years after withdrawal/account closure
+Delete after claims period/approved schedule
+Proof of choice
+Store policy version, not unnecessary content
+Private messages
+User-controlled; default service retention to be finalized
+Delete on user action/account closure subject to recipient copy, abuse evidence and lawful hold
+Communication service
+No indefinite hidden archive
+Community posts/comments
+Until user deletion or moderation/archival decision
+Delete/anonymize after request/review
+Community publishing
+Public content needs explicit audience
+Deleted/moderated content evidence
+180 days; up to 2 years for serious/repeated safety cases
+Secure purge
+Appeal, abuse and safety
+Case-only access
+Support tickets
+2 years after closure
+Delete/anonymize
+Service and dispute handling
+Separate sensitive attachments sooner
+Privacy rights requests
+7 years after closure
+Retain minimal audit; delete supplied identity evidence within 90 days unless needed
+Compliance evidence
+Do not retain deleted payload
+Exact address/location
+Until consent withdrawal or feature purpose ends
+Prompt deletion; coarse historical locality only if separately justified
+Optional map/directory
+No public exact home coordinates
+Photos and media
+Until deletion/consent withdrawal or approved archival status
+Delete derivatives/thumbnails with original
+Profile/community/gallery
+Document contributor rights
+Analytics events
+13 months maximum
+Aggregate/anonymize or delete
+Product reliability
+No advertising profile by default
+Crash diagnostics
+90 days
+Rolling deletion
+Reliability/security
+Scrub message/contact/genealogy content
+Security incident evidence
+7 years after closure, or counsel-approved period
+Secure deletion after holds
+Defense/accountability
+Strict case access
+Backups
+35 days rolling; monthly recovery snapshots up to 12 months only if approved
+Cryptographic/physical expiry
+Recovery and disaster resilience
+No routine restoration of deleted data
+Processor copies
+No longer than corresponding controller record
+Contractual deletion/return and attestation
+Service delivery
+Flow-down schedule required
+Financial/procurement records
+7 years or legally required period confirmed by counsel
+Secure deletion after holds
+Governance/accounting
+Keep separate from member profiles
+
+12. Legal holds and archival exceptions
+A legal hold suspends scheduled deletion only for specifically identified records and must record issuer, authority, scope, reason, date, review date and release. Holds must not become indefinite convenience archives. Cultural or historical value alone does not justify retaining a living person's private contact, exact address, messages or sensitive relationship status.
+13. Security requirements
+Encrypt sensitive data in transit and at rest; manage keys separately with rotation and access logging.
+Use MFA for privileged accounts, strong password hashing, short-lived sessions, revocation and device/session visibility.
+Enforce authorization server-side at record and field level; branch scope is never trusted from the client.
+Separate production, staging and development; do not use real personal data in development or demos.
+Use immutable centralized audit logs that administrators cannot silently alter.
+Scan uploads; validate file types; remove unsafe metadata; use signed, expiring download links.
+Maintain secure backups, tested restoration, disaster recovery, vulnerability management, penetration testing and dependency review.
+Prevent sensitive values in application logs, analytics, crash reports, URLs, notifications and support screenshots.
+Apply rate limits, anti-scraping, export approval, anomaly detection and download watermarking where appropriate.
+Require documented secure deletion and access termination when staff or processors leave.
+14. Messaging, notifications and community safety
+Private messages must be access-controlled and excluded from advertising or unrelated profiling. Whether end-to-end encryption is provided must be stated accurately; the system must not claim E2EE unless only endpoints hold the content keys and operational recovery/moderation implications are documented. Push notifications must avoid sensitive relationship, dispute or message content on lock screens by default.
+Moderation access to private content is case-based, logged and limited to reported content or a documented safety/security basis. Reports, appeals and sanctions use the separation-of-duties framework.
+15. Location and map privacy
+Use manually selected locality or coarse coordinates by default; do not derive exact residence from background GPS.
+Require a separate, reversible opt-in before showing a household or member on a map.
+Apply geographic jitter, aggregation or minimum-group thresholds for member-facing maps.
+Do not show minor, vulnerable, disputed or protected-person locations.
+Prevent export of map coordinates except through a separately approved administrative purpose.
+When location permission is denied, provide a manual non-location alternative.
+16. Vendors, hosting and cross-border processing
+Before any processor receives personal data, the organization must document the service, data categories, locations, subprocessors, security, breach notification, deletion/return, audit rights, availability and exit plan. Cross-border hosting or support must be reviewed by Nepal-qualified counsel and disclosed appropriately. Production must not depend on an unreviewed personal developer account.
+Processor due diligence
+Minimum evidence
+Identity and contract
+Legal entity, service terms, data-processing terms, governing law and accountable owner
+Data flow
+Fields, purposes, regions, encryption, access paths and subprocessors
+Security
+Independent assurance where available, access controls, incident history and vulnerability process
+Retention/deletion
+Configurable periods, backup expiry, deletion API/process and termination attestation
+Resilience
+SLA, backup/restore, disaster recovery, portability and vendor-exit plan
+Store/SDK disclosure
+Every mobile SDK mapped to Google Data Safety and Apple App Privacy declarations
+
+17. Incident and breach response
+Detect and open an incident record; preserve evidence without spreading sensitive data.
+Contain access, tokens, accounts, integrations and compromised devices.
+Assess affected people, records, sensitivity, geography, duration and likely harm.
+Notify the Incident Commander, Security Authority and DPO immediately; involve legal counsel for notification duties.
+Communicate to affected people and authorities when legally required or risk-appropriate, using accurate approved content.
+Recover from a trusted state, monitor recurrence and verify data integrity.
+Complete a blameless post-incident review with actions, owners, deadlines and effectiveness testing.
+Internal target: Severity 1 privacy/security incidents are acknowledged immediately, command is established within 15 minutes, and executive/DPO escalation occurs within 30 minutes. Legal notification deadlines must be confirmed by counsel.
+
+18. Privacy engineering gates in SDLC
+Gate
+Mandatory evidence
+Accountable owner
+Requirements
+Purpose, minimum fields, users, visibility, legal basis, retention, rights and misuse cases documented
+Product Owner + DPO
+Design
+Data-flow diagram, threat model, field-level authorization, consent UX, deletion design and DPIA complete
+Architecture + Security + DPO
+Build
+Secure coding, test data controls, secrets management, audit events and configurable retention implemented
+Engineering
+Test
+Authorization, enumeration, export, deletion, consent, minor, backup and incident tests pass
+QA + Security + DPO
+UAT
+Branch/cultural users verify understandable privacy behavior and no hidden relationship leakage
+Product + Community UAT
+Release
+Counsel approval, processor register, notices, store forms, web deletion URL, incident contacts and rollback evidence complete
+Release Authority
+Operate
+Access reviews, deletion jobs, retention checks, incident exercises, vendor reviews and policy refresh
+Operations + DPO + Auditor
+
+19. Required privacy test cases
+Test ID
+Scenario
+Required outcome
+PRV-001
+Unauthorized branch user requests a private person record
+Deny; no existence leakage; audit event
+PRV-002
+Member searches by sequential IDs or rapidly traverses a tree
+Rate-limit/block; alert; no bulk disclosure
+PRV-003
+User withdraws map consent
+Remove map visibility promptly; retain only approved coarse history
+PRV-004
+Minor account receives unknown-adult message
+Apply approved restriction/reporting rules
+PRV-005
+Account deletion through app
+Authenticate, explain, schedule and execute account/private-data deletion
+PRV-006
+Account deletion through public web route
+Request works without reinstalling app; status is trackable
+PRV-007
+Deleted user has shared genealogy links
+Remove account/private data; review/minimize independent shared facts without corrupting relatives' records
+PRV-008
+Hidden adoption/dispute edge could be inferred by Nata/Saino
+Do not reveal hidden edge or derived sensitive term
+PRV-009
+Backup restored after a deletion
+Deletion tombstone/reconciliation prevents data from returning to active service
+PRV-010
+Support opens a sensitive record without assigned case
+Access denied and flagged
+PRV-011
+Processor termination
+Export required data; delete/return copies; obtain attestation
+PRV-012
+Crash contains message/contact value
+Redaction prevents sensitive payload from entering diagnostics
+
+20. Launch compliance checklist
+☐ Legal entity, privacy contact and complaint channel are named.
+☐ Nepal-qualified counsel approves the legal register, children model, retention schedule, cross-border arrangements and notice.
+☐ Data inventory and current data-flow diagram cover every app, API, admin tool, SDK, processor, log and backup.
+☐ DPIA is approved for genealogy, relationship inference, minor data, map/location, messaging and moderation.
+☐ In-app privacy notice, consent controls, access/correction and deletion are tested in Nepali and English.
+☐ Public web account-deletion route is live and functional.
+☐ Google Play Data Safety and Apple App Privacy declarations reconcile with actual code and processors.
+☐ Role/branch permissions, MFA, recusal, break-glass access and immutable audit are tested.
+☐ Retention jobs, processor deletion and backup expiry are automated and monitored.
+☐ Incident response contacts, templates and tabletop exercise are complete.
+☐ No real member data exists in development, demonstration or unmanaged spreadsheets.
+☐ Governing Board records formal approval and effective date.
+Appendix A. Legal-review questions
+What is the exact legal status and accountable entity of the platform operator?
+Which Privacy Act provisions apply to each category of data and each disclosure?
+What consent/guardian verification is required for minors and what age thresholds apply?
+What rights, response periods, exceptions and complaint routes are legally required?
+What obligations apply to data about deceased persons and living relatives?
+When can genealogy data remain after account deletion, and in what minimized/anonymized form?
+What conditions apply to hosting, support or processors outside Nepal?
+What security/privacy incidents require notification, to whom and within what period?
+What limitation periods or statutory retention duties apply to consent, audit, finance and dispute records?
+Are electronic acceptance, signatures and records sufficient for the planned workflows?
+What wording is required in Nepali, and which language controls in a conflict?
+What registrations, licenses, notices or regulator consultations are required before launch?
+Appendix B. Source register
+Source
+URL
+Use / limitation
+Nepal Law Commission - Privacy Act, 2075
+https://lawcommission.gov.np/content/12261/12261-the-privacy-act-2075/
+Primary legal text; counsel to validate current consolidated version.
+Nepal Law Commission - Electronic Transactions Act, 2063
+https://lawcommission.gov.np/content/13397/
+Primary legal text.
+Nepal Law Commission - Electronic Transactions Rules, 2064
+https://lawcommission.gov.np/content/12955/12955-electronic-transaction-regulat/
+Primary rules.
+Nepal Law Commission - Act Relating to Children, 2075
+https://lawcommission.gov.np/content/12933/12933-the-act-relating-to-children/
+Primary child-protection statute.
+Nepal Law Commission - National Civil Code, 2074
+https://lawcommission.gov.np/content/13455/civil-code-2074/
+Primary civil/family-law reference.
+Nepal Law Commission - Muluki Criminal Code, 2074
+https://lawcommission.gov.np/content/13454/criminal-code-2074/
+Primary criminal-law reference.
+Google Play - account deletion requirements
+https://support.google.com/googleplay/android-developer/answer/13327111?hl=en
+Official platform policy guidance.
+Apple - offering account deletion in your app
+https://developer.apple.com/support/offering-account-deletion-in-your-app/
+Official platform requirement.
+Apple App Review Guidelines
+https://developer.apple.com/app-store/review/guidelines/
+Official review requirements.
+Apple App Privacy Details
+https://developer.apple.com/app-store/app-privacy-details/
+Official disclosure guidance.
+Android privacy and security
+https://developer.android.com/privacy
+Official engineering guidance.
+
+Appendix C. Approval record
+Approval role
+Name
+Decision
+Date
+Evidence / signature reference
+Privacy / Data Protection Officer
+[PENDING]
+[ ] Approve  [ ] Return
+[PENDING]
+[PENDING]
+Nepal-qualified Legal Adviser
+[PENDING]
+[ ] Approve  [ ] Return
+[PENDING]
+[PENDING]
+Security Authority
+[PENDING]
+[ ] Approve  [ ] Return
+[PENDING]
+[PENDING]
+Product Owner
+[PENDING]
+[ ] Approve  [ ] Return
+[PENDING]
+[PENDING]
+Governing Board
+[PENDING]
+[ ] Approve  [ ] Return
+[PENDING]
+[PENDING]
+Policy Owner / Approving Organization
+Jyphra Technology Pvt. Ltd.
+APPROVED - internal SDLC baseline
+8 September 2026
+Owner approval recorded in project documentation
+
+Version-control note: Version 1.0 records owner approval for internal SDLC use. Later approved changes create a new policy version with change reason, effective date and migration instructions. Prior versions remain available for audit.

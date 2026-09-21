@@ -1,0 +1,16 @@
+﻿Release 1.0 SDLC RACI													
+R = Responsible; A = Accountable; C = Consulted; I = Informed. Each activity has exactly one accountable role/group.													
+SDLC Activity	Board	Sponsor	Product Owner	Project Manager	Cultural Authority	Branch Authority	DPO/Legal	Security	Engineering	QA/UAT	Release Manager	Operations	Auditor
+Approve scope and governance	A	R	C	R	C	I	C	I	I	I	I	I	C
+Baseline requirements	I	A	R	R	C	C	C	C	C	C	I	I	I
+Approve cultural rules	I	I	C	I	A/R	C	C	I	I	C	I	I	I
+Approve privacy/legal policies	I	C	C	I	C	I	A/R	C	C	C	I	C	C
+Architecture and threat model	I	I	C	C	C	I	C	A/R	R	C	I	C	I
+Develop Release 1.0	I	I	A	R	C	I	C	C	R	C	I	C	I
+Genealogy data migration	I	I	C	R	C	A/R	C	C	R	C	I	C	I
+System/integration/security testing	I	I	C	C	I	I	C	C/R	R	A/R	I	C	I
+Community UAT	I	I	A	R	C	R	C	I	C	R	I	C	I
+Release go/no-go	I	C	A	R	C	I	C	C	C	R	R	C	I
+Production deployment	I	I	I	C	I	I	I	C	R	C	A/R	R	I
+Incident response	I	I	I	C	I	I	C	A/R	R	C	C	R	I
+Access/compliance audit	I	I	I	I	I	I	C	C	I	I	I	C	A/R

@@ -1,0 +1,16 @@
+﻿Decision & Permission Authority Matrix											
+A = final approval; R = executes/reviews; C = consulted; I = informed; — = no authority.											
+Decision ID	Decision / Permission	Accountable Role	A	Responsible Role	R	Consulted / Informed	Scope	Required Evidence	Separation Rule	Review Frequency	Launch Gate
+GOV-001	Approve governance charter	Governing Board	A	Project Sponsor	R	DPO; Legal Adviser	Organization-wide	Board resolution	No self-conflicted vote	Annual/when changed	Mandatory
+GOV-002	Appoint senior cultural authority	Governing Board	A	Project Sponsor	R	Existing non-conflicted authorities	Organization-wide	Resolution + due diligence	Candidate cannot approve appointment	Per term	Mandatory
+CUL-001	Validate cultural rule	Cultural Reviewer	R	Senior Community Authority	A	Content Editor; Legal/DPO if sensitive	Assigned cultural domain	Evidence + example path	Reviewer ≠ final approver	Per rule version	Mandatory
+GEN-001	Approve branch member	Branch Authority	A	Genealogy Verifier	R	Support Agent	Assigned branch	Identity/source evidence	No own/direct-family approval	Per request	Mandatory
+GEN-002	Approve genealogy edge	Branch Authority	A	Genealogy Verifier	R	Central Genealogy Authority if cross-branch	Assigned branch	Source + duplicate/cycle checks	No self-entry approval	Per relationship	Mandatory
+GEN-003	Merge duplicate people	Central Genealogy Authority	A	Genealogy Verifier	R	Affected Branch Authorities; DPO	Cross-branch	Merge report + rollback plan	Two-person confirmation	Per merge	Mandatory
+GEN-004	Resolve disputed lineage	Central Genealogy Authority / Board	A	Assigned independent panel	R	Affected branches; Legal; DPO	Case-specific	Evidence bundle + reasoned decision	All conflicted persons recuse	Per case	Mandatory
+PRV-001	Approve public visibility	Data subject or authorized policy owner	A	DPO	R	Branch Authority	Record-specific	Consent/legal basis	No default public setting	Per change	Mandatory
+SEC-001	Grant privileged role	Role owner + Security Admin	A/R	System Administrator	R	DPO; Auditor informed	Exact environment/scope	Approved appointment + MFA	No shared accounts	Per grant	Mandatory
+SEC-002	Emergency privileged access	Incident Commander	A	Security Administrator	R	DPO; Auditor	Incident-limited	Incident ID + expiry	Independent post-review	Per incident	Mandatory
+REL-001	Approve production release	Product Owner + Release Authority	A	Release Manager	R	QA; Security; DPO; Operations	Release version	UAT/security/rollback evidence	Developer cannot sole-approve	Per release	Mandatory
+FIN-001	Approve procurement/payment	Authorized finance approvers	A	Finance Officer	R	Sponsor; Auditor	Threshold-based	Invoice/contract/budget evidence	Requester ≠ approver; dual approval	Per transaction	Mandatory
+OPS-001	Delete or anonymize data	DPO + authorized data owner	A	System Administrator	R	Legal; Auditor	Record-specific	Verified request + retention check	Backups/logs follow policy	Per request	Mandatory

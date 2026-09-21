@@ -1,0 +1,11 @@
+﻿Separation-of-Duties & Recusal Controls											
+These controls must be enforced in workflow logic, not only documented as policy.											
+Control ID	Process	Initiator	Reviewer/Processor	Final Authority	Conflict Rule	Enforcement	Risk	Frequency	Evidence	Control Owner	Launch Gate
+SOD-001	Cultural rule publication	Rule proposer	Cultural reviewer	Senior final approver	All three different people	Block workflow	Critical	Per rule	Audit log + identities	Security Admin	Required
+SOD-002	Genealogy record approval	Record submitter	Verifier	Branch Authority	Submitter cannot verify/approve own or direct-family case	Recusal + reassignment	High	Per case	Relationship/conflict declaration	Branch Authority	Required
+SOD-003	Privilege provisioning	Role requester	Role owner	Security Admin	Requester cannot grant own access	Dual approval	Critical	Per grant	Approval + MFA record	DPO/Auditor	Required
+SOD-004	Audit evidence	System Admin	Security Admin	Independent Auditor	Administrators cannot alter/delete audit records	Immutable external log store	Critical	Continuous	Log integrity proof	Auditor	Required
+SOD-005	Production release	Developer	QA/UAT approver	Release Manager	Developer cannot be sole test/release approver	Protected pipeline gates	Critical	Per release	Signed build + test evidence	Technology Lead	Required
+SOD-006	Payment	Requester	Finance processor	Two authorized approvers	Requester/processor cannot provide all approvals	Dual authorization	Critical	Per payment	Invoice + approvals	Auditor	Required
+SOD-007	Privacy request	Support intake	DPO decision	System Admin execution	Identity verifier separated from irreversible execution	Case workflow	High	Per request	Request + legal basis + execution proof	DPO	Required
+SOD-008	Dispute resolution	Affected branch/person	Independent investigator	Final panel	All materially conflicted persons recuse	Conflict declaration	High	Per case	Evidence + reasoned decision	Board	Required
