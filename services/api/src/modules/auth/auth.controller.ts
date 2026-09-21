@@ -58,7 +58,7 @@ function setRefreshTokenCookie(res: Response, token: string) {
   res.cookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     path: '/',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   });
@@ -68,7 +68,7 @@ function clearRefreshTokenCookie(res: Response) {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     path: '/',
   });
 }
@@ -345,6 +345,17 @@ export class AuthController {
     }
     const normalized = normalizeNepaliPhone(body.phoneNumber);
     await this.authService.clearCooldownForTest(normalized);
+    return { success: true, phoneNumber: normalized };
+  }
+
+  @Post('test-ensure-linked-person')
+  @ApiOperation({ summary: 'Ensure test user has a linked person record in test environment' })
+  async testEnsureLinkedPerson(@Body() body: { phoneNumber: string }) {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new NotFoundException();
+    }
+    const normalized = normalizeNepaliPhone(body.phoneNumber);
+    await this.authService.ensureLinkedPersonForTest(normalized);
     return { success: true, phoneNumber: normalized };
   }
 }

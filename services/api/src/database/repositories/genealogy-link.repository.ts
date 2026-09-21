@@ -55,6 +55,20 @@ export class GenealogyLinkRepository {
     return res.rows;
   }
 
+  /** Current verified relationships only; never infer access from a display DTO. */
+  async getVerifiedImmediateFamilyIds(personId: string): Promise<Set<string>> {
+    const result = await this.executeQuery<{ id: string }>(
+      `SELECT parent_id AS id FROM parent_links WHERE child_id = $1 AND confidence = 'VERIFIED'
+       UNION SELECT child_id AS id FROM parent_links WHERE parent_id = $1 AND confidence = 'VERIFIED'
+       UNION SELECT spouse_id AS id FROM spouse_links
+         WHERE person_id = $1 AND confidence = 'VERIFIED' AND (status IS NULL OR status <> 'CANCELLED')
+       UNION SELECT person_id AS id FROM spouse_links
+         WHERE spouse_id = $1 AND confidence = 'VERIFIED' AND (status IS NULL OR status <> 'CANCELLED')`,
+      [personId],
+    );
+    return new Set(result.rows.map((row) => row.id));
+  }
+
   async getChildrenByParentId(parentId: string, client?: PoolClient): Promise<ParentLinkRecord[]> {
     const res = await this.executeQuery<ParentLinkRecord>(
       'SELECT * FROM parent_links WHERE parent_id = $1 ORDER BY created_at ASC',

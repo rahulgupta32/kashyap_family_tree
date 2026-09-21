@@ -432,7 +432,8 @@ export class DuplicateService {
    */
   async mergePersons(
     dto: MergePersonsDto,
-    actor: { id: string; roles: Role[]; branchId?: string; branchIds?: string[]; ipAddress?: string; userAgent?: string },
+    actor: { id: string; roles: Role[]; branchId?: string; branchIds?: string[]; roleAssignments?: { role: Role; branchId?: string | null }[]; ipAddress?: string; userAgent?: string },
+    externalClient?: PoolClient,
   ): Promise<MergeResultDto> {
     const { survivingPersonId, mergedPersonId, fieldResolutions, justificationReason } = dto;
 
@@ -475,10 +476,7 @@ export class DuplicateService {
       }
     }
 
-    // Permission check: Super Admin or Branch Admin with authority over both records
-    const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
-
-    return this.db.transaction(async (client: PoolClient) => {
+    const runMergeLogic = async (client: PoolClient): Promise<MergeResultDto> => {
       // 1. Acquire transaction graph mutation lock
       await this.linkRepo.acquireGraphMutationLock(client);
 
@@ -698,7 +696,12 @@ export class DuplicateService {
         migratedRequestsCount: reqsRes.rowCount || 0,
         executedAt: new Date().toISOString(),
       };
-    });
+    };
+
+    if (externalClient) {
+      return runMergeLogic(externalClient);
+    }
+    return this.db.transaction(runMergeLogic);
   }
 
   private async loadSummary(personId: string, viewer?: ViewerContext): Promise<PersonSummaryDto | null> {

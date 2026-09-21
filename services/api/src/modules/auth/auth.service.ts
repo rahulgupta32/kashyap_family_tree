@@ -1092,4 +1092,36 @@ export class AuthService {
       );
     }
   }
+
+  async ensureLinkedPersonForTest(phone: string): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new ForbiddenException();
+    }
+    const user = await this.userRepo.findOrCreateByPhone(phone);
+    let hasActivePerson = false;
+    const db = (this as any).db || (this.userRepo as any).db;
+    if (user.person_id && db) {
+      const check = await db.query('SELECT id FROM persons WHERE id = $1 AND is_archived = FALSE', [user.person_id]);
+      if (check.rows.length > 0) {
+        hasActivePerson = true;
+      }
+    }
+    if (!hasActivePerson && db) {
+      const kaski = await db.query("SELECT id FROM branches WHERE code = 'KASKI' OR code LIKE 'KSK%' LIMIT 1");
+      const branchId = kaski.rows[0]?.id;
+      const pRes = await db.query(
+        `INSERT INTO persons (gender, living_status, generation, branch_id, current_address, is_claimed, claimed_user_id)
+         VALUES ('MALE', 'LIVING', 4, $1, 'पोखरा, कास्की', TRUE, $2)
+         RETURNING id`,
+        [branchId, user.id],
+      );
+      const personId = pRes.rows[0].id;
+      await db.query(
+        `INSERT INTO person_names (person_id, language, first_name, last_name, full_name, is_primary)
+         VALUES ($1, 'ne', 'रामेश्वर', 'अधिकारी', 'रामेश्वर अधिकारी', TRUE)`,
+        [personId],
+      );
+      await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [personId, user.id]);
+    }
+  }
 }

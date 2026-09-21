@@ -13,6 +13,7 @@ import { DuplicateRepository } from '../src/database/repositories/duplicate.repo
 import { JwtService } from '@nestjs/jwt';
 import { Role, Gender, LivingStatus, PrivacyVisibility, ParentType, ErrorCode, DuplicateCandidateStatus } from '@kashyap/contracts';
 import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../src/modules/auth/auth.constants';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / PostgreSQL)', () => {
   let app: INestApplication;
@@ -25,6 +26,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   let sessionRepo: SessionRepository;
   let duplicateRepo: DuplicateRepository;
   let jwtService: JwtService;
+  let isoDb: DisposableDatabase;
 
   let superAdminToken: string;
   let branchAdminToken: string;
@@ -33,13 +35,15 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   let branch2Id: string;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('gen_http');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
+    process.env.DB_NAME = isoDb.dbName;
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
     process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'kashyap_jwt_secret_dev_key_super_secure';
@@ -53,6 +57,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     await app.init();
 
     db = moduleFixture.get<DatabaseService>(DatabaseService);
+    await assertDatabaseIsolation(db, isoDb.dbName);
+    console.log(`[DISPOSABLE DB TARGET] Genealogy HTTP test verified running exclusively against target: ${isoDb.dbName}`);
     auditOutboxRepo = moduleFixture.get<AuditOutboxRepository>(AuditOutboxRepository);
     personRepo = moduleFixture.get<PersonRepository>(PersonRepository);
     linkRepo = moduleFixture.get<GenealogyLinkRepository>(GenealogyLinkRepository);
@@ -184,7 +190,8 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     expect(ba2DbRoles.rows).toHaveLength(1);
     expect(ba2DbRoles.rows[0].branch_id).toBe(branch2Id);
 
-    // Clean up any test persons from previous runs
+    // Clean up any test persons from previous runs (strictly on disposable DB)
+    await assertDatabaseIsolation(db, isoDb.dbName);
     await db.query("DELETE FROM duplicate_candidates WHERE person_a_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR person_b_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
     await db.query("DELETE FROM parent_links WHERE parent_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR child_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
     await db.query("DELETE FROM spouse_links WHERE person_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5) OR spouse_id IN (SELECT id FROM persons WHERE branch_id = ANY($1) AND generation >= 5)", [[branch1Id, branch2Id]]);
@@ -195,6 +202,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
   afterAll(async () => {
     if (app) {
       await app.close();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 
@@ -790,8 +800,9 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
 
     it('should reject merge of two persons claimed by distinct user accounts (400 CANNOT_MERGE_CLAIMED_PERSONS)', async () => {
       // Create two distinct users in user_accounts linked to two persons
-      const u1 = await userRepo.findOrCreateByPhone('+9779849999011');
-      const u2 = await userRepo.findOrCreateByPhone('+9779849999012');
+      const randSuffix = Math.floor(100000 + Math.random() * 900000);
+      const u1 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}1`);
+      const u2 = await userRepo.findOrCreateByPhone(`+977984${randSuffix}2`);
 
       const [claimedP1, claimedP2] = await Promise.all([
         personRepo.createPerson(
@@ -901,6 +912,16 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
       expect(res.body.errorCode).toBe(ErrorCode.BRANCH_MISMATCH);
     });
 
+    it('exports only administratively assigned branches for a mixed-role account', async () => {
+      await request(app.getHttpServer()).get(`/genealogy/export?branchId=${branch2Id}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`).expect(403);
+      const allowed = await request(app.getHttpServer()).get(`/genealogy/export?branchId=${branch1Id}`)
+        .set('Authorization', `Bearer ${mixedAdminToken}`).expect(200);
+      expect(allowed.body.persons.some((p: any) => p.id === pBranch1Mixed)).toBe(true);
+      expect(allowed.body.persons.every((p: any) => p.branchId === branch1Id)).toBe(true);
+      expect(JSON.stringify(allowed.body)).not.toContain(pBranch2Mixed);
+    });
+
     it('should reject candidate resolution for mixed user without admin authority in branch B (403 BRANCH_MISMATCH)', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/genealogy/duplicates/candidates/${mixedCandidateId}`)
@@ -990,6 +1011,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           education: 'प्राथमिक',
           address_visibility: PrivacyVisibility.PRIVATE,
           dob_visibility: PrivacyVisibility.VERIFIED_COMMUNITY,
+          profile_visibility: PrivacyVisibility.PUBLIC,
           is_minor_protected: true,
           is_claimed: true,
           claimed_user_id: selfUser.id,
@@ -1083,6 +1105,94 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
     });
   });
 
+  describe('Verified immediate-family privacy across HTTP read paths', () => {
+    let memberToken: string;
+    let self: string;
+    let parent: string;
+    let child: string;
+    let spouse: string;
+    let unverifiedParent: string;
+    const namePrefix = 'FamilyPrivacy' + Date.now();
+
+    beforeAll(async () => {
+      const makePerson = async (label: string, generation: number, visibility: PrivacyVisibility) => {
+        const person = await personRepo.createPerson(
+          { branch_id: branch1Id, gender: Gender.MALE, living_status: LivingStatus.LIVING,
+            generation, birth_year_bs: 2030, profile_visibility: visibility },
+          [{ language: 'ne', first_name: label, last_name: namePrefix,
+            full_name: `${label} ${namePrefix}`, is_primary: true }],
+        );
+        return person.id;
+      };
+      self = await makePerson('Self', 3, PrivacyVisibility.PUBLIC);
+      parent = await makePerson('Parent', 2, PrivacyVisibility.IMMEDIATE_FAMILY);
+      child = await makePerson('Child', 4, PrivacyVisibility.IMMEDIATE_FAMILY);
+      spouse = await makePerson('Spouse', 3, PrivacyVisibility.IMMEDIATE_FAMILY);
+      unverifiedParent = await makePerson('Unverified', 2, PrivacyVisibility.IMMEDIATE_FAMILY);
+      await db.query(`INSERT INTO parent_links (parent_id, child_id, parent_type, confidence)
+        VALUES ($1, $2, 'BIOLOGICAL', 'VERIFIED'), ($2, $3, 'BIOLOGICAL', 'VERIFIED'),
+               ($4, $2, 'BIOLOGICAL', 'UNVERIFIED')`, [parent, self, child, unverifiedParent]);
+      await db.query(`INSERT INTO spouse_links (person_id, spouse_id, status, confidence)
+        VALUES ($1, $2, 'CURRENT', 'VERIFIED'), ($2, $1, 'CURRENT', 'VERIFIED')`, [self, spouse]);
+      const user = await userRepo.findOrCreateByPhone('+9779849999077');
+      await userRepo.assignRole(user.id, Role.VERIFIED_MEMBER, branch1Id);
+      await db.query('UPDATE user_accounts SET person_id = $1 WHERE id = $2', [self, user.id]);
+      await db.query('UPDATE persons SET claimed_user_id = $1, is_claimed = TRUE WHERE id = $2', [user.id, self]);
+      const session = await sessionRepo.createSession({
+        userId: user.id, refreshTokenHash: `family_${Date.now()}`, devicePlatform: 'WEB',
+        ipAddress: '127.0.0.1', userAgent: 'family-privacy-regression', expiresAt: new Date(Date.now() + 86400000),
+      });
+      memberToken = jwtService.sign({ sub: user.id, sid: session.id, tokenType: 'access' }, {
+        secret: getJwtSecret(), issuer: JWT_ISSUER, audience: JWT_AUDIENCE, algorithm: JWT_ALGORITHM,
+        expiresIn: '15m',
+      });
+    });
+
+    it('allows verified family in search, detail, relatives, ancestors, descendants and private tree roots', async () => {
+      const search = await request(app.getHttpServer()).get('/genealogy/search')
+        .query({ query: namePrefix, limit: 100 }).set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(search.body.items.map((p: any) => p.id).sort()).toEqual([self, parent, child, spouse].sort());
+      const detail = await request(app.getHttpServer()).get(`/genealogy/people/${self}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(detail.body.parents.map((p: any) => p.personId)).toEqual([parent]);
+      expect(detail.body.children.map((p: any) => p.personId)).toEqual([child]);
+      expect(detail.body.spouses.map((p: any) => p.spousePersonId)).toEqual([spouse]);
+      const tree = await request(app.getHttpServer()).get(`/genealogy/people/${self}/tree`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(tree.body.ancestors.map((p: any) => p.id)).toEqual([parent]);
+      expect(tree.body.children.map((p: any) => p.id)).toEqual([child]);
+      expect(tree.body.spouses.map((p: any) => p.id)).toEqual([spouse]);
+      expect(JSON.stringify(tree.body)).not.toContain(unverifiedParent);
+      for (const id of [parent, child, spouse]) {
+        await request(app.getHttpServer()).get(`/genealogy/people/${id}`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(200);
+        const root = await request(app.getHttpServer()).get(`/genealogy/people/${id}/tree`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(200);
+        expect(root.body.id).toBe(id);
+      }
+    });
+
+    it('denies unverified or revoked family access without exposing hidden IDs', async () => {
+      for (const suffix of ['', '/tree']) {
+        await request(app.getHttpServer()).get(`/genealogy/people/${unverifiedParent}${suffix}`)
+          .set('Authorization', `Bearer ${memberToken}`).expect(403);
+        await request(app.getHttpServer()).get(`/genealogy/people/${parent}${suffix}`).expect(403);
+      }
+      await db.query("UPDATE spouse_links SET confidence = 'UNVERIFIED' WHERE person_id = ANY($1) AND spouse_id = ANY($1)", [[self, spouse]]);
+      await request(app.getHttpServer()).get(`/genealogy/people/${spouse}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(403);
+      const detail = await request(app.getHttpServer()).get(`/genealogy/people/${self}`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(detail.body.spouses).toEqual([]);
+      const tree = await request(app.getHttpServer()).get(`/genealogy/people/${self}/tree`)
+        .set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(JSON.stringify(tree.body)).not.toContain(spouse);
+      const search = await request(app.getHttpServer()).get('/genealogy/search')
+        .query({ query: namePrefix, limit: 100 }).set('Authorization', `Bearer ${memberToken}`).expect(200);
+      expect(search.body.items.map((p: any) => p.id).sort()).toEqual([self, parent, child].sort());
+    });
+  });
+
   describe('10. Multi-Page Search & Visibility Counting (SRCH-FR-001..008)', () => {
     let searchPrefix: string;
     const activeIds: string[] = [];
@@ -1102,6 +1212,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           living_status: LivingStatus.LIVING,
           generation: 4,
           is_archived: false,
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}व्यक्ति${i}`, last_name: 'अधिकारी', full_name: `${searchPrefix}व्यक्ति${i} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Person${i}`, last_name: 'Adhikari', full_name: `${searchPrefix}Person${i} Adhikari`, is_primary: false },
@@ -1117,6 +1228,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
           generation: 4,
           is_archived: true,
           archive_reason: 'Archived duplicate fixture for search testing',
+          profile_visibility: PrivacyVisibility.PUBLIC,
         }, [
           { language: 'ne', first_name: `${searchPrefix}आर्काइभ${j}`, last_name: 'अधिकारी', full_name: `${searchPrefix}आर्काइभ${j} अधिकारी`, is_primary: true },
           { language: 'en', first_name: `${searchPrefix}Archive${j}`, last_name: 'Adhikari', full_name: `${searchPrefix}Archive${j} Adhikari`, is_primary: false },
@@ -1202,6 +1314,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Alice`, last_name: 'Adhikari', full_name: `${engPrefix}_Alice Adhikari`, is_primary: true },
       ]);
@@ -1214,6 +1327,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'en', first_name: `${engPrefix}_Bob`, last_name: 'Adhikari', full_name: `${engPrefix}_Bob Adhikari`, is_primary: true },
         { language: 'ne', first_name: 'बब', last_name: 'अधिकारी', full_name: 'बब अधिकारी', is_primary: false },
@@ -1227,6 +1341,7 @@ describe('Genealogy HTTP API & Atomic Audit Enforcement (Real Nest AppModule / P
         living_status: LivingStatus.LIVING,
         generation: 3,
         is_archived: false,
+        profile_visibility: PrivacyVisibility.PUBLIC,
       }, [
         { language: 'ne', first_name: 'क्यारोल', last_name: 'अधिकारी', full_name: 'क्यारोल अधिकारी', is_primary: true },
         { language: 'en', first_name: `${engPrefix}_Carol`, last_name: 'Adhikari', full_name: `${engPrefix}_Carol Adhikari`, is_primary: false },

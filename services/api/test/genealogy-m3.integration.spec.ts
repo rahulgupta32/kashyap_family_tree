@@ -23,6 +23,7 @@ import {
   Role,
   ErrorCode,
 } from '@kashyap/contracts';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D: Storage)', () => {
   let db: DatabaseService;
@@ -40,6 +41,7 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
   let searchService: SearchService;
   let duplicateService: DuplicateService;
   let genealogyService: GenealogyService;
+  let isoDb: DisposableDatabase;
 
   let testBranchId: string;
   let superAdminUser: any;
@@ -47,13 +49,15 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
   let regularUser: any;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('gen_m3');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
     process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    process.env.DB_NAME = isoDb.dbName;
 
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
@@ -113,6 +117,7 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
   afterAll(async () => {
     if (redisService) await redisService.onModuleDestroy();
     if (db) await db.onModuleDestroy();
+    if (isoDb) await isoDb.drop();
   });
 
   async function createTestPerson(overrides: Partial<any> = {}) {
@@ -145,10 +150,11 @@ describe('Genealogy Core & Duplicate Governance Integration (Real PostgreSQL / D
         moolGhar: overrides.moolGhar || 'कास्की',
         justificationReason: overrides.justificationReason || 'प्रशासनिक परीक्षण दर्ता - नयाँ व्यक्ति प्रविष्टि',
         allowDuplicateOverride: overrides.allowDuplicateOverride !== undefined ? overrides.allowDuplicateOverride : true,
+        profileVisibility: overrides.profileVisibility || PrivacyVisibility.PUBLIC,
         phoneVisibility: PrivacyVisibility.PUBLIC,
         addressVisibility: PrivacyVisibility.PUBLIC,
         dobVisibility: overrides.dobVisibility || PrivacyVisibility.PUBLIC,
-      },
+      } as any,
       {
         id: superAdminUser.id,
         roles: [Role.SUPER_ADMIN],

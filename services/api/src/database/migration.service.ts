@@ -3,10 +3,12 @@ import { DatabaseService } from './database.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { PoolClient } from 'pg';
 
 @Injectable()
 export class MigrationService implements OnModuleInit {
   private readonly logger = new Logger(MigrationService.name);
+  private migrationPromise: Promise<void> | null = null;
 
   constructor(private readonly db: DatabaseService) {}
 
@@ -32,50 +34,74 @@ export class MigrationService implements OnModuleInit {
     return null;
   }
 
-  async runMigrations() {
-    this.logger.log('Checking database migrations status...');
-
-    // 1. Create schema_migrations table if not exists
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version VARCHAR(100) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-        checksum VARCHAR(64) NOT NULL,
-        execution_time_ms INT NOT NULL
-      );
-    `);
-
-    // 2. Discover migration files
-    const migrationsDir = this.resolveMigrationsDir();
-    if (!migrationsDir) {
-      const msg = 'Migrations directory not found in any candidate path.';
-      if (process.env.NODE_ENV === 'production' || process.env.USE_REAL_POSTGRES === 'true') {
-        throw new Error(`FATAL: ${msg}`);
-      }
-      this.logger.warn(msg);
-      return;
+  async runMigrations(): Promise<void> {
+    if (this.migrationPromise) {
+      return this.migrationPromise;
     }
 
-    this.logger.log(`Resolved migrations directory: ${migrationsDir}`);
+    this.migrationPromise = this.executeMigrations().catch((err) => {
+      this.migrationPromise = null;
+      throw err;
+    });
 
-    const files = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
-      .sort();
+    return this.migrationPromise;
+  }
 
-    // 3. Acquire migration advisory lock in real PG mode (ADR-004 concurrency guard)
+  private async querySql(queryRunner: PoolClient | DatabaseService, sql: string, params?: any[]) {
+    if (queryRunner instanceof DatabaseService) {
+      return queryRunner.query(sql, params);
+    }
+    return (queryRunner as PoolClient).query(sql, params);
+  }
+
+  private async executeMigrations(): Promise<void> {
+    this.logger.log('Checking database migrations status...');
+
     const isRealPg = !this.db.getIsMemoryDb();
     const MIGRATION_LOCK_ID = 2026090901;
 
-    let client: any = null;
-    if (isRealPg) {
-      client = await this.db.getClient();
-      await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
-      this.logger.log('Acquired PostgreSQL advisory lock for migration execution.');
-    }
+    let dedicatedClient: PoolClient | null = null;
 
     try {
+      if (isRealPg) {
+        dedicatedClient = await this.db.getClient();
+        await dedicatedClient.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
+        this.logger.log('Acquired PostgreSQL advisory lock for migration execution.');
+      }
+
+      const queryRunner: PoolClient | DatabaseService = dedicatedClient || this.db;
+
+      // 1. Create schema_migrations table AFTER advisory lock is acquired
+      await this.querySql(
+        queryRunner,
+        `CREATE TABLE IF NOT EXISTS schema_migrations (
+          version VARCHAR(100) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          checksum VARCHAR(64) NOT NULL,
+          execution_time_ms INT NOT NULL
+        );`,
+      );
+
+      // 2. Discover migration files
+      const migrationsDir = this.resolveMigrationsDir();
+      if (!migrationsDir) {
+        const msg = 'Migrations directory not found in any candidate path.';
+        if (process.env.NODE_ENV === 'production' || process.env.USE_REAL_POSTGRES === 'true') {
+          throw new Error(`FATAL: ${msg}`);
+        }
+        this.logger.warn(msg);
+        return;
+      }
+
+      this.logger.log(`Resolved migrations directory: ${migrationsDir}`);
+
+      const files = fs
+        .readdirSync(migrationsDir)
+        .filter((f) => f.endsWith('.sql') && !f.endsWith('.down.sql'))
+        .sort();
+
+      // 3. Apply each unapplied migration
       for (const file of files) {
         const version = file.split('_')[0];
         const filePath = path.join(migrationsDir, file);
@@ -83,7 +109,8 @@ export class MigrationService implements OnModuleInit {
         const checksum = crypto.createHash('sha256').update(sqlContent).digest('hex');
 
         // Check if migration already applied
-        const existing = await this.db.query(
+        const existing = await this.querySql(
+          queryRunner,
           'SELECT version, checksum FROM schema_migrations WHERE version = $1',
           [version],
         );
@@ -102,33 +129,49 @@ export class MigrationService implements OnModuleInit {
         const start = Date.now();
 
         try {
-          // Execute migration inside transaction
-          await this.db.transaction(async (txClient) => {
-            await txClient.query(sqlContent);
+          if (dedicatedClient) {
+            await dedicatedClient.query('BEGIN');
+            await dedicatedClient.query(sqlContent);
             const duration = Date.now() - start;
-            await txClient.query(
+            await dedicatedClient.query(
               'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)',
               [version, file, checksum, duration],
             );
-          });
+            await dedicatedClient.query('COMMIT');
+          } else {
+            await this.db.transaction(async (txClient) => {
+              await txClient.query(sqlContent);
+              const duration = Date.now() - start;
+              await txClient.query(
+                'INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES ($1, $2, $3, $4)',
+                [version, file, checksum, duration],
+              );
+            });
+          }
           this.logger.log(`Migration ${file} applied successfully in ${Date.now() - start}ms.`);
         } catch (err: any) {
+          if (dedicatedClient) {
+            try {
+              await dedicatedClient.query('ROLLBACK');
+            } catch (rbErr) {}
+          }
           this.logger.error(`Migration ${file} failed: ${err.message}`, err.stack);
-          // Never swallow migration failures — always propagate to halt startup!
           throw new Error(`Migration ${file} failed: ${err.message}`);
         }
       }
+
+      this.logger.log('All database migrations verified and up to date.');
     } finally {
-      if (isRealPg && client) {
+      if (isRealPg && dedicatedClient) {
         try {
-          await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
+          await dedicatedClient.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
           this.logger.log('Released PostgreSQL advisory lock for migration execution.');
+        } catch (unlockErr: any) {
+          this.logger.error(`Failed to release advisory lock: ${unlockErr.message}`);
         } finally {
-          client.release();
+          dedicatedClient.release();
         }
       }
     }
-
-    this.logger.log('All database migrations verified and up to date.');
   }
 }

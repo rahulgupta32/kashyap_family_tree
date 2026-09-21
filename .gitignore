@@ -118,6 +118,7 @@ docker-compose.override.yml
 *.db
 *.sql.gz
 data/
+storage/
 
 # --- Logs ---
 logs/

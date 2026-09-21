@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../database.service';
-import { ClaimStatus } from '@kashyap/contracts';
+import { ClaimStatus, DisputeStatus } from '@kashyap/contracts';
 
 export interface ClaimRecord {
   id: string;
@@ -10,9 +11,20 @@ export interface ClaimRecord {
   relationship_description: string;
   known_family_members?: any;
   statement_of_truth: boolean;
-  review_notes?: string;
-  reviewed_by?: string;
-  reviewed_at?: string;
+  tier1_reviewed_by?: string | null;
+  tier1_reviewed_at?: string | null;
+  tier1_decision?: string | null;
+  tier1_notes?: string | null;
+  tier2_reviewed_by?: string | null;
+  tier2_reviewed_at?: string | null;
+  tier2_decision?: string | null;
+  tier2_notes?: string | null;
+  correction_request_notes?: string | null;
+  resubmission_count: number;
+  version: number;
+  review_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,82 +36,114 @@ export interface ClaimEvidenceRecord {
   document_type: string;
   sha256_hash?: string;
   description?: string;
+  dispute_id?: string | null;
   created_at: string;
+}
+
+export interface ClaimDisputeRecord {
+  id: string;
+  claim_id: string;
+  disputant_user_id: string;
+  reason: string;
+  status: DisputeStatus;
+  resolution_notes?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 @Injectable()
 export class ClaimRepository {
   constructor(private readonly db: DatabaseService) {}
 
-  async findById(id: string): Promise<ClaimRecord | null> {
-    const res = await this.db.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1', [id]);
+  private query<R = any>(text: string, params?: any[], client?: PoolClient) {
+    if (client) {
+      return client.query<R>(text, params);
+    }
+    return this.db.query<R>(text, params);
+  }
+
+  async findById(id: string, client?: PoolClient): Promise<ClaimRecord | null> {
+    const res = await this.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1', [id], client);
     return res.rows[0] || null;
   }
 
-  async findActiveByPersonId(personId: string): Promise<ClaimRecord | null> {
-    const res = await this.db.query<ClaimRecord>(
+  async findActiveByPersonId(personId: string, client?: PoolClient): Promise<ClaimRecord | null> {
+    const res = await this.query<ClaimRecord>(
       `SELECT * FROM profile_claims 
-       WHERE target_person_id = $1 AND status IN ('SUBMITTED', 'IN_REVIEW')
+       WHERE target_person_id = $1 
+         AND status IN ('PENDING_TIER1', 'PENDING_TIER2', 'CORRECTION_REQUESTED', 'RESUBMITTED', 'ESCALATED', 'DISPUTED')
        LIMIT 1`,
       [personId],
+      client,
     );
     return res.rows[0] || null;
   }
 
-  async createClaim(
-    data: Omit<ClaimRecord, 'id' | 'created_at' | 'updated_at'>,
-    attachments: Array<{ mediaAssetId: string; documentType: string; description: string }>,
-  ): Promise<ClaimRecord> {
-    return this.db.transaction(async (client) => {
-      const claimRes = await client.query<ClaimRecord>(
-        `INSERT INTO profile_claims (
-          target_person_id, claimant_user_id, status, relationship_description, known_family_members, statement_of_truth
-        ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [
-          data.target_person_id,
-          data.claimant_user_id,
-          data.status,
-          data.relationship_description,
-          JSON.stringify(data.known_family_members || []),
-          data.statement_of_truth,
-        ],
-      );
-
-      const claim = claimRes.rows[0];
-
-      for (const att of attachments) {
-        await client.query(
-          `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description)
-           VALUES ($1, $2, $3, $4)`,
-          [claim.id, att.mediaAssetId, att.documentType, att.description],
-        );
-      }
-
-      return claim;
-    });
+  async findActiveByClaimantId(userId: string, client?: PoolClient): Promise<ClaimRecord | null> {
+    const res = await this.query<ClaimRecord>(
+      `SELECT * FROM profile_claims 
+       WHERE claimant_user_id = $1 
+         AND status IN ('PENDING_TIER1', 'PENDING_TIER2', 'CORRECTION_REQUESTED', 'RESUBMITTED', 'ESCALATED')
+       LIMIT 1`,
+      [userId],
+      client,
+    );
+    return res.rows[0] || null;
   }
 
-  async listAll(status?: ClaimStatus): Promise<ClaimRecord[]> {
-    const sql = status
-      ? 'SELECT * FROM profile_claims WHERE status = $1 ORDER BY created_at DESC'
-      : 'SELECT * FROM profile_claims ORDER BY created_at DESC';
-    const params = status ? [status] : [];
-    const res = await this.db.query<ClaimRecord>(sql, params);
+  async findEvidenceByClaimId(claimId: string, client?: PoolClient): Promise<ClaimEvidenceRecord[]> {
+    const res = await this.query<ClaimEvidenceRecord>(
+      'SELECT * FROM claim_evidence_attachments WHERE claim_id = $1 ORDER BY created_at ASC',
+      [claimId],
+      client,
+    );
     return res.rows;
   }
 
-  async updateReview(
-    claimId: string,
-    status: ClaimStatus,
-    reviewNotes: string,
-    reviewedBy: string,
-  ): Promise<ClaimRecord | null> {
-    const res = await this.db.query<ClaimRecord>(
-      `UPDATE profile_claims 
-       SET status = $1, review_notes = $2, reviewed_by = $3, reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4 RETURNING *`,
-      [status, reviewNotes, reviewedBy, claimId],
+  async findDisputesByClaimId(claimId: string, client?: PoolClient): Promise<ClaimDisputeRecord[]> {
+    const res = await this.query<ClaimDisputeRecord>(
+      'SELECT * FROM claim_disputes WHERE claim_id = $1 ORDER BY created_at DESC',
+      [claimId],
+      client,
     );
+    return res.rows;
+  }
+
+  async findDisputeById(disputeId: string, client?: PoolClient): Promise<ClaimDisputeRecord | null> {
+    const res = await this.query<ClaimDisputeRecord>('SELECT * FROM claim_disputes WHERE id = $1', [disputeId], client);
     return res.rows[0] || null;
+  }
+
+  async listAll(options?: {
+    status?: ClaimStatus;
+    claimantUserId?: string;
+    branchId?: string;
+  }): Promise<ClaimRecord[]> {
+    let sql = `
+      SELECT c.* FROM profile_claims c
+      LEFT JOIN persons p ON c.target_person_id = p.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let pIdx = 1;
+
+    if (options?.status) {
+      sql += ` AND c.status = $${pIdx++}`;
+      params.push(options.status);
+    }
+    if (options?.claimantUserId) {
+      sql += ` AND c.claimant_user_id = $${pIdx++}`;
+      params.push(options.claimantUserId);
+    }
+    if (options?.branchId) {
+      sql += ` AND p.branch_id = $${pIdx++}`;
+      params.push(options.branchId);
+    }
+
+    sql += ' ORDER BY c.created_at DESC';
+    const res = await this.db.query<ClaimRecord>(sql, params);
+    return res.rows;
   }
 }

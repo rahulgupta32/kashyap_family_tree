@@ -8,6 +8,7 @@ import { PrivacyEngineService } from '../src/modules/genealogy/privacy/privacy-e
 import { DuplicateService } from '../src/modules/genealogy/duplicate.service';
 import { GenealogyService } from '../src/modules/genealogy/genealogy.service';
 import { Gender, LivingStatus, ParentType, SpouseStatus } from '@kashyap/contracts';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
   let db: DatabaseService;
@@ -19,8 +20,11 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
   let privacyEngine: PrivacyEngineService;
   let duplicateService: DuplicateService;
   let genealogyService: GenealogyService;
+  let isoDb: DisposableDatabase;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('db_spec');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     // Configure environment for real PostgreSQL
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
@@ -28,7 +32,7 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    process.env.DB_NAME = isoDb.dbName;
 
     db = new DatabaseService();
     await db.onModuleInit();
@@ -62,6 +66,9 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
   afterAll(async () => {
     if (db) {
       await db.onModuleDestroy();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 
@@ -216,14 +223,17 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
 
   it('should hard fail and refuse automatic pg-mem fallback when real PostgreSQL fails to connect', async () => {
     const origPort = process.env.DB_PORT;
+    const origUrl = process.env.DATABASE_URL;
     try {
       process.env.DB_PORT = '59999'; // Dead port
+      delete process.env.DATABASE_URL;
       delete process.env.USE_PG_MEM;
       const svc = new DatabaseService();
       await expect(svc.onModuleInit()).rejects.toThrow();
       expect(svc.getIsMemoryDb()).toBe(false);
     } finally {
       process.env.DB_PORT = origPort;
+      if (origUrl) process.env.DATABASE_URL = origUrl;
     }
   });
 });

@@ -107,10 +107,25 @@ jobs:
           ADMIN_PORT: '3002'
           CORS_ORIGINS: 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:3002,http://127.0.0.1:3002'
 
+      - name: Browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-${{ github.run_id }}
+          path: test-results/
+          retention-days: 7
+
+  flutter-checks:
+    name: Flutter analysis and mocked HTTP/widget tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.47.5'
           cache: true
 
       - name: Flutter Dependencies
@@ -125,3 +140,138 @@ jobs:
         run: flutter test
         working-directory: apps/mobile
 
+
+  live-clamav:
+    name: Live ClamAV clean, compressed EICAR and unavailable-engine checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      clamav:
+        image: clamav/clamav:1.4
+        ports:
+          - 127.0.0.1:3310:3310
+        options: >-
+          --health-interval 10s
+          --health-timeout 5s
+          --health-start-period 120s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
+      - name: Verify real daemon scanning
+        run: node scripts/verify-live-clamav.cjs
+        env:
+          NODE_ENV: production
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: 3310
+      - name: Verify fail-closed behavior after stopping the test daemon
+        run: |
+          docker stop "${{ job.services.clamav.id }}"
+          node scripts/verify-live-clamav.cjs --unavailable
+        env:
+          NODE_ENV: production
+          CLAMAV_HOST: 127.0.0.1
+          CLAMAV_PORT: 3310
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clamav-verification-${{ github.run_id }}
+          path: test-results/clamav-*.json
+          retention-days: 14
+
+  android-live-api:
+    name: Android emulator with live NestJS and PostgreSQL
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: test
+      USE_REAL_POSTGRES: 'true'
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: kashyap_test_user
+      DB_PASSWORD: kashyap_test_password
+      DB_NAME: kashyap_test_android
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      SEED_ADMINS: 'true'
+      JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
+      SPARROW_SMS_TOKEN: test_sparrow_token
+      PORT: 3010
+      API_BASE: http://127.0.0.1:3010
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: kashyap_test_android
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
+      - name: Start API and seed guarded fictional fixtures
+        run: |
+          mkdir -p test-results
+          node services/api/dist/main.js > test-results/android-api.log 2>&1 &
+          api_pid=$!
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3010/health/ready > test-results/android-health.json; then break; fi
+            kill -0 "$api_pid" || { cat test-results/android-api.log; exit 1; }
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3010/health/ready
+          node scripts/seed-m4-device-fixtures.cjs
+      - name: Enable KVM and cap Gradle memory for the disposable runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3G -XX:MaxMetaspaceSize=1G -XX:ReservedCodeCacheSize=256m/' apps/mobile/android/gradle.properties
+      - name: Install, launch and verify the Android app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: bash scripts/run-m4-device-acceptance.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-live-api-${{ github.run_id }}
+          path: |
+            test-results/android-*
+            test-results/m4-device-*.json
+            test-results/kashyap-m4-debug.apk
+          retention-days: 14

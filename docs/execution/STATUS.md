@@ -1,59 +1,22 @@
-# Status Report
+# Application status
 
-**Project**: Kashyap Adhikari Family Tree  
-**Owner**: Jyphra Technology Pvt. Ltd.  
-**Current Phase**: Milestone 3 (Persistent Genealogy Core, Person Search, Interactive Tree Navigation, Governed Duplicate Management, and Mobile Client Architecture) - COMPLETED & FULLY VERIFIED  
-**Last Updated**: 2026-09-13T10:45:00+05:45  
-**Active Branch**: `feat/m3-genealogy-core`  
-**Base Branch**: `develop`  
-**Verified M2 Merge PR**: #2  
+Updated 2026-09-20. Owner: Jyphra Technology Pvt. Ltd.
 
----
+- M1–M3 are the preserved foundation. M4 PR [#4](https://github.com/rahulgupta32/kashyap_family_tree/pull/4) remains open against `develop`.
+- M4 checkpoint `8bfe0fbb943523fb351d2c73db0651d48c61b88e` passed [PR CI 35514467567](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514467567), including a real Android emulator/live API/PostgreSQL flow and live ClamAV scanning. See `MILESTONE_4_DELIVERY_REPORT.md` for counts, commands and artifacts.
+- Completion work continues in draft PR [#5](https://github.com/rahulgupta32/kashyap_family_tree/pull/5), stacked on M4. The community persistence checkpoint `2c3cba954ea25782718a6885cbee0c7f0aa17599` passed [push CI 35514808157](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514808157): 107 unit, 169 PostgreSQL integration, 14 browser and 20 Flutter widget/HTTP tests, plus typechecks and builds.
+- Neither PR has been merged. No production deployment has been performed.
 
-## 1. Multi-Dimensional Readiness Assessment
+## Completion scope
 
-| Dimension | Status | Notes |
-|-----------|--------|-------|
-| **Foundation Readiness** | ✅ **PASSED (M1)** | Monorepo structure, contracts, localization, design tokens, test fixtures, CI/CD with PostgreSQL 16 & Redis 7 containers, and NestJS/Next.js builds verified. |
-| **Persistence Readiness** | ✅ **PASSED (M1, M2 & M3)** | Real PostgreSQL 16 persistence on D: drive (`D:\Jyphra\pg_data\kashyap_pg.img` via `/dev/loop0`). Real Redis 7 persistence on D: (`/mnt/kashyap_pg/redis`). Automatic in-memory fallbacks strictly rejected outside tests. Durable `audit_outbox` table and database-enforced unique constraint (`003_audit_outbox_unique_event.sql`). Genealogy indexes, optimistic locking versioning, and duplicate candidate queue in `004_genealogy_m3_enhancements.sql`. Unlimited non-primary alias support in `005_person_names_alias_constraint.sql`. |
-| **Test Completeness** | ✅ **PASSED (M3)** | 101 unit tests across 13 suites (100% PASS), 99 real PostgreSQL/Redis integration tests across 7 suites including real Nest AppModule HTTP tests (100% PASS), 9 Playwright end-to-end browser test cases (100% PASS), and 5 Flutter mobile tests (100% PASS). Total: 214 automated tests passed across all tiers. |
-| **Security Readiness** | ✅ **HARDENED** | PostgreSQL transaction advisory graph lock (`pg_advisory_xact_lock`), rule-based privacy engine with validated Bikram Sambat calendar dataset (BS 2000..2090) and strict minor (< 18 / uncertain age) masking without admin bypass on PRIVATE fields, optimistic locking versioning (`STALE_UPDATE_DETECTED`), claim conflict protection on merge (`CANNOT_MERGE_CLAIMED_PERSONS`), mandatory justification reason validation, strongly typed DI with atomic audit outbox persistence, server-authoritative dual-branch resolution, authoritative `roleAssignments` scoping for administrative archived searches, and SQL visibility predicate synchronization for search pagination. |
-| **Operational Readiness** | ✅ **D: STORAGE VERIFIED** | PostgreSQL (`ensure-kashyap-pg.sh`) and Redis (`ensure-kashyap-redis.sh`) verified on D: drive ext4 mount. Unrelated WSL workloads (`vidyarthi`, `mala_chem`) strictly preserved. Flutter SDK installed on D: (`D:\flutter`), Android toolchain configured with JDK 21, `flutter analyze` clean (0 issues), `flutter test` (5/5 PASS), and `flutter build apk --debug` verified with APK generated on D: storage. CI workflow updated with Flutter steps. |
-| **UAT Readiness** | ⬜ **NOT STARTED** | Scheduled for Phase G6. |
-| **Production Readiness** | ⬜ **NOT READY** | Platform is in active development. |
+| Area | Current evidence / next work |
+|---|---|
+| Genealogy, claims, governed edits, profiles, calendar | M4 automated and Android acceptance passed; extend remaining mobile forms and audit UI |
+| Community | Persistent authenticated web/mobile posts, independent moderation, comments, reactions and reporting; CI passed |
+| Chat | Replacing in-memory demo conversations with durable membership, messages, receipts and authenticated realtime transport |
+| Household map | Demo data and caller-supplied verification flag still need replacement with database-backed privacy and consent |
+| Import and offline operation | Remaining implementation and acceptance work; not declared complete |
+| Media and notifications | M4 private media and scanner verified; storage deployment, provider integration and remaining product surfaces still require work |
+| Operations and release | Production credentials, cultural approvals, TLS, monitoring, backup/restore rehearsal and deployment acceptance remain gates |
 
----
-
-## 2. Completed Milestones ✅
-
-- [x] **Milestone 3: Persistent Genealogy Core, Person Search, Interactive Tree Navigation, Governed Duplicate Management, and Mobile Client Architecture (Fully Completed & Verified)**:
-  - Directed Acyclic Graph (DAG) concurrency protection using transaction-scoped PostgreSQL advisory lock `pg_advisory_xact_lock(hashtext('kashyap_lineage_graph'))` preventing cycle formation under concurrent edge mutations.
-  - Trigram and phonetic person search across Nepali and English name records with branch, generation, and living status filtering, backed by SQL-level visibility predicate synchronization ensuring deterministic pagination and exact totals.
-  - Interactive Family Tree Canvas in Next.js Admin portal with pan/zoom/center controls, focused root selector, ancestor rendering, 500-node budget enforcement, and node detail drawer.
-  - Governed duplicate management: pre-creation uncommitted duplicate scoring, candidate review queue, side-by-side comparison matrix, dismissal, authorized duplicate creation override (`allowDuplicateOverride: true`), and atomic governed merge with transaction-scoped duplicate verification and `user_accounts` ownership validation.
-  - Stale update protection using entity versioning (`STALE_UPDATE_DETECTED / GEN_3010`) and mandatory justification reason audit logging (`ADM_3011`).
-  - Rule-based privacy engine (`PRIV-FR-001..004, 007..008`) with validated BS calendar conversion (`packages/localization/src/calendar.ts`, BS 2000..2090) enforcing strict minor protection for individuals under 18 or with uncertain age (including null-safe current BS date handling), while preventing unconditional admin bypass of field-level PRIVATE disclosure.
-  - Authorized privacy-filtered JSON and CSV export (`POST /genealogy/export`) with strict masking on minor and private fields.
-  - Flutter mobile architecture in `apps/mobile` with Modern Heritage design tokens, Provider service architecture, and read-only tree viewing (with precise host tooling documentation).
-  - Full automated verification: 101 unit tests across 13 suites, 97 real PostgreSQL integration tests across 7 suites, and 9 Playwright E2E browser tests (100% PASS, 207/207 tests total).
-  - Delivery report published (`docs/execution/MILESTONE_3_DELIVERY_REPORT.md`).
-
-- [x] **Milestone 2: Persistent Accounts, Authentication, Sessions, and Server-Enforced Permissions**:
-  - Replaced synthetic user IDs with PostgreSQL-backed accounts (`user_accounts`, `user_roles`, `user_sessions`, `branches`).
-  - Cryptographic HS256 tokens bound to database sessions, real-time revocation, and transactional refresh rotation.
-  - Atomic revocation with durable audit outbox insertion.
-  - Real two-tab concurrent refresh & cross-tab logout via Web Locks API.
-  - Strict refresh-token replay detection (EC-0020).
-
-- [x] **Milestone 1: Local Application Foundation with Real PostgreSQL Persistence**:
-  - D: Drive storage backing verified (`D:\Jyphra\pg_data\kashyap_pg.img` mounted to `/mnt/kashyap_pg` via `/dev/loop0`).
-  - Schema migrations runner with PostgreSQL advisory locks.
-  - Fail-fast bridge (`scripts/pg_bridge.js`).
-  - Base monorepo contracts, localization, and design tokens.
-
----
-
-## 3. Active Next Work: Awaiting Milestone 4 Authorization 🛑
-
-* **Milestone 4 has NOT been authorized and has NOT been started.**
-* Platform remains on `feat/m3-genealogy-core` for user review and PR inspection.
+This status does not equate build success, mock tests or a green subset of CI with full application completion. New commits must link their own acceptance evidence. User D: storage, backups and unrelated workloads remain preserved.

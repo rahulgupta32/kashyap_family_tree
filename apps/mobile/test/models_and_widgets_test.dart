@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kashyap_mobile/models/person.dart';
 import 'package:kashyap_mobile/models/tree_node.dart';
 import 'package:kashyap_mobile/main.dart';
+import 'package:kashyap_mobile/services/genealogy_api_service.dart';
+import 'package:kashyap_mobile/screens/sign_in_screen.dart';
+import 'native_session_test.dart' show MemorySessionStore;
 
 void main() {
   group('Genealogy Mobile Models Contract Test Suite', () {
@@ -250,9 +253,14 @@ void main() {
   });
 
   group('KashyapApp Smoke Widget Test', () {
-    testWidgets('KashyapApp renders initial search screen', (WidgetTester tester) async {
-      await tester.pumpWidget(const KashyapApp());
+    testWidgets('KashyapApp restores empty session to sign-in screen', (WidgetTester tester) async {
+      final service = GenealogyApiService(sessionStore: MemorySessionStore());
+      addTearDown(service.dispose);
+      await tester.pumpWidget(KashyapApp(apiService: service));
+      await tester.pumpAndSettle();
+      expect(find.byType(SignInScreen), findsOneWidget);
       expect(find.text('कश्यप अधिकारी वंशावली'), findsOneWidget);
     });
   });
 }
+

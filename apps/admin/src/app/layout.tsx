@@ -41,18 +41,21 @@ export default function RootLayout({
                   <Link href="/tree" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     अन्तरक्रियात्मक वंशावली (Tree Canvas)
                   </Link>
-                  <Link href="/duplicates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
-                    दोहोरिएको व्यवस्थापन (Duplicates/Merge)
-                  </Link>
-                  <a href="#claims" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
+                  <Link href="/claims" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     दाबी प्रमाणीकरण (Claims Queue)
-                  </a>
-                  <a href="#rules" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
-                    नाता/साइनो नियम (Rulesets)
-                  </a>
-                  <a href="#audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:bg-slate-800 text-sm font-medium transition">
-                    अपरिवर्तनीय अडिट (Audit Trail)
-                  </a>
+                  </Link>
+                  <Link href="/change-requests" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    वंशावली परिमार्जन (Change Requests)
+                  </Link>
+                  <Link href="/duplicates" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    दोहोरिएको व्यवस्थापन (Duplicates)
+                  </Link>
+                  <Link href="/calendar" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    वार्षिक क्यालेन्डर (Calendar)
+                  </Link>
+                  <Link href="/profile" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    प्रोफाइल तथा गोपनीयता (Profile)
+                  </Link>
                 </nav>
               </div>
               <div className="p-2 border-t border-slate-800 text-xs text-slate-400">

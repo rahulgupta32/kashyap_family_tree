@@ -12,6 +12,7 @@ import { JWT_SECRET } from '../src/modules/auth/auth.constants';
 import { JwtService } from '@nestjs/jwt';
 import { Role, ErrorCode } from '@kashyap/contracts';
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', () => {
   let db: DatabaseService;
@@ -25,12 +26,15 @@ describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', (
   let smsProvider: TestSmsProviderAdapter;
   let jwtService: JwtService;
   let authService: AuthService;
+  let isoDb: DisposableDatabase;
 
   const uniqueSuffix = Math.floor(1000000 + Math.random() * 9000000).toString();
   const TEST_PHONE_RAW = `984${uniqueSuffix}`;
   const TEST_PHONE = `+977${TEST_PHONE_RAW}`;
 
   beforeAll(async () => {
+    isoDb = await createDisposableDatabase('auth_int');
+    await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     // 1. Configure real PostgreSQL environment
     process.env.USE_REAL_POSTGRES = 'true';
     delete process.env.USE_PG_MEM;
@@ -38,7 +42,7 @@ describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', (
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
     process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
-    process.env.DB_NAME = process.env.DB_NAME || 'kashyap_db';
+    process.env.DB_NAME = isoDb.dbName;
 
     // 2. Configure real Redis environment
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
@@ -104,6 +108,9 @@ describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', (
     }
     if (db) {
       await db.onModuleDestroy();
+    }
+    if (isoDb) {
+      await isoDb.drop();
     }
   });
 

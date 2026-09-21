@@ -1,9 +1,28 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import { execSync } from 'child_process';
+
+function getDatabaseHost(): string {
+  if (process.env.DB_HOST && process.env.DB_HOST !== '127.0.0.1' && process.env.DB_HOST !== 'localhost') {
+    return process.env.DB_HOST;
+  }
+  if (process.platform === 'win32') {
+    try {
+      const wslIp = execSync('wsl hostname -I', { stdio: ['pipe', 'pipe', 'ignore'] }).toString().trim().split(' ')[0];
+      if (wslIp && /^\d+\.\d+\.\d+\.\d+$/.test(wslIp)) {
+        return wslIp;
+      }
+    } catch (e) {}
+  }
+  return process.env.DB_HOST || '127.0.0.1';
+}
 
 const API_PORT = process.env.API_PORT || '3000';
 const ADMIN_PORT = process.env.ADMIN_PORT || '3002';
 const DB_PORT = process.env.DB_PORT || '5434';
-const DB_HOST = process.env.DB_HOST || '127.0.0.1';
+const DB_HOST = getDatabaseHost();
 const DB_USER = process.env.DB_USER || 'kashyap_user';
 const DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
 const DB_NAME = process.env.DB_NAME || 'kashyap_db';
@@ -20,7 +39,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   use: {
-    baseURL: `http://localhost:${ADMIN_PORT}`,
+    baseURL: `http://127.0.0.1:${ADMIN_PORT}`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -31,10 +50,14 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'node services/api/dist/src/main.js',
-      url: `http://localhost:${API_PORT}/api/docs`,
-      reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000,
+      command: fs.existsSync(path.resolve(__dirname, 'services/api/dist/src/main.js'))
+        ? 'node services/api/dist/src/main.js'
+        : 'node services/api/dist/main.js',
+      url: `http://127.0.0.1:${API_PORT}/health/ready`,
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         PORT: API_PORT,
         NODE_ENV: 'test',
@@ -56,12 +79,14 @@ export default defineConfig({
     },
     {
       command: `pnpm --filter @kashyap/admin start -p ${ADMIN_PORT}`,
-      url: `http://localhost:${ADMIN_PORT}/login`,
-      reuseExistingServer: !process.env.CI,
-      timeout: 60 * 1000,
+      url: `http://127.0.0.1:${ADMIN_PORT}/login`,
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
       env: {
         PORT: ADMIN_PORT,
-        NEXT_PUBLIC_API_URL: `http://localhost:${API_PORT}`,
+        NEXT_PUBLIC_API_URL: `http://127.0.0.1:${API_PORT}`,
       },
     },
   ],

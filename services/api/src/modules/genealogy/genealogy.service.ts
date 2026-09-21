@@ -40,6 +40,7 @@ export const GENEALOGY_TEST_FIXTURE_MODE = 'GENEALOGY_TEST_FIXTURE_MODE';
 
 export interface ActorContext {
   id: string;
+  personId?: string;
   roles: Role[];
   roleAssignments?: { role: Role; branchId?: string | null }[];
   branchId?: string;
@@ -572,6 +573,7 @@ export class GenealogyService {
             phone_visibility: dto.phoneVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             address_visibility: dto.addressVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             dob_visibility: dto.dobVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
+            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility || PrivacyVisibility.VERIFIED_COMMUNITY,
             is_minor_protected: dto.isMinorProtected ?? false,
           },
           dto.names.map((n) => ({
@@ -635,7 +637,7 @@ export class GenealogyService {
         return created.id;
       });
 
-      return (await this.getPersonById(createdId))!;
+      return (await this.getPersonById(createdId, actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : { userId: 'system', roles: [Role.SUPER_ADMIN] }))!;
     }
 
     // In-memory fallback
@@ -745,6 +747,7 @@ export class GenealogyService {
             phone_visibility: dto.phoneVisibility,
             address_visibility: dto.addressVisibility,
             dob_visibility: dto.dobVisibility,
+            profile_visibility: (dto as any).profileVisibility || (dto as any).privacyVisibility,
             is_minor_protected: dto.isMinorProtected,
           },
           dto.names ? dto.names.map((n) => ({
@@ -786,7 +789,7 @@ export class GenealogyService {
         return id;
       });
 
-      return (await this.getPersonById(updatedId))!;
+      return (await this.getPersonById(updatedId, actor ? { userId: actor.id, roles: actor.roles, branchId: actor.branchId, branchIds: actor.branchIds } : { userId: 'system', roles: [Role.SUPER_ADMIN] }))!;
     }
 
     // In-memory fallback
@@ -847,8 +850,17 @@ export class GenealogyService {
     if (mem) mem.isArchived = true;
   }
 
+  private async withVerifiedFamily(viewer?: ViewerContext): Promise<ViewerContext | undefined> {
+    if (!viewer?.personId) return viewer;
+    return {
+      ...viewer,
+      verifiedFamilyPersonIds: await this.linkRepo!.getVerifiedImmediateFamilyIds(viewer.personId),
+    };
+  }
+
   async getPersonById(id: string, viewer?: ViewerContext): Promise<PersonDetailDto> {
     if (this.isDatabaseAvailable) {
+      viewer = await this.withVerifiedFamily(viewer);
       const canonicalRes = await this.personRepo!.resolveCanonicalPerson(id);
       const person = canonicalRes.person;
       if (!person) {
@@ -869,6 +881,13 @@ export class GenealogyService {
           ? this.db!.query('SELECT name_nepali, name_english FROM branches WHERE id = $1', [person.branch_id])
           : Promise.resolve({ rows: [] }),
       ]);
+
+      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(person, viewer)) {
+        throw new ForbiddenException({
+          errorCode: ErrorCode.FORBIDDEN,
+          message: 'Access denied: Profile is marked private by owner',
+        });
+      }
 
       const primaryNameNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name
         || names.find((n) => n.language === 'ne')?.full_name
@@ -1007,7 +1026,11 @@ export class GenealogyService {
     if (this.isDatabaseAvailable) {
       const p = await this.personRepo!.findById(id, true);
       if (!p) return null;
+      if (this.privacyEngine && !this.privacyEngine.isRecordVisible(p, viewer)) {
+        return null;
+      }
       const [names, branchRes] = await Promise.all([
+
         this.personRepo!.findNamesByPersonId(id),
         p.branch_id
           ? this.db!.query('SELECT name_nepali FROM branches WHERE id = $1', [p.branch_id])
@@ -1071,7 +1094,11 @@ export class GenealogyService {
         });
       }
 
-      const rawTree = await this.buildSubtreeFromDb(root.id, descDepth, ascDepth);
+      viewer = await this.withVerifiedFamily(viewer);
+      const rawTree = await this.buildSubtreeFromDb(root.id, descDepth, ascDepth, new Set(), viewer);
+      if (!rawTree) {
+        throw new ForbiddenException({ errorCode: ErrorCode.FORBIDDEN, message: 'Profile is private' });
+      }
       if (this.privacyEngine) {
         return this.privacyEngine.filterTreeNode(rawTree, viewer);
       }
@@ -1095,7 +1122,8 @@ export class GenealogyService {
     descDepthRemaining: number,
     ascDepthRemaining: number = 0,
     visited: Set<string> = new Set(),
-  ): Promise<TreeNodeDto> {
+    viewer?: ViewerContext,
+  ): Promise<TreeNodeDto | null> {
     if (visited.size >= 500) {
       throw new BadRequestException({
         errorCode: ErrorCode.MAX_TREE_DEPTH_EXCEEDED,
@@ -1106,6 +1134,10 @@ export class GenealogyService {
 
     const p = await this.personRepo!.findById(personId);
     if (!p) throw new NotFoundException(`Person ${personId} not found`);
+
+    if (this.privacyEngine && !this.privacyEngine.isRecordVisible(p, viewer)) {
+      return null;
+    }
 
     const [names, childLinks, parentLinks, spouseLinks] = await Promise.all([
       this.personRepo!.findNamesByPersonId(personId),
@@ -1121,8 +1153,11 @@ export class GenealogyService {
     if (descDepthRemaining > 0) {
       for (const cl of childLinks) {
         if (!visited.has(cl.child_id)) {
-          const childNode = await this.buildSubtreeFromDb(cl.child_id, descDepthRemaining - 1, 0, visited);
-          childNodes.push(childNode);
+          const childP = await this.personRepo!.findById(cl.child_id);
+          if (childP && (!this.privacyEngine || this.privacyEngine.isRecordVisible(childP, viewer))) {
+            const childNode = await this.buildSubtreeFromDb(cl.child_id, descDepthRemaining - 1, 0, visited, viewer);
+            if (childNode) childNodes.push(childNode);
+          }
         }
       }
     }
@@ -1131,8 +1166,11 @@ export class GenealogyService {
     if (ascDepthRemaining > 0) {
       for (const pl of parentLinks) {
         if (!visited.has(pl.parent_id)) {
-          const ancestorNode = await this.buildSubtreeFromDb(pl.parent_id, 0, ascDepthRemaining - 1, visited);
-          ancestorNodes.push(ancestorNode);
+          const parentP = await this.personRepo!.findById(pl.parent_id);
+          if (parentP && (!this.privacyEngine || this.privacyEngine.isRecordVisible(parentP, viewer))) {
+            const ancestorNode = await this.buildSubtreeFromDb(pl.parent_id, 0, ascDepthRemaining - 1, visited, viewer);
+            if (ancestorNode) ancestorNodes.push(ancestorNode);
+          }
         }
       }
     }
@@ -1149,7 +1187,7 @@ export class GenealogyService {
           }
           visited.add(sl.spouse_id);
           const sp = await this.personRepo!.findById(sl.spouse_id);
-          if (sp) {
+          if (sp && (!this.privacyEngine || this.privacyEngine.isRecordVisible(sp, viewer))) {
             const spNames = await this.personRepo!.findNamesByPersonId(sl.spouse_id);
             spouseNodes.push({
               id: sp.id,
@@ -1240,19 +1278,23 @@ export class GenealogyService {
 
     const isSuperAdmin = actor.roles.includes(Role.SUPER_ADMIN) || actor.roles.includes(Role.CENTRAL_ADMIN);
     const actorBranches = actor.branchIds || (actor.branchId ? [actor.branchId] : []);
+    const exportBranches = actor.roleAssignments !== undefined
+      ? actor.roleAssignments.filter((assignment) => assignment.role === Role.BRANCH_ADMIN)
+          .map((assignment) => assignment.branchId).filter((id): id is string => Boolean(id))
+      : actorBranches;
 
     let targetBranchId: string | undefined = undefined;
 
     if (isSuperAdmin) {
       targetBranchId = query.branchId;
     } else {
-      if (query.branchId && !actorBranches.includes(query.branchId)) {
+      if (query.branchId && !exportBranches.includes(query.branchId)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.BRANCH_MISMATCH,
           message: 'Branch administrators can only export genealogy data for their assigned branch',
         });
       }
-      targetBranchId = query.branchId || actorBranches[0];
+      targetBranchId = query.branchId || exportBranches[0];
       if (!targetBranchId) {
         throw new ForbiddenException({
           errorCode: ErrorCode.BRANCH_MISMATCH,
@@ -1293,44 +1335,53 @@ export class GenealogyService {
 
     const viewerContext: ViewerContext = {
       userId: actor.id,
+      personId: actor.personId,
       roles: actor.roles,
+      roleAssignments: actor.roleAssignments,
       branchId: targetBranchId,
       branchIds: actorBranches,
       isVerifiedMember: true,
     };
 
-    const sanitizedPersons = personsRes.rows.map((r: any) => {
-      const summary: PersonSummaryDto = {
-        id: r.id,
-        primaryNameNepali: r.primary_name_nepali,
-        primaryNameEnglish: r.primary_name_english || r.primary_name_nepali,
-        gender: r.gender,
-        livingStatus: r.living_status,
-        generation: r.generation,
-        branchId: r.branch_id || undefined,
-        branchName: r.branch_name || undefined,
-        birthYearBs: r.birth_year_bs,
-        deathYearBs: r.death_year_bs,
-        isClaimed: r.is_claimed,
-        version: r.version,
-      };
-      return this.privacyEngine ? this.privacyEngine.filterPersonSummary(summary, viewerContext) : summary;
-    });
+    const sanitizedPersons = personsRes.rows
+      .filter((r: any) => {
+        if (this.privacyEngine) {
+          return this.privacyEngine.isRecordVisible(r, viewerContext);
+        }
+        return true;
+      })
+      .map((r: any) => {
+        const summary: PersonSummaryDto = {
+          id: r.id,
+          primaryNameNepali: r.primary_name_nepali,
+          primaryNameEnglish: r.primary_name_english || r.primary_name_nepali,
+          gender: r.gender,
+          livingStatus: r.living_status,
+          generation: r.generation,
+          branchId: r.branch_id || undefined,
+          branchName: r.branch_name || undefined,
+          birthYearBs: r.birth_year_bs,
+          deathYearBs: r.death_year_bs,
+          isClaimed: r.is_claimed,
+          version: r.version,
+        };
+        return this.privacyEngine ? this.privacyEngine.filterPersonSummary(summary, viewerContext) : summary;
+      });
 
-    const personIds = personsRes.rows.map((r: any) => r.id);
+    const sanitizedPersonIds = sanitizedPersons.map((r: any) => r.id);
     let parentLinks: any[] = [];
     let spouseLinks: any[] = [];
 
-    if (personIds.length > 0) {
+    if (sanitizedPersonIds.length > 0) {
       const pLinksRes = await this.db!.query(
         'SELECT parent_id, child_id, parent_type FROM parent_links WHERE parent_id = ANY($1) AND child_id = ANY($1)',
-        [personIds],
+        [sanitizedPersonIds],
       );
       parentLinks = pLinksRes.rows;
 
       const sLinksRes = await this.db!.query(
         'SELECT person_id, spouse_id, status, marriage_date_bs FROM spouse_links WHERE person_id = ANY($1) AND spouse_id = ANY($1)',
-        [personIds],
+        [sanitizedPersonIds],
       );
       spouseLinks = sLinksRes.rows;
     }
