@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 import { ClaimDetailDto, ClaimStatus } from '@kashyap/contracts';
 
 export default function ClaimsAdminPage() {
-  const { accessToken, hasRole } = useAuth();
+  const { accessToken, hasRole, isLoading } = useAuth();
+  const loadVersion = useRef(0);
   const [claims, setClaims] = useState<ClaimDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -18,22 +19,24 @@ export default function ClaimsAdminPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    loadClaims();
-  }, [accessToken, selectedStatus]);
+    if (!isLoading) void loadClaims();
+    return () => { loadVersion.current += 1; };
+  }, [accessToken, selectedStatus, isLoading]);
 
   async function loadClaims() {
-    if (!accessToken) return;
+    if (!accessToken || isLoading) return;
+    const requestVersion = ++loadVersion.current;
     setLoading(true);
     try {
       const data = await ApiClient.listClaims(
         accessToken,
         selectedStatus === 'ALL' ? undefined : { status: selectedStatus },
       );
-      setClaims(data);
+      if (requestVersion === loadVersion.current) setClaims(data);
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      if (requestVersion === loadVersion.current) setMessage({ type: 'error', text: err.message });
     } finally {
-      setLoading(false);
+      if (requestVersion === loadVersion.current) setLoading(false);
     }
   }
 

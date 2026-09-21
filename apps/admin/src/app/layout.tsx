@@ -57,6 +57,7 @@ export default function RootLayout({
                     प्रोफाइल तथा गोपनीयता (Profile)
                   </Link>
                   <Link href="/community" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">समुदाय (Community)</Link>
+<Link href="/chat" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सन्देश (Messages)</Link>
                 </nav>
               </div>
               <div className="p-2 border-t border-slate-800 text-xs text-slate-400">

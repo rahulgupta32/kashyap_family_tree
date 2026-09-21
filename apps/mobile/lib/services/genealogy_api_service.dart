@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/person.dart';
 import '../models/tree_node.dart';
 import 'session_store.dart';
+import 'chat_connection.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -161,6 +162,14 @@ class GenealogyApiService {
       throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
     }
     return decoded;
+  }
+
+  Future<ChatConnection> openChatConnection() async {
+    // A real authenticated request rotates an expired native session before the socket opens.
+    await getMyProfile();
+    final token = _authToken;
+    if (token == null) { throw StateError('Sign in for messaging'); }
+    return NativeChatConnection.connect(baseUrl, token);
   }
 
   // Bilingual search
