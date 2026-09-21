@@ -4,11 +4,15 @@ Updated 2026-09-21. Preserve M1–M4 protections, user D: storage, backups and u
 
 ## Remote state and evidence
 
-- M4 PR #4: `feat/m4-governed-workflows` → `develop`; last inspected head `dafc7b1039b44bc73996c27b2a97c0e7737c0240`. Its last change removes an Android test scroll-animation wait that could deadlock without frame pumping. No Actions run was found for that newest head during inspection.
-- M4 verified checkpoint `8bfe0fbb943523fb351d2c73db0651d48c61b88e`: PR run https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514467567 passed platform, Flutter, live ClamAV and real Android/live API/PostgreSQL acceptance. See M4 delivery report for the exact evidence scope.
-- Draft completion PR #5: `feat/application-completion` → `feat/m4-governed-workflows`, community checkpoint `2c3cba954ea25782718a6885cbee0c7f0aa17599`. Push run 35514808157 and PR run 35514832719 both passed.
-- Created GitHub chat commit: `a279f204bc0f2b61d8787ac8ca5a255266d9b9ff`; tree `fc0ec6f459dc76c17941c75a3ae041aad3b70640`; parent `2c3cba954ea25782718a6885cbee0c7f0aa17599`.
-- The earlier automatic approval-review usage block cleared on 2026-09-21. After rechecking the remote head, a normal non-forced update published the chat commit to `feat/application-completion`. Local map/dashboard/audit recovery commit: `64a0912`. Do not claim remote verification until the new runs finish.
+- M4 PR #4 remains open against `develop`. An earlier publishing error at `dafc7b1039b44bc73996c27b2a97c0e7737c0240` replaced its full tree with one file. The complete prior tree was recoverable; restoration commit `3ac8cdbe10a12b7be3a571c1a38dab58994c1a7b` is now published on M4. Its tree `26e127f7e91783074e8c0aee6cec598ad2ab8e98` contains all 352 files and differs from full checkpoint `cc05c8a8e51c3390cb721b2fc942f368d597466d` only in the intended device-test helper correction. No history was reset and no PR was merged.
+- M4 verified checkpoint `8bfe0fbb943523fb351d2c73db0651d48c61b88e`: PR run https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514467567 passed platform, Flutter, live ClamAV and real Android/live API/PostgreSQL acceptance. The restoration commit needs its own CI evidence.
+- Draft completion PR #5: `feat/application-completion` → `feat/m4-governed-workflows`. All 379 current files are present, including every M4 path. Chat, household consent, dashboard and audit work is published through `4cc9d24c038ff17d747297957b11ff7c023c1993`.
+- Completion run https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35600441746 passed 108 unit and 185 real PostgreSQL integration tests, Flutter analysis/widget checks and live ClamAV checks. Browser result: 12 passed, 3 failed. Android was skipped on this push event. Do not report this run as green.
+- Current corrections restore the dashboard's signed-out/revoked-session redirect and explicitly label the chat branch selector. Admin TypeScript check passed. The next completion commit incorporates the restored M4 parent while preserving its claims response race fix, Android helper fix and delivery report, which already match the completion tree exactly.
+
+## Publication safety
+
+Local histories were reconstructed from GitHub files and must never be force-pushed. Read the actual remote ref and its full base tree before creating an additive Git Data API tree. Verify complete path count, expected changed paths and original binary blob SHAs before updating a branch. Recheck the head, use a non-forced update, then verify the published commit/tree again. The September 21 restoration demonstrates why an isolated file tree must never replace a repository tree.
 
 ## New local work
 
@@ -22,11 +26,11 @@ Updated 2026-09-21. Preserve M1–M4 protections, user D: storage, backups and u
 - API and admin TypeScript typechecks passed after these changes.
 - Full backend unit suite passed 108 tests in 14 suites after the chat/map changes. The final audit/map/chat focused run passed 10 tests in 3 suites after replacing the audit service.
 - No PostgreSQL/Redis server, Flutter SDK or Android emulator is installed in this cloud workspace. Package setup through apt failed because the runtime cannot switch required system groups. This is separate from the user's Windows environment, which was not accessed.
-- Added tests are not the same as passed tests: new chat WebSocket/PostgreSQL tests, map PostgreSQL tests, browser chat scenario, Flutter chat and map widget tests still need execution. Their outputs must be recorded before marking acceptance complete.
+- Remote PostgreSQL checks now passed all 9 chat (including WebSocket) and 7 household map tests. Flutter widget checks passed. The browser chat flow and final real-device checks still require passing results; these are separate acceptance tiers.
 
 ## Next execution steps
 
-1. Inspect PR #5 head and its latest CI results, preserving unrelated newer remote changes if any. Chat is published; check whether the subsequent map/dashboard/audit checkpoint has finished verification.
+1. Inspect PR #5 head and its latest CI results, preserving unrelated newer remote changes if any. Chat/map/dashboard/audit are published. Check the corrected browser run and the restored M4/stacked PR Android checks.
 2. For any unpublished corrections, use the actual remote parent tree. Local repository history was reconstructed from GitHub files: do not force-push this synthetic local history.
 3. Run frozen-lockfile install, full typecheck, builds, backend unit/integration suites, browser tests, Flutter analysis/widget tests and Android live API acceptance. Resolve actual failures rather than rerunning failed commands blindly. Keep command, exit status and saved artifact for each tier.
 4. Extend chat to complete group roles/management, media, reporting, delivered state and persistent offline outbox; verify reconnect pagination and load against NFR targets. Existing text chat is a checkpoint, not full CHAT-FR acceptance.
