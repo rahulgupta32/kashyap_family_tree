@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 import 'chat_screen.dart';
 import 'calendar_events_screen.dart';
+import 'person_search_screen.dart';
 
 class NotificationInboxScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -39,7 +40,9 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       if(target=='/chat'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));}
       else if(target=='/calendar'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));}
       else if(target=='/claims'||target=='/change-requests'){
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('दाबी वा संशोधनका लागि खोजबाट व्यक्ति छान्नुहोस्। (Select a person from Search to review requests.)')));
+        // Notifications intentionally omit private person IDs. Let the member
+        // select an authorized person before opening a governed workflow.
+        await Navigator.push(context,MaterialPageRoute(builder:(_)=>PersonSearchScreen(apiService:widget.apiService)));
       }
       await _load();
     } catch(e){if(mounted)setState(()=>_error=e.toString());}
