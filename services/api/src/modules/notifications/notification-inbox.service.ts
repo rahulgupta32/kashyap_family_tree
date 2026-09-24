@@ -96,6 +96,14 @@ export class NotificationInboxService {
     return {id:updated.rows[0].id,readAt:updated.rows[0].read_at};
   }
 
+  async markUnread(userId:string,id:string) {
+    if (!/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id)) throw new NotFoundException();
+    const updated=await this.db.query(`UPDATE notification_inbox n SET read_at=NULL
+      WHERE n.id=$1 AND n.recipient_user_id=$2 AND ${this.visible} RETURNING n.id`,[id,userId]);
+    if(!updated.rows.length)throw new NotFoundException();
+    return {id:updated.rows[0].id,readAt:null};
+  }
+
   async markAllRead(userId:string) {
     const result=await this.db.query(`UPDATE notification_inbox n SET read_at=NOW()
       WHERE n.recipient_user_id=$1 AND n.read_at IS NULL AND ${this.visible}`,[userId]);

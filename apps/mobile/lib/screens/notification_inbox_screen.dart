@@ -72,6 +72,10 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       ..._items.map((raw){final n=raw as Map;return Card(child:ListTile(
         leading:Icon(n['readAt']==null?Icons.notifications_active:Icons.notifications_none),
         title:Text(n['message']?.toString()??''),subtitle:Text(n['createdAt']?.toString()??''),
+        trailing:n['readAt']!=null?IconButton(tooltip:'Mark unread',icon:const Icon(Icons.mark_email_unread),onPressed:_busy?null:() async {
+          try {await widget.apiService.requestJson('/notifications/${n['id']}/unread',method:'POST');await _load();}
+          catch(e){if(mounted){setState(()=>_error=e.toString());}}
+        }):null,
         onTap:_busy?null:()=>_open(n),));}),
       if(_cursor!=null)TextButton(onPressed:_loading||_busy?null:()=>_load(older:true),child:const Text('पुराना सूचनाहरू (Load older)')),
       if(_loading)const Center(child:CircularProgressIndicator()),

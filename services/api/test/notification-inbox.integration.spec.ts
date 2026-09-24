@@ -35,6 +35,7 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
    return {id:user.id,token};
   }
   owner=await member('+9779847391111');other=await member('+9779847391112');
+  await db.query("INSERT INTO user_roles(user_id,role) VALUES($1,'VERIFIED_MEMBER'),($2,'VERIFIED_MEMBER')",[owner.id,other.id]);
   await db.query('INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled) VALUES($1,false,false,false)',[owner.id]);
   await db.query('INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled) VALUES($1,false,false,false)',[other.id]);
  },60000);
@@ -54,6 +55,9 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   const again=(await request(app.getHttpServer()).post(`/notifications/${id}/read`).set('Authorization',auth(owner)).expect(201)).body;
   expect(again.readAt).toBe(read.readAt);
   expect((await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(owner)).expect(200)).body.unreadCount).toBe(0);
+  await request(app.getHttpServer()).post(`/notifications/${id}/unread`).set('Authorization',auth(other)).expect(404);
+  await request(app.getHttpServer()).post(`/notifications/${id}/unread`).set('Authorization',auth(owner)).expect(201);
+  expect((await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(owner)).expect(200)).body.unreadCount).toBe(1);
   expect((await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(other)).expect(200)).body.items).toHaveLength(0);
  });
 
@@ -80,7 +84,6 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
  });
 
  it('rechecks chat membership and blocks before displaying an old private notification',async()=>{
-  await db.query("INSERT INTO user_roles(user_id,role) VALUES($1,'VERIFIED_MEMBER'),($2,'VERIFIED_MEMBER')",[owner.id,other.id]);
   await inbox.updatePreferences(owner.id,{chatEnabled:true});
   const conversation=(await db.query(`INSERT INTO chat_conversations(conversation_type,is_group,created_by,title)
     VALUES('DIRECT',false,$1,'Fictional direct chat') RETURNING id`,[other.id])).rows[0].id;
@@ -98,6 +101,46 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   await db.query('DELETE FROM chat_blocks WHERE blocker_id=$1 AND blocked_id=$2',[owner.id,other.id]);
   await db.query('UPDATE chat_participants SET left_at=NOW() WHERE conversation_id=$1 AND user_id=$2',[conversation,owner.id]);
   expect((await inbox.list(owner.id)).items.some(n=>n.id===notice!.id)).toBe(false);
+ });
+
+ it('limits follows to authorized targets, deduplicates overlapping scopes and stops future fanout after unfollow',async()=>{
+  const branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('NOTIF_A','काल्पनिक क','Fictional A') RETURNING id")).rows[0].id;
+  const outside=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('NOTIF_B','काल्पनिक ख','Fictional B') RETURNING id")).rows[0].id;
+  async function person(userId:string,firstName:string){
+    const id=(await db.query(`INSERT INTO persons(branch_id,generation,gender,living_status,birth_year_bs,is_claimed,claimed_user_id)
+      VALUES($1,3,'MALE','LIVING',2040,true,$2) RETURNING id`,[branch,userId])).rows[0].id;
+    await db.query(`INSERT INTO person_names(person_id,language,first_name,last_name,full_name,is_primary)
+      VALUES($1,'en',$2,'Adhikari',$3,true)`,[id,firstName,`${firstName} Adhikari`]);
+    await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[userId,id]);return id;
+  }
+  const target=await person(owner.id,'Fictional target'),parent=await person(other.id,'Fictional parent');
+  await db.query("INSERT INTO parent_links(parent_id,child_id,confidence) VALUES($1,$2,'VERIFIED')",[parent,target]);
+  await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'BRANCH',branchId:outside}).expect(403);
+  await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'IMMEDIATE_FAMILY',personId:target}).expect(400);
+  const follow=(await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'PERSON',personId:target}).expect(201)).body;
+  const replay=(await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'PERSON',personId:target}).expect(201)).body;
+  expect(replay.id).toBe(follow.id);
+  const family=(await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'IMMEDIATE_FAMILY'}).expect(201)).body;
+  const group=(await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'RELATIONSHIP_GROUP',relationshipGroup:'CHILDREN'}).expect(201)).body;
+  const change=(await db.query(`INSERT INTO genealogy_change_requests(target_person_id,requester_user_id,request_type,status,proposed_changes,reason)
+    VALUES($1,$2,'EDIT_PERSON','APPROVED','{}','Fictional approved test correction') RETURNING id`,[target,owner.id])).rows[0].id;
+  const entry=await event('CHANGE_REQUEST_APPROVED_AND_MERGED',owner.id,'CHANGE_REQUEST',change);
+  await dispatcher.processRecord(entry);
+  const fetched=(await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(other)).expect(200)).body;
+  expect(fetched.items.filter(n=>n.action==='CHANGE_REQUEST_APPROVED_AND_MERGED')).toHaveLength(1);
+  await request(app.getHttpServer()).delete(`/notifications/follows/${follow.id}`).set('Authorization',auth(owner)).expect(404);
+  for(const item of [follow,family,group])await request(app.getHttpServer()).delete(`/notifications/follows/${item.id}`).set('Authorization',auth(other)).expect(200);
+  await dispatcher.processRecord(await event('CHANGE_REQUEST_APPROVED_AND_MERGED',owner.id,'CHANGE_REQUEST',change));
+  expect((await inbox.list(other.id)).items.filter(n=>n.action==='CHANGE_REQUEST_APPROVED_AND_MERGED')).toHaveLength(1);
+  await db.query("UPDATE persons SET profile_visibility='PRIVATE' WHERE id=$1",[target]);
+  await request(app.getHttpServer()).post('/notifications/follows').set('Authorization',auth(other))
+    .send({targetType:'PERSON',personId:target}).expect(403);
  });
 
  it('keeps inbox history when an external gateway fails and revokes access with the account session',async()=>{

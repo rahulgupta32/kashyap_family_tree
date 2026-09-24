@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '../../context/auth-context';
 
 interface Notice { id:string; category:string; message:string; destination:string; createdAt:string; readAt:string|null }
@@ -37,6 +38,7 @@ export default function NotificationsPage(){
  if(isLoading)return <p>लोड हुँदैछ…</p>;
  if(!accessToken)return <p>सूचनाहरूका लागि प्रवेश गर्नुहोस् (Sign in for notifications).</p>;
  return <section className="max-w-3xl space-y-5"><h1 className="text-2xl font-bold">सूचनाहरू (Notifications)</h1>
+  <Link className="underline text-sm" href="/follows">व्यक्ति र समूह अनुसरण (Manage follows)</Link>
   {error&&<p role="alert" className="p-3 bg-red-50 text-red-800">{error}</p>}
   <div role="status">नपढिएका सूचनाहरू: {inbox?.unreadCount??0} (Unread)</div>
   <div className="flex gap-3"><button disabled={busy} onClick={()=>void load()} className="border rounded px-3 py-2">Refresh inbox</button>
@@ -47,6 +49,7 @@ export default function NotificationsPage(){
   <ol aria-label="Notification inbox" className="space-y-3">{inbox?.items.map(item=><li key={item.id} className={`border rounded-lg p-4 ${item.readAt?'bg-white':'bg-amber-50'}`}>
     <button disabled={busy} className="w-full text-left" onClick={()=>void open(item)}><span className="block font-semibold">{item.message}</span>
      <span className="text-xs">{new Date(item.createdAt).toLocaleString()} · {item.readAt?'Read':'Unread'} · Open {item.destination}</span></button>
+    {item.readAt&&<button disabled={busy} className="text-sm underline mt-2" onClick={()=>void task(async()=>{await request(`/${item.id}/unread`,'POST');await load();})}>Mark unread</button>}
    </li>)}</ol>
   {inbox?.items.length===0&&<p>अहिलेसम्म सूचना छैन। (No notifications yet.)</p>}
   {inbox?.nextCursor&&<button disabled={busy} className="border rounded px-3 py-2" onClick={()=>void task(async()=>{

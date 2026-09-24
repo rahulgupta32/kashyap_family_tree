@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject, Optional, OnModuleInit, OnModuleDestroy } f
 import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
 import { NotificationInboxService } from './notification-inbox.service';
+import { NotificationFollowsService } from './notification-follows.service';
 
 export interface NotificationDispatchResult {
   outboxId: string;
@@ -22,6 +23,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     @Inject(SMS_PROVIDER)
     private readonly smsProvider?: ISmsProvider,
     private readonly inbox?: NotificationInboxService,
+    private readonly follows?: NotificationFollowsService,
   ) {}
 
   onModuleInit() {
@@ -117,10 +119,16 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         recipientUserIds.push(record.actor_id);
       }
     } else if (action.startsWith('CHANGE_REQUEST_')) {
-      if (record.entity_type === 'GENEALOGY_CHANGE_REQUEST' && isUuid(record.entity_id)) {
+      if (['GENEALOGY_CHANGE_REQUEST', 'CHANGE_REQUEST'].includes(record.entity_type) && isUuid(record.entity_id)) {
         const reqRes = await this.db.query('SELECT requester_user_id FROM genealogy_change_requests WHERE id = $1', [record.entity_id]);
         if (reqRes.rows[0]?.requester_user_id) {
           recipientUserIds.push(reqRes.rows[0].requester_user_id);
+        }
+        if (action === 'CHANGE_REQUEST_APPROVED_AND_MERGED' && reqRes.rows.length) {
+          const target = await this.db.query('SELECT target_person_id FROM genealogy_change_requests WHERE id=$1', [record.entity_id]);
+          if (target.rows[0]?.target_person_id) {
+            recipientUserIds.push(...((await this.follows?.recipientsForPerson(target.rows[0].target_person_id)) ?? []));
+          }
         }
       }
       if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
@@ -150,7 +158,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
     const results: NotificationDispatchResult[] = [];
 
-    for (const userId of recipientUserIds) {
+    for (const userId of new Set(recipientUserIds)) {
       const prefRes = await this.db.query(
         'SELECT * FROM notification_preferences WHERE user_id = $1',
         [userId],
@@ -432,6 +440,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   private formatNotificationMessage(action: string, record: any): string {
     switch (action) {
       case 'CLAIM_SUBMIT':
+      case 'CLAIM_SUBMITTED':
         return 'तपाईंको प्रोफाइल दाबी दर्ता गरिएको छ। (Your profile claim has been submitted)';
       case 'CLAIM_TIER1_VOUCHED':
         return 'तपाईंको दाबी तह १ बाट सिफारिस भएको छ। (Claim vouched at Tier 1)';
@@ -449,9 +458,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       case 'DISPUTE_FILED':
         return 'प्रोफाइल दाबी विरुद्ध उजुरी परेको छ। (A dispute has been filed regarding this claim)';
       case 'CHANGE_REQUEST_SUBMIT':
+      case 'CHANGE_REQUEST_SUBMITTED':
         return 'वंशवृक्ष संशोधन अनुरोध दर्ता भएको छ। (Genealogy change request submitted)';
       case 'CHANGE_REQUEST_APPROVED_AND_APPLIED':
-        return 'वंशवृक्ष संशोधन अनुरोध स्वीकृत भई लागू भएको छ। (Change request approved and applied)';
+      case 'CHANGE_REQUEST_APPROVED_AND_MERGED':
+        return 'वंशवृक्ष संशोधन स्वीकृत भई लागू भएको छ। (An approved genealogy change was applied)';
       case 'CHANGE_REQUEST_REJECTED':
         return 'वंशवृक्ष संशोधन अनुरोध अस्वीकृत भएको छ। (Change request rejected)';
       case 'CHAT_MESSAGE_CREATED':

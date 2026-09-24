@@ -61,6 +61,7 @@ export default function RootLayout({
                   <Link href="/map" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">परिवारको स्थान (Household map)</Link>
 <Link href="/chat" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सन्देश (Messages)</Link>
                   <Link href="/notifications" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सूचनाहरू (Notifications)</Link>
+                  <Link href="/follows" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अनुसरण (Following)</Link>
                 </nav>
               </div>
               <div className="p-2 border-t border-slate-800 text-xs text-slate-400">
@@ -82,4 +83,3 @@ export default function RootLayout({
     </html>
   );
 }
-
