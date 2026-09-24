@@ -47,7 +47,7 @@ void main() {
         if(request.method=='POST'){
           saved={'id':'follow-1','targetType':'BRANCH','branchId':branchId,'generation':null,
             'relationshipGroup':null,'personId':null};
-          return jsonResponse(saved);
+          return jsonResponse(saved!);
         }
         return jsonResponse(saved==null?[]:[saved]);
       }
