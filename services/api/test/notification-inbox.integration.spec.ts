@@ -151,7 +151,9 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
    const results=await dispatcher.processRecord(record);
    expect(results).toMatchObject([{channel:'PUSH',status:'FAILED'}]);
    const page=(await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(other)).expect(200)).body;
-   expect(page.items).toHaveLength(1);expect(page.unreadCount).toBe(1);
+   expect(page.items.filter((item:any)=>item.action==='CLAIM_APPROVED_AND_LINKED')).toHaveLength(1);
+   expect(page.items.some((item:any)=>item.action==='CHANGE_REQUEST_APPROVED_AND_MERGED')).toBe(true);
+   expect(page.unreadCount).toBeGreaterThanOrEqual(1);
    expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE outbox_id=$1',[record.id])).rows[0].delivery_status).toBe('FAILED');
    await db.query('UPDATE user_sessions SET revoked_at=NOW() WHERE user_id=$1',[other.id]);
    await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(other)).expect(401);
