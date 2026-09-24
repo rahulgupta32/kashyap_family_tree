@@ -24,8 +24,8 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
     try {
       final page=await widget.apiService.requestJson('/notifications${older?'?cursor=${Uri.encodeQueryComponent(_cursor!)}':''}') as Map<String,dynamic>;
       final prefs=older?_preferences:await widget.apiService.requestJson('/notifications/preferences') as Map<String,dynamic>;
-      if(mounted)setState((){_items=older?[..._items,...(page['items'] as List)]:page['items'] as List;
-        _cursor=page['nextCursor'] as String?;_preferences=prefs;});
+      if(mounted){setState((){_items=older?[..._items,...(page['items'] as List)]:page['items'] as List;
+        _cursor=page['nextCursor'] as String?;_preferences=prefs;});}
     } catch(e){if(mounted)setState(()=>_error=e.toString());}
     finally{if(mounted)setState(()=>_loading=false);}
   }
@@ -36,8 +36,8 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       await widget.apiService.requestJson('/notifications/${notice['id']}/read',method:'POST');
       if(!mounted)return;
       final target=notice['destination'];
-      if(target=='/chat')await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));
-      else if(target=='/calendar')await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));
+      if(target=='/chat'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));}
+      else if(target=='/calendar'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));}
       else if(target=='/claims'||target=='/change-requests'){
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('दाबी वा संशोधनका लागि खोजबाट व्यक्ति छान्नुहोस्। (Select a person from Search to review requests.)')));
       }
