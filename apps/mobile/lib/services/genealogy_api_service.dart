@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/person.dart';
 import '../models/tree_node.dart';
 import 'session_store.dart';
+import 'chat_connection.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -151,6 +152,24 @@ class GenealogyApiService {
     } else {
       throw Exception('OTP प्रमाणीकरण असफल भयो (${response.statusCode})');
     }
+  }
+
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data}) async {
+    final response = await _send(method, Uri.parse('$baseUrl$path'),
+      body: data == null ? null : json.encode(data));
+    final decoded = response.body.isEmpty ? null : json.decode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
+    }
+    return decoded;
+  }
+
+  Future<ChatConnection> openChatConnection() async {
+    // A real authenticated request rotates an expired native session before the socket opens.
+    await getMyProfile();
+    final token = _authToken;
+    if (token == null) { throw StateError('Sign in for messaging'); }
+    return NativeChatConnection.connect(baseUrl, token);
   }
 
   // Bilingual search

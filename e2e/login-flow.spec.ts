@@ -144,11 +144,31 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
       page2.waitForResponse((r) => r.url().includes('/auth/refresh')),
     ]);
 
+    // Hold the real refresh request until both tabs have started their calls.
+    // Promise.all of automation commands alone does not guarantee browser overlap.
+    let started = 0;
+    let releaseRequests!: () => void;
+    const bothStarted = new Promise<void>(resolve => { releaseRequests = resolve; });
+    await context.exposeFunction('__refreshAttemptStarted', () => {
+      started++;
+      if (started === 2) releaseRequests();
+    });
+    const holdRefresh = async (route: any) => {
+      await bothStarted;
+      await route.continue();
+    };
+    await context.route('**/auth/refresh', holdRefresh);
+    const refreshInTab = () => {
+      const pending = (window as any).__kashyap_refreshSession();
+      void (window as any).__refreshAttemptStarted();
+      return pending;
+    };
     const [t1Token, t2Token, refreshResponse] = await Promise.all([
-      page.evaluate(() => (window as any).__kashyap_refreshSession()),
-      page2.evaluate(() => (window as any).__kashyap_refreshSession()),
+      page.evaluate(refreshInTab),
+      page2.evaluate(refreshInTab),
       refreshResponsePromise,
     ]);
+    await context.unroute('**/auth/refresh', holdRefresh);
 
     expect(t1Token).toBeTruthy();
     expect(t2Token).toBeTruthy();
@@ -263,3 +283,4 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     expect(noCookieBody.message).toContain('Refresh token is required');
   });
 });
+

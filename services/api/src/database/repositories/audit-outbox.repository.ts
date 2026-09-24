@@ -58,8 +58,8 @@ export class AuditOutboxRepository {
       data.entityId,
       data.actorId || null,
       data.actorRole || null,
-      data.oldValue ? JSON.stringify(data.oldValue) : null,
-      data.newValue ? JSON.stringify(data.newValue) : null,
+      data.oldValue === undefined ? null : JSON.stringify(data.oldValue),
+      data.newValue === undefined ? null : JSON.stringify(data.newValue),
       data.ipAddress || null,
       data.userAgent || null,
     ];
@@ -207,3 +207,4 @@ export class AuditOutboxRepository {
     return { processed, failed };
   }
 }
+

@@ -672,6 +672,9 @@ export class ProfileService {
         }
       }
 
+      // Withdraw map consent and remove generalized coordinates on account deletion.
+      await client.query("UPDATE household_locations SET map_consent=false,approx_latitude=NULL,approx_longitude=NULL,status='WITHDRAWN',version=version+1,updated_at=now() WHERE owner_user_id=$1",[userId]);
+
       // Revoke all active sessions for the user atomically
       await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
