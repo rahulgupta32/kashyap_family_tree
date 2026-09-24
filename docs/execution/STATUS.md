@@ -1,6 +1,6 @@
 # Application status
 
-Updated 2026-09-21. Owner: Jyphra Technology Pvt. Ltd.
+Updated 2026-09-24. Owner: Jyphra Technology Pvt. Ltd.
 
 - M1–M3 are the preserved foundation. M4 PR [#4](https://github.com/rahulgupta32/kashyap_family_tree/pull/4) remains open against `develop`.
 - M4 checkpoint `8bfe0fbb943523fb351d2c73db0651d48c61b88e` passed [PR CI 35514467567](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514467567), including a real Android emulator/live API/PostgreSQL flow and live ClamAV scanning. See `MILESTONE_4_DELIVERY_REPORT.md` for counts, commands and artifacts.
@@ -17,7 +17,7 @@ Updated 2026-09-21. Owner: Jyphra Technology Pvt. Ltd.
 | Household map | Persisted proposals, consent withdrawal, independent review and generalized coordinates implemented. PostgreSQL tests passed; browser/device acceptance pending |
 | Dashboard and audit | Dashboard queries scoped counts and audit reads durable metadata. HTTP integration passed; dashboard login redirect browser regression under correction |
 | Import and offline operation | Remaining implementation and acceptance work; not declared complete |
-| Media and notifications | M4 private media and scanner verified; storage deployment, provider integration and remaining product surfaces still require work |
+| Media and notifications | Private media and ClamAV verified in remote checks. Migration 015, an authenticated durable notification inbox, read state, safe generic templates, independent in-app/category preferences, and web/Flutter screens are implemented; real PostgreSQL and Android checks for this new checkpoint await CI. Follows, broader reminders, admin broadcasts, and real provider delivery still require work. |
 | Operations and release | Production credentials, cultural approvals, TLS, monitoring, backup/restore rehearsal and deployment acceptance remain gates |
 
 This status does not equate build success, mock tests or a green subset of CI with full application completion. New commits must link their own acceptance evidence. User D: storage, backups and unrelated workloads remain preserved.
@@ -26,6 +26,6 @@ This status does not equate build success, mock tests or a green subset of CI wi
 
 The complete M4 file tree was restored in commit `3ac8cdbe10a12b7be3a571c1a38dab58994c1a7b` after an earlier publishing error removed 351 files. The restoration preserves all 352 original paths and the device-test correction. PR #4 remains open; this repair is not a merge into `develop`.
 
-Completion commit `4cc9d24c038ff17d747297957b11ff7c023c1993` preserves 379 files. [Run 35600441746](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35600441746) passed 108 unit tests, 185 PostgreSQL integration tests (including chat/WebSocket and household-map checks), Flutter analysis/widgets and live ClamAV checks. Browser tests: 12 passed and 3 failed; Android skipped on this push event. The next correction restores login redirection and fixes the chat branch selector label. Fresh CI evidence is required.
+M4 restoration commit `3ac8cdbe10a12b7be3a571c1a38dab58994c1a7b` retains all 352 paths; [PR CI 35630426019](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35630426019) and [push CI 35630421280](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35630421280) passed. Completion commit `54d7c8884f3ad7c85faa9d0454c8fa359f122139` retains all 384 paths; [push CI 35631840703](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35631840703) passed. [PR CI 35631855377](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35631855377) passed 110 unit, 191 real PostgreSQL, 16 browser, 22 mocked Flutter tests, Flutter analysis and live ClamAV but failed the separate Android job: the proposal button was not hit-testable after native keyboard dismissal. An Android helper correction now retries actual viewport and hit-test positions. Its real-device result and this notification inbox remain unverified pending a new CI run.
 
 The frozen master specification contains 229 functional requirements and 31 nonfunctional requirements. `RELEASE_ACCEPTANCE_LEDGER.csv` preserves all 260 requirements and acceptance text. All remain mandatory. The application is still in implementation and acceptance; neither PR has been merged and no production release is claimed.

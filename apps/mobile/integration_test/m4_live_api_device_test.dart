@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:http/http.dart' as http;
@@ -48,11 +49,16 @@ Future<void> until(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> press(WidgetTester tester, Finder finder) async {
-  // Dismiss the native keyboard before calculating scroll and hit-test positions.
+  // Native IME inset changes can arrive after focus loss on the Android emulator.
+  // Recalculate the scroll after each rendered frame until the actual hit test succeeds.
   FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
-  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  for (var attempt = 0; attempt < 30; attempt++) {
+    await tester.pump(const Duration(milliseconds: 150));
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 150));
+    if (finder.hitTestable().evaluate().isNotEmpty) break;
+  }
   expect(finder.hitTestable(), findsWidgets, reason: 'The action must be visible and tappable');
   await tester.tap(finder.hitTestable());
   await tester.pump();

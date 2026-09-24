@@ -1,6 +1,6 @@
 # Application completion checkpoint
 
-Updated 2026-09-21. Preserve M1–M4 protections, user D: storage, backups and unrelated workloads. Do not merge either pull request or deploy production from this checkpoint.
+Updated 2026-09-24. Preserve M1–M4 protections, user D: storage, backups and unrelated workloads. Do not merge either pull request or deploy production from this checkpoint.
 
 ## Remote state and evidence
 
@@ -26,6 +26,8 @@ Local histories were reconstructed from GitHub files and must never be force-pus
 - Migration 014 and the version-2 audit writer serialize direct and outbox appends on one transaction lock; JSONB reordering no longer invalidates new digests. Historical hashes are preserved, with `LEGACY_UNVERIFIED` returned instead of claiming validation. The central-only console exposes integrity status without event payloads. New isolated PostgreSQL tests cover concurrent writers, outbox deduplication, transaction rollback, immutable records, fork prevention and fabricated digests.
 - Local verification: API/admin TypeScript passed; 110 unit tests passed in 15 suites. New PostgreSQL/browser tests require remote results.
 - Run 35630946205 confirms the dashboard redirects and chat selector are fixed, but found a chat token-read race in the browser test and a two-tab test that did not guarantee overlapping refresh calls. The corrections wait for session restoration and hold real network requests until both browser calls start; no responses are mocked.
+- Completion `54d7c8884f3ad7c85faa9d0454c8fa359f122139` contains 384 paths; push run 35631840703 succeeded. PR run 35631855377 passed 110 unit, 191 real PostgreSQL integration, 16 browser, 22 mocked Flutter tests, Flutter analysis and live ClamAV. Its Android-only failure occurred after sign-in, three-generation search/tree, and two-reviewer claim approval, when the change-proposal button failed its hit-test after typing. The test helper now dismisses the native keyboard and checks/recalculates real scroll position for up to 30 rendered frames; this correction requires an actual Android rerun.
+- Migration 015 adds a per-recipient inbox with unique event/recipient identity, persistent read state, allowlisted generic messages/destinations, bounded cursor pagination, category/in-app preferences and read-time chat membership/block checks. The notification worker records in-app history before external gateways. Member-only HTTP APIs, web inbox and Flutter inbox are implemented. Existing external gateway failures do not erase the member inbox. PostgreSQL/HTTP integration tests cover owner access, duplicate replay, cursor, preferences, all-read and provider failure. This new code has local TypeScript and unit checks; device, PostgreSQL and browser checks are still awaiting CI.
 
 ## Validation completed locally
 

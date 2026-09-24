@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
+import { NotificationInboxService } from './notification-inbox.service';
 
 export interface NotificationDispatchResult {
   outboxId: string;
@@ -20,6 +21,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     @Optional()
     @Inject(SMS_PROVIDER)
     private readonly smsProvider?: ISmsProvider,
+    private readonly inbox?: NotificationInboxService,
   ) {}
 
   onModuleInit() {
@@ -54,7 +56,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     // Query independent notification_status, NEVER relying on audit drain status
     const outboxRes = await this.db.query(
       `SELECT * FROM audit_outbox 
-       WHERE notification_status = 'PENDING' 
+       WHERE notification_status = 'PENDING' OR (notification_status = 'FAILED'
+         AND notification_processed_at < NOW() - INTERVAL '30 seconds')
        ORDER BY created_at ASC 
        LIMIT $1 FOR UPDATE SKIP LOCKED`,
       [batchSize],
@@ -157,6 +160,10 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         sms_enabled: true,
         email_enabled: false,
       };
+
+      // Persist a member-facing notice before trying external gateways. A provider
+      // outage cannot remove inbox history; the unique key makes replay safe.
+      await this.inbox?.record(record,userId,prefs);
 
       const payload = {
         action,
@@ -456,4 +463,3 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     }
   }
 }
-
