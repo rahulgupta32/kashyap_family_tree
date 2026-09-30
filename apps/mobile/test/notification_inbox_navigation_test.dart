@@ -74,7 +74,11 @@ void main() {
     expect(saved?['branchId'],branchId);
     await tester.scrollUntilVisible(find.textContaining('BRANCH ·'),300,scrollable:find.byType(Scrollable).first);
     expect(find.textContaining('BRANCH ·'),findsOneWidget);
-    await tester.tap(find.byTooltip('Unfollow'));
+    final unfollow=find.byTooltip('Unfollow');
+    await Scrollable.ensureVisible(tester.element(unfollow),alignment:0.3);
+    await tester.pumpAndSettle();
+    expect(unfollow.hitTestable(),findsOneWidget);
+    await tester.tap(unfollow.hitTestable());
     await tester.pumpAndSettle();
     expect(saved,isNull);
   });
