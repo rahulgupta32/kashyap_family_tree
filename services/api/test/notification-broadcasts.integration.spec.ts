@@ -106,4 +106,35 @@ describe('Governed broadcast notices (disposable PostgreSQL and HTTP)', () => {
     await send(branchAdmin,{...generated,requestId:randomUUID(),branchId:branchB}).expect(403);
     await send(admin,{...generated,requestId:randomUUID(),branchId:undefined}).expect(201);
   });
+
+  it('lets admins select a bounded, current verified audience without exposing full phone numbers',async()=>{
+    await request(app.getHttpServer()).get('/notifications/broadcasts/eligible-members?query=5514').expect(401);
+    await request(app.getHttpServer()).get('/notifications/broadcasts/eligible-members?query=5514')
+      .set('Authorization',header(memberB)).expect(403);
+    await request(app.getHttpServer()).get('/notifications/broadcasts/eligible-members?query=55')
+      .set('Authorization',header(admin)).expect(400);
+    const denied=(await request(app.getHttpServer()).get(`/notifications/broadcasts/eligible-members?query=5514&branchId=${branchA}`)
+      .set('Authorization',header(branchAdmin)).expect(200)).body;
+    expect(denied).toEqual([]);
+    const matched=(await request(app.getHttpServer()).get('/notifications/broadcasts/eligible-members?query=5514')
+      .set('Authorization',header(admin)).expect(200)).body;
+    expect(matched).toEqual([{id:memberB.id,label:'••••5514'}]);
+    expect(JSON.stringify(matched)).not.toContain('+977');
+    const chosen={requestId:randomUUID(),title:'Fictional selected audience',body:'Fictional selected member note',
+      scope:'DEFINED',branchId:branchA,targetUserIds:[otherGen.id,memberB.id]};
+    await request(app.getHttpServer()).post('/notifications/broadcasts/preview')
+      .set('Authorization',header(branchAdmin)).send(chosen).expect(403);
+    await send(branchAdmin,chosen).expect(403);
+    const limited={...chosen,targetUserIds:[otherGen.id]};
+    expect((await send(branchAdmin,limited).expect(201)).body.recipientCount).toBe(1);
+    const global={...chosen,requestId:randomUUID(),branchId:undefined,targetUserIds:[memberB.id,otherGen.id]};
+    expect((await request(app.getHttpServer()).post('/notifications/broadcasts/preview')
+      .set('Authorization',header(admin)).send(global).expect(201)).body.recipientCount).toBe(2);
+    const sent=(await send(admin,global).expect(201)).body;
+    expect(sent.recipientCount).toBe(2);
+    expect((await send(admin,{...global,targetUserIds:[otherGen.id,memberB.id]}).expect(201)).body.alreadySent).toBe(true);
+    await send(admin,{...global,targetUserIds:[memberB.id]}).expect(409);
+    const snapshot=await db.query('SELECT user_id FROM notification_broadcast_recipients WHERE broadcast_id=$1',[sent.id]);
+    expect(snapshot.rows.map(row=>row.user_id).sort()).toEqual([memberB.id,otherGen.id].sort());
+  });
 });

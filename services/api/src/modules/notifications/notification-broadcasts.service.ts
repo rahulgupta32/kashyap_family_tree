@@ -9,9 +9,10 @@ interface NoticeInput {
   requestId: string;
   title: string;
   body: string;
-  scope: 'ALL' | 'BRANCH' | 'GENERATION';
+  scope: 'ALL' | 'BRANCH' | 'GENERATION' | 'DEFINED';
   branchId: string | null;
   generation: number | null;
+  targetUserIds: string[] | null;
 }
 
 @Injectable()
@@ -19,21 +20,30 @@ export class NotificationBroadcastsService {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditOutboxRepository) {}
 
   private parse(body: any, sending: boolean): NoticeInput {
-    allowedFields(body, ['requestId', 'title', 'body', 'scope', 'branchId', 'generation']);
-    if (!['ALL', 'BRANCH', 'GENERATION'].includes(body.scope)) throw new BadRequestException('Invalid audience scope');
+    allowedFields(body, ['requestId', 'title', 'body', 'scope', 'branchId', 'generation', 'targetUserIds']);
+    if (!['ALL', 'BRANCH', 'GENERATION', 'DEFINED'].includes(body.scope)) throw new BadRequestException('Invalid audience scope');
     const scope = body.scope as NoticeInput['scope'];
     const branchId = body.branchId === undefined ? null : uuid(body.branchId, 'branchId');
     const generation = body.generation === undefined ? null : body.generation;
+    const targetUserIds = body.targetUserIds === undefined ? null : body.targetUserIds;
+    if (scope === 'DEFINED') {
+      if (!Array.isArray(targetUserIds) || targetUserIds.length < 1 || targetUserIds.length > 100) {
+        throw new BadRequestException('Defined audience needs 1–100 selected members');
+      }
+      targetUserIds.forEach(id => uuid(id, 'target user ID'));
+      if (new Set(targetUserIds).size !== targetUserIds.length) throw new BadRequestException('Duplicate audience member');
+    } else if (targetUserIds !== null) throw new BadRequestException('Target member IDs are only valid for defined audiences');
     if ((scope === 'ALL' && (branchId || generation !== null)) ||
       (scope === 'BRANCH' && (!branchId || generation !== null)) ||
-      (scope === 'GENERATION' && (!Number.isInteger(generation) || generation! < 1 || generation! > 100))) {
+      (scope === 'GENERATION' && (!Number.isInteger(generation) || generation! < 1 || generation! > 100)) ||
+      (scope === 'DEFINED' && generation !== null)) {
       throw new BadRequestException('Scope requires a branch or generation with no extra fields');
     }
     return {
       requestId: sending ? uuid(body.requestId, 'requestId') : '',
       title: sending ? textField(body.title, 'Title', 180) : '',
       body: sending ? textField(body.body, 'Notice', 4000) : '',
-      scope, branchId, generation,
+      scope, branchId, generation, targetUserIds: targetUserIds?.slice().sort() ?? null,
     };
   }
 
@@ -60,10 +70,33 @@ export class NotificationBroadcastsService {
     const input = this.parse(body, false);
     await this.authorize(user, input);
     const result = await this.db.query(`SELECT count(*)::int AS count FROM
-      (VALUES($1::varchar,$2::uuid,$3::int)) AS b(scope,branch_id,generation)
+      (VALUES($1::varchar,$2::uuid,$3::int,$4::uuid[])) AS b(scope,branch_id,generation,target_user_ids)
       CROSS JOIN user_accounts u WHERE ${broadcastEligibility()}`,
-      [input.scope, input.branchId, input.generation]);
+      [input.scope, input.branchId, input.generation, input.targetUserIds]);
+    if (input.targetUserIds && result.rows[0].count !== input.targetUserIds.length) {
+      throw new ForbiddenException('One or more selected members are outside the permitted audience');
+    }
     return { recipientCount: result.rows[0].count, scope: input.scope, branchId: input.branchId, generation: input.generation };
+  }
+
+  async eligibleMembers(user: AuthenticatedUser, query: unknown, branchIdRaw?: string) {
+    if (typeof query !== 'string' || !/^\d{3,4}$/.test(query)) {
+      throw new BadRequestException('Search with the last 3–4 digits of a member phone');
+    }
+    const branchId = branchIdRaw === undefined ? null : uuid(branchIdRaw, 'branchId');
+    const input: NoticeInput = {requestId:'',title:'',body:'',scope:'DEFINED',branchId,generation:null,targetUserIds:[]};
+    await this.authorize(user,input);
+    // The search is bounded and never reveals a full phone number or any person record.
+    const rows = await this.db.query(`SELECT u.id, '••••' || right(u.phone_number,4) AS label
+      FROM user_accounts u WHERE u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL
+      AND right(u.phone_number,4) LIKE '%' || $1
+      AND EXISTS(SELECT 1 FROM user_roles role WHERE role.user_id=u.id AND role.role NOT IN ('GUEST','REGISTERED_USER'))
+      AND ($2::uuid IS NULL OR
+        EXISTS(SELECT 1 FROM user_roles role WHERE role.user_id=u.id AND role.branch_id=$2
+          AND role.role NOT IN ('GUEST','REGISTERED_USER')) OR
+        EXISTS(SELECT 1 FROM persons p WHERE p.id=u.person_id AND p.branch_id=$2 AND p.is_archived=FALSE))
+      ORDER BY u.id LIMIT 20`,[query,branchId]);
+    return rows.rows.map(row=>({id:row.id,label:row.label}));
   }
 
   async send(user: AuthenticatedUser, body: any) {
@@ -71,15 +104,16 @@ export class NotificationBroadcastsService {
     return this.db.transaction(async client => {
       await this.authorize(user, input, client);
       const inserted = await client.query(`INSERT INTO notification_broadcasts
-        (created_by_user_id,request_id,title,body,scope,branch_id,generation)
-        VALUES($1,$2,$3,$4,$5,$6,$7)
+        (created_by_user_id,request_id,title,body,scope,branch_id,generation,target_user_ids)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8)
         ON CONFLICT(created_by_user_id,request_id) DO NOTHING RETURNING id`,
-        [user.id, input.requestId, input.title, input.body, input.scope, input.branchId, input.generation]);
+        [user.id, input.requestId, input.title, input.body, input.scope, input.branchId, input.generation, input.targetUserIds]);
       if (!inserted.rows.length) {
         const old = (await client.query('SELECT * FROM notification_broadcasts WHERE created_by_user_id=$1 AND request_id=$2',
           [user.id, input.requestId])).rows[0];
         if (!old || old.title !== input.title || old.body !== input.body || old.scope !== input.scope ||
-          old.branch_id !== input.branchId || old.generation !== input.generation) {
+          old.branch_id !== input.branchId || old.generation !== input.generation ||
+          JSON.stringify(old.target_user_ids) !== JSON.stringify(input.targetUserIds)) {
           throw new ConflictException('requestId has already been used for a different notice');
         }
         const count = (await client.query('SELECT count(*)::int AS count FROM notification_broadcast_recipients WHERE broadcast_id=$1',
@@ -89,6 +123,9 @@ export class NotificationBroadcastsService {
       const id = inserted.rows[0].id;
       const recipients = await client.query(`INSERT INTO notification_broadcast_recipients(broadcast_id,user_id)
         SELECT $1,u.id ${this.audienceSql} RETURNING user_id`, [id]);
+      if (input.targetUserIds && recipients.rowCount !== input.targetUserIds.length) {
+        throw new ForbiddenException('One or more selected members are outside the permitted audience');
+      }
       if (!recipients.rowCount) throw new BadRequestException('No currently eligible recipients in this audience');
       await this.audit.recordAuditIntent({ action: 'NOTIFICATION_BROADCAST_CREATED', entityType: 'NOTIFICATION_BROADCAST',
         entityId: id, actorId: user.id, newValue: { scope: input.scope, branchId: input.branchId,

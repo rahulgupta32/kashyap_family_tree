@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { NotificationBroadcastsService } from './notification-broadcasts.service';
@@ -8,6 +8,10 @@ import { NotificationBroadcastsService } from './notification-broadcasts.service
 export class NotificationBroadcastsController {
   constructor(private readonly broadcasts: NotificationBroadcastsService) {}
   @Get() list(@CurrentUser() user: AuthenticatedUser) { return this.broadcasts.list(user); }
+  @Get('eligible-members') eligibleMembers(@CurrentUser() user: AuthenticatedUser,
+    @Query('query') query?: string, @Query('branchId') branchId?: string) {
+    return this.broadcasts.eligibleMembers(user, query, branchId);
+  }
   @Get(':id') detail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.broadcasts.detail(user, id);
   }
