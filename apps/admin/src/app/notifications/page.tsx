@@ -33,7 +33,7 @@ export default function NotificationsPage(){
   await request(`/${item.id}/read`,'POST');
   await load();
   // Routes are fixed by the API's category allowlist; never use a URL from audit payload.
-  if(['/claims','/change-requests','/chat','/calendar'].includes(item.destination))router.push(item.destination);
+  if(['/claims','/change-requests','/chat','/calendar','/broadcasts'].includes(item.destination))router.push(item.destination);
  });}
  if(isLoading)return <p>लोड हुँदैछ…</p>;
  if(!accessToken)return <p>सूचनाहरूका लागि प्रवेश गर्नुहोस् (Sign in for notifications).</p>;

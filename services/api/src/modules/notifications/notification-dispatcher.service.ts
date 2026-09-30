@@ -3,6 +3,7 @@ import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
 import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationFollowsService } from './notification-follows.service';
+import { broadcastEligibility } from './broadcast-eligibility';
 
 export interface NotificationDispatchResult {
   outboxId: string;
@@ -134,6 +135,12 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
         recipientUserIds.push(record.actor_id);
       }
+    } else if (action === 'NOTIFICATION_BROADCAST_CREATED' && record.entity_type === 'NOTIFICATION_BROADCAST' && isUuid(record.entity_id)) {
+      const recipients = await this.db.query(`SELECT r.user_id FROM notification_broadcast_recipients r
+        JOIN notification_broadcasts b ON b.id=r.broadcast_id
+        JOIN user_accounts u ON u.id=r.user_id
+        WHERE r.broadcast_id=$1 AND ${broadcastEligibility()}`, [record.entity_id]);
+      recipientUserIds.push(...recipients.rows.map(r => r.user_id));
     } else if (action === 'CHAT_MESSAGE_CREATED' && isUuid(record.entity_id)) {
       // Resolve current recipients from membership; notification text never contains private message content.
       const recipients = await this.db.query(`SELECT p.user_id FROM chat_messages m
@@ -213,7 +220,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
           // Perform delivery
           const providerOutcome = await this.deliverNotification(channel, userId, payload);
-          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
 
           await this.db.query(
             "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2 WHERE id = $3",
@@ -280,7 +287,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     for (const job of claimRes.rows) {
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
         await this.db.query(
           `UPDATE notification_dispatches 
            SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
@@ -306,6 +313,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private async deliverNotification(channel: string, userId: string, payload: any): Promise<any> {
+    if (payload.action === 'NOTIFICATION_BROADCAST_CREATED') {
+      const eligible = await this.db.query(`SELECT 1 FROM notification_broadcast_recipients r
+        JOIN notification_broadcasts b ON b.id=r.broadcast_id JOIN user_accounts u ON u.id=r.user_id
+        WHERE r.broadcast_id=$1 AND r.user_id=$2 AND ${broadcastEligibility()}`,
+        [payload.entityId, userId]);
+      if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Audience membership revoked' };
+    }
     if (channel === 'SMS') {
       if (!this.smsProvider) {
         throw new Error('SMS provider is not configured. Cannot deliver SMS notification.');
@@ -415,7 +429,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     for (const job of strandedRes.rows) {
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
         await this.db.query(
           "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 WHERE id = $3",
           [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
@@ -439,6 +453,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
   private formatNotificationMessage(action: string, record: any): string {
     switch (action) {
+      case 'NOTIFICATION_BROADCAST_CREATED':
+        return 'प्रशासनिक सूचना उपलब्ध छ। (An official notice is available)';
       case 'CLAIM_SUBMIT':
       case 'CLAIM_SUBMITTED':
         return 'तपाईंको प्रोफाइल दाबी दर्ता गरिएको छ। (Your profile claim has been submitted)';

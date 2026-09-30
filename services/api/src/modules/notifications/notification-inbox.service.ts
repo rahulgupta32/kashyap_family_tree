@@ -1,15 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { broadcastEligibility } from './broadcast-eligibility';
 
-type Category = 'WORKFLOW' | 'CHAT' | 'EVENT';
+type Category = 'WORKFLOW' | 'CHAT' | 'EVENT' | 'BROADCAST';
 type Preference = 'inAppEnabled' | 'workflowEnabled' | 'chatEnabled' | 'familyEventsEnabled';
-const destinations: Record<Category, string> = { WORKFLOW: '/claims', CHAT: '/chat', EVENT: '/calendar' };
+const destinations: Record<Category, string> = { WORKFLOW: '/claims', CHAT: '/chat', EVENT: '/calendar', BROADCAST: '/broadcasts' };
 
 @Injectable()
 export class NotificationInboxService {
   constructor(private readonly db: DatabaseService) {}
 
   private classify(action: string): { category: Category; destination: string; message: string } | null {
+    if (action === 'NOTIFICATION_BROADCAST_CREATED') return {
+      category: 'BROADCAST', destination: destinations.BROADCAST,
+      message: 'प्रशासनिक सूचना उपलब्ध छ। (An official notice is available)',
+    };
     if (action === 'CHAT_MESSAGE_CREATED') return {
       category: 'CHAT', destination: destinations.CHAT,
       message: 'नयाँ निजी सन्देश आएको छ। (You have a new private message)',
@@ -47,7 +52,12 @@ export class NotificationInboxService {
   // Chat notices are rechecked at read time, so leaving a group, a block,
   // or deleting a message revokes even a previously queued notice.
   private readonly visible = `(
-    n.category <> 'CHAT' OR EXISTS (
+    (n.category <> 'BROADCAST' OR EXISTS (
+      SELECT 1 FROM audit_outbox o JOIN notification_broadcasts b ON o.entity_id=b.id::text
+      JOIN notification_broadcast_recipients r ON r.broadcast_id=b.id AND r.user_id=n.recipient_user_id
+      JOIN user_accounts u ON u.id=r.user_id
+      WHERE o.id=n.outbox_id AND ${broadcastEligibility()}
+    )) AND (n.category <> 'CHAT' OR EXISTS (
       SELECT 1 FROM chat_messages m
       JOIN chat_participants p ON p.conversation_id=m.conversation_id
         AND p.user_id=n.recipient_user_id AND p.left_at IS NULL
@@ -59,7 +69,7 @@ export class NotificationInboxService {
         AND NOT EXISTS (SELECT 1 FROM chat_blocks b WHERE
           (b.blocker_id=n.recipient_user_id AND b.blocked_id=m.sender_id)
           OR (b.blocker_id=m.sender_id AND b.blocked_id=n.recipient_user_id))
-    ))`;
+    )))`;
 
   async list(userId: string, limitRaw?: string, cursor?: string) {
     const number = limitRaw === undefined ? 30 : Number(limitRaw);
