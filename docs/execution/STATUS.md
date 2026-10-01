@@ -1,6 +1,14 @@
 # Application status
 
-Updated 2026-09-30. Owner: Jyphra Technology Pvt. Ltd.
+Updated 2026-10-01. Owner: Jyphra Technology Pvt. Ltd.
+
+## Canonical completion checkpoint
+
+Continue on `feat/application-completion`, reviewed head `0d93525ffa473617bd9cc43cbb36a00a0aa31814`. [PR CI 36748729434](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/36748729434) completed successfully; its earlier pending note is superseded. PR #5 remains draft/open and stacked on open M4 PR #4. Neither PR is merged; no production deployment is claimed.
+
+`RELEASE_IMPLEMENTATION_ASSESSMENT.csv` classifies all 260 mandatory requirements separately from final acceptance: 102 completed bounded implementations, 104 partial, 42 missing workflows/evidence, 12 external gates. This static source assessment does not close any of the original acceptance rows and does not provide fractional credit for partial requirements. See `RELEASE_IMPLEMENTATION_ASSESSMENT.md` for scope, findings and next work.
+
+The accompanying notification delivery-policy change applies category preferences to external channels and rechecks active accounts, channel preferences and current chat access before initial delivery, retries and expired-lease recovery. Tests cover blocks, departures, deleted messages, revoked roles and suspension. This is a new implementation checkpoint and requires its own CI; successful older CI does not verify it.
 
 - M1–M3 are the preserved foundation. M4 PR [#4](https://github.com/rahulgupta32/kashyap_family_tree/pull/4) remains open against `develop`.
 - M4 checkpoint `8bfe0fbb943523fb351d2c73db0651d48c61b88e` passed [PR CI 35514467567](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/35514467567), including a real Android emulator/live API/PostgreSQL flow and live ClamAV scanning. See `MILESTONE_4_DELIVERY_REPORT.md` for counts, commands and artifacts.

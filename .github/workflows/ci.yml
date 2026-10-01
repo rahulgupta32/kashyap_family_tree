@@ -39,6 +39,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate complete release implementation assessment
+        run: python3 scripts/validate_release_assessment.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

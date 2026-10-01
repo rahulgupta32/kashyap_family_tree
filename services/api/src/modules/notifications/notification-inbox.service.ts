@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { broadcastEligibility } from './broadcast-eligibility';
+import { notificationCategoryEnabled } from './notification-policy';
 
 type Category = 'WORKFLOW' | 'CHAT' | 'EVENT' | 'BROADCAST';
 type Preference = 'inAppEnabled' | 'workflowEnabled' | 'chatEnabled' | 'familyEventsEnabled';
@@ -36,10 +37,7 @@ export class NotificationInboxService {
 
   async record(outbox: {id: string; action: string; entity_id?: string}, recipientId: string, prefs: any): Promise<void> {
     const kind = this.classify(outbox.action);
-    if (!kind || prefs.in_app_enabled === false ||
-      (kind.category === 'WORKFLOW' && prefs.workflow_enabled === false) ||
-      (kind.category === 'CHAT' && prefs.chat_enabled === false) ||
-      (kind.category === 'EVENT' && prefs.family_events_enabled === false)) return;
+    if (!kind || prefs.in_app_enabled === false || !notificationCategoryEnabled(outbox.action, prefs)) return;
     await this.db.query(`INSERT INTO notification_inbox
       (outbox_id,recipient_user_id,category,action,message,destination,chat_message_id)
       SELECT $1,u.id,$3,$4,$5,$6,$7 FROM user_accounts u

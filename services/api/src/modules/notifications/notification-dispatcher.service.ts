@@ -4,12 +4,13 @@ import { DatabaseService } from '../../database/database.service';
 import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationFollowsService } from './notification-follows.service';
 import { broadcastEligibility } from './broadcast-eligibility';
+import { notificationCategoryEnabled } from './notification-policy';
 
 export interface NotificationDispatchResult {
   outboxId: string;
   recipientUserId: string;
   channel: 'PUSH' | 'SMS' | 'EMAIL';
-  status: 'SENT' | 'FAILED' | 'SKIPPED';
+  status: 'SENT' | 'FAILED' | 'SKIPPED' | 'SIMULATED';
   error?: string;
 }
 
@@ -176,6 +177,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         email_enabled: false,
       };
 
+      if (!notificationCategoryEnabled(action, prefs)) continue;
+
       // Persist a member-facing notice before trying external gateways. A provider
       // outage cannot remove inbox history; the unique key makes replay safe.
       await this.inbox?.record(record,userId,prefs);
@@ -313,6 +316,30 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private async deliverNotification(channel: string, userId: string, payload: any): Promise<any> {
+    // Recheck at the last delivery boundary, including retries and stranded jobs.
+    // A saved job is not continuing permission to contact a former participant.
+    const current = (await this.db.query(`SELECT u.id,p.push_enabled,p.sms_enabled,p.email_enabled,
+      p.workflow_enabled,p.chat_enabled,p.family_events_enabled
+      FROM user_accounts u LEFT JOIN notification_preferences p ON p.user_id=u.id
+      WHERE u.id=$1 AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL`, [userId])).rows[0];
+    if (!current) return { status: 'SKIPPED', reason: 'Account is no longer active' };
+    if (!notificationCategoryEnabled(payload.action, current)) return { status: 'SKIPPED', reason: 'Notification category disabled' };
+    const enabled = channel === 'PUSH' ? current.push_enabled !== false
+      : channel === 'SMS' ? current.sms_enabled !== false
+      : channel === 'EMAIL' ? current.email_enabled === true : false;
+    if (!enabled) return { status: 'SKIPPED', reason: 'Delivery channel disabled' };
+
+    if (payload.action === 'CHAT_MESSAGE_CREATED') {
+      const eligible = await this.db.query(`SELECT 1 FROM chat_messages m
+        JOIN chat_conversations c ON c.id=m.conversation_id
+        JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=$2 AND p.left_at IS NULL
+        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sender_id<>$2
+          AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=$2 AND r.role NOT IN ('GUEST','REGISTERED_USER')
+            AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
+          AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.sender_id)
+            OR (b.blocker_id=m.sender_id AND b.blocked_id=$2))`, [payload.entityId, userId]);
+      if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Chat access revoked' };
+    }
     if (payload.action === 'NOTIFICATION_BROADCAST_CREATED') {
       const eligible = await this.db.query(`SELECT 1 FROM notification_broadcast_recipients r
         JOIN notification_broadcasts b ON b.id=r.broadcast_id JOIN user_accounts u ON u.id=r.user_id
