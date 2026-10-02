@@ -33,7 +33,7 @@ export class CalendarService {
     this.validateBsYear(dto.tithiYearBs);
     if(!Number.isInteger(dto.tithiMonthBs)||dto.tithiMonthBs<1||dto.tithiMonthBs>12)throw new BadRequestException('tithiMonthBs must be between 1 and 12');
     if(typeof dto.tithiPaksha!=='string'||!['SHUKLA','KRISHNA'].includes(dto.tithiPaksha.toUpperCase()))throw new BadRequestException('Must be SHUKLA or KRISHNA');
-    if(!Number.isInteger(dto.tithiNumber)||dto.tithiNumber<1||dto.tithiNumber>15)throw new BadRequestException('tithiNumber must be between 1 and 15');
+    if(!Number.isInteger(dto.tithiNumber)||dto.tithiNumber<1||dto.tithiNumber>15)throw new BadRequestException('tithiNumber: Must be between 1 and 15');
     return {dateBs:null,startsAt:null,provenance:{source:'TITHI_ONLY',conversionStatus:'UNAVAILABLE',reason:'Authority-approved HG-004 conversion is required'}};
   }
   private validate(dto:any){

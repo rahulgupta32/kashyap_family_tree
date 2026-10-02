@@ -88,7 +88,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
             if(title.text.trim().isEmpty || selected == null) {update(() => error = calendarLabels['required']); return;}
             update(() {busy = true; error = null;});
             try {
-              await widget.apiService.requestJson('/calendar/events', method: 'POST', body: {
+              await widget.apiService.requestJson('/calendar/events', method: 'POST', data: {
                 'title': title.text.trim(), 'eventType': 'GENERAL_EVENT', 'audienceScope': 'COMMUNITY',
                 'startsAt': selected!.toUtc().toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
               });
@@ -113,7 +113,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
     if(result == null || !mounted) return;
     try {
       await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
-        body: {'version': event['version'], (cancel ? 'reason' : 'title'): result});
+        data: {'version': event['version'], (cancel ? 'reason' : 'title'): result});
       await _loadEvents();
     } catch(e) {if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));}
   }

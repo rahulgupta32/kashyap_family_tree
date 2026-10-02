@@ -2,6 +2,11 @@
 ALTER TABLE calendar_events ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0);
 ALTER TABLE calendar_events ADD COLUMN lifecycle_state VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK(lifecycle_state IN ('ACTIVE','CANCELLED'));
 ALTER TABLE calendar_events ADD COLUMN starts_at TIMESTAMPTZ;
+ALTER TABLE calendar_events DROP CONSTRAINT chk_calendar_events_date_validity;
+ALTER TABLE calendar_events ADD CONSTRAINT chk_calendar_events_date_validity CHECK (
+  date_bs IS NOT NULL OR starts_at IS NOT NULL OR
+  (tithi_year_bs IS NOT NULL AND tithi_month_bs IS NOT NULL AND tithi_paksha IS NOT NULL AND tithi_number IS NOT NULL)
+);
 ALTER TABLE calendar_events ADD COLUMN reminder_offsets INTEGER[] NOT NULL DEFAULT '{}'
   CHECK(cardinality(reminder_offsets)<=3 AND reminder_offsets <@ ARRAY[30,60,1440,10080]);
 ALTER TABLE calendar_events ADD CONSTRAINT chk_calendar_reminder_instant CHECK(cardinality(reminder_offsets)=0 OR starts_at IS NOT NULL);
