@@ -154,7 +154,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         JOIN chat_conversations c ON c.id=m.conversation_id
         JOIN chat_participants p ON p.conversation_id=c.id AND p.left_at IS NULL
         JOIN user_accounts u ON u.id=p.user_id AND u.is_active=true AND u.is_suspended=false AND u.deleted_at IS NULL
-        WHERE m.id=$1 AND m.deleted_at IS NULL AND p.user_id<>m.sender_id
+        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence AND p.user_id<>m.sender_id
           AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role NOT IN ('GUEST','REGISTERED_USER')
             AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
           AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=p.user_id AND b.blocked_id=m.sender_id)
@@ -347,7 +347,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       const eligible = await this.db.query(`SELECT 1 FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
         JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=$2 AND p.left_at IS NULL
-        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sender_id<>$2
+        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence AND m.sender_id<>$2
           AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=$2 AND r.role NOT IN ('GUEST','REGISTERED_USER')
             AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
           AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.sender_id)

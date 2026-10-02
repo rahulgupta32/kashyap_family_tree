@@ -67,7 +67,7 @@ export class NotificationInboxService {
       JOIN chat_participants p ON p.conversation_id=m.conversation_id
         AND p.user_id=n.recipient_user_id AND p.left_at IS NULL
       JOIN chat_conversations c ON c.id=m.conversation_id
-      WHERE m.id=n.chat_message_id AND m.deleted_at IS NULL
+      WHERE m.id=n.chat_message_id AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence
         AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id=n.recipient_user_id
           AND r.role NOT IN ('GUEST','REGISTERED_USER')
           AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))

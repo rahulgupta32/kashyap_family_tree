@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -16,4 +16,10 @@ export class ChatController {
  @Delete('conversations/:id/messages/:messageId') remove(@Param('id') id:string,@Param('messageId') msg:string,@CurrentUser() u:AuthenticatedUser){return this.chat.removeMessage(id,msg,u);}
  @Post('conversations/:id/leave') leave(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser){return this.chat.leave(id,u);}
  @Post('conversations/:id/block') block(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser){return this.chat.block(id,u);}
+ @Get('conversations/:id') info(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser){return this.chat.info(id,u);}
+ @Patch('conversations/:id') settings(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.updateGroup(id,u,b);}
+ @Post('conversations/:id/members') add(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.addMember(id,u,b);}
+ @Delete('conversations/:id/members/:userId') removeMember(@Param('id') id:string,@Param('userId') target:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.removeMember(id,target,u,b);}
+ @Patch('conversations/:id/members/:userId') role(@Param('id') id:string,@Param('userId') target:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.setMemberRole(id,target,u,b);}
+ @Post('conversations/:id/owner') owner(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.transferOwner(id,u,b);}
 }

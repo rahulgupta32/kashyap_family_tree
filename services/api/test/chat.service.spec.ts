@@ -26,4 +26,18 @@ describe('Chat request identity and retry integrity',()=>{
   await expect(service.read(randomUUID(),user,1.5)).rejects.toThrow('Invalid read cursor');
   expect(db.transaction).not.toHaveBeenCalled();
  });
+ it('validates bounded distinct group selections before creating a transaction',async()=>{
+  for(const ids of [[],[user.id,user.id],Array.from({length:50},()=>randomUUID())]){
+   await expect(service.create(user,{type:'GROUP',title:'Fictional group',memberPersonIds:ids})).rejects.toThrow('Select 1 to 49 distinct');
+  }
+  expect(db.transaction).not.toHaveBeenCalled();
+ });
+ it('does not allow ownership to be assigned through a role mutation',async()=>{
+  await expect(service.setMemberRole(randomUUID(),randomUUID(),user,{version:1,role:'OWNER'})).rejects.toThrow('ownership uses transfer');
+  expect(db.transaction).not.toHaveBeenCalled();
+ });
+ it('rejects group settings with no editable fields',async()=>{
+  await expect(service.updateGroup(randomUUID(),user,{version:1})).rejects.toThrow('Group settings are required');
+  expect(db.transaction).not.toHaveBeenCalled();
+ });
 });

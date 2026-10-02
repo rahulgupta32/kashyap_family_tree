@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 import '../services/chat_connection.dart';
 import '../models/person.dart';
+import 'chat_group_management_screen.dart';
+import '../localization/chat_group_labels.dart';
 
 String _messageId() {
   final random = Random.secure();
@@ -57,6 +59,12 @@ class _ChatScreenState extends State<ChatScreen> {
     try { final c = await widget.apiService.requestJson('/chat/conversations', method: 'POST', data: {'type':'DIRECT', 'personId':personId}); if (mounted) { await _open(c as Map); } }
     catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
   }
+  Future<void> _privateGroup() async {
+    try {
+      final selected=await showDialog<Map<String,dynamic>>(context:context,builder:(_)=>PrivateChatGroupDialog(api:widget.apiService));
+      if(selected!=null){final group=await widget.apiService.requestJson('/chat/conversations',method:'POST',data:selected);if(mounted){await _open(group as Map);}}
+    }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+  }
   Future<void> _group() async {
     try {
       final branches = await widget.apiService.requestJson('/genealogy/branches') as List;
@@ -67,7 +75,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('सन्देश (Messages)'), actions:[IconButton(tooltip:'Create branch group',onPressed:_busy?null:_group,icon:const Icon(Icons.group_add)),IconButton(tooltip:'Refresh',onPressed:_load,icon:const Icon(Icons.refresh))]),
+    appBar: AppBar(title: const Text('सन्देश (Messages)'), actions:[IconButton(tooltip:chatGroupLabels['create'],onPressed:_busy?null:_privateGroup,icon:const Icon(Icons.add_circle_outline)),IconButton(tooltip:'Create branch group',onPressed:_busy?null:_group,icon:const Icon(Icons.group_add)),IconButton(tooltip:'Refresh',onPressed:_load,icon:const Icon(Icons.refresh))]),
     body:_loading?const Center(child:CircularProgressIndicator()):RefreshIndicator(onRefresh:_load,child:ListView(padding:const EdgeInsets.all(16),children:[
       if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       TextField(controller:_query,decoration:const InputDecoration(labelText:'व्यक्ति खोज्नुहोस् (Find person)'),onSubmitted:(_)=>_search()),
@@ -142,13 +150,15 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   Future<void> _action(String action)async{
+    if(action=='Info'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatGroupManagementScreen(api:widget.api,conversationId:widget.conversation['id'] as String)));return;}
+
     final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('$action conversation?'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:Text(action))]));
     if(confirmed!=true){return;}
     try{await widget.api.requestJson('$_path/${action.toLowerCase()}',method:'POST');if(mounted){Navigator.pop(context);}}
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   @override
-  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String),actions:[PopupMenuButton<String>(onSelected:_action,itemBuilder:(_)=>[const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
+  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String),actions:[PopupMenuButton<String>(onSelected:_action,itemBuilder:(_)=>[if(widget.conversation['type']!='DIRECT')PopupMenuItem(value:'Info',child:Text(chatGroupLabels['info']!)),const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
     body:Column(children:[
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
