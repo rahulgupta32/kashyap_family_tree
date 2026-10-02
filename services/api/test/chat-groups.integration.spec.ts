@@ -72,6 +72,14 @@ describe('Governed private/branch group roles and membership boundaries (Postgre
   await db.query('INSERT INTO chat_blocks(blocker_id,blocked_id) VALUES($1,$2)',[b.id,owner.id]);
   try{await expect(group()).rejects.toThrow('invitation is blocked');}finally{await db.query('DELETE FROM chat_blocks WHERE blocker_id=$1 AND blocked_id=$2',[b.id,owner.id]);}
  });
+ it('rejects alias/canonical selections resolving to one account before writing any group',async()=>{
+  const alias=(await db.query(`INSERT INTO persons(gender,living_status,generation,branch_id,birth_year_bs,is_archived,archive_reason)
+   VALUES('MALE','LIVING',3,$1,2040,TRUE,$2) RETURNING id`,[branch,`MERGED_INTO:${b.personId}`])).rows[0].id;
+  const before=(await db.query('SELECT count(*) FROM chat_conversations')).rows[0].count;
+  const response=await request(app.getHttpServer()).post('/chat/conversations').set(auth(owner)).send({type:'GROUP',title:'Fictional alias collision',memberPersonIds:[b.personId,alias]}).expect(400);
+  expect(response.body.message).toContain('distinct eligible members');
+  expect((await db.query('SELECT count(*) FROM chat_conversations')).rows[0].count).toBe(before);
+ });
  it('denies member management and promotion of self or arbitrary owner roles',async()=>{
   const g=await group();
   await request(app.getHttpServer()).patch(`/chat/conversations/${g.id}`).set(auth(b)).send({version:1,title:'Unauthorized'}).expect(403);

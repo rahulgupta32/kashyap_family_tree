@@ -21,7 +21,7 @@ This change extends calendar head `dfe61a70a486eaa4b1159c0cb70f7d747ff38199` on 
 
 ## Verification and remaining work
 
-Tests cover selected creation, current eligibility, nonmember Super Admin denial, roles, stale/concurrent edits and transfers, owner leave protection, branch removal, private history/unread/notice boundaries, masking, audit rollback and live-socket revocation. A browser workflow exercises create/promote/settings/remove/restore/transfer/reload. Flutter checks owner promotion/version submission and ordinary-member controls.
+Tests cover selected creation, current eligibility, canonical/merged-alias collisions, nonmember Super Admin denial, roles, stale/concurrent edits and transfers, owner leave protection, branch removal, private history/unread/notice boundaries, masking, audit rollback and live-socket revocation. A browser workflow exercises create/promote/settings/remove/restore/transfer/reload. Flutter checks owner promotion/version submission and ordinary-member controls. Alias/canonical selections resolving to the same account return a validation error without writing a group.
 
 Exact CI results must be associated with the published group-management head. Earlier calendar CI does not verify migration 020. Original 260 mandatory acceptance rows and the baseline assessment remain unchanged.
 

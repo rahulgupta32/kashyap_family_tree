@@ -190,6 +190,7 @@ export class ChatService {
    for(const id of ids){
     const target=await this.eligiblePerson(id,user,client);
     if(target.account_id===user.id)throw new BadRequestException('The creator is already the group owner');
+    if(members.includes(target.account_id))throw new BadRequestException('Select distinct eligible members; merged profiles may identify the same account');
     if((await client.query('SELECT 1 FROM chat_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1)',[user.id,target.account_id])).rows.length)throw new ForbiddenException('Group invitation is blocked');
     members.push(target.account_id);
    }
