@@ -67,7 +67,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
     var busy = false;
     String? error;
     try {
-      await showDialog<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
+      final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
         title: Text(calendarLabels['create']!),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: title, decoration: InputDecoration(labelText: calendarLabels['title'])),
@@ -98,17 +98,21 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
           }, child: Text(calendarLabels['save']!)),
         ],
       )));
+      await Navigator.of(context).push(route);
+      await route.completed;
     } finally {title.dispose();}
   }
 
   Future<void> _manage(Map event, {bool cancel = false}) async {
     final controller = TextEditingController(text: cancel ? '' : event['title'] as String? ?? '');
-    final result = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+    final route = DialogRoute<String>(context: context, builder: (context) => AlertDialog(
       title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
       content: TextField(controller: controller, decoration: InputDecoration(labelText: calendarLabels[cancel ? 'reason' : 'title'])),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(calendarLabels['close']!)),
         TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(calendarLabels['save']!))],
     ));
+    final result = await Navigator.of(context).push(route);
+    await route.completed;
     controller.dispose();
     if(result == null || !mounted) return;
     try {

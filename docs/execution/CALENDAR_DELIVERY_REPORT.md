@@ -17,6 +17,21 @@ This checkpoint extends `feat/application-completion` from `c8ada12efe0278e933c2
 
 Added date/category unit cases, isolated PostgreSQL/HTTP transaction, authorization, concurrent worker, rollback, revocation and cancellation tests, a browser organizer workflow, and Flutter organizer/attendee widget checks. Local TypeScript checks and 129 API unit tests pass. Database, browser, Flutter and live-device results must be taken from this checkpoint's own CI run.
 
+CI exposed the legacy date constraint, Flutter HTTP argument names and dialog-controller disposal during closing animations. Corrections extend the constraint to explicit AD instants, retain existing Tithi validation compatibility, use the shared HTTP helper and keep controllers alive until their routes finish. Migration rollback refuses AD-only records rather than inventing BS dates.
+
+## Requirement impact
+
+| Requirement | Progress in this block | Still open |
+|---|---|---|
+| CAL-FR-002 | Source fields and provenance are refreshed with versioned snapshots | Full approved conversion/reference acceptance |
+| CAL-FR-004 | Version-checked edit/cancel, history, organizer controls | Complete mobile editor and device acceptance |
+| CAL-FR-010 | BS year/month filters apply before limiting | Day/month/agenda navigation and range pagination |
+| CAL-FR-011 | Current access is checked in reads, invitations and reminders | Full family/ancestry audience policy |
+| CAL-FR-012 | Committed changes/cancellations notify current explicit invitees according to policy | Relevant follower expansion and provider acceptance |
+| NOT-FR-003 | Explicit AD event reminders use durable jobs | Derived verified family occurrences and approved recurrence |
+
+These are progress annotations against the original assessment, not signed release acceptance.
+
 ## Remaining scope
 
 Recurrence, ancestry/generation calendar audiences, a Flutter invitation picker, complete calendar editor fields, delivery-provider acceptance, approved BS/Tithi conversion, device matrix and full localization/accessibility acceptance remain open. Workers use the existing audit outbox/provider pipeline; creating a reminder is not evidence of production SMS/push/email receipt. The source assessment's 102/104/42/12 classification is still its original baseline, not a new completion percentage.
