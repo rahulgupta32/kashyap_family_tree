@@ -1,0 +1,15 @@
+const calendarLabels = {
+  'required': 'शीर्षक र मिति आवश्यक छ (Title and date are required)',
+  'create': 'नयाँ कार्यक्रम (Create event)',
+  'title': 'शीर्षक (Title)',
+  'time': 'ग्रेगोरियन मिति र समय (Gregorian date and time)',
+  'reminder': 'एक घण्टा पहिले सम्झना (Reminder one hour before)',
+  'save': 'सुरक्षित गर्नुहोस् (Save)',
+  'close': 'बन्द गर्नुहोस् (Close)',
+  'edit': 'कार्यक्रम सम्पादन (Edit event)',
+  'cancel': 'कार्यक्रम रद्द (Cancel event)',
+  'reason': 'रद्द गर्नुको कारण (Cancellation reason)',
+  'cancelled': 'रद्द भएको (Cancelled)',
+  'attendance': 'उपस्थिति (Attendance)',
+  'dateNote': 'यो समय तपाईंले दिएको ग्रेगोरियन समय हो। तिथि रूपान्तरण स्वीकृत हुन बाँकी छ। (This is your entered Gregorian time. Tithi conversion is pending approval.)',
+};

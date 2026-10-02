@@ -1,8 +1,14 @@
 # Application status
 
-Updated 2026-10-01. Owner: Jyphra Technology Pvt. Ltd.
+Updated 2026-10-02. Owner: Jyphra Technology Pvt. Ltd.
 
-## Canonical completion checkpoint
+## Calendar delivery checkpoint
+
+Work continues from `c8ada12efe0278e933c24f167c23b0d4a1ed6407`, verified by successful [PR CI 36892335512](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/36892335512): 119 API unit, 211 PostgreSQL integration, 20 Playwright and 24 Flutter tests, plus live ClamAV and Android/live API/PostgreSQL acceptance.
+
+The new migration-019 calendar block adds versioned invitations, explicit AD reminders, cancellation, revisions and web/mobile controls. See `CALENDAR_DELIVERY_REPORT.md` for behavior and remaining scope. Its own CI is required before acceptance; all 260 original ledger rows remain `ACCEPTANCE_NOT_CLOSED`.
+
+## Original assessment checkpoint
 
 Continue on `feat/application-completion`, reviewed head `0d93525ffa473617bd9cc43cbb36a00a0aa31814`. [PR CI 36748729434](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/36748729434) completed successfully; its earlier pending note is superseded. PR #5 remains draft/open and stacked on open M4 PR #4. Neither PR is merged; no production deployment is claimed.
 

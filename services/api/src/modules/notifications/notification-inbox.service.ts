@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { broadcastEligibility } from './broadcast-eligibility';
+import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
 type Category = 'WORKFLOW' | 'CHAT' | 'EVENT' | 'BROADCAST';
@@ -20,9 +21,11 @@ export class NotificationInboxService {
       category: 'CHAT', destination: destinations.CHAT,
       message: 'नयाँ निजी सन्देश आएको छ। (You have a new private message)',
     };
-    if (action === 'CALENDAR_EVENT_CREATED') return {
+    if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(action)) return {
       category: 'EVENT', destination: destinations.EVENT,
-      message: 'नयाँ कार्यक्रम थपिएको छ। (A new event was added)',
+      message: action === 'CALENDAR_EVENT_CANCELLED' ? 'कार्यक्रम रद्द भएको छ। (An event was cancelled)'
+        : action === 'CALENDAR_EVENT_REMINDER_DUE' ? 'कार्यक्रमको सम्झना उपलब्ध छ। (An event reminder is available)'
+        : 'कार्यक्रम अपडेट उपलब्ध छ। (An event update is available)',
     };
     if (/^(CLAIM_|DISPUTE_FILED|DISPUTE_RESOLVED)/.test(action)) return {
       category: 'WORKFLOW', destination: '/claims',
@@ -50,7 +53,11 @@ export class NotificationInboxService {
   // Chat notices are rechecked at read time, so leaving a group, a block,
   // or deleting a message revokes even a previously queued notice.
   private readonly visible = `(
-    (n.category <> 'BROADCAST' OR EXISTS (
+    (n.category <> 'EVENT' OR EXISTS(
+      SELECT 1 FROM calendar_notification_recipients nr JOIN audit_outbox o ON o.id=nr.outbox_id
+      JOIN calendar_events e ON e.id=nr.event_id JOIN user_accounts u ON u.id=nr.user_id
+      WHERE nr.outbox_id=n.outbox_id AND nr.user_id=n.recipient_user_id AND ${calendarNoticeEligibility()}
+    )) AND (n.category <> 'BROADCAST' OR EXISTS (
       SELECT 1 FROM audit_outbox o JOIN notification_broadcasts b ON o.entity_id=b.id::text
       JOIN notification_broadcast_recipients r ON r.broadcast_id=b.id AND r.user_id=n.recipient_user_id
       JOIN user_accounts u ON u.id=r.user_id

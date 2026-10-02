@@ -440,6 +440,14 @@ export class ApiClient {
     return data;
   }
 
+  static async calendarRequest(token: string, path: string, method = 'GET', body?: unknown): Promise<any> {
+    const res = await fetch(`${API_BASE}/calendar/${path}`, {method, headers: this.getHeaders(token), credentials:'include',
+      cache:'no-store', ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+    const data = await res.json();
+    if(!res.ok)throw new Error(data.message || 'Calendar action failed');
+    return data;
+  }
+
   // --- Milestone 4: Calendar Events ---
   static async rsvpCalendarEvent(token: string, id: string, response: 'GOING' | 'MAYBE' | 'DECLINED'): Promise<void> {
     const res = await fetch(`${API_BASE}/calendar/events/${encodeURIComponent(id)}/rsvp`, {

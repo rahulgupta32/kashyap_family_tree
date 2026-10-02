@@ -4,6 +4,7 @@ import { DatabaseService } from '../../database/database.service';
 import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationFollowsService } from './notification-follows.service';
 import { broadcastEligibility } from './broadcast-eligibility';
+import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
 export interface NotificationDispatchResult {
@@ -136,6 +137,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
         recipientUserIds.push(record.actor_id);
       }
+    } else if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(action)) {
+      const recipients=await this.db.query(`SELECT u.id FROM calendar_notification_recipients nr
+        JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id
+        JOIN user_accounts u ON u.id=nr.user_id WHERE nr.outbox_id=$1 AND ${calendarNoticeEligibility()}`, [record.id]);
+      recipientUserIds.push(...recipients.rows.map(r=>r.id));
     } else if (action === 'NOTIFICATION_BROADCAST_CREATED' && record.entity_type === 'NOTIFICATION_BROADCAST' && isUuid(record.entity_id)) {
       const recipients = await this.db.query(`SELECT r.user_id FROM notification_broadcast_recipients r
         JOIN notification_broadcasts b ON b.id=r.broadcast_id
@@ -185,6 +191,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
       const payload = {
         action,
+        outboxId: record.id,
         entityType: record.entity_type,
         entityId: record.entity_id,
         timestamp: new Date().toISOString(),
@@ -329,6 +336,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       : channel === 'EMAIL' ? current.email_enabled === true : false;
     if (!enabled) return { status: 'SKIPPED', reason: 'Delivery channel disabled' };
 
+    if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(payload.action)) {
+      const eligible=await this.db.query(`SELECT 1 FROM calendar_notification_recipients nr
+        JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id
+        JOIN user_accounts u ON u.id=nr.user_id WHERE nr.outbox_id=$1 AND nr.user_id=$2 AND ${calendarNoticeEligibility()}`,
+        [payload.outboxId,userId]);
+      if(!eligible.rows.length)return {status:'SKIPPED',reason:'Event access or revision revoked'};
+    }
     if (payload.action === 'CHAT_MESSAGE_CREATED') {
       const eligible = await this.db.query(`SELECT 1 FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
@@ -510,6 +524,12 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         return 'वंशवृक्ष संशोधन अनुरोध अस्वीकृत भएको छ। (Change request rejected)';
       case 'CHAT_MESSAGE_CREATED':
         return 'नयाँ निजी सन्देश आएको छ। (You have a new private message)';
+      case 'CALENDAR_EVENT_UPDATED':
+        return 'कार्यक्रम अपडेट उपलब्ध छ। (An event update is available)';
+      case 'CALENDAR_EVENT_CANCELLED':
+        return 'कार्यक्रम रद्द भएको छ। (An event was cancelled)';
+      case 'CALENDAR_EVENT_REMINDER_DUE':
+        return 'कार्यक्रमको सम्झना उपलब्ध छ। (An event reminder is available)';
       case 'CALENDAR_EVENT_CREATED':
         return 'नयाँ सांस्कृतिक/पारिवारिक कार्यक्रम थपिएको छ। (New calendar event added)';
       default:
