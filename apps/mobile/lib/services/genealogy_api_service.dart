@@ -133,6 +133,7 @@ class GenealogyApiService {
   }
 
   Future<void> logout() async {
+    _chatOutbox?.stop();
     try {
       if (_refreshing != null) { await _refreshing; }
       final response = await _send('POST', Uri.parse('$baseUrl/auth/logout'),

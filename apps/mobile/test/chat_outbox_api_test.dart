@@ -32,4 +32,16 @@ void main(){
   addTearDown(api.dispose);await api.chatOutbox.enqueue(conversation,'Logout in flight');final pending=api.chatOutbox.pump();await Future<void>.delayed(Duration.zero);
   await api.logout().timeout(const Duration(seconds:1));gate.complete();await pending;expect(store.value,isNull);expect(api.authToken,isNull);
  });
+ test('logout immediately stops remaining replay while its server response is delayed',() async {
+  final store=MemoryChatOutboxStore(),chatGate=Completer<void>(),logoutGate=Completer<void>();var chatCalls=0;
+  final api=GenealogyApiService(chatOutboxStore:store,sessionStore:MemorySessionStore(),client:MockClient((request) async {
+   if(request.url.path=='/auth/logout'){await logoutGate.future;return http.Response('{}',200);}
+   chatCalls++;await chatGate.future;return http.Response('{"id":"committed"}',201);
+  }))..setAuthToken(token('first'));
+  addTearDown(api.dispose);await api.chatOutbox.enqueue(conversation,'First');await api.chatOutbox.enqueue(conversation,'Must stop');
+  final pending=api.chatOutbox.pump();await Future<void>.delayed(Duration.zero);
+  final logout=api.logout();chatGate.complete();await pending;expect(chatCalls,1);
+  logoutGate.complete();await logout;expect(store.value,isNull);
+ });
+
 }
