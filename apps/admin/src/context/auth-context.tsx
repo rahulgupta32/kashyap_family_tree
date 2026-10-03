@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
         broadcastChannelRef.current = channel;
         channel.onmessage = (event) => {
-          if (event.data?.type === 'TOKEN_REFRESHED' && event.data.accessToken) {
+          if (event.data?.type === 'TOKEN_REFRESHED' && event.data.accessToken && !localStorage.getItem(SIGNED_OUT_KEY) && localStorage.getItem(TOKEN_KEY)===event.data.accessToken) {
             setAccessToken(event.data.accessToken);
             if (event.data.user) setUser(event.data.user);
           } else if (event.data?.type === 'SESSION_EXPIRED') {

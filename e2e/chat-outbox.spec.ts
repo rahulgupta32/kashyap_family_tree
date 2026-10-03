@@ -47,9 +47,10 @@ test('Logout purges encrypted pending messages in every tab',async({page})=>{
  await room(page);await page.context().route(posts,route=>route.request().method()==='POST'?route.abort():route.continue());
  const content=`Logout fictional intent ${randomUUID()}`;await compose(page,content);await expect(page.locator('[data-queued-id]').filter({hasText:content})).toBeVisible();
  const second=await page.context().newPage();await second.goto('/chat');await expect(second.getByRole('region',{name:'Queued messages'})).toContainText(content);
+ const staleSession=await second.evaluate(()=>({accessToken:localStorage.getItem('kashyap_admin_access_token'),user:JSON.parse(localStorage.getItem('kashyap_admin_user')!)}));
  let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
  await page.route('**/auth/logout',async route=>{await held;await route.continue();});
- try{await page.getByRole('button',{name:/Logout/}).click();await expect(second).toHaveURL(/\/login/);await second.reload();await expect(second.locator('input[type=tel]')).toBeVisible();expect(await second.evaluate(()=>localStorage.getItem('kashyap_admin_access_token'))).toBeNull();}finally{release();}
+ try{await page.getByRole('button',{name:/Logout/}).click();await expect(second).toHaveURL(/\/login/);await second.reload();await expect(second.locator('input[type=tel]')).toBeVisible();await page.evaluate(payload=>{const c=new BroadcastChannel('kashyap_auth_channel');c.postMessage({type:'TOKEN_REFRESHED',...payload});c.close();},staleSession);await second.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));await expect(second.locator('input[type=tel]')).toBeVisible();expect(await second.evaluate(()=>localStorage.getItem('kashyap_admin_access_token'))).toBeNull();}finally{release();}
  await expect(page).toHaveURL(/\/login/);await expect(second).toHaveURL(/\/login/);
  expect(await envelope(page)).toBeNull();expect(await page.evaluate(()=>localStorage.getItem('kashyap_admin_access_token'))).toBeNull();await second.close();
 });
