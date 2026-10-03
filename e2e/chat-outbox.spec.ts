@@ -47,7 +47,10 @@ test('Logout purges encrypted pending messages in every tab',async({page})=>{
  await room(page);await page.context().route(posts,route=>route.request().method()==='POST'?route.abort():route.continue());
  const content=`Logout fictional intent ${randomUUID()}`;await compose(page,content);await expect(page.locator('[data-queued-id]').filter({hasText:content})).toBeVisible();
  const second=await page.context().newPage();await second.goto('/chat');await expect(second.getByRole('region',{name:'Queued messages'})).toContainText(content);
- await page.getByRole('button',{name:/Logout/}).click();await expect(page).toHaveURL(/\/login/);await expect(second).toHaveURL(/\/login/);
+ let release!:()=>void;const held=new Promise<void>(resolve=>release=resolve);
+ await page.route('**/auth/logout',async route=>{await held;await route.continue();});
+ try{await page.getByRole('button',{name:/Logout/}).click();await expect(second).toHaveURL(/\/login/);await second.reload();await expect(second.locator('input[type=tel]')).toBeVisible();expect(await second.evaluate(()=>localStorage.getItem('kashyap_admin_access_token'))).toBeNull();}finally{release();}
+ await expect(page).toHaveURL(/\/login/);await expect(second).toHaveURL(/\/login/);
  expect(await envelope(page)).toBeNull();expect(await page.evaluate(()=>localStorage.getItem('kashyap_admin_access_token'))).toBeNull();await second.close();
 });
 
@@ -55,5 +58,5 @@ test('Storage failure retains the composer and sends no network message',async({
  await page.addInitScript(()=>{const original=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args:Parameters<typeof original>){if(this.transaction.db.name==='kashyap_chat_outbox_v1')throw new DOMException('Test full disk','QuotaExceededError');return original.apply(this,args);};});
  await room(page);let attempts=0;page.on('request',request=>{if(request.method()==='POST'&&/\/chat\/conversations\/[^/]+\/messages$/.test(request.url()))attempts++;});
  const content=`Unpersisted fictional intent ${randomUUID()}`;await compose(page,content);
- await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByLabel('सन्देश (Your message)',{exact:true})).toHaveValue(content);expect(attempts).toBe(0);
+ await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByRole('textbox',{name:'सन्देश (Your message)',exact:true})).toHaveValue(content);expect(attempts).toBe(0);
 });

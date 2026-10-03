@@ -8,7 +8,7 @@ A storage lock serializes encryption and writes across tabs; a separate pump loc
 
 Network, timeout, 408, 429 and server failures back off from two to sixty seconds. Permanent permission/validation/conflict failures stop automatic retries. Earlier delayed/failed intent blocks its conversation but allows independent conversations. Retry retains identity and content; discard requires confirmation and cannot run while any tab owns the network pump. Discard removes local intent and cannot unsend an uncertain server commit. Queue limits are 100 messages, 4,000 characters each and 512 KiB serialized UTF-8.
 
-Local subject is a storage scope only; every send still requires current server authentication and permissions. Account/API changes clear foreign envelopes before replay. A local generation invalidates old pumps immediately during logout/revocation without waiting on network locks. Late refresh responses cannot restore an invalidated generation. Network/503 refresh outages retain local intent; confirmed 401/403 refresh rejection clears it. Pending intent has no silent expiry.
+Local subject is a storage scope only; every send still requires current server authentication and permissions. Account/API changes clear foreign envelopes before replay. A local generation invalidates old pumps immediately during logout/revocation without waiting on network locks. Late refresh responses cannot restore an invalidated generation. A persisted signed-out marker prevents cookie rehydration in another tab while logout is still pending; explicit OTP login clears it. Network/503 refresh outages retain local intent; confirmed 401/403 refresh rejection clears it. Pending intent has no silent expiry.
 
 ## Verification
 

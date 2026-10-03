@@ -10,7 +10,7 @@ test('private group creation, admin promotion, settings, removal and transfer pe
  const label=`GroupFlow${randomUUID().replace(/-/g,'').slice(0,10)}`;
  const database=process.env.DB_NAME;
  expect(database).toMatch(/^kashyap_(test|iso)_[a-z0-9_]+$/);
- const db=new Client({host:process.env.DB_HOST||'127.0.0.1',port:Number(process.env.DB_PORT||5434),user:process.env.DB_USER||'kashyap_user',password:process.env.DB_PASSWORD||'kashyap_secure_dev_password',database});
+ const db=new Client({host:process.env.DB_HOST||'127.0.0.1',port:Number(process.env.DB_PORT||5434),user:process.env.DB_USER||'kashyap_user',password:process.env.DB_PASSWORD,database});
  await db.connect();expect((await db.query('SELECT current_database() AS name')).rows[0].name).toBe(database);
  const otherContext=await browser.newContext();
  try{
@@ -31,7 +31,7 @@ test('private group creation, admin promotion, settings, removal and transfer pe
    return {phone,id:member.user.id,personId:person.id,name:label+suffix+' Fictional',token:member.accessToken};
   }
   const owner=await fixture('Owner'),member=await fixture('Member');
-  await page.getByRole('button',{name:/Logout/}).click();await login(page,owner.phone);await page.goto('/chat');
+  await page.getByRole('button',{name:/Logout/}).click();await expect(page).toHaveURL(/\/login/);await login(page,owner.phone);await page.goto('/chat');
   const creator=page.getByRole('group',{name:/Create private group/});
   const title=`Fictional private ${label}`;
   await creator.getByLabel(/Private group title/).fill(title);

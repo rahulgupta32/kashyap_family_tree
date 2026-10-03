@@ -23,6 +23,7 @@ const USER_KEY = 'kashyap_admin_user';
 const TOKEN_TIMESTAMP_KEY = 'kashyap_token_refreshed_at';
 const AUTH_CHANNEL_NAME = 'kashyap_auth_channel';
 const REFRESH_LOCK_NAME = 'kashyap_auth_refresh';
+const SIGNED_OUT_KEY = 'kashyap_admin_signed_out';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthSessionDto['user'] | null>(null);
@@ -84,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const executeRefresh = async (): Promise<string | null> => {
       const performNetworkRefresh = async (): Promise<string | null> => {
+        if(localStorage.getItem(SIGNED_OUT_KEY))return null;
         const generation=localStorage.getItem('kashyap_chat_outbox_generation');
         try {
           const session = await ApiClient.refreshToken();
@@ -112,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAccessToken(null);
           setUser(null);
           try {
+            localStorage.setItem(SIGNED_OUT_KEY,'1');
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(USER_KEY);
             localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
@@ -192,10 +195,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSession]);
 
   const login = useCallback((session: AuthSessionDto) => {
-    localStorage.setItem('kashyap_chat_outbox_generation',crypto.randomUUID());
     setAccessToken(session.accessToken);
     setUser(session.user);
     try {
+      localStorage.removeItem(SIGNED_OUT_KEY);
+      localStorage.setItem('kashyap_chat_outbox_generation',crypto.randomUUID());
       localStorage.setItem(TOKEN_KEY, session.accessToken);
       localStorage.setItem(USER_KEY, JSON.stringify(session.user));
       localStorage.setItem(TOKEN_TIMESTAMP_KEY, Date.now().toString());
@@ -215,6 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     setUser(null);
     try {
+      localStorage.setItem(SIGNED_OUT_KEY,'1');
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
