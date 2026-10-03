@@ -93,7 +93,10 @@ export class ChatService {
   if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(before)||before<0||(after>0&&before>0))throw new BadRequestException('Invalid message cursor');
   const rows=(await this.db.query(`SELECT m.id,m.conversation_id AS "conversationId",m.sender_id AS "senderUserId",m.sequence::float8 AS sequence,
    CASE WHEN m.deleted_at IS NULL THEN m.message_text ELSE '' END AS content,m.deleted_at IS NOT NULL AS "isDeleted",m.created_at AS "createdAt",
-   ARRAY(SELECT p.user_id FROM chat_participants p WHERE p.conversation_id=m.conversation_id AND p.left_at IS NULL AND p.last_read_sequence>=m.sequence AND m.sequence>p.history_from_sequence) AS "readByUserIds"
+   ARRAY(SELECT p.user_id FROM chat_participants p WHERE p.conversation_id=m.conversation_id AND p.left_at IS NULL AND p.removed_at IS NULL AND p.last_read_sequence>=m.sequence AND m.sequence>p.history_from_sequence) AS "readByUserIds",
+   ARRAY(SELECT p.user_id FROM chat_participants p WHERE p.conversation_id=m.conversation_id
+    AND p.left_at IS NULL AND p.removed_at IS NULL AND m.sequence>p.history_from_sequence
+    AND (p.last_read_sequence>=m.sequence OR EXISTS(SELECT 1 FROM chat_message_deliveries receipt WHERE receipt.message_id=m.id AND receipt.user_id=p.user_id))) AS "deliveredToUserIds"
    FROM chat_messages m JOIN chat_participants viewer ON viewer.conversation_id=m.conversation_id AND viewer.user_id=$4
    WHERE m.conversation_id=$1 AND viewer.left_at IS NULL AND viewer.removed_at IS NULL AND m.sequence>viewer.history_from_sequence AND ($2::bigint=0 OR m.sequence>$2) AND ($3::bigint=0 OR m.sequence<$3) ORDER BY m.sequence ${after>0?'ASC':'DESC'} LIMIT 100`,[id,after,before,user.id])).rows;
   return after>0?rows:rows.reverse();
@@ -115,12 +118,37 @@ export class ChatService {
    return {...row,alreadySent:false};
   });
  }
+ /** Delivery means an authenticated client acknowledges specific received records,
+  * never that a socket write or an external push provider succeeded. */
+ async delivered(id:string,user:AuthenticatedUser,body:any){
+  allowedFields(body,['messageIds']);
+  const ids=body.messageIds;
+  if(!Array.isArray(ids)||ids.length<1||ids.length>100||new Set(ids).size!==ids.length)throw new BadRequestException('Acknowledge 1 to 100 distinct messages');
+  ids.forEach(value=>uuid(value,'message'));
+  return this.db.transaction(async client=>{
+   await this.access(id,user,client);
+   const visible=(await client.query(`SELECT m.id FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=$2
+    WHERE m.conversation_id=$1 AND m.id=ANY($3::uuid[]) AND m.sequence>p.history_from_sequence`,[id,user.id,ids])).rows;
+   if(visible.length!==ids.length)throw new BadRequestException('Only received conversation history can be acknowledged');
+   await client.query(`INSERT INTO chat_message_deliveries(message_id,user_id) SELECT id,$2 FROM chat_messages WHERE id=ANY($1::uuid[])
+    ON CONFLICT(message_id,user_id) DO NOTHING`,[ids,user.id]);
+   return {success:true};
+  });
+ }
  async read(id:string,user:AuthenticatedUser,sequence:number){
   if(!Number.isSafeInteger(sequence)||sequence<0)throw new BadRequestException('Invalid read cursor');
   return this.db.transaction(async client=>{
    await this.access(id,user,client);
-   const latest=(await client.query('SELECT coalesce(max(sequence),0)::float8 AS sequence FROM chat_messages WHERE conversation_id=$1',[id])).rows[0].sequence;
-   if(sequence>latest)throw new BadRequestException('Cannot acknowledge future messages');
+   if(sequence===0)return {success:true};
+   const visible=(await client.query(`SELECT m.id FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=$2
+    WHERE m.conversation_id=$1 AND m.sequence=$3 AND m.sequence>p.history_from_sequence`,[id,user.id,sequence])).rows[0];
+   if(!visible)throw new BadRequestException('Cannot acknowledge unavailable or future messages');
+   // Read is a cumulative acknowledgement of authorized history through this
+   // record. It also implies delivery; delivery alone never changes unread state.
+   await client.query(`INSERT INTO chat_message_deliveries(message_id,user_id)
+    SELECT m.id,$2 FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=$2
+    WHERE m.conversation_id=$1 AND m.sequence<=$3 AND m.sequence>p.history_from_sequence
+    ON CONFLICT(message_id,user_id) DO NOTHING`,[id,user.id,sequence]);
    await client.query('UPDATE chat_participants SET last_read_sequence=greatest(last_read_sequence,$3),last_read_at=now() WHERE conversation_id=$1 AND user_id=$2',[id,user.id,sequence]);return {success:true};
   });
  }

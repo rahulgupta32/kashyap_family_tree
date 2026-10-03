@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { PrivateGroupCreator, GroupManager } from './group-controls';
-import { chatManagement } from '@kashyap/localization';
+import { chatManagement, chatReceipts } from '@kashyap/localization';
 import { ApiClient } from '../../lib/api-client';
 interface Conversation {id:string;title:string;type:string;isParticipant:boolean;unreadCount:number}
-interface Message {id:string;senderUserId:string;content:string;sequence:number;isDeleted:boolean;readByUserIds:string[]}
+interface Message {id:string;senderUserId:string;content:string;sequence:number;isDeleted:boolean;readByUserIds:string[];deliveredToUserIds:string[]}
 const API=process.env.NEXT_PUBLIC_API_URL||'http://127.0.0.1:3000';
 export default function ChatPage(){
  const {accessToken,user,isLoading,refreshSession}=useAuth();
@@ -23,14 +23,16 @@ export default function ChatPage(){
  useEffect(()=>{ApiClient.listBranches().then(setBranches).catch(()=>{});},[]);
  useEffect(()=>{
   if(!selected||!accessToken||isLoading)return;
-  let stopped=false,timer:ReturnType<typeof setTimeout>,attempt=0;
+  let stopped=false,timer:ReturnType<typeof setTimeout>,attempt=0,latestReceived=0;
+  const acknowledgeRead=()=>{if(document.visibilityState==='visible'&&socket.current?.readyState===WebSocket.OPEN&&latestReceived>0)socket.current.send(JSON.stringify({type:'read',sequence:latestReceived}));};
+  document.addEventListener('visibilitychange',acknowledgeRead);
   function connect(){
    const ws=new WebSocket(`${API.replace(/^http/,'ws')}/chat/socket`);socket.current=ws;
    ws.onopen=()=>ws.send(JSON.stringify({type:'auth',token:accessToken}));
    ws.onmessage=(event)=>{
     const data=JSON.parse(event.data);
     if(data.type==='authenticated'){ws.send(JSON.stringify({type:'subscribe',conversationId:selected!.id}));}
-    if(data.type==='snapshot'&&data.conversationId===selected!.id){setLive(true);attempt=0;setMessages(previous=>Array.from(new Map([...previous,...data.messages].map(m=>[m.id,m])).values()).sort((a,b)=>a.sequence-b.sequence));setTyping(data.typingUserIds.length>0);const latest=data.messages.at(-1)?.sequence;if(latest)ws.send(JSON.stringify({type:'read',sequence:latest}));}
+    if(data.type==='snapshot'&&data.conversationId===selected!.id){setLive(true);attempt=0;setMessages(previous=>Array.from(new Map([...previous,...data.messages].map(m=>[m.id,m])).values()).sort((a,b)=>a.sequence-b.sequence));setTyping(data.typingUserIds.length>0);if(data.messages.length){ws.send(JSON.stringify({type:'delivered',messageIds:data.messages.map((m:Message)=>m.id)}));latestReceived=data.messages.at(-1).sequence;acknowledgeRead();}}
    };
    ws.onclose=(event)=>{setLive(false);if(stopped)return;
     if(event.code===4401){void refreshSession();return;}
@@ -38,7 +40,7 @@ export default function ChatPage(){
     timer=setTimeout(connect,Math.min(30000,1000*2**attempt++));};
    ws.onerror=()=>ws.close();
   }
-  connect();return()=>{stopped=true;clearTimeout(timer);socket.current?.close();socket.current=null;};
+  connect();return()=>{stopped=true;document.removeEventListener('visibilitychange',acknowledgeRead);clearTimeout(timer);socket.current?.close();socket.current=null;};
  },[selected?.id,accessToken,isLoading,refreshSession]);
  async function action(work:()=>Promise<void>){setBusy(true);setError('');try{await work();await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function open(c:Conversation){await action(async()=>{if(!c.isParticipant)await call(`/conversations/${c.id}/join`,'POST');setSelected({...c,isParticipant:true});setMessages(await call(`/conversations/${c.id}/messages`));});}
@@ -57,7 +59,7 @@ export default function ChatPage(){
   </aside><div className="border rounded-xl p-4 space-y-3">{selected?<>
    <header className="flex flex-wrap justify-between gap-3"><h2 className="font-bold">{selected.title}</h2><span role="status">{live?'Live':'Connecting…'}</span><button className="border rounded px-2" onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/leave`,'POST');setSelected(null);setMessages([]);})}>Leave conversation</button>{selected.type!=='DIRECT'&&<button onClick={()=>setManaging(true)}>{chatManagement.info}</button>}{selected.type==='DIRECT'&&<button className="border rounded px-2" onClick={()=>{if(confirm('Block direct messages from this person?'))void action(async()=>{await call(`/conversations/${selected.id}/block`,'POST');setSelected(null);});}}>Block</button>}</header>
    {messages.length>=100&&<button onClick={()=>void action(async()=>{const older=await call(`/conversations/${selected.id}/messages?before=${messages[0].sequence}`);setMessages(previous=>[...older,...previous]);})}>Load earlier messages</button>}
-   <ol aria-label="Message history" className="space-y-3 min-h-64 max-h-[55vh] overflow-y-auto">{messages.map(m=><li key={m.id} className={`p-3 rounded-lg ${m.senderUserId===user?.id?'bg-amber-50 ml-8':'bg-slate-50 mr-8'}`}><p className="text-xs">{m.senderUserId===user?.id?'You':'Member'}</p><p className="whitespace-pre-wrap break-words">{m.isDeleted?'Message removed':m.content}</p>{m.senderUserId===user?.id&&!m.isDeleted&&<div className="flex gap-3 text-xs"><span>{m.readByUserIds.some(id=>id!==user.id)?'Read':'Sent'}</span><button onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/messages/${m.id}`,'DELETE');setMessages(await call(`/conversations/${selected.id}/messages`));})}>Remove message</button></div>}</li>)}</ol>
+   <ol aria-label="Message history" className="space-y-3 min-h-64 max-h-[55vh] overflow-y-auto">{messages.map(m=><li key={m.id} className={`p-3 rounded-lg ${m.senderUserId===user?.id?'bg-amber-50 ml-8':'bg-slate-50 mr-8'}`}><p className="text-xs">{m.senderUserId===user?.id?'You':'Member'}</p><p className="whitespace-pre-wrap break-words">{m.isDeleted?'Message removed':m.content}</p>{m.senderUserId===user?.id&&!m.isDeleted&&<div className="flex gap-3 text-xs"><span>{m.readByUserIds.some(id=>id!==user.id)?chatReceipts.read:(m.deliveredToUserIds||[]).some(id=>id!==user.id)?chatReceipts.delivered:chatReceipts.sent}</span><button onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/messages/${m.id}`,'DELETE');setMessages(await call(`/conversations/${selected.id}/messages`));})}>Remove message</button></div>}</li>)}</ol>
    {typing&&<p aria-live="polite" className="text-sm">Someone is typing…</p>}
    <form onSubmit={e=>{e.preventDefault();void send();}} className="flex items-end gap-3"><label className="grow">सन्देश (Your message)<textarea required maxLength={4000} value={text} onChange={e=>{setText(e.target.value);if(socket.current?.readyState===WebSocket.OPEN&&Date.now()-lastTyping.current>1500){socket.current.send(JSON.stringify({type:'typing'}));lastTyping.current=Date.now();}}} className="block border rounded p-2 w-full"/></label><button disabled={busy||!text.trim()} className="bg-slate-900 text-white rounded p-3">पठाउनुहोस् (Send)</button></form>
   </>:<p>कुराकानी चयन गर्नुहोस् (Select or create a conversation).</p>}</div></div>{managing&&selected&&<GroupManager id={selected.id} token={accessToken} call={call} onClose={()=>setManaging(false)} onChanged={info=>{setSelected(current=>current&&current.id===info.id?{...current,title:info.title}:current);void load();}}/>}</section>;

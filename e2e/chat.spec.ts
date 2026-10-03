@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { API, login, headers } from './helpers/auth';
 
-test('Branch messaging authenticates both browsers and persists messages, read receipts and deletion',async({page,browser})=>{
+test('Branch messaging authenticates both browsers and persists messages, separate delivery/read receipts and deletion',async({page,browser})=>{
  test.setTimeout(120000);
  const otherContext=await browser.newContext();
  try{
@@ -31,6 +31,19 @@ test('Branch messaging authenticates both browsers and persists messages, read r
   await reader.reload();await reader.getByRole('button',{name:new RegExp(group.title)}).click();
   await expect(reader.getByRole('list',{name:'Message history'})).toContainText(content);
   const records=await reader.request.get(`${API}/chat/conversations/${group.id}/messages`,{headers:await headers(reader)});expect(records.ok()).toBeTruthy();expect((await records.json()).filter((m:any)=>m.content===content)).toHaveLength(1);
+  // A hidden browser receives records and acknowledges delivery but does not
+  // acknowledge reading until it becomes visible. Simulate lifecycle deterministically.
+  await reader.evaluate(()=>Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'}));
+  const deliveredContent=`Delivery before read ${randomUUID()}`;
+  await page.getByLabel('सन्देश (Your message)',{exact:true}).fill(deliveredContent);
+  await page.getByRole('button',{name:'पठाउनुहोस् (Send)',exact:true}).click();
+  await expect(reader.getByRole('list',{name:'Message history'})).toContainText(deliveredContent);
+  const delivered=page.getByRole('listitem').filter({hasText:deliveredContent});
+  await expect(delivered).toContainText('Delivered');await expect(delivered).not.toContainText('(Read)');
+  const unread=await reader.request.get(`${API}/chat/conversations`,{headers:await headers(reader)});
+  expect((await unread.json()).find((c:any)=>c.id===group.id).unreadCount).toBeGreaterThan(0);
+  await reader.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'visible'});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(delivered).toContainText('(Read)');
   await own.getByRole('button',{name:'Remove message',exact:true}).click();await expect(reader.getByRole('list',{name:'Message history'})).not.toContainText(content);await expect(reader.getByText('Message removed',{exact:true})).toBeVisible();
  }finally{await otherContext.close();}
 });

@@ -42,8 +42,11 @@ void main(){
   expect(find.textContaining('Temporary failure'),findsOneWidget);
   await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
   expect(requests.length,2);expect(requests[0]['clientMessageId'],requests[1]['clientMessageId']);expect(requests[0].keys,unorderedEquals(['content','clientMessageId']));
-  connection.events.add({'type':'snapshot','conversationId':'conv','typingUserIds':[],'messages':[{'id':'m1','senderUserId':'viewer','sequence':1,'content':'A fictional message','isDeleted':false,'readByUserIds':['viewer','other']}]});await tester.pumpAndSettle();
-  expect(find.text('A fictional message'),findsOneWidget);expect(find.text('You · Read'),findsOneWidget);expect(connection.sent,contains(equals({'type':'read','sequence':1})));
+  connection.events.add({'type':'snapshot','conversationId':'conv','typingUserIds':[],'messages':[{'id':'m1','senderUserId':'viewer','sequence':1,'content':'A fictional message','isDeleted':false,'readByUserIds':['viewer'],'deliveredToUserIds':['other']}]});await tester.pumpAndSettle();
+  expect(find.text('You · प्राप्त भयो (Delivered)'),findsOneWidget);
+  expect(connection.sent,contains(equals({'type':'delivered','messageIds':['m1']})));
+  connection.events.add({'type':'snapshot','conversationId':'conv','typingUserIds':[],'messages':[{'id':'m1','senderUserId':'viewer','sequence':1,'content':'A fictional message','isDeleted':false,'readByUserIds':['viewer','other'],'deliveredToUserIds':['other']}]});await tester.pumpAndSettle();
+  expect(find.text('A fictional message'),findsOneWidget);expect(find.text('You · पढियो (Read)'),findsOneWidget);expect(connection.sent,contains(equals({'type':'read','sequence':1})));
   await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
  });
 }

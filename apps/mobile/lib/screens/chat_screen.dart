@@ -130,7 +130,8 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
           final merged={for(final m in _messages)m['id']:m,for(final m in frame['messages'] as List)m['id']:m};
           final rows=merged.values.toList()..sort((a,b)=>(a['sequence'] as num).compareTo(b['sequence'] as num));
           setState((){_messages=rows;_typing=(frame['typingUserIds'] as List).isNotEmpty;_live=true;_attempt=0;_error=null;});
-          if(rows.isNotEmpty){connection.send({'type':'read','sequence':rows.last['sequence']});}
+          final received=frame['messages'] as List;
+          if(received.isNotEmpty){connection.send({'type':'delivered','messageIds':received.map((m)=>m['id']).toList()});if(_active&&ModalRoute.of(context)?.isCurrent!=false){connection.send({'type':'read','sequence':received.last['sequence']});}}
         }
       },onDone:(){if(!mounted||epoch!=_epoch){return;}setState(()=>_live=false);if(connection.closeCode==4403){setState(()=>_error='Conversation access has ended.');}else{_retry();}},onError:(Object e){if(mounted&&epoch==_epoch){setState((){_live=false;_error='Connection interrupted. Reconnecting…';});_retry();}});
     }catch(e){if(mounted&&epoch==_epoch){setState(()=>_error=e.toString());_retry();}}
@@ -150,7 +151,7 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   Future<void> _action(String action)async{
-    if(action=='Info'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatGroupManagementScreen(api:widget.api,conversationId:widget.conversation['id'] as String)));return;}
+    if(action=='Info'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatGroupManagementScreen(api:widget.api,conversationId:widget.conversation['id'] as String)));if(mounted&&_active&&_messages.isNotEmpty){_connection?.send({'type':'read','sequence':_messages.last['sequence']});}return;}
 
     final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text('$action conversation?'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:Text(action))]));
     if(confirmed!=true){return;}
@@ -163,7 +164,7 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
         if(_messages.length>=100)TextButton(onPressed:_older,child:const Text('Load earlier messages')),
-        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?'Read':'Sent'}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):null));}),
+        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):null));}),
       ])),
       if(_typing)const Text('Someone is typing…'),
       SafeArea(top:false,child:Padding(padding:const EdgeInsets.all(12),child:Row(crossAxisAlignment:CrossAxisAlignment.end,children:[Expanded(child:TextField(controller:_text,maxLength:4000,minLines:1,maxLines:4,decoration:const InputDecoration(labelText:'सन्देश (Your message)'),onChanged:(_){setState((){});final now=DateTime.now().millisecondsSinceEpoch;if(_live&&now-_lastTyping>1500){_lastTyping=now;_connection?.send({'type':'typing'});}})),IconButton(tooltip:'Send message',onPressed:_sending||_text.text.trim().isEmpty?null:_send,icon:const Icon(Icons.send))])),

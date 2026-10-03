@@ -26,6 +26,13 @@ describe('Chat request identity and retry integrity',()=>{
   await expect(service.read(randomUUID(),user,1.5)).rejects.toThrow('Invalid read cursor');
   expect(db.transaction).not.toHaveBeenCalled();
  });
+ it('rejects unbounded or malformed delivery acknowledgements before mutation',async()=>{
+  for(const messageIds of [[],[user.id,user.id],['invalid'],Array.from({length:101},()=>randomUUID())]){
+   await expect(service.delivered(randomUUID(),user,{messageIds})).rejects.toThrow();
+  }
+  await expect(service.delivered(randomUUID(),user,{messageIds:[user.id],userId:user.id})).rejects.toThrow('Unexpected request fields');
+  expect(db.transaction).not.toHaveBeenCalled();
+ });
  it('validates bounded distinct group selections before creating a transaction',async()=>{
   for(const ids of [[],[user.id,user.id],Array.from({length:50},()=>randomUUID())]){
    await expect(service.create(user,{type:'GROUP',title:'Fictional group',memberPersonIds:ids})).rejects.toThrow('Select 1 to 49 distinct');

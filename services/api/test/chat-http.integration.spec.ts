@@ -98,6 +98,8 @@ describe('Chat persistent membership, messages and receipts (real PostgreSQL)',(
    await a.frame('snapshot');await b.frame('snapshot');
    const sent=await chat.send(group,reader,{content:'Live fictional WebSocket message',clientMessageId:randomUUID()});
    const update=await a.frame('snapshot',f=>f.messages.some((m:any)=>m.id===sent.id));expect(update.messages.find((m:any)=>m.id===sent.id).senderUserId).toBe(reader.id);
+   a.ws.send(JSON.stringify({type:'delivered',messageIds:[sent.id]}));
+   await b.frame('snapshot',f=>f.messages.some((m:any)=>m.id===sent.id&&m.deliveredToUserIds.includes(author.id)&&!m.readByUserIds.includes(author.id)));
    a.ws.send(JSON.stringify({type:'read',sequence:sent.sequence}));
    await b.frame('snapshot',f=>f.messages.some((m:any)=>m.id===sent.id&&m.readByUserIds.includes(author.id)));
    a.ws.send(JSON.stringify({type:'typing'}));await b.frame('snapshot',f=>f.typingUserIds.includes(author.id));

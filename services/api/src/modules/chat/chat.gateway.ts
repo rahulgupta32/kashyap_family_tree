@@ -73,6 +73,8 @@ export class ChatGateway implements OnApplicationBootstrap, OnModuleDestroy {
      await this.chat.access(conversation,user);
      const key=`chat:typing:${process.env.DB_NAME}:${conversation}`;
      const client=this.redis.getClient();if(client){await client.hset(key,user.id,Date.now().toString());await client.expire(key,10);}
+    }else if(frame.type==='delivered'&&conversation){
+     await this.chat.delivered(conversation,user,{messageIds:frame.messageIds});await snapshot();
     }else if(frame.type==='read'&&conversation){
      await this.chat.read(conversation,user,frame.sequence);await snapshot();
     }else if(frame.type==='ping'){send({type:'pong'});}

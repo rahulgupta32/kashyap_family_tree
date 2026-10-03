@@ -1,12 +1,18 @@
 # Application status
 
-Updated 2026-10-02. Owner: Jyphra Technology Pvt. Ltd.
+Updated 2026-10-03. Owner: Jyphra Technology Pvt. Ltd.
+
+## Chat delivery acknowledgement checkpoint
+
+Continue on `feat/application-completion` from `05f5a224e8831ed44754a7997e8fbfbad63a5042`. [PR CI 37008655107](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37008655107) passed all four jobs: 132 API unit, 238 real PostgreSQL integration, 22 Playwright and 28 Flutter tests, plus live ClamAV and Android/live NestJS/PostgreSQL.
+
+Migration 021 adds per-message, per-account delivery acknowledgements through authenticated HTTP and WebSocket routes. Web and Flutter show Sent/Delivered/Read; hidden web tabs acknowledge delivery without reading. Read cursors must identify actual authorized conversation history. See `CHAT_DELIVERY_REPORT.md` for semantics, tests and remaining scope. This new checkpoint needs its own CI; original 260 acceptance rows remain open.
 
 ## Chat group management checkpoint
 
 Continue on `feat/application-completion` from verified calendar head `dfe61a70a486eaa4b1159c0cb70f7d747ff38199`. [PR CI 36999211616](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/36999211616) passed all four jobs: 129 unit, 222 PostgreSQL integration, 21 browser and 26 Flutter tests, live ClamAV and Android/live API/PostgreSQL.
 
-Migration 020 adds private selected-member groups and owner/admin/member management in API, web and Flutter. `CHAT_GROUP_MANAGEMENT_REPORT.md` describes authority, removal, ownership transfer and private history boundaries. This new code requires its own CI evidence; original Release 1 acceptance remains open.
+Migration 020 adds private selected-member groups and owner/admin/member management in API, web and Flutter. `CHAT_GROUP_MANAGEMENT_REPORT.md` describes authority, removal, ownership transfer and private history boundaries. Group head `05f5a22` passed PR CI 37008655107, recorded above; original Release 1 acceptance remains open.
 
 ## Calendar delivery checkpoint
 

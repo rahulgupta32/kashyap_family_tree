@@ -18,3 +18,9 @@ export const chatManagement = {
   historyNote: 'नयाँ वा पुनः थपिएका निजी समूह सदस्यले सदस्यता पछिका सन्देश मात्र देख्छन्। (New or restored private-group members see messages sent after joining.)',
   transferNote: 'समूह छाड्नुअघि मालिकले स्वामित्व अर्को सदस्यलाई दिनुपर्छ। (The owner must transfer ownership before leaving.)',
 };
+
+export const chatReceipts = {
+ sent: 'पठाइयो (Sent)',
+ delivered: 'प्राप्त भयो (Delivered)',
+ read: 'पढियो (Read)',
+};
