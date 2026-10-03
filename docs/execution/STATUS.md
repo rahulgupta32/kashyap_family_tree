@@ -2,11 +2,17 @@
 
 Updated 2026-10-03. Owner: Jyphra Technology Pvt. Ltd.
 
+## Durable mobile chat outbox checkpoint
+
+Continue on `feat/application-completion` from verified head `edf09beb01d499d8eb7dfa1f1d27d81f1eeae1c9`. [PR CI 37121838079](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37121838079) passed all four jobs: 133 unit, 249 real PostgreSQL integration, 22 browser and 28 Flutter tests, live ClamAV and Android/live API/PostgreSQL.
+
+Mobile outgoing messages now persist in encrypted account/API-bound storage before HTTP, retain immutable retry identity across service recreation, and expose queued/failed/retry/discard controls. Temporary failures back off; membership/conflict failures require review. Logout/revocation clears intent without waiting for an in-flight send. See `CHAT_OFFLINE_OUTBOX_REPORT.md` for scope and exact-head CI requirements. All 260 final acceptance rows remain open.
+
 ## Chat delivery acknowledgement checkpoint
 
 Continue on `feat/application-completion` from `05f5a224e8831ed44754a7997e8fbfbad63a5042`. [PR CI 37008655107](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37008655107) passed all four jobs: 132 API unit, 238 real PostgreSQL integration, 22 Playwright and 28 Flutter tests, plus live ClamAV and Android/live NestJS/PostgreSQL.
 
-Migration 021 adds per-message, per-account delivery acknowledgements through authenticated HTTP and WebSocket routes. Web and Flutter show Sent/Delivered/Read; hidden web tabs acknowledge delivery without reading. Read cursors must identify actual authorized conversation history. See `CHAT_DELIVERY_REPORT.md` for semantics, tests and remaining scope. This new checkpoint needs its own CI; original 260 acceptance rows remain open.
+Migration 021 adds per-message, per-account delivery acknowledgements through authenticated HTTP and WebSocket routes. Web and Flutter show Sent/Delivered/Read; hidden web tabs acknowledge delivery without reading. Read cursors must identify actual authorized conversation history. See `CHAT_DELIVERY_REPORT.md` for semantics, tests and remaining scope. Delivery head `edf09be` passed PR CI 37121838079 as recorded above; original 260 acceptance rows remain open.
 
 ## Chat group management checkpoint
 

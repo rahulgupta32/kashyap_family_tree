@@ -3,17 +3,10 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 import '../services/chat_connection.dart';
+import '../services/chat_outbox.dart';
 import '../models/person.dart';
 import 'chat_group_management_screen.dart';
 import '../localization/chat_group_labels.dart';
-
-String _messageId() {
-  final random = Random.secure();
-  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
-  bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
-  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return '${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}';
-}
 
 class ChatScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -99,22 +92,24 @@ class ChatConversationScreen extends StatefulWidget {
 class _ChatConversationState extends State<ChatConversationScreen> with WidgetsBindingObserver {
   ChatConnection? _connection;
   StreamSubscription<Map<String,dynamic>>? _subscription;
+  StreamSubscription<void>? _outboxSubscription;
+  List<QueuedChatMessage> _pending=[];
   Timer? _reconnect;
   final _text=TextEditingController();
   List<dynamic> _messages=[];
-  String? _error,_retryId,_retryContent;
+  String? _error;
   bool _live=false,_sending=false,_typing=false,_active=true;
   int _attempt=0,_epoch=0,_lastTyping=0;
   String get _path=>'/chat/conversations/${widget.conversation['id']}';
   @override
-  void initState(){super.initState();WidgetsBinding.instance.addObserver(this);_connect();}
+  void initState(){super.initState();WidgetsBinding.instance.addObserver(this);_outboxSubscription=widget.api.chatOutbox.changes.listen((_)=>unawaited(_loadPending()));unawaited(_loadPending());widget.api.chatOutbox.start();_connect();}
   Future<void> _stop() async {_epoch++;_reconnect?.cancel();await _subscription?.cancel();await _connection?.close();_connection=null;}
   @override
-  void dispose(){_active=false;WidgetsBinding.instance.removeObserver(this);unawaited(_stop());_text.dispose();super.dispose();}
+  void dispose(){_active=false;widget.api.chatOutbox.stop();unawaited(_outboxSubscription?.cancel());WidgetsBinding.instance.removeObserver(this);unawaited(_stop());_text.dispose();super.dispose();}
   @override
   void didChangeAppLifecycleState(AppLifecycleState state){
     _active=state==AppLifecycleState.resumed;
-    if(_active){_connect();}else{unawaited(_stop());}
+    if(_active){widget.api.chatOutbox.start();unawaited(_loadPending());_connect();}else{widget.api.chatOutbox.stop();unawaited(_stop());}
   }
   void _retry(){if(!mounted||!_active){return;}_reconnect?.cancel();_reconnect=Timer(Duration(seconds:min(30,1<<min(5,_attempt++))),_connect);}
   Future<void> _connect() async {
@@ -136,15 +131,35 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
       },onDone:(){if(!mounted||epoch!=_epoch){return;}setState(()=>_live=false);if(connection.closeCode==4403){setState(()=>_error='Conversation access has ended.');}else{_retry();}},onError:(Object e){if(mounted&&epoch==_epoch){setState((){_live=false;_error='Connection interrupted. Reconnecting…';});_retry();}});
     }catch(e){if(mounted&&epoch==_epoch){setState(()=>_error=e.toString());_retry();}}
   }
+  Future<void> _loadPending() async {
+    try {
+      if(widget.api.chatAccountId!=widget.userId){throw StateError('Message session changed');}
+      final rows=await widget.api.chatOutbox.list();
+      if(mounted){setState((){_pending=rows.where((r)=>r.conversationId==widget.conversation['id']).toList();if(widget.api.chatOutbox.lastError!=null){_error=chatOutboxLabels['storage'];}});}
+    }catch(e){if(mounted){setState((){_pending=[];_error=chatOutboxLabels['storage'];});}}
+  }
+  Future<void> _pump() async {
+    try {await widget.api.chatOutbox.pump();}
+    catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
+  }
   Future<void> _send() async {
     final content=_text.text.trim();if(content.isEmpty){return;}
     setState(()=>_sending=true);
     try{
-      if(_retryContent!=content){_retryId=_messageId();_retryContent=content;}
-      await widget.api.requestJson('$_path/messages',method:'POST',data:{'content':content,'clientMessageId':_retryId});
-      if(mounted){_text.clear();setState(()=>_error=null);}_retryId=null;_retryContent=null;
-    }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+      if(widget.api.chatAccountId!=widget.userId){throw StateError('Message session changed');}
+      await widget.api.chatOutbox.enqueue(widget.conversation['id'] as String,content);
+      if(mounted){_text.clear();setState(()=>_error=null);}
+      unawaited(_pump());
+    }catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
     finally{if(mounted){setState(()=>_sending=false);}}
+  }
+  Future<void> _queuedAction(QueuedChatMessage row,bool discard) async {
+    if(discard){
+      final confirmed=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:Text(chatOutboxLabels['confirmDiscard']!),content:Text(chatOutboxLabels['discardNote']!),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:Text(chatOutboxLabels['discard']!))]));
+      if(confirmed!=true){return;}
+    }
+    try {if(discard){await widget.api.chatOutbox.discard(row.id);}else{await widget.api.chatOutbox.retry(row.id);unawaited(_pump());}}
+    catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
   }
   Future<void> _older()async{
     try{final rows=await widget.api.requestJson('$_path/messages?before=${_messages.first['sequence']}') as List;if(mounted){setState(()=>_messages=[...rows,..._messages]);}}
@@ -166,6 +181,7 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
         if(_messages.length>=100)TextButton(onPressed:_older,child:const Text('Load earlier messages')),
         ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):null));}),
       ])),
+      if(_pending.isNotEmpty)ConstrainedBox(constraints:const BoxConstraints(maxHeight:160),child:ListView(shrinkWrap:true,children:_pending.map((row)=>ListTile(key:ValueKey('queued-${row.id}'),title:Text(row.content),subtitle:Text(row.state=='failed'?chatOutboxLabels['failed']!:chatOutboxLabels['queued']!),trailing:Row(mainAxisSize:MainAxisSize.min,children:[IconButton(tooltip:chatOutboxLabels['retry'],onPressed:()=>_queuedAction(row,false),icon:const Icon(Icons.refresh)),IconButton(tooltip:chatOutboxLabels['discard'],onPressed:()=>_queuedAction(row,true),icon:const Icon(Icons.close))]))).toList())),
       if(_typing)const Text('Someone is typing…'),
       SafeArea(top:false,child:Padding(padding:const EdgeInsets.all(12),child:Row(crossAxisAlignment:CrossAxisAlignment.end,children:[Expanded(child:TextField(controller:_text,maxLength:4000,minLines:1,maxLines:4,decoration:const InputDecoration(labelText:'सन्देश (Your message)'),onChanged:(_){setState((){});final now=DateTime.now().millisecondsSinceEpoch;if(_live&&now-_lastTyping>1500){_lastTyping=now;_connection?.send({'type':'typing'});}})),IconButton(tooltip:'Send message',onPressed:_sending||_text.text.trim().isEmpty?null:_send,icon:const Icon(Icons.send))])),
       ),

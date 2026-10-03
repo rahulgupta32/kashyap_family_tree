@@ -22,3 +22,13 @@ const chatReceiptLabels = {
  'delivered': 'प्राप्त भयो (Delivered)',
  'read': 'पढियो (Read)',
 };
+
+const chatOutboxLabels = {
+ 'queued': 'पठाउन बाँकी (Queued for sending)',
+ 'failed': 'पठाउन सकिएन; जाँच गर्नुहोस् (Sending stopped; review or discard)',
+ 'retry': 'पुनः प्रयास (Retry queued message)',
+ 'discard': 'हटाउनुहोस् (Discard queued message)',
+ 'confirmDiscard': 'पठाउन बाँकी सन्देश हटाउने? (Discard queued message?)',
+ 'discardNote': 'पहिले नै सर्भरमा पुगेको सन्देश यसले हटाउँदैन। (This does not remove a message already received by the server.)',
+ 'storage': 'सन्देश सुरक्षित गर्न सकिएन वा सत्र परिवर्तन भयो। फेरि प्रयास गर्नुहोस्। (Queue storage or session changed; retry after checking access.)',
+};

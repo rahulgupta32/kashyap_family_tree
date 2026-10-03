@@ -4,6 +4,7 @@ import '../models/person.dart';
 import '../models/tree_node.dart';
 import 'session_store.dart';
 import 'chat_connection.dart';
+import 'chat_outbox.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -11,6 +12,8 @@ class GenealogyApiService {
   String? _refreshToken;
   final http.Client _client;
   final SessionStore _sessionStore;
+  final ChatOutboxStore _chatOutboxStore;
+  ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   void Function()? onSessionExpired;
 
@@ -18,15 +21,37 @@ class GenealogyApiService {
     this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000'),
     http.Client? client,
     SessionStore? sessionStore,
+    ChatOutboxStore? chatOutboxStore,
   }) : _client = client ?? http.Client(),
-       _sessionStore = sessionStore ?? SecureSessionStore();
+       _sessionStore = sessionStore ?? SecureSessionStore(),
+       _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore();
 
   void setAuthToken(String? token) {
+    _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
   }
 
   String? get authToken => _authToken;
+
+  // This subject scopes encrypted local intent, not server authorization. Every
+  // send still authenticates and checks current permissions in the API.
+  String? get chatAccountId {
+    try {
+      final parts=_authToken?.split('.');
+      if(parts==null||parts.length!=3){return null;}
+      final value=json.decode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      return value is Map&&value['sub'] is String?value['sub'] as String:null;
+    } catch(_){return null;}
+  }
+  ChatOutbox get chatOutbox => _chatOutbox ??= ChatOutbox(store:_chatOutboxStore,server:Uri.parse(baseUrl).toString(),
+    currentOwner:()=>chatAccountId,send:(message,owner) async {
+      final response=await _send('POST',Uri.parse('$baseUrl/chat/conversations/${message.conversationId}/messages'),
+        boundAccountId:owner,body:json.encode({'content':message.content,'clientMessageId':message.id}));
+      if(response.statusCode<200||response.statusCode>=300){throw ChatSendFailure(response.statusCode);}
+      final value=json.decode(response.body);
+      if(value is! Map||value['id'] is! String){throw const FormatException('Invalid committed message response');}
+    });
 
   Future<void> _acceptSession(Map<String, dynamic> data) async {
     final access = data['accessToken'];
@@ -60,7 +85,7 @@ class GenealogyApiService {
     _authToken = null;
     _refreshToken = null;
     try { await _sessionStore.clear(); }
-    finally { onSessionExpired?.call(); }
+    finally { try { await chatOutbox.clear(); } finally { onSessionExpired?.call(); } }
   }
 
   Future<bool> _refreshSession() async {
@@ -88,8 +113,9 @@ class GenealogyApiService {
     return true;
   }
 
-  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true}) async {
+  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId}) async {
     Future<http.Response> send() async {
+      if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
       final request = http.Request(method, uri);
       request.headers.addAll(authenticated ? _headers : {'Content-Type': 'application/json'});
       if (body != null) { request.body = body; }
@@ -98,6 +124,7 @@ class GenealogyApiService {
     }
     final tokenUsed = _authToken;
     var response = await send();
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
     if (authenticated && response.statusCode == 401 && _refreshToken != null) {
       if (_authToken != tokenUsed || await _refreshSession()) { response = await send(); }
     }
@@ -116,7 +143,7 @@ class GenealogyApiService {
     }
   }
 
-  void dispose() => _client.close();
+  void dispose() { _chatOutbox?.dispose(); _client.close(); }
 
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};

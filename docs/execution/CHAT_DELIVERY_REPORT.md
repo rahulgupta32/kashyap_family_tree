@@ -26,7 +26,7 @@ Local shared-package builds, workspace typecheck, NestJS/Next.js production buil
 
 Eleven new disposable PostgreSQL cases cover no inference from sends/GETs, exact acknowledgements, concurrent idempotency, invalid/spoofed batches, atomic foreign-ID rejection, read implications, another real session, removal/restoration boundaries, account suspension/role revocation, tombstones and guarded rollback. The existing real WebSocket case now verifies Delivered before Read.
 
-Real PostgreSQL/browser, Flutter analysis/tests, live ClamAV and Android/live API/PostgreSQL require exact published-head GitHub CI. No local PostgreSQL or Flutter result is claimed. CI results are recorded in PR #5 after they complete.
+Delivery head `edf09beb01d499d8eb7dfa1f1d27d81f1eeae1c9` passed [PR CI 37121838079](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37121838079): 133 unit, 249 real PostgreSQL integration, 22 browser and 28 Flutter tests, zero analyzer issues, live ClamAV and Android/live API/PostgreSQL. No local PostgreSQL or Flutter result is claimed. Later mobile-outbox work is tracked separately in `CHAT_OFFLINE_OUTBOX_REPORT.md` and requires its own exact-head CI.
 
 ## Remaining work
 

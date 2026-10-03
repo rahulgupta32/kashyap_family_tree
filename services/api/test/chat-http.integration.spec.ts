@@ -111,6 +111,20 @@ describe('Chat persistent membership, messages and receipts (real PostgreSQL)',(
   try{await expect(chat.create(author,{type:'DIRECT',personId:reader.personId})).rejects.toThrow('unavailable for direct chat');}
   finally{await db.query('UPDATE persons SET birth_year_bs=2040 WHERE id=$1',[reader.personId]);}
  });
+ it('deduplicates persisted retries across a newly authenticated device session',async()=>{
+  const body={content:'Fictional restored offline intent',clientMessageId:randomUUID()};
+  const first=(await request(app.getHttpServer()).post(`/chat/conversations/${group}/messages`).set('Authorization',auth(reader)).send(body).expect(201)).body;
+  const session=await app.get(SessionRepository).createSession({userId:reader.id,refreshTokenHash:randomUUID(),devicePlatform:'ANDROID',ipAddress:'127.0.0.1',userAgent:'restored-outbox-device',expiresAt:new Date(Date.now()+3600000)});
+  const token=app.get(JwtService).sign({sub:reader.id,sid:session.id,phoneNumber:'+9779847300002',tokenType:'access'},{secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM});
+  const replay=(await request(app.getHttpServer()).post(`/chat/conversations/${group}/messages`).set('Authorization',`Bearer ${token}`).send(body).expect(201)).body;
+  expect(replay).toMatchObject({id:first.id,alreadySent:true});
+  expect((await db.query('SELECT id FROM chat_messages WHERE conversation_id=$1 AND sender_id=$2 AND client_message_id=$3',[group,reader.id,body.clientMessageId])).rows).toHaveLength(1);
+ });
+ it('does not resurrect a deleted message when a durable retry reappears',async()=>{
+  const body={content:'Fictional deleted offline intent',clientMessageId:randomUUID()};const first=await chat.send(group,author,body);
+  await chat.removeMessage(group,first.id,author);expect(await chat.send(group,author,body)).toMatchObject({id:first.id,alreadySent:true});
+  expect((await chat.messages(group,reader)).find(m=>m.id===first.id)).toMatchObject({content:'',isDeleted:true});
+ });
  it('revokes access after leaving, removing branch authority or revoking the session',async()=>{
   await chat.leave(group,reader);await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages`).set('Authorization',auth(reader)).expect(404);
   await chat.join(group,reader);
