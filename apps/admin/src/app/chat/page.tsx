@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { PrivateGroupCreator, GroupManager } from './group-controls';
-import { chatManagement, chatReceipts } from '@kashyap/localization';
+import { chatManagement, chatReceipts, chatOutboxLabels } from '@kashyap/localization';
+import { BrowserChatOutbox, QueuedChatMessage } from '../../lib/chat-outbox';
 import { ApiClient } from '../../lib/api-client';
 interface Conversation {id:string;title:string;type:string;isParticipant:boolean;unreadCount:number}
 interface Message {id:string;senderUserId:string;content:string;sequence:number;isDeleted:boolean;readByUserIds:string[];deliveredToUserIds:string[]}
@@ -13,7 +14,19 @@ export default function ChatPage(){
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[text,setText]=useState(''),[query,setQuery]=useState(''),[people,setPeople]=useState<any[]>([]);
  const [managing,setManaging]=useState(false);
  const [branches,setBranches]=useState<any[]>([]),[branch,setBranch]=useState(''),[groupTitle,setGroupTitle]=useState(''),[live,setLive]=useState(false),[typing,setTyping]=useState(false);
- const socket=useRef<WebSocket|null>(null),retry=useRef<{content:string;id:string}|null>(null),lastTyping=useRef(0);
+ const socket=useRef<WebSocket|null>(null),lastTyping=useRef(0);
+ const outbox=useRef<BrowserChatOutbox|null>(null),[pending,setPending]=useState<QueuedChatMessage[]>([]);
+ const refreshRef=useRef(refreshSession);refreshRef.current=refreshSession;
+ useEffect(()=>{setSelected(null);setMessages([]);setText('');setConversations([]);},[user?.id]);
+ useEffect(()=>{
+  if(!user||!accessToken||isLoading)return;let stopped=false;
+  let queue:BrowserChatOutbox;try{queue=new BrowserChatOutbox({owner:user.id,api:API,getToken:()=>localStorage.getItem('kashyap_admin_access_token'),refresh:()=>refreshRef.current()});outbox.current=queue;}catch{setError(chatOutboxLabels.storage);return;}
+  async function reload(){try{const rows=await queue.list();if(!stopped)setPending(rows);}catch(e){if(!stopped)setError(chatOutboxLabels.storage);}}
+  async function tick(){try{await queue.pump();await reload();}catch(e){if(!stopped)setError(chatOutboxLabels.storage);}}
+  const unsubscribe=queue.subscribe(()=>void reload()),timer=setInterval(()=>void tick(),2000);
+  window.addEventListener('online',tick);document.addEventListener('visibilitychange',tick);void reload();void tick();
+  return()=>{stopped=true;queue.stop();unsubscribe();clearInterval(timer);window.removeEventListener('online',tick);document.removeEventListener('visibilitychange',tick);if(outbox.current===queue)outbox.current=null;setPending([]);};
+ },[user?.id,accessToken,isLoading]);
  const call=useCallback(async(path:string,method='GET',body?:unknown)=>{
   const response=await fetch(`${API}/chat${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${accessToken}`},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const data=await response.json();if(!response.ok)throw new Error(data.message||'Chat request failed');return data;
@@ -44,12 +57,14 @@ export default function ChatPage(){
  },[selected?.id,accessToken,isLoading,refreshSession]);
  async function action(work:()=>Promise<void>){setBusy(true);setError('');try{await work();await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  async function open(c:Conversation){await action(async()=>{if(!c.isParticipant)await call(`/conversations/${c.id}/join`,'POST');setSelected({...c,isParticipant:true});setMessages(await call(`/conversations/${c.id}/messages`));});}
- async function send(){if(!selected||!text.trim())return;await action(async()=>{const content=text.trim();if(retry.current?.content!==content)retry.current={content,id:crypto.randomUUID()};await call(`/conversations/${selected.id}/messages`,'POST',{content,clientMessageId:retry.current.id});retry.current=null;setText('');setMessages(await call(`/conversations/${selected.id}/messages`));});}
+ async function send(){if(!selected||!text.trim()||!outbox.current)return;setBusy(true);setError('');try{await outbox.current.enqueue(selected.id,text.trim());setText('');void outbox.current.pump().catch(()=>setError(chatOutboxLabels.storage));}catch(e){setError(chatOutboxLabels.storage);}finally{setBusy(false);}}
+ async function queuedAction(row:QueuedChatMessage,discard:boolean){if(discard&&!confirm(chatOutboxLabels.discardNote))return;try{await outbox.current?.change(row.id,discard);void outbox.current?.pump().catch(()=>setError(chatOutboxLabels.storage));}catch(e){setError(chatOutboxLabels.storage);}}
  if(isLoading)return <p>लोड हुँदैछ…</p>;
  if(!accessToken)return <p>सन्देशका लागि प्रवेश गर्नुहोस् (Sign in for messaging).</p>;
  return <section className="space-y-4 max-w-6xl"><h1 className="text-2xl font-bold">सन्देश (Messages)</h1>
   {error&&<p role="alert" className="p-3 bg-red-50 text-red-800">{error}</p>}
   <div className="grid gap-4 md:grid-cols-[280px_1fr]"><aside className="border rounded-xl p-4 space-y-4">
+   {pending.length>0&&<section aria-label="Queued messages" className="space-y-2"><h2 className="font-bold">{chatOutboxLabels.title}</h2>{pending.map(row=><div key={row.id} data-queued-id={row.id} className="border rounded p-2"><p className="break-words">{row.content}</p><p className="text-xs">{row.state==='failed'?chatOutboxLabels.failed:chatOutboxLabels.queued}</p><button onClick={()=>void queuedAction(row,false)}>{chatOutboxLabels.retry}</button><button onClick={()=>void queuedAction(row,true)}>{chatOutboxLabels.discard}</button></div>)}</section>}
    <PrivateGroupCreator token={accessToken} call={call} onCreated={async(c)=>{await open(c);}}/>
    <button className="border rounded px-3 py-2" onClick={()=>void load()}>Refresh conversations</button>
    {conversations.map(c=><button key={c.id} aria-pressed={selected?.id===c.id} onClick={()=>void open(c)} className="block text-left border rounded p-3 w-full">{c.title}<span className="block text-xs">{c.type} · {c.unreadCount} unread{c.isParticipant?'':' · Join'}</span></button>)}

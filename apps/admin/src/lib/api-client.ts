@@ -34,6 +34,10 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
+export class SessionRefreshError extends Error {
+  constructor(public status:number,message:string){super(message);}
+}
+
 export class ApiClient {
   static async community<T = unknown>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}/community${path}`, {
@@ -91,9 +95,9 @@ export class ApiClient {
       body: JSON.stringify(dto || {}),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(()=>({}));
     if (!res.ok) {
-      throw new Error(data.messageNepali || data.message || 'Token refresh failed');
+      throw new SessionRefreshError(res.status,data.messageNepali || data.message || 'Token refresh failed');
     }
     return data;
   }

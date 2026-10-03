@@ -2,6 +2,12 @@
 
 Updated 2026-10-03. Owner: Jyphra Technology Pvt. Ltd.
 
+## Durable browser chat outbox checkpoint
+
+Continue on `feat/application-completion` from verified mobile outbox head `80e74e24dda2c90940703b8a57f2ee7e9d566a8e`. [PR CI 37128085747](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37128085747) passed all four jobs: 133 unit, 251 real PostgreSQL integration, 22 browser and 42 Flutter tests, live ClamAV and Android/live API/PostgreSQL.
+
+Browser outgoing intent now persists in encrypted account/API-bound IndexedDB before HTTP, keeps original retry identity across reloads, and coordinates sending/writes across tabs with Web Locks. Temporary refresh outages preserve pending intent; logout/confirmed revocation clears it. Four new Playwright scenarios cover lost responses, reload/two-tab replay, rejection/discard, logout and failed storage. See `CHAT_BROWSER_OUTBOX_REPORT.md`; the new head requires its own CI, recorded in PR #5 after completion. All 260 final acceptance rows remain open.
+
 ## Durable mobile chat outbox checkpoint
 
 Continue on `feat/application-completion` from verified head `edf09beb01d499d8eb7dfa1f1d27d81f1eeae1c9`. [PR CI 37121838079](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/37121838079) passed all four jobs: 133 unit, 249 real PostgreSQL integration, 22 browser and 28 Flutter tests, live ClamAV and Android/live API/PostgreSQL.

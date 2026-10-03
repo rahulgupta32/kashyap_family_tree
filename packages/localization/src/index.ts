@@ -4,4 +4,4 @@ export * from './errors.js';
 export * from './calendar.js';
 
 export * from "./calendar-management.js";
-export { chatManagement, chatReceipts } from './chat-management';
+export { chatManagement, chatReceipts, chatOutboxLabels } from './chat-management';

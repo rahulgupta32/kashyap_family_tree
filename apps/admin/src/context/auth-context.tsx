@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { AuthSessionDto, Role } from '@kashyap/contracts';
-import { ApiClient } from '../lib/api-client';
+import { purgeBrowserChatOutbox } from '../lib/chat-outbox';
+import { ApiClient, SessionRefreshError } from '../lib/api-client';
 
 interface AuthContextType {
   user: AuthSessionDto['user'] | null;
@@ -83,8 +84,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const executeRefresh = async (): Promise<string | null> => {
       const performNetworkRefresh = async (): Promise<string | null> => {
+        const generation=localStorage.getItem('kashyap_chat_outbox_generation');
         try {
           const session = await ApiClient.refreshToken();
+          if(localStorage.getItem('kashyap_chat_outbox_generation')!==generation)return null;
           setAccessToken(session.accessToken);
           setUser(session.user);
           try {
@@ -101,7 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
           }
           return session.accessToken;
-        } catch {
+        } catch (error) {
+          if(localStorage.getItem('kashyap_chat_outbox_generation')!==generation)return null;
+          // A transient refresh outage keeps encrypted intent and the saved local
+          // identity. Only the API can authorize actions; revoked sessions purge it.
+          if(!(error instanceof SessionRefreshError)||![401,403].includes(error.status))return null;
           setAccessToken(null);
           setUser(null);
           try {
@@ -109,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.removeItem(USER_KEY);
             localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
           } catch {}
+          await purgeBrowserChatOutbox().catch(()=>{});
           if (broadcastChannelRef.current) {
             broadcastChannelRef.current.postMessage({ type: 'SESSION_EXPIRED' });
           }
@@ -184,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSession]);
 
   const login = useCallback((session: AuthSessionDto) => {
+    localStorage.setItem('kashyap_chat_outbox_generation',crypto.randomUUID());
     setAccessToken(session.accessToken);
     setUser(session.user);
     try {
@@ -203,8 +212,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const token = accessToken || undefined;
-    await ApiClient.logout(undefined, token);
-
     setAccessToken(null);
     setUser(null);
     try {
@@ -217,6 +224,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       broadcastChannelRef.current.postMessage({ type: 'SESSION_EXPIRED' });
     }
 
+    await purgeBrowserChatOutbox().catch(()=>{});
+    await ApiClient.logout(undefined, token);
     window.location.href = '/login';
   }, [accessToken]);
 

@@ -24,3 +24,13 @@ export const chatReceipts = {
  delivered: 'प्राप्त भयो (Delivered)',
  read: 'पढियो (Read)',
 };
+
+export const chatOutboxLabels = {
+ title: 'पठाउन बाँकी सन्देश (Queued messages)',
+ queued: 'पठाउन बाँकी (Queued for sending)',
+ failed: 'पठाउन सकिएन; जाँच गर्नुहोस् (Sending stopped; review or discard)',
+ retry: 'पुनः प्रयास (Retry queued message)',
+ discard: 'हटाउनुहोस् (Discard queued message)',
+ discardNote: 'पठाउन बाँकी सन्देश हटाउने? सर्भरमा पहिले नै पुगेको सन्देश यसले हटाउँदैन। (Discard queued intent? This cannot unsend a message already received by the server.)',
+ storage: 'सुरक्षित सन्देश भण्डारण वा सत्र उपलब्ध छैन। (Secure message queue or session unavailable.)',
+};
