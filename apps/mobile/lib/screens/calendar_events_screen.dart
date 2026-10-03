@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
+import '../localization/calendar_labels.dart';
 
 class CalendarEventsScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -59,12 +60,75 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
     }
   }
 
+  Future<void> _create() async {
+    final title = TextEditingController();
+    DateTime? selected;
+    var reminder = false;
+    var busy = false;
+    String? error;
+    try {
+      final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: Text(calendarLabels['create']!),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: title, decoration: InputDecoration(labelText: calendarLabels['title'])),
+          TextButton(onPressed: busy ? null : () async {
+            final date = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 1)),
+              firstDate: DateTime.now(), lastDate: DateTime(2100));
+            if (date == null || !context.mounted) return;
+            final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));
+            if (time != null && context.mounted) update(() => selected = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+          }, child: Text(selected?.toString() ?? calendarLabels['time']!)),
+          CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy ? null : (value) => update(() => reminder = value ?? false)),
+          Text(calendarLabels['dateNote']!),
+          if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+        ])),
+        actions: [
+          TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: Text(calendarLabels['close']!)),
+          TextButton(onPressed: busy ? null : () async {
+            if(title.text.trim().isEmpty || selected == null) {update(() => error = calendarLabels['required']); return;}
+            update(() {busy = true; error = null;});
+            try {
+              await widget.apiService.requestJson('/calendar/events', method: 'POST', data: {
+                'title': title.text.trim(), 'eventType': 'GENERAL_EVENT', 'audienceScope': 'COMMUNITY',
+                'startsAt': selected!.toUtc().toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
+              });
+              if(dialogContext.mounted) Navigator.pop(dialogContext);
+              await _loadEvents();
+            } catch(e) {if(dialogContext.mounted) update(() {busy = false; error = e.toString();});}
+          }, child: Text(calendarLabels['save']!)),
+        ],
+      )));
+      await Navigator.of(context).push(route);
+      await route.completed;
+    } finally {title.dispose();}
+  }
+
+  Future<void> _manage(Map event, {bool cancel = false}) async {
+    final controller = TextEditingController(text: cancel ? '' : event['title'] as String? ?? '');
+    final route = DialogRoute<String>(context: context, builder: (context) => AlertDialog(
+      title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
+      content: TextField(controller: controller, decoration: InputDecoration(labelText: calendarLabels[cancel ? 'reason' : 'title'])),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(calendarLabels['close']!)),
+        TextButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(calendarLabels['save']!))],
+    ));
+    final result = await Navigator.of(context).push(route);
+    await route.completed;
+    controller.dispose();
+    if(result == null || !mounted) return;
+    try {
+      await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
+        data: {'version': event['version'], (cancel ? 'reason' : 'title'): result});
+      await _loadEvents();
+    } catch(e) {if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('सांस्कृतिक तथा पारिवारिक पात्रो (Calendar)'),
         actions: [
+          IconButton(tooltip: calendarLabels['create'], onPressed: _create, icon: const Icon(Icons.add)),
           IconButton(onPressed: _loadEvents, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -107,7 +171,13 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Text('मिति: ${ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
+                                Text('मिति: ${ev['startsAt'] ?? ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
+                                if(ev['lifecycleState'] == 'CANCELLED') Text(calendarLabels['cancelled']!),
+                                if(ev['rsvpCounts'] != null) Text('${calendarLabels['attendance']}: ${ev['rsvpCounts']['going']} Going · ${ev['rsvpCounts']['maybe']} Maybe'),
+                                if(ev['canManage'] == true && ev['lifecycleState'] != 'CANCELLED') Wrap(children: [
+                                  TextButton(onPressed: () => _manage(ev as Map), child: Text(calendarLabels['edit']!)),
+                                  TextButton(onPressed: () => _manage(ev as Map, cancel: true), child: Text(calendarLabels['cancel']!)),
+                                ]),
                                 if (ev['location'] != null) Text('स्थान: ${ev['location']}'),
                                 if (widget.apiService.authToken != null)
                                   Wrap(spacing: 8, children: [
@@ -116,7 +186,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                                         key: ValueKey('rsvp-${ev['id']}-${option.key}'),
                                         label: Text(option.value),
                                         selected: ev['myRsvp'] == option.key,
-                                        onSelected: _savingRsvps.contains(ev['id']) ? null
+                                        onSelected: _savingRsvps.contains(ev['id']) || ev['lifecycleState'] == 'CANCELLED' ? null
                                             : (_) => _rsvp(ev['id'] as String, option.key),
                                       ),
                                   ]),

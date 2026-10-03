@@ -34,7 +34,21 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
+export class SessionRefreshError extends Error {
+  constructor(public status:number,message:string){super(message);}
+}
+
 export class ApiClient {
+  static async community<T = unknown>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE}/community${path}`, {
+      method, headers: this.getHeaders(token), credentials: 'include', cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `Community request failed (${response.status})`);
+    return data as T;
+  }
+
   private static getHeaders(token?: string): HeadersInit {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) {
@@ -81,9 +95,9 @@ export class ApiClient {
       body: JSON.stringify(dto || {}),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(()=>({}));
     if (!res.ok) {
-      throw new Error(data.messageNepali || data.message || 'Token refresh failed');
+      throw new SessionRefreshError(res.status,data.messageNepali || data.message || 'Token refresh failed');
     }
     return data;
   }
@@ -427,6 +441,14 @@ export class ApiClient {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.messageNepali || data.message || 'Change request review failed');
+    return data;
+  }
+
+  static async calendarRequest(token: string, path: string, method = 'GET', body?: unknown): Promise<any> {
+    const res = await fetch(`${API_BASE}/calendar/${path}`, {method, headers: this.getHeaders(token), credentials:'include',
+      cache:'no-store', ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+    const data = await res.json();
+    if(!res.ok)throw new Error(data.message || 'Calendar action failed');
     return data;
   }
 

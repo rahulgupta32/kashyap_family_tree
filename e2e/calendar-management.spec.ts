@@ -1,0 +1,35 @@
+import { test, expect } from '@playwright/test';
+import { login, headers, API } from './helpers/auth';
+
+test('organizer creates an AD gathering, edits its revision and cancels RSVP', async ({ page }) => {
+  await login(page);
+  await page.goto('/calendar');
+  await page.getByRole('button', { name: /Create Event/i }).click();
+  const create = page.getByRole('dialog', { name: 'Create event', exact: true });
+  const title = `Fictional calendar acceptance ${Date.now()}`;
+  await create.getByPlaceholder('उदा: कुल पूजा २०८३').fill(title);
+  await create.getByRole('combobox', { name: /Date source/ }).selectOption('AD');
+  const start = new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 16);
+  await create.getByLabel(/Gregorian date and time/).fill(start);
+  await create.getByLabel(/One hour before/).check();
+  await create.getByRole('button', { name: 'सिर्जना गर्नुहोस् (Save)', exact: true }).click();
+  let card = page.getByRole('article', { name: title, exact: true });
+  await expect(card).toBeVisible();
+  const response = await page.request.get(`${API}/calendar/events`, { headers: await headers(page) });
+  expect(response.ok()).toBeTruthy();
+  const event = (await response.json()).find((e: any) => e.title === title);
+  expect(event.reminderOffsets).toEqual([60]);
+  expect(event.version).toBe(1);
+  await card.getByRole('button', { name: /Edit event/ }).click();
+  const edit = page.getByRole('dialog', { name: /Edit event/ });
+  await edit.getByLabel('Event title', { exact: true }).fill(`${title} updated`);
+  await edit.getByRole('button', { name: /Save changes/ }).click();
+  card = page.getByRole('article', { name: `${title} updated`, exact: true });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: /Edit event/ }).click();
+  await expect(edit.getByText(/Revisions: 2, 1/)).toBeVisible();
+  await edit.getByLabel(/Cancellation reason/).fill('Fictional organizer cancellation');
+  await edit.getByRole('button', { name: /Cancel event/ }).click();
+  await expect(card.getByRole('status')).toContainText('Cancelled');
+  await expect(card.getByRole('button', { name: /Going/ })).toBeDisabled();
+});

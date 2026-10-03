@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,7 @@ import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'package:kashyap_mobile/services/session_store.dart';
+import 'package:kashyap_mobile/services/chat_outbox.dart';
 
 const base = String.fromEnvironment('API_BASE_URL');
 const phone = String.fromEnvironment('M4_PHONE');
@@ -17,6 +19,23 @@ const rootId = String.fromEnvironment('M4_ROOT');
 const parentId = String.fromEnvironment('M4_PARENT');
 const childId = String.fromEnvironment('M4_CHILD');
 const eventId = String.fromEnvironment('M4_EVENT');
+
+// The real API commits the first send, but this device transport deliberately
+// loses its response. Recovery must reuse the persisted intent, never resend new IDs.
+class LoseFirstChatResponseClient extends http.BaseClient {
+  final http.Client _inner=http.Client();
+  bool _lost=false;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response=await _inner.send(request);
+    if(!_lost&&request.method=='POST'&&request.url.path.endsWith('/messages')){
+      _lost=true;await response.stream.drain<void>();throw http.ClientException('Fictional lost chat response');
+    }
+    return response;
+  }
+  @override
+  void close()=>_inner.close();
+}
 
 Future<dynamic> api(String path, {String? token, Map<String, dynamic>? data}) async {
   final headers = {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
@@ -48,11 +67,16 @@ Future<void> until(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> press(WidgetTester tester, Finder finder) async {
-  // Dismiss the native keyboard before calculating scroll and hit-test positions.
+  // Native IME inset changes can arrive after focus loss on the Android emulator.
+  // Recalculate the scroll after each rendered frame until the actual hit test succeeds.
   FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
-  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  for (var attempt = 0; attempt < 30; attempt++) {
+    await tester.pump(const Duration(milliseconds: 150));
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 150));
+    if (finder.hitTestable().evaluate().isNotEmpty) break;
+  }
   expect(finder.hitTestable(), findsWidgets, reason: 'The action must be visible and tappable');
   await tester.tap(finder.hitTestable());
   await tester.pump();
@@ -196,12 +220,27 @@ void main() {
     expect(tester.widget<ChoiceChip>(going).selected, isTrue);
     expect((await api('/calendar/events/$eventId', token: service.authToken))['myRsvp'], 'GOING');
     await back(tester);
+    // Android Keystore-backed queue survives service recreation and reconciles a
+    // real committed PostgreSQL message whose first HTTP response was lost.
+    final group=await api('/chat/conversations',token:tier2,data:{'type':'FAMILY_BRANCH','branchId':corrected['branchId'],'title':'Fictional Android outbox'});
+    await api('/chat/conversations/${group['id']}/join',token:service.authToken,data:{});
+    await SecureChatOutboxStore().clear();
+    final firstQueueApi=GenealogyApiService(baseUrl:base,client:LoseFirstChatResponseClient())..setAuthToken(service.authToken);
+    final queued=await firstQueueApi.chatOutbox.enqueue(group['id'] as String,'Fictional Android durable outbox ${DateTime.now().microsecondsSinceEpoch}');
+    await firstQueueApi.chatOutbox.pump();expect((await firstQueueApi.chatOutbox.list()).single.id,queued.id);firstQueueApi.dispose();
+    final secondQueueApi=GenealogyApiService(baseUrl:base)..setAuthToken(service.authToken);
+    expect((await secondQueueApi.chatOutbox.list()).single.id,queued.id);
+    await secondQueueApi.chatOutbox.retry(queued.id);await secondQueueApi.chatOutbox.pump();expect(await secondQueueApi.chatOutbox.list(),isEmpty);
+    final messages=await api('/chat/conversations/${group['id']}/messages',token:service.authToken) as List;
+    expect(messages.where((m)=>m['content']==queued.content).length,1);secondQueueApi.dispose();
+    debugPrint('[M4 DEVICE] Encrypted durable outbox restored after lost real response; exactly one PostgreSQL message');
     final restored = GenealogyApiService();
     addTearDown(restored.dispose);
     expect(await restored.restoreSession(), isTrue);
     expect((await restored.getMyProfile())['personId'], rootId);
     await restored.logout();
     expect(await SecureSessionStore().read(), isNull);
+    expect(await SecureChatOutboxStore().read(), isNull);
     debugPrint('[M4 DEVICE] Persisted RSVP, native refresh and logout passed. Live acceptance complete.');
     await tester.pumpWidget(const SizedBox.shrink());
   }, timeout: const Timeout(Duration(minutes: 8)));

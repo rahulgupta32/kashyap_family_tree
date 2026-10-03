@@ -187,4 +187,61 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
     expect(profile.person.currentAddress).toBe(address);
     expect(profile.personId).toBeTruthy();
   });
+
+  test('5. Admin broadcast previews, sends and reads an auditable notice through the live portal', async ({ page }) => {
+    const title = `Fictional official notice ${randomUUID()}`;
+    const body = `Fictional community gathering ${randomUUID()}`;
+    await page.goto('/broadcasts');
+    await expect(page.getByRole('heading', { name: /Official notices/ })).toBeVisible();
+    await page.getByRole('combobox', { name: 'Audience' }).selectOption('ALL');
+    await page.getByRole('textbox', { name: 'Title' }).fill(title);
+    await page.getByRole('textbox', { name: 'Notice' }).fill(body);
+    await page.getByRole('button', { name: 'Preview recipients' }).click();
+    await expect(page.getByText(/currently eligible recipients/)).toBeVisible();
+    const response = page.waitForResponse(r => r.url().endsWith('/notifications/broadcasts') && r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Send notice' }).click();
+    const created = await checkedJson(await response);
+    expect(created.recipientCount).toBeGreaterThan(0);
+    await expect(page.getByText(/Delivery is queued/)).toBeVisible();
+    await page.getByRole('button', { name: new RegExp(title) }).click();
+    await expect(page.getByText(body, { exact: true })).toBeVisible();
+    const token = await browserToken(page);
+    const detail = await checkedJson(await page.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`, { headers: auth(token) }));
+    expect(detail.body).toBe(body);
+    expect((await page.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`)).status()).toBe(401);
+  });
+
+  test('6. Defined notice audience reaches only the explicitly selected member', async ({ page, browser }) => {
+    const memberContext = await browser.newContext();
+    try {
+      const recipient = await memberContext.newPage();
+      await loginAdmin(recipient, '9800000002');
+      const token = await browserToken(recipient);
+      const member = await checkedJson(await recipient.request.get(`${API_BASE}/profile/me`, { headers: auth(token) }));
+      const title = `Fictional selected notice ${randomUUID()}`;
+      const body = `Fictional selected content ${randomUUID()}`;
+      await page.goto('/broadcasts');
+      await page.getByRole('combobox', { name: 'Audience' }).selectOption('DEFINED');
+      await page.getByRole('combobox', { name: 'Branch' }).selectOption('');
+      await page.getByRole('textbox', { name: 'Phone ending' }).fill('0002');
+      await page.getByRole('button', { name: 'Find members' }).click();
+      const matches = page.getByRole('list', { name: 'Matching members' });
+      const chosen = matches.getByRole('button').filter({ hasText: member.id.slice(0,8) });
+      await expect(chosen).toBeVisible();
+      await chosen.click();
+      await expect(page.getByRole('list', { name: 'Selected members' }).getByRole('listitem')).toHaveCount(1);
+      await page.getByRole('textbox', { name: 'Title' }).fill(title);
+      await page.getByRole('textbox', { name: 'Notice' }).fill(body);
+      await page.getByRole('button', { name: 'Preview recipients' }).click();
+      await expect(page.getByText('1 currently eligible recipients')).toBeVisible();
+      const response = page.waitForResponse(r => r.url().endsWith('/notifications/broadcasts') && r.request().method() === 'POST');
+      await page.getByRole('button', { name: 'Send notice' }).click();
+      const created = await checkedJson(await response);
+      expect(created.recipientCount).toBe(1);
+      const detail = await checkedJson(await recipient.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`, { headers: auth(token) }));
+      expect(detail.body).toBe(body);
+      const listing = await checkedJson(await recipient.request.get(`${API_BASE}/notifications/broadcasts`, { headers: auth(token) }));
+      expect(listing.some((item:any)=>item.id===created.id)).toBe(true);
+    } finally { await memberContext.close(); }
+  });
 });

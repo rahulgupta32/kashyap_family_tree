@@ -1,12 +1,17 @@
 import { Injectable, Logger, Inject, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
+import { NotificationInboxService } from './notification-inbox.service';
+import { NotificationFollowsService } from './notification-follows.service';
+import { broadcastEligibility } from './broadcast-eligibility';
+import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
+import { notificationCategoryEnabled } from './notification-policy';
 
 export interface NotificationDispatchResult {
   outboxId: string;
   recipientUserId: string;
   channel: 'PUSH' | 'SMS' | 'EMAIL';
-  status: 'SENT' | 'FAILED' | 'SKIPPED';
+  status: 'SENT' | 'FAILED' | 'SKIPPED' | 'SIMULATED';
   error?: string;
 }
 
@@ -20,6 +25,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     @Optional()
     @Inject(SMS_PROVIDER)
     private readonly smsProvider?: ISmsProvider,
+    private readonly inbox?: NotificationInboxService,
+    private readonly follows?: NotificationFollowsService,
   ) {}
 
   onModuleInit() {
@@ -54,7 +61,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     // Query independent notification_status, NEVER relying on audit drain status
     const outboxRes = await this.db.query(
       `SELECT * FROM audit_outbox 
-       WHERE notification_status = 'PENDING' 
+       WHERE notification_status = 'PENDING' OR (notification_status = 'FAILED'
+         AND notification_processed_at < NOW() - INTERVAL '30 seconds')
        ORDER BY created_at ASC 
        LIMIT $1 FOR UPDATE SKIP LOCKED`,
       [batchSize],
@@ -114,15 +122,44 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         recipientUserIds.push(record.actor_id);
       }
     } else if (action.startsWith('CHANGE_REQUEST_')) {
-      if (record.entity_type === 'GENEALOGY_CHANGE_REQUEST' && isUuid(record.entity_id)) {
+      if (['GENEALOGY_CHANGE_REQUEST', 'CHANGE_REQUEST'].includes(record.entity_type) && isUuid(record.entity_id)) {
         const reqRes = await this.db.query('SELECT requester_user_id FROM genealogy_change_requests WHERE id = $1', [record.entity_id]);
         if (reqRes.rows[0]?.requester_user_id) {
           recipientUserIds.push(reqRes.rows[0].requester_user_id);
+        }
+        if (action === 'CHANGE_REQUEST_APPROVED_AND_MERGED' && reqRes.rows.length) {
+          const target = await this.db.query('SELECT target_person_id FROM genealogy_change_requests WHERE id=$1', [record.entity_id]);
+          if (target.rows[0]?.target_person_id) {
+            recipientUserIds.push(...((await this.follows?.recipientsForPerson(target.rows[0].target_person_id)) ?? []));
+          }
         }
       }
       if (record.actor_id && !recipientUserIds.includes(record.actor_id)) {
         recipientUserIds.push(record.actor_id);
       }
+    } else if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(action)) {
+      const recipients=await this.db.query(`SELECT u.id FROM calendar_notification_recipients nr
+        JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id
+        JOIN user_accounts u ON u.id=nr.user_id WHERE nr.outbox_id=$1 AND ${calendarNoticeEligibility()}`, [record.id]);
+      recipientUserIds.push(...recipients.rows.map(r=>r.id));
+    } else if (action === 'NOTIFICATION_BROADCAST_CREATED' && record.entity_type === 'NOTIFICATION_BROADCAST' && isUuid(record.entity_id)) {
+      const recipients = await this.db.query(`SELECT r.user_id FROM notification_broadcast_recipients r
+        JOIN notification_broadcasts b ON b.id=r.broadcast_id
+        JOIN user_accounts u ON u.id=r.user_id
+        WHERE r.broadcast_id=$1 AND ${broadcastEligibility()}`, [record.entity_id]);
+      recipientUserIds.push(...recipients.rows.map(r => r.user_id));
+    } else if (action === 'CHAT_MESSAGE_CREATED' && isUuid(record.entity_id)) {
+      // Resolve current recipients from membership; notification text never contains private message content.
+      const recipients = await this.db.query(`SELECT p.user_id FROM chat_messages m
+        JOIN chat_conversations c ON c.id=m.conversation_id
+        JOIN chat_participants p ON p.conversation_id=c.id AND p.left_at IS NULL
+        JOIN user_accounts u ON u.id=p.user_id AND u.is_active=true AND u.is_suspended=false AND u.deleted_at IS NULL
+        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence AND p.user_id<>m.sender_id
+          AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role NOT IN ('GUEST','REGISTERED_USER')
+            AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
+          AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=p.user_id AND b.blocked_id=m.sender_id)
+            OR (b.blocker_id=m.sender_id AND b.blocked_id=p.user_id))`, [record.entity_id]);
+      recipientUserIds.push(...recipients.rows.map(r => r.user_id));
     } else if (action === 'USER_ACCOUNT_DELETED_GENEALOGY_PRESERVED') {
       return [];
     } else if (record.actor_id) {
@@ -135,7 +172,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
     const results: NotificationDispatchResult[] = [];
 
-    for (const userId of recipientUserIds) {
+    for (const userId of new Set(recipientUserIds)) {
       const prefRes = await this.db.query(
         'SELECT * FROM notification_preferences WHERE user_id = $1',
         [userId],
@@ -146,8 +183,15 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         email_enabled: false,
       };
 
+      if (!notificationCategoryEnabled(action, prefs)) continue;
+
+      // Persist a member-facing notice before trying external gateways. A provider
+      // outage cannot remove inbox history; the unique key makes replay safe.
+      await this.inbox?.record(record,userId,prefs);
+
       const payload = {
         action,
+        outboxId: record.id,
         entityType: record.entity_type,
         entityId: record.entity_id,
         timestamp: new Date().toISOString(),
@@ -186,7 +230,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
           // Perform delivery
           const providerOutcome = await this.deliverNotification(channel, userId, payload);
-          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
 
           await this.db.query(
             "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2 WHERE id = $3",
@@ -253,7 +297,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     for (const job of claimRes.rows) {
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
         await this.db.query(
           `UPDATE notification_dispatches 
            SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
@@ -279,6 +323,44 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private async deliverNotification(channel: string, userId: string, payload: any): Promise<any> {
+    // Recheck at the last delivery boundary, including retries and stranded jobs.
+    // A saved job is not continuing permission to contact a former participant.
+    const current = (await this.db.query(`SELECT u.id,p.push_enabled,p.sms_enabled,p.email_enabled,
+      p.workflow_enabled,p.chat_enabled,p.family_events_enabled
+      FROM user_accounts u LEFT JOIN notification_preferences p ON p.user_id=u.id
+      WHERE u.id=$1 AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL`, [userId])).rows[0];
+    if (!current) return { status: 'SKIPPED', reason: 'Account is no longer active' };
+    if (!notificationCategoryEnabled(payload.action, current)) return { status: 'SKIPPED', reason: 'Notification category disabled' };
+    const enabled = channel === 'PUSH' ? current.push_enabled !== false
+      : channel === 'SMS' ? current.sms_enabled !== false
+      : channel === 'EMAIL' ? current.email_enabled === true : false;
+    if (!enabled) return { status: 'SKIPPED', reason: 'Delivery channel disabled' };
+
+    if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(payload.action)) {
+      const eligible=await this.db.query(`SELECT 1 FROM calendar_notification_recipients nr
+        JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id
+        JOIN user_accounts u ON u.id=nr.user_id WHERE nr.outbox_id=$1 AND nr.user_id=$2 AND ${calendarNoticeEligibility()}`,
+        [payload.outboxId,userId]);
+      if(!eligible.rows.length)return {status:'SKIPPED',reason:'Event access or revision revoked'};
+    }
+    if (payload.action === 'CHAT_MESSAGE_CREATED') {
+      const eligible = await this.db.query(`SELECT 1 FROM chat_messages m
+        JOIN chat_conversations c ON c.id=m.conversation_id
+        JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=$2 AND p.left_at IS NULL
+        WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence AND m.sender_id<>$2
+          AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=$2 AND r.role NOT IN ('GUEST','REGISTERED_USER')
+            AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
+          AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.sender_id)
+            OR (b.blocker_id=m.sender_id AND b.blocked_id=$2))`, [payload.entityId, userId]);
+      if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Chat access revoked' };
+    }
+    if (payload.action === 'NOTIFICATION_BROADCAST_CREATED') {
+      const eligible = await this.db.query(`SELECT 1 FROM notification_broadcast_recipients r
+        JOIN notification_broadcasts b ON b.id=r.broadcast_id JOIN user_accounts u ON u.id=r.user_id
+        WHERE r.broadcast_id=$1 AND r.user_id=$2 AND ${broadcastEligibility()}`,
+        [payload.entityId, userId]);
+      if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Audience membership revoked' };
+    }
     if (channel === 'SMS') {
       if (!this.smsProvider) {
         throw new Error('SMS provider is not configured. Cannot deliver SMS notification.');
@@ -388,7 +470,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     for (const job of strandedRes.rows) {
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : 'SENT';
+        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
         await this.db.query(
           "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 WHERE id = $3",
           [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
@@ -412,7 +494,10 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
 
   private formatNotificationMessage(action: string, record: any): string {
     switch (action) {
+      case 'NOTIFICATION_BROADCAST_CREATED':
+        return 'प्रशासनिक सूचना उपलब्ध छ। (An official notice is available)';
       case 'CLAIM_SUBMIT':
+      case 'CLAIM_SUBMITTED':
         return 'तपाईंको प्रोफाइल दाबी दर्ता गरिएको छ। (Your profile claim has been submitted)';
       case 'CLAIM_TIER1_VOUCHED':
         return 'तपाईंको दाबी तह १ बाट सिफारिस भएको छ। (Claim vouched at Tier 1)';
@@ -430,11 +515,21 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       case 'DISPUTE_FILED':
         return 'प्रोफाइल दाबी विरुद्ध उजुरी परेको छ। (A dispute has been filed regarding this claim)';
       case 'CHANGE_REQUEST_SUBMIT':
+      case 'CHANGE_REQUEST_SUBMITTED':
         return 'वंशवृक्ष संशोधन अनुरोध दर्ता भएको छ। (Genealogy change request submitted)';
       case 'CHANGE_REQUEST_APPROVED_AND_APPLIED':
-        return 'वंशवृक्ष संशोधन अनुरोध स्वीकृत भई लागू भएको छ। (Change request approved and applied)';
+      case 'CHANGE_REQUEST_APPROVED_AND_MERGED':
+        return 'वंशवृक्ष संशोधन स्वीकृत भई लागू भएको छ। (An approved genealogy change was applied)';
       case 'CHANGE_REQUEST_REJECTED':
         return 'वंशवृक्ष संशोधन अनुरोध अस्वीकृत भएको छ। (Change request rejected)';
+      case 'CHAT_MESSAGE_CREATED':
+        return 'नयाँ निजी सन्देश आएको छ। (You have a new private message)';
+      case 'CALENDAR_EVENT_UPDATED':
+        return 'कार्यक्रम अपडेट उपलब्ध छ। (An event update is available)';
+      case 'CALENDAR_EVENT_CANCELLED':
+        return 'कार्यक्रम रद्द भएको छ। (An event was cancelled)';
+      case 'CALENDAR_EVENT_REMINDER_DUE':
+        return 'कार्यक्रमको सम्झना उपलब्ध छ। (An event reminder is available)';
       case 'CALENDAR_EVENT_CREATED':
         return 'नयाँ सांस्कृतिक/पारिवारिक कार्यक्रम थपिएको छ। (New calendar event added)';
       default:

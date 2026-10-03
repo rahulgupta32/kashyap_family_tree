@@ -1,65 +1,33 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { CommunityService } from './community.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { allowedFields } from './community-policy';
 
 @Controller('community')
+@UseGuards(JwtAuthGuard)
 export class CommunityController {
-  constructor(private readonly communityService: CommunityService) {}
-
+  constructor(private readonly service: CommunityService) {}
   @Get('posts')
-  async listPosts(@Query('branchId') branchId?: string) {
-    const posts = await this.communityService.listPosts(branchId);
-    return { success: true, data: posts };
+  list(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string, @Query('queue') queue?: string, @Query('page') page?: string) {
+    return this.service.listPosts(user,{branchId,queue:queue==='true',page:page===undefined?1:Number(page)});
   }
-
   @Post('posts')
-  async createPost(
-    @Body()
-    body: {
-      authorUserId: string;
-      authorName: string;
-      branchId?: string;
-      title: string;
-      content: string;
-      category: 'ANNOUNCEMENT' | 'DISCUSSION' | 'RITUAL' | 'ACHIEVEMENT';
-    },
-  ) {
-    const post = await this.communityService.createPost(body);
-    return { success: true, data: post };
+  create(@CurrentUser() user: AuthenticatedUser,@Body() body:any) { return this.service.createPost(user,body); }
+  @Put('posts/:id/like')
+  like(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
+    allowedFields(body,['liked']); return this.service.react(id,user,body.liked);
   }
-
-  @Post('posts/:id/like')
-  async toggleLike(@Param('id') postId: string, @Body('userId') userId: string) {
-    const result = await this.communityService.toggleLike(postId, userId);
-    return { success: true, data: result };
-  }
-
+  @Get('posts/:id/comments')
+  comments(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser) { return this.service.comments(id,user); }
   @Post('posts/:id/comments')
-  async addComment(
-    @Param('id') postId: string,
-    @Body() body: { authorUserId: string; authorName: string; content: string },
-  ) {
-    const comment = await this.communityService.addComment(postId, body);
-    return { success: true, data: comment };
-  }
-
+  comment(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.addComment(id,user,body); }
   @Post('posts/:id/flag')
-  async flagPost(@Param('id') postId: string, @Body('reason') reason: string) {
-    await this.communityService.flagPost(postId, reason);
-    return { success: true, message: 'Post flagged for moderation review' };
+  report(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
+    allowedFields(body,['reason']);return this.service.report(id,user,body.reason);
   }
-
-  @Get('events')
-  async listEvents() {
-    const events = await this.communityService.listEvents();
-    return { success: true, data: events };
-  }
-
-  @Post('events/:id/rsvp')
-  async rsvpEvent(
-    @Param('id') eventId: string,
-    @Body() body: { userId: string; response: 'GOING' | 'MAYBE' | 'DECLINED' },
-  ) {
-    await this.communityService.rsvpEvent(eventId, body.userId, body.response);
-    return { success: true, message: 'RSVP recorded' };
-  }
+  @Post('posts/:id/moderate')
+  moderate(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.moderate(id,user,body); }
+  @Delete('posts/:id')
+  remove(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser) { return this.service.deletePost(id,user); }
 }

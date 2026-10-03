@@ -5,6 +5,9 @@
 import { EventAudienceScope } from './enums.js';
 
 export interface CreateCalendarEventDto {
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
   title: string;
   description?: string;
   eventType: string;
@@ -23,6 +26,12 @@ export interface CreateCalendarEventDto {
 }
 
 export interface CalendarEventDetailDto {
+  invitedUserIds?: string[];
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
+  lifecycleState?: 'ACTIVE' | 'CANCELLED';
+  canManage?: boolean;
   id: string;
   createdByUserId: string;
   title: string;

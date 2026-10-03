@@ -57,6 +57,7 @@ const isProd = process.env.NODE_ENV === 'production';
   ],
   exports: [
     AuthService,
+    JwtStrategy,
     JwtModule,
     PassportModule,
     JwtAuthGuard,
@@ -67,3 +68,4 @@ const isProd = process.env.NODE_ENV === 'production';
   ],
 })
 export class AuthModule {}
+
