@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -64,6 +65,21 @@ void main(){
   expect(requests.single.url.path,'/chat/conversations/$conversation/messages/reported/report');
   expect(jsonDecode(requests.single.body),{'reason':'Fictional spam'});
   expect(find.text('उजुरी पठाइयो (Report submitted)'),findsOneWidget);
+  await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
+ });
+
+ testWidgets('Native file selection queues immutable bytes before attachment sending',(tester)async{
+  const channel=MethodChannel('kashyap/chat_attachments');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,(call)async{expect(call.method,'pick');return {'mimeType':'application/pdf','dataBase64':'JVBERi0xLjc='};});
+  addTearDown(()=>tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel,null));
+  final connection=FakeChatConnection();final requests=<http.Request>[];
+  final api=ChatTestApi(connection,MockClient((request)async{requests.add(request);return http.Response('{"id":"attachment-message"}',201);}));
+  api.setAuthToken('header.${base64Url.encode(utf8.encode(jsonEncode({'sub':'viewer'})))}.signature');addTearDown(api.dispose);
+  await tester.pumpWidget(MaterialApp(home:ChatConversationScreen(api:api,conversation:const {'id':conversation,'title':'Fictional family','type':'DIRECT'},userId:'viewer')));await tester.pump();
+  await tester.tap(find.byTooltip('संलग्न फाइल (Attach file)'));await tester.pumpAndSettle();expect(find.textContaining('Attachment selected'),findsOneWidget);
+  await tester.tap(find.byTooltip('Send message'));await tester.pumpAndSettle();
+  expect(requests.single.url.path,'/chat/conversations/$conversation/attachments');final body=jsonDecode(requests.single.body) as Map;
+  expect(body['mimeType'],'application/pdf');expect(body['dataBase64'],'JVBERi0xLjc=');expect(body['clientMessageId'],isNotEmpty);expect(body.containsKey('senderId'),isFalse);
   await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
  });
 

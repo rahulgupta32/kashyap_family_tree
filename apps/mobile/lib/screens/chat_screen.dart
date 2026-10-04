@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 import '../services/chat_connection.dart';
@@ -96,6 +98,8 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
   List<QueuedChatMessage> _pending=[];
   Timer? _reconnect;
   final _text=TextEditingController();
+  static const _files=MethodChannel('kashyap/chat_attachments');
+  Map<String,String>? _attachment;
   List<dynamic> _messages=[];
   String? _error;
   bool _live=false,_sending=false,_typing=false,_active=true;
@@ -143,12 +147,12 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
   }
   Future<void> _send() async {
-    final content=_text.text.trim();if(content.isEmpty){return;}
+    final content=_text.text.trim();if(content.isEmpty&&_attachment==null){return;}
     setState(()=>_sending=true);
     try{
       if(widget.api.chatAccountId!=widget.userId){throw StateError('Message session changed');}
-      await widget.api.chatOutbox.enqueue(widget.conversation['id'] as String,content);
-      if(mounted){_text.clear();setState(()=>_error=null);}
+      await widget.api.chatOutbox.enqueue(widget.conversation['id'] as String,content.isEmpty?'संलग्न फाइल (Attachment)':content,attachment:_attachment);
+      if(mounted){_text.clear();setState((){_error=null;_attachment=null;});}
       unawaited(_pump());
     }catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
     finally{if(mounted){setState(()=>_sending=false);}}
@@ -160,6 +164,16 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     }
     try {if(discard){await widget.api.chatOutbox.discard(row.id);}else{await widget.api.chatOutbox.retry(row.id);unawaited(_pump());}}
     catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
+  }
+  Future<void> _pickAttachment() async {
+    try{final value=await _files.invokeMapMethod<String,String>('pick');if(mounted&&value!=null&&widget.api.chatAccountId==widget.userId){setState((){_attachment=Map<String,String>.from(value);_error=null;});}}
+    catch(e){if(mounted){setState(()=>_error='Choose PNG, JPEG, WebP or PDF up to 5 MB. $e');}}
+  }
+  Future<void> _downloadAttachment(Map message) async {
+    try{final response=await widget.api.downloadChatAttachment(widget.conversation['id'] as String,message['id'] as String,widget.userId);
+      if(!mounted||widget.api.chatAccountId!=widget.userId){return;}
+      await _files.invokeMethod('save',{'dataBase64':base64Encode(response.bodyBytes),'mimeType':message['attachment']['mimeType'],'fileName':message['attachment']['fileName']});
+    }catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   Future<void> _report(String messageId) async {
     var reason='';
@@ -189,11 +203,12 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
         if(_messages.length>=100)TextButton(onPressed:_older,child:const Text('Load earlier messages')),
-        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):!own&&m['isDeleted']!=true?IconButton(tooltip:'उजुरी (Report message)',icon:const Icon(Icons.flag_outlined),onPressed:()=>_report(m['id'] as String)):null));}),
+        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(m['isDeleted']==true?'Message removed':m['content'] as String),if(m['attachment']!=null&&m['isDeleted']!=true)TextButton(onPressed:()=>_downloadAttachment(m as Map),child:const Text('डाउनलोड (Download attachment)'))]),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):!own&&m['isDeleted']!=true?IconButton(tooltip:'उजुरी (Report message)',icon:const Icon(Icons.flag_outlined),onPressed:()=>_report(m['id'] as String)):null));}),
       ])),
       if(_pending.isNotEmpty)ConstrainedBox(constraints:const BoxConstraints(maxHeight:160),child:ListView(shrinkWrap:true,children:_pending.map((row)=>ListTile(key:ValueKey('queued-${row.id}'),title:Text(row.content),subtitle:Text(row.state=='failed'?chatOutboxLabels['failed']!:chatOutboxLabels['queued']!),trailing:Row(mainAxisSize:MainAxisSize.min,children:[IconButton(tooltip:chatOutboxLabels['retry'],onPressed:()=>_queuedAction(row,false),icon:const Icon(Icons.refresh)),IconButton(tooltip:chatOutboxLabels['discard'],onPressed:()=>_queuedAction(row,true),icon:const Icon(Icons.close))]))).toList())),
+      if(_attachment!=null)Row(children:[const Expanded(child:Text('संलग्न फाइल चयन गरियो (Attachment selected)')),TextButton(onPressed:()=>setState(()=>_attachment=null),child:const Text('हटाउनुहोस् (Clear attachment)'))]),
       if(_typing)const Text('Someone is typing…'),
-      SafeArea(top:false,child:Padding(padding:const EdgeInsets.all(12),child:Row(crossAxisAlignment:CrossAxisAlignment.end,children:[Expanded(child:TextField(controller:_text,maxLength:4000,minLines:1,maxLines:4,decoration:const InputDecoration(labelText:'सन्देश (Your message)'),onChanged:(_){setState((){});final now=DateTime.now().millisecondsSinceEpoch;if(_live&&now-_lastTyping>1500){_lastTyping=now;_connection?.send({'type':'typing'});}})),IconButton(tooltip:'Send message',onPressed:_sending||_text.text.trim().isEmpty?null:_send,icon:const Icon(Icons.send))])),
+      SafeArea(top:false,child:Padding(padding:const EdgeInsets.all(12),child:Row(crossAxisAlignment:CrossAxisAlignment.end,children:[IconButton(tooltip:'संलग्न फाइल (Attach file)',onPressed:_sending?null:_pickAttachment,icon:const Icon(Icons.attach_file)),Expanded(child:TextField(controller:_text,maxLength:4000,minLines:1,maxLines:4,decoration:const InputDecoration(labelText:'सन्देश (Your message)'),onChanged:(_){setState((){});final now=DateTime.now().millisecondsSinceEpoch;if(_live&&now-_lastTyping>1500){_lastTyping=now;_connection?.send({'type':'typing'});}})),IconButton(tooltip:'Send message',onPressed:_sending||(_text.text.trim().isEmpty&&_attachment==null)?null:_send,icon:const Icon(Icons.send))])),
       ),
     ]));
 }

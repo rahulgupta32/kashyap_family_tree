@@ -27,25 +27,27 @@ class QueuedChatMessage {
   final String id, conversationId, content, state;
   final int createdAt, attempts, nextAttemptAt;
   final int? failureStatus;
+  final Map<String,String>? attachment;
   const QueuedChatMessage({required this.id, required this.conversationId, required this.content,
-    required this.createdAt, this.state = 'queued', this.attempts = 0, this.nextAttemptAt = 0, this.failureStatus});
+    required this.createdAt, this.state = 'queued', this.attempts = 0, this.nextAttemptAt = 0, this.failureStatus,this.attachment});
   Map<String,dynamic> toJson() => {'id':id,'conversationId':conversationId,'content':content,'createdAt':createdAt,
-    'state':state,'attempts':attempts,'nextAttemptAt':nextAttemptAt,'failureStatus':failureStatus};
+    'state':state,'attempts':attempts,'nextAttemptAt':nextAttemptAt,'failureStatus':failureStatus,if(attachment!=null)'attachment':attachment};
   factory QueuedChatMessage.fromJson(Map value) {
     final row = QueuedChatMessage(id:value['id'] as String,conversationId:value['conversationId'] as String,
       content:value['content'] as String,createdAt:value['createdAt'] as int,state:value['state'] as String,
-      attempts:value['attempts'] as int,nextAttemptAt:value['nextAttemptAt'] as int,failureStatus:value['failureStatus'] as int?);
+      attempts:value['attempts'] as int,nextAttemptAt:value['nextAttemptAt'] as int,failureStatus:value['failureStatus'] as int?,attachment:value['attachment']==null?null:Map<String,String>.unmodifiable(Map<String,String>.from(value['attachment'] as Map)));
     if (!_uuid.hasMatch(row.id) || !_uuid.hasMatch(row.conversationId) || row.content.trim().isEmpty || row.content.length>4000 ||
-      !['queued','failed'].contains(row.state) || row.createdAt<0 || row.attempts<0 || row.nextAttemptAt<0) {
+      !['queued','failed'].contains(row.state) || row.createdAt<0 || row.attempts<0 || row.nextAttemptAt<0 || !_validAttachment(row.attachment)) {
       throw const FormatException('Invalid queued message');
     }
     return row;
   }
   QueuedChatMessage failed(int attempts, int next, int? status, bool retryable) => QueuedChatMessage(
     id:id,conversationId:conversationId,content:content,createdAt:createdAt,attempts:attempts,
-    nextAttemptAt:next,state:retryable?'queued':'failed',failureStatus:status);
-  QueuedChatMessage retry() => QueuedChatMessage(id:id,conversationId:conversationId,content:content,createdAt:createdAt);
+    nextAttemptAt:next,state:retryable?'queued':'failed',failureStatus:status,attachment:attachment);
+  QueuedChatMessage retry() => QueuedChatMessage(id:id,conversationId:conversationId,content:content,createdAt:createdAt,attachment:attachment);
 }
+bool _validAttachment(Map<String,String>? value)=>value==null||['image/png','image/jpeg','image/webp','application/pdf'].contains(value['mimeType'])&&(value['dataBase64']?.isNotEmpty??false)&&(value['dataBase64']!.length<=6990508)&&value['dataBase64']!.length%4==0&&RegExp(r'^[A-Za-z0-9+/]*={0,2}$').hasMatch(value['dataBase64']!);
 final _uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 String _messageId() {
   final random=Random.secure();
@@ -95,7 +97,7 @@ class ChatOutbox {
   Future<void> _save(String owner,List<QueuedChatMessage> rows,int generation) async {
     if(currentOwner()!=owner||generation!=_generation){throw StateError('Session changed');}
     final value=jsonEncode({'version':1,'owner':owner,'server':server,'items':rows.map((r)=>r.toJson()).toList()});
-    if(utf8.encode(value).length>524288){throw StateError('Message queue storage limit reached');}
+    if(utf8.encode(value).length>8*1024*1024){throw StateError('Message queue storage limit reached');}
     await store.write(value);
   }
   Future<List<QueuedChatMessage>> list() => _locked(() async {
@@ -103,11 +105,11 @@ class ChatOutbox {
     final rows=await _read(owner);
     if(currentOwner()!=owner||generation!=_generation){throw StateError('Session changed');}return rows;
   });
-  Future<QueuedChatMessage> enqueue(String conversation,String content) => _locked(() async {
+  Future<QueuedChatMessage> enqueue(String conversation,String content,{Map<String,String>? attachment}) => _locked(() async {
     final owner=_owner(),generation=_generation;content=content.trim();
-    if(!_uuid.hasMatch(conversation)||content.isEmpty||content.length>4000){throw ArgumentError('Invalid queued message');}
+    if(!_uuid.hasMatch(conversation)||content.isEmpty||content.length>4000||!_validAttachment(attachment)){throw ArgumentError('Invalid queued message');}
     final rows=await _read(owner);if(rows.length>=100){throw StateError('Message queue is full');}
-    final row=QueuedChatMessage(id:_messageId(),conversationId:conversation,content:content,createdAt:now());
+    final row=QueuedChatMessage(id:_messageId(),conversationId:conversation,content:content,createdAt:now(),attachment:attachment==null?null:Map<String,String>.unmodifiable(attachment));
     await _save(owner,[...rows,row],generation);_notify();return row;
   });
   Future<void> retry(String id) => _locked(() async {

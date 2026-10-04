@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
+import { ChatAttachmentsService } from './chat-attachments.service';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -6,7 +8,10 @@ import { allowedFields } from '../community/community-policy';
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
- constructor(private readonly chat:ChatService){}
+ constructor(private readonly chat:ChatService,private readonly attachments:ChatAttachmentsService){}
+ @Post('conversations/:id/attachments') attachment(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.attachments.send(id,u,b);}
+ @Get('conversations/:id/messages/:messageId/attachment') async download(@Param('id') id:string,@Param('messageId') msg:string,@CurrentUser() u:AuthenticatedUser,@Res() res:Response){const file=await this.attachments.download(id,msg,u);res.setHeader('Content-Type',file.mimeType);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename="${file.fileName}"`);res.send(file.buffer);}
+ @Get('reports/:reportId/attachment') async reportedFile(@Param('reportId') id:string,@CurrentUser() u:AuthenticatedUser,@Res() res:Response){const file=await this.attachments.downloadReported(id,u);res.setHeader('Content-Type',file.mimeType);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename="${file.fileName}"`);res.send(file.buffer);}
  @Get('reports') reports(@CurrentUser() u:AuthenticatedUser){return this.chat.reviewReports(u);}
  @Post('reports/:reportId/resolve') resolve(@Param('reportId') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.resolveReport(id,u,b);}
  @Post('conversations/:id/messages/:messageId/report') report(@Param('id') id:string,@Param('messageId') msg:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.reportMessage(id,msg,u,b);}

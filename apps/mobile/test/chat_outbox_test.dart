@@ -92,4 +92,20 @@ void main(){
   final pending=queue.pump();await Future<void>.delayed(Duration.zero);await expectLater(queue.discard(a.id),throwsStateError);
   await queue.discard(b.id);gate.complete();await pending;expect(await queue.list(),isEmpty);
  });
+ test('immutable attachments survive retry and client recreation with the original message identity',() async {
+  final store=MemoryChatOutboxStore(),attempts=<Map>[];var lose=true;
+  Future<void> send(QueuedChatMessage row,String owner)async{attempts.add(row.toJson());if(lose){lose=false;throw const ChatSendFailure(503);}}
+  final original={'mimeType':'application/pdf','dataBase64':'JVBERi0xLjc='};
+  final first=ChatOutbox(store:store,server:'fixture-api',currentOwner:()=> 'owner',send:send);
+  final row=await first.enqueue(conversation,'PDF caption',attachment:original);original['dataBase64']='changed';await first.pump();first.dispose();
+  final restored=ChatOutbox(store:store,server:'fixture-api',currentOwner:()=> 'owner',send:send);addTearDown(restored.dispose);
+  expect((await restored.list()).single.attachment!['dataBase64'],'JVBERi0xLjc=');await restored.retry(row.id);await restored.pump();expect(await restored.list(),isEmpty);
+  expect(attempts.map((r)=>r['id']).toSet(),{row.id});expect(attempts.first['attachment'],attempts.last['attachment']);expect(attempts.first['content'],attempts.last['content']);
+ });
+ test('invalid attachment data is refused before persistence',() async {
+  final store=MemoryChatOutboxStore();final queue=ChatOutbox(store:store,server:'fixture-api',currentOwner:()=> 'owner',send:(_,__) async{});addTearDown(queue.dispose);
+  await expectLater(queue.enqueue(conversation,'caption',attachment:{'mimeType':'image/svg+xml','dataBase64':'AAAA'}),throwsArgumentError);
+  await expectLater(queue.enqueue(conversation,'caption',attachment:{'mimeType':'image/png','dataBase64':'bad'}),throwsArgumentError);expect(store.value,isNull);
+ });
+
 }

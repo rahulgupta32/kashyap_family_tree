@@ -459,6 +459,10 @@ export class ProfileService {
       throw new NotFoundException('Media asset not found');
     }
 
+    if (asset.bucket === 'private-chat') {
+      throw new NotFoundException('Use the authorized conversation attachment endpoint');
+    }
+
     if (asset.quarantine_status !== 'CLEAN') {
       if (asset.quarantine_status === 'SCANNER_FAILED') {
         throw new ForbiddenException('Media asset is inaccessible due to malware scanner failure (fail-closed policy)');

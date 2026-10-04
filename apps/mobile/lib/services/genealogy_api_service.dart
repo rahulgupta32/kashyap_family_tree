@@ -46,8 +46,8 @@ class GenealogyApiService {
   }
   ChatOutbox get chatOutbox => _chatOutbox ??= ChatOutbox(store:_chatOutboxStore,server:Uri.parse(baseUrl).toString(),
     currentOwner:()=>chatAccountId,send:(message,owner) async {
-      final response=await _send('POST',Uri.parse('$baseUrl/chat/conversations/${message.conversationId}/messages'),
-        boundAccountId:owner,body:json.encode({'content':message.content,'clientMessageId':message.id}));
+      final response=await _send('POST',Uri.parse('$baseUrl/chat/conversations/${message.conversationId}/${message.attachment==null?'messages':'attachments'}'),
+        boundAccountId:owner,body:json.encode({'content':message.content,'clientMessageId':message.id,...?message.attachment}));
       if(response.statusCode<200||response.statusCode>=300){throw ChatSendFailure(response.statusCode);}
       final value=json.decode(response.body);
       if(value is! Map||value['id'] is! String){throw const FormatException('Invalid committed message response');}
@@ -190,6 +190,12 @@ class GenealogyApiService {
       throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
     }
     return decoded;
+  }
+
+  Future<http.Response> downloadChatAttachment(String conversationId,String messageId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/chat/conversations/$conversationId/messages/$messageId/attachment'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Attachment unavailable (${response.statusCode})');}
+    return response;
   }
 
   Future<ChatConnection> openChatConnection() async {

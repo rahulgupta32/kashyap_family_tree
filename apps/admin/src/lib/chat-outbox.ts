@@ -1,9 +1,10 @@
 'use client';
 
-export interface QueuedChatMessage {id:string;conversationId:string;content:string;createdAt:number;attempts:number;nextAttemptAt:number;state:'queued'|'failed';status?:number}
+export interface QueuedChatMessage {id:string;conversationId:string;content:string;createdAt:number;attempts:number;nextAttemptAt:number;state:'queued'|'failed';status?:number;attachment?:{mimeType:string;dataBase64:string}}
 interface Envelope {epoch:string;owner:string;api:string;key:CryptoKey;iv:Uint8Array;data:ArrayBuffer}
 const DB='kashyap_chat_outbox_v1',STORE='state',STORAGE_LOCK='kashyap_chat_outbox_storage',PUMP_LOCK='kashyap_chat_outbox_pump',CHANNEL='kashyap_chat_outbox_changed';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function validAttachment(a:any){return a===undefined||a&&['image/png','image/jpeg','image/webp','application/pdf'].includes(a.mimeType)&&typeof a.dataBase64==='string'&&a.dataBase64.length>0&&a.dataBase64.length<=6990508&&a.dataBase64.length%4===0&&/^[A-Za-z0-9+/]*={0,2}$/.test(a.dataBase64);}
 function supported(){if(!window.isSecureContext||!crypto.subtle||!indexedDB||!navigator.locks)throw new Error('Secure queue storage is unavailable');}
 function signal(){window.dispatchEvent(new Event(CHANNEL));try{const channel=new BroadcastChannel(CHANNEL);channel.postMessage('changed');channel.close();}catch{}}
 async function database():Promise<IDBDatabase>{
@@ -27,10 +28,10 @@ function aad(value:Envelope){return new TextEncoder().encode(JSON.stringify([val
 async function decode(value:Envelope):Promise<QueuedChatMessage[]>{
  const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(value.iv),additionalData:aad(value)},value.key,value.data);
  const rows=JSON.parse(new TextDecoder().decode(plain));
- if(!Array.isArray(rows)||rows.length>100||new Set(rows.map(r=>r.id)).size!==rows.length||rows.some(r=>!uuid.test(r.id)||!uuid.test(r.conversationId)||typeof r.content!=='string'||!r.content.trim()||r.content.length>4000||!['queued','failed'].includes(r.state)||!Number.isSafeInteger(r.createdAt)||!Number.isSafeInteger(r.attempts)||r.attempts<0||!Number.isSafeInteger(r.nextAttemptAt)))throw new Error('Unreadable message queue');
+ if(!Array.isArray(rows)||rows.length>100||new Set(rows.map(r=>r.id)).size!==rows.length||rows.some(r=>!uuid.test(r.id)||!uuid.test(r.conversationId)||typeof r.content!=='string'||!r.content.trim()||r.content.length>4000||!['queued','failed'].includes(r.state)||!Number.isSafeInteger(r.createdAt)||!Number.isSafeInteger(r.attempts)||r.attempts<0||!Number.isSafeInteger(r.nextAttemptAt)||!validAttachment(r.attachment)))throw new Error('Unreadable message queue');
  return rows;
 }
-async function encode(value:Envelope,rows:QueuedChatMessage[]){const plain=new TextEncoder().encode(JSON.stringify(rows));if(rows.length>100||plain.byteLength>524288)throw new Error('Message queue is full');
+async function encode(value:Envelope,rows:QueuedChatMessage[]){const plain=new TextEncoder().encode(JSON.stringify(rows));if(rows.length>100||plain.byteLength>8*1024*1024)throw new Error('Message queue is full');
  const iv=crypto.getRandomValues(new Uint8Array(12));const data=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad(value)},value.key,plain);return {...value,iv,data};
 }
 class SendFailure extends Error {constructor(public status:number){super('Queued send failed');}}
@@ -48,8 +49,8 @@ export class BrowserChatOutbox {
  return value;
  }
  async list(){return lock(async()=>{const value=await this.state(false);const rows=value?await decode(value):[];this.token();return rows;});}
- async enqueue(conversationId:string,content:string){content=content.trim();if(!uuid.test(conversationId)||!content||content.length>4000)throw new Error('Invalid queued message');
- const row:QueuedChatMessage={id:crypto.randomUUID(),conversationId,content,createdAt:Date.now(),attempts:0,nextAttemptAt:0,state:'queued'};
+ async enqueue(conversationId:string,content:string,attachment?:{mimeType:string;dataBase64:string}){content=content.trim();if(!uuid.test(conversationId)||!content||content.length>4000||!validAttachment(attachment))throw new Error('Invalid queued message');
+ const row:QueuedChatMessage={id:crypto.randomUUID(),conversationId,content,createdAt:Date.now(),attempts:0,nextAttemptAt:0,state:'queued',...(attachment?{attachment:{mimeType:attachment.mimeType,dataBase64:attachment.dataBase64}}:{})};
  await lock(async()=>{const value=(await this.state(true))!,rows=await decode(value);if(rows.length>=100)throw new Error('Message queue is full');const encoded=await encode(value,[...rows,row]);this.token();await write(encoded);});signal();return row;
  }
  async change(id:string,discard:boolean){supported();await navigator.locks.request(PUMP_LOCK,{ifAvailable:true},async acquired=>{if(!acquired)throw new Error('A queued message is sending');await lock(async()=>{const value=await this.state(false);if(!value)return;
@@ -60,7 +61,7 @@ export class BrowserChatOutbox {
  private async post(row:QueuedChatMessage){
  this.controller=new AbortController();const timer=setTimeout(()=>this.controller?.abort(),20000);
  try{
- const send=()=>fetch(`${this.api}/chat/conversations/${row.conversationId}/messages`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${this.token()}`},body:JSON.stringify({content:row.content,clientMessageId:row.id}),signal:this.controller!.signal,cache:'no-store'});
+ const send=()=>fetch(`${this.api}/chat/conversations/${row.conversationId}/${row.attachment?'attachments':'messages'}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${this.token()}`},body:JSON.stringify({content:row.content,clientMessageId:row.id,...row.attachment}),signal:this.controller!.signal,cache:'no-store'});
  let response=await send();this.token();
  if(response.status===401){const refreshed=await this.options.refresh();this.token();if(!refreshed)throw new SendFailure(503);response=await send();}
  if(!response.ok)throw new SendFailure(response.status);

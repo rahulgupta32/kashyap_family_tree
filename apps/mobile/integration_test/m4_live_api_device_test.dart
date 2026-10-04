@@ -28,7 +28,7 @@ class LoseFirstChatResponseClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final response=await _inner.send(request);
-    if(!_lost&&request.method=='POST'&&request.url.path.endsWith('/messages')){
+    if(!_lost&&request.method=='POST'&&(request.url.path.endsWith('/messages')||request.url.path.endsWith('/attachments'))){
       _lost=true;await response.stream.drain<void>();throw http.ClientException('Fictional lost chat response');
     }
     return response;
@@ -234,6 +234,19 @@ void main() {
     final messages=await api('/chat/conversations/${group['id']}/messages',token:service.authToken) as List;
     expect(messages.where((m)=>m['content']==queued.content).length,1);secondQueueApi.dispose();
     debugPrint('[M4 DEVICE] Encrypted durable outbox restored after lost real response; exactly one PostgreSQL message');
+    const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==';
+    final firstFileApi=GenealogyApiService(baseUrl:base,client:LoseFirstChatResponseClient())..setAuthToken(service.authToken);
+    final queuedFile=await firstFileApi.chatOutbox.enqueue(group['id'] as String,'Fictional Android file ${DateTime.now().microsecondsSinceEpoch}',attachment:{'mimeType':'image/png','dataBase64':png});
+    await firstFileApi.chatOutbox.pump();expect((await firstFileApi.chatOutbox.list()).single.id,queuedFile.id);firstFileApi.dispose();
+    final secondFileApi=GenealogyApiService(baseUrl:base)..setAuthToken(service.authToken);
+    expect((await secondFileApi.chatOutbox.list()).single.attachment!['dataBase64'],png);
+    await secondFileApi.chatOutbox.retry(queuedFile.id);await secondFileApi.chatOutbox.pump();expect(await secondFileApi.chatOutbox.list(),isEmpty);
+    final fileMessages=await api('/chat/conversations/${group['id']}/messages',token:service.authToken) as List;
+    final fileMessage=fileMessages.singleWhere((m)=>m['content']==queuedFile.content);
+    expect(fileMessage['attachment']['mimeType'],'image/png');
+    final downloaded=await secondFileApi.downloadChatAttachment(group['id'] as String,fileMessage['id'] as String,service.chatAccountId!);
+    expect(base64Encode(downloaded.bodyBytes),png);secondFileApi.dispose();
+    debugPrint('[M4 DEVICE] Encrypted attachment outbox restored after lost committed response; one message and authorized original file bytes');
     final restored = GenealogyApiService();
     addTearDown(restored.dispose);
     expect(await restored.restoreSession(), isTrue);

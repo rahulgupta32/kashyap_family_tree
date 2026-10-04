@@ -93,6 +93,7 @@ export class ChatService {
   if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(before)||before<0||(after>0&&before>0))throw new BadRequestException('Invalid message cursor');
   const rows=(await this.db.query(`SELECT m.id,m.conversation_id AS "conversationId",m.sender_id AS "senderUserId",m.sequence::float8 AS sequence,
    CASE WHEN m.deleted_at IS NULL THEN m.message_text ELSE '' END AS content,m.deleted_at IS NOT NULL AS "isDeleted",m.created_at AS "createdAt",
+   CASE WHEN m.deleted_at IS NULL THEN (SELECT json_build_object('id',a.id,'mimeType',a.mime_type,'byteSize',a.byte_size,'fileName',a.file_name) FROM chat_message_attachments link JOIN media_assets a ON a.id=link.asset_id WHERE link.message_id=m.id AND a.retention_status='ACTIVE' AND a.quarantine_status='CLEAN') ELSE NULL END AS attachment,
    ARRAY(SELECT p.user_id FROM chat_participants p WHERE p.conversation_id=m.conversation_id AND p.left_at IS NULL AND p.removed_at IS NULL AND p.last_read_sequence>=m.sequence AND m.sequence>p.history_from_sequence) AS "readByUserIds",
    ARRAY(SELECT p.user_id FROM chat_participants p WHERE p.conversation_id=m.conversation_id
     AND p.left_at IS NULL AND p.removed_at IS NULL AND m.sequence>p.history_from_sequence
@@ -101,9 +102,9 @@ export class ChatService {
    WHERE m.conversation_id=$1 AND viewer.left_at IS NULL AND viewer.removed_at IS NULL AND m.sequence>viewer.history_from_sequence AND ($2::bigint=0 OR m.sequence>$2) AND ($3::bigint=0 OR m.sequence<$3) ORDER BY m.sequence ${after>0?'ASC':'DESC'} LIMIT 100`,[id,after,before,user.id])).rows;
   return after>0?rows:rows.reverse();
  }
- async send(id:string,user:AuthenticatedUser,body:any) {
+ async send(id:string,user:AuthenticatedUser,body:any,transactionClient?:PoolClient) {
   allowedFields(body,['content','clientMessageId']);const content=textField(body.content,'Message',4000),retry=uuid(body.clientMessageId,'client message');
-  return this.db.transaction(async client=>{
+  const work=async (client:PoolClient)=>{
    const conv=await this.access(id,user,client);
    if(conv.conversation_type==='DIRECT'&&(await client.query(`SELECT 1 FROM chat_blocks b WHERE
     (b.blocker_id=$2 AND b.blocked_id IN (SELECT user_id FROM chat_participants WHERE conversation_id=$1)) OR
@@ -116,7 +117,8 @@ export class ChatService {
    const recipients=(await client.query('SELECT user_id FROM chat_participants WHERE conversation_id=$1 AND user_id<>$2 AND left_at IS NULL',[id,user.id])).rows.map(r=>r.user_id);
    await this.audit.recordAuditIntent({action:'CHAT_MESSAGE_CREATED',entityType:'chat_message',entityId:row.id,actorId:user.id,newValue:{conversationId:id,recipientUserIds:recipients}},client);
    return {...row,alreadySent:false};
-  });
+  };
+  return transactionClient?work(transactionClient):this.db.transaction(work);
  }
  /** Delivery means an authenticated client acknowledges specific received records,
   * never that a socket write or an external push provider succeeded. */
@@ -336,6 +338,7 @@ export class ChatService {
   if(!canModerate(user))throw new ForbiddenException('Central moderation authority required');
   // Only the explicitly reported record is disclosed, never surrounding history.
   return (await this.db.query(`SELECT r.id,r.reason,r.status,r.created_at AS "createdAt",r.resolved_at AS "resolvedAt",
+   EXISTS(SELECT 1 FROM chat_message_attachments link JOIN media_assets a ON a.id=link.asset_id WHERE link.message_id=m.id AND m.deleted_at IS NULL AND a.quarantine_status='CLEAN' AND a.retention_status='ACTIVE') AS "hasAttachment",
    CASE WHEN m.deleted_at IS NULL THEN m.message_text ELSE '' END AS content,m.deleted_at IS NOT NULL AS "isDeleted"
    FROM chat_message_reports r JOIN chat_messages m ON m.id=r.message_id
    ORDER BY r.created_at DESC,r.id LIMIT 100`)).rows;

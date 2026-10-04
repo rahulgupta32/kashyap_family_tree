@@ -61,3 +61,21 @@ test('Storage failure retains the composer and sends no network message',async({
  const content=`Unpersisted fictional intent ${randomUUID()}`;await compose(page,content);
  await expect(page.getByRole('alert')).toBeVisible();await expect(page.getByRole('textbox',{name:'सन्देश (Your message)',exact:true})).toHaveValue(content);expect(attempts).toBe(0);
 });
+
+
+test('Encrypted attachment intent survives lost commit/reload and downloads the original private bytes',async({page})=>{
+ test.setTimeout(120000);const group=await room(page),content=`Fictional attachment ${randomUUID()}`;
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==','base64');
+ const uploads='**/chat/conversations/*/attachments';let committed=false;
+ await page.context().route(uploads,async route=>{if(!committed){const response=await route.fetch();expect(response.ok(),await response.text()).toBeTruthy();committed=true;}await route.abort();});
+ await page.locator('input[type=file]').setInputFiles({name:'fictional.png',mimeType:'image/png',buffer:png});await expect(page.getByText('fictional.png',{exact:false})).toBeVisible();
+ await compose(page,content);const card=page.locator('[data-queued-id]').filter({hasText:content});await expect(card).toBeVisible();const id=await card.getAttribute('data-queued-id');await expect.poll(()=>committed).toBeTruthy();
+ const encrypted=await envelope(page);expect(new TextDecoder().decode(new Uint8Array(encrypted.cipher))).not.toContain(png.toString('base64'));
+ await page.reload();await expect(page.locator(`[data-queued-id="${id}"]`)).toBeVisible();await page.context().unroute(uploads);
+ await expect(page.locator(`[data-queued-id="${id}"]`)).toHaveCount(0,{timeout:70000});
+ await page.getByRole('button',{name:new RegExp(group.title)}).click();
+ const record=page.getByRole('listitem').filter({hasText:content});await expect(record.getByRole('button',{name:/Download attachment/})).toBeVisible();
+ const [download]=await Promise.all([page.waitForEvent('download'),record.getByRole('button',{name:/Download attachment/}).click()]);expect(download.suggestedFilename()).toMatch(/^attachment_.*\.png$/);
+ const response=await page.request.get(`${API}/chat/conversations/${group.id}/messages`,{headers:await headers(page)});const messages=(await response.json()).filter((m:any)=>m.content===content);expect(messages).toHaveLength(1);
+ const file=await page.request.get(`${API}/chat/conversations/${group.id}/messages/${messages[0].id}/attachment`,{headers:await headers(page)});expect(file.ok()).toBeTruthy();expect(await file.body()).toEqual(png);expect(file.headers()['cache-control']).toBe('no-store');
+});
