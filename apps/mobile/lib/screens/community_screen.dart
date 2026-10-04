@@ -41,6 +41,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
+  Future<void> _edit(Map post) async {
+    final result = await Navigator.push<Map<String, dynamic>>(context,
+      MaterialPageRoute(builder: (_) => _PostEditor(post: post)));
+    if (result == null || !mounted) { return; }
+    await _action(() async {
+      await widget.apiService.requestJson('/community/posts/${post['id']}', method: 'PUT', data: result);
+      if (mounted) { setState(() => _notice = 'Changes submitted for independent moderation'); }
+    });
+  }
+
   Future<void> _reason(Map post, {bool review = false}) async {
     final result = await Navigator.push<Map<String, dynamic>>(context,
       MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review)));
@@ -85,6 +95,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ],
               if (p['canModerate'] == true && p['moderationStatus'] == 'PENDING')
                 TextButton(onPressed: _busy ? null : () => _reason(p as Map, review: true), child: const Text('Review')),
+              if (p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _edit(p as Map), child: const Text('सम्पादन (Edit)')),
+              if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RevisionScreen(api: widget.apiService, post: p as Map))), child: const Text('Revision history')),
               if (p['canDelete'] == true) TextButton(onPressed: _busy ? null : () async {
                 final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
                   title: const Text('पोस्ट हटाउने? (Remove post?)'), actions: [
@@ -102,28 +114,33 @@ class _CommunityScreenState extends State<CommunityScreen> {
 }
 
 class _PostEditor extends StatefulWidget {
-  const _PostEditor();
+  final Map? post;
+  const _PostEditor({this.post});
   @override
   State<_PostEditor> createState() => _PostEditorState();
 }
 class _PostEditorState extends State<_PostEditor> {
-  final _title = TextEditingController(), _content = TextEditingController();
+  final _title = TextEditingController(), _content = TextEditingController(), _reason = TextEditingController();
   final _form = GlobalKey<FormState>();
   String _category = 'DISCUSSION';
   @override
-  void dispose() { _title.dispose(); _content.dispose(); super.dispose(); }
+  void initState() { super.initState(); if (widget.post != null) { _title.text = widget.post!['title'] as String; _content.text = widget.post!['content'] as String; _category = widget.post!['category'] as String; } }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('नयाँ पोस्ट (New post)')),
+  void dispose() { _title.dispose(); _content.dispose(); _reason.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.post == null ? 'नयाँ पोस्ट (New post)' : 'सम्पादन (Edit post)')),
     body: Form(key: _form, child: ListView(padding: const EdgeInsets.all(16), children: [
       TextFormField(controller: _title, maxLength: 180, decoration: const InputDecoration(labelText: 'शीर्षक (Title)'), validator: (v) => v!.trim().isEmpty ? 'Required' : null),
       TextFormField(controller: _content, maxLength: 10000, minLines: 4, maxLines: 8, decoration: const InputDecoration(labelText: 'सन्देश (Message)'), validator: (v) => v!.trim().isEmpty ? 'Required' : null),
-      DropdownButtonFormField<String>(initialValue: _category, decoration: const InputDecoration(labelText: 'प्रकार (Category)'), items: const [
-        DropdownMenuItem(value: 'DISCUSSION', child: Text('छलफल (Discussion)')),
-        DropdownMenuItem(value: 'RITUAL', child: Text('परम्परा (Tradition)')),
-        DropdownMenuItem(value: 'ACHIEVEMENT', child: Text('उपलब्धि (Achievement)')),
+      if (widget.post != null) ...[const Text('Changes require independent review before publication.'), TextFormField(controller: _reason, maxLength: 1000, decoration: const InputDecoration(labelText: 'Edit reason'), validator: (v) => v!.trim().length < 5 ? 'At least 5 characters required' : null)],
+      DropdownButtonFormField<String>(initialValue: _category, decoration: const InputDecoration(labelText: 'प्रकार (Category)'), items: [
+        if (widget.post?['category'] == 'ANNOUNCEMENT') const DropdownMenuItem(value: 'ANNOUNCEMENT', child: Text('सूचना (Announcement)')),
+        const DropdownMenuItem(value: 'DISCUSSION', child: Text('छलफल (Discussion)')),
+        const DropdownMenuItem(value: 'RITUAL', child: Text('परम्परा (Tradition)')),
+        const DropdownMenuItem(value: 'ACHIEVEMENT', child: Text('उपलब्धि (Achievement)')),
       ], onChanged: (v) => setState(() => _category = v!)),
       const SizedBox(height: 20), FilledButton(onPressed: () {
-        if (_form.currentState!.validate()) { Navigator.pop(context, {'title': _title.text.trim(), 'content': _content.text.trim(), 'category': _category}); }
+        if (_form.currentState!.validate()) { Navigator.pop(context, {'title': _title.text.trim(), 'content': _content.text.trim(), 'category': _category, if (widget.post != null) 'version': widget.post!['version'], if (widget.post != null) 'reason': _reason.text.trim()}); }
       }, child: const Text('समीक्षामा पठाउनुहोस् (Submit for review)')),
     ])));
 }
@@ -186,5 +203,44 @@ class _CommentsScreenState extends State<_CommentsScreen> {
       ..._comments.map((c) => ListTile(title: Text(c['content'] as String))),
       TextField(controller: _text, maxLength: 2000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Your comment')),
       FilledButton(onPressed: _busy || _text.text.trim().isEmpty ? null : _send, child: const Text('पठाउनुहोस् (Send comment)')),
+    ]));
+}
+
+class _RevisionScreen extends StatefulWidget {
+  final GenealogyApiService api;
+  final Map post;
+  const _RevisionScreen({required this.api, required this.post});
+  @override
+  State<_RevisionScreen> createState() => _RevisionScreenState();
+}
+class _RevisionScreenState extends State<_RevisionScreen> {
+  List<dynamic> _rows = [];
+  String? _error;
+  int _page = 1;
+  bool _loading = true;
+  @override
+  void initState() { super.initState(); _load(1); }
+  Future<void> _load(int page) async {
+    setState(() => _loading = true);
+    try {
+      final rows = await widget.api.requestJson('/community/posts/${widget.post['id']}/revisions?page=$page');
+      if (mounted) { setState(() { _rows = rows as List; _page = page; _error = null; }); }
+    } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
+    finally { if (mounted) { setState(() => _loading = false); } }
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Revision history')),
+    body: ListView(padding: const EdgeInsets.all(16), children: [
+      const Text('Content versions are retained for review. Older edits before history was enabled are unavailable.'),
+      if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+      if (_loading) const Center(child: CircularProgressIndicator())
+      else ..._rows.map((r) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Version ${r['version']} · ${r['title']}'), Text(r['content'] as String), Text(r['category'] as String), Text('Reason: ${r['reason']}'), Text(r['createdAt'].toString()),
+      ])))),
+      Wrap(spacing: 8, children: [
+        TextButton(onPressed: _loading || _page == 1 ? null : () => _load(_page - 1), child: const Text('Newer versions')),
+        TextButton(onPressed: _loading || _rows.length < 50 ? null : () => _load(_page + 1), child: const Text('Older versions')),
+        if (_error != null) TextButton(onPressed: _loading ? null : () => _load(_page), child: const Text('Retry')),
+      ]),
     ]));
 }

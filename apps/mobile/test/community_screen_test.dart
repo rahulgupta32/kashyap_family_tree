@@ -36,4 +36,39 @@ void main() {
     expect(submitted!.containsKey('authorUserId'), isFalse);
     expect(find.textContaining('Submitted for independent moderation'), findsOneWidget);
   });
+  testWidgets('Author edits carry the viewed version and reason; history retains both snapshots', (tester) async {
+    Map<String,dynamic>? edited;
+    var content = 'Original fictional message';
+    var status = 'PUBLISHED';
+    final service = GenealogyApiService(sessionStore: MemorySessionStore(), client: MockClient((request) async {
+      expect(request.headers['Authorization'], 'Bearer revision-session');
+      if (request.method == 'PUT') {
+        edited = jsonDecode(request.body) as Map<String,dynamic>;
+        content = edited!['content'] as String; status = 'PENDING';
+        return http.Response('{}',200);
+      }
+      if (request.url.path.endsWith('/revisions')) {
+        return http.Response(jsonEncode([
+          {'version':3,'title':'Fictional discussion','content':content,'category':'DISCUSSION','reason':'Correct gathering details','createdAt':'2026-10-04T00:00:00Z'},
+          {'version':1,'title':'Fictional discussion','content':'Original fictional message','category':'DISCUSSION','reason':'Initial submission','createdAt':'2026-10-03T00:00:00Z'},
+        ]),200);
+      }
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional discussion','content':content,'category':'DISCUSSION','version':2,
+        'moderationStatus':status,'isLiked':false,'likesCount':0,'commentsCount':0,'canModerate':false,'canDelete':false,'canEdit':true,'canViewRevisions':true}]),200);
+    }));
+    service.setAuthToken('revision-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('सम्पादन (Edit)'));await tester.pumpAndSettle();
+    expect(find.text('Original fictional message'),findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).at(1),'Updated fictional message');
+    await tester.enterText(find.byType(TextFormField).at(2),'Correct gathering details');
+    await tester.ensureVisible(find.text('समीक्षामा पठाउनुहोस् (Submit for review)'));
+    await tester.tap(find.text('समीक्षामा पठाउनुहोस् (Submit for review)'));await tester.pumpAndSettle();
+    expect(edited,{'title':'Fictional discussion','content':'Updated fictional message','category':'DISCUSSION','version':2,'reason':'Correct gathering details'});
+    expect(find.text('PENDING'),findsOneWidget);expect(find.text('♡ 0 · Like'),findsNothing);
+    await tester.tap(find.text('Revision history'));await tester.pumpAndSettle();
+    expect(find.text('Original fictional message'),findsOneWidget);expect(find.text('Updated fictional message'),findsOneWidget);
+    expect(find.text('Reason: Correct gathering details'),findsOneWidget);
+  });
+
 }

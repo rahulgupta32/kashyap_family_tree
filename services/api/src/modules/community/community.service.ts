@@ -51,6 +51,8 @@ export class CommunityService {
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
       reportsCount: canModerate(user, row.branch_id) ? row.report_count || 0 : undefined,
       canModerate: canModerate(user, row.branch_id) && row.author_user_id !== user.id,
+      canEdit: row.author_user_id === user.id,
+      canViewRevisions: row.author_user_id === user.id || canModerate(user, row.branch_id),
       canDelete: row.author_user_id === user.id || canModerate(user, row.branch_id) };
   }
 
@@ -65,8 +67,48 @@ export class CommunityService {
     return this.db.transaction(async client => {
       const row = (await client.query(`INSERT INTO community_posts (author_user_id, branch_id, title, content, category, status)
         VALUES ($1,$2,$3,$4,$5,'PENDING') RETURNING *`, [user.id, branchId, title, content, body.category])).rows[0];
+      await this.saveRevision(row, user.id, 'Initial submission', client);
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_POST_SUBMITTED', entityType: 'community_post', entityId: row.id, actorId: user.id, newValue: { status: 'PENDING', branchId } }, client);
       return this.dto(row, user);
+    });
+  }
+
+  private async saveRevision(post: any, editorId: string, reason: string, client: any) {
+    await client.query(`INSERT INTO community_post_revisions
+      (post_id,version,editor_user_id,title,content,category,reason) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [post.id,post.version,editorId,post.title,post.content,post.category,reason]);
+  }
+
+  async editPost(id: string, user: AuthenticatedUser, body: any) {
+    allowedFields(body, ['title','content','category','version','reason']);
+    const title = textField(body.title, 'Title', 180);
+    const content = textField(body.content, 'Content', 10000);
+    const reason = textField(body.reason, 'Edit reason', 1000, 5);
+    if (!Number.isSafeInteger(body.version) || body.version < 1) throw new BadRequestException('Invalid version');
+    if (!['ANNOUNCEMENT','DISCUSSION','RITUAL','ACHIEVEMENT'].includes(body.category)) throw new BadRequestException('Invalid category');
+    return this.db.transaction(async client => {
+      const post = await this.visiblePost(id, user, client);
+      if (post.author_user_id !== user.id) throw new ForbiddenException('Only the author may edit this post');
+      if (post.version !== body.version) throw new ConflictException('Post changed; reload before editing');
+      if (body.category === 'ANNOUNCEMENT' && !canModerate(user, post.branch_id)) throw new ForbiddenException('Announcements require moderator authority');
+      if (post.title === title && post.content === content && post.category === body.category) return this.dto(post, user);
+      const updated = (await client.query(`UPDATE community_posts SET title=$2,content=$3,category=$4,
+        status='PENDING',version=version+1,updated_at=now() WHERE id=$1 RETURNING *`, [id,title,content,body.category])).rows[0];
+      await this.saveRevision(updated,user.id,reason,client);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_POST_EDITED',entityType:'community_post',entityId:id,actorId:user.id,
+        oldValue:{version:post.version,status:post.status},newValue:{version:updated.version,status:'PENDING',reason}},client);
+      return this.dto(updated,user);
+    });
+  }
+
+  async revisions(id: string, user: AuthenticatedUser, page = 1) {
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10000) throw new BadRequestException('Invalid page');
+    // Lock the post during authorization and history read so a concurrent deletion cannot expose history.
+    return this.db.transaction(async client => {
+      const post = await this.visiblePost(id,user,client);
+      if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Revision history requires author or moderator authority');
+      return (await client.query(`SELECT version,title,content,category,reason,created_at AS "createdAt"
+        FROM community_post_revisions WHERE post_id=$1 ORDER BY version DESC LIMIT 50 OFFSET $2`,[id,(page-1)*50])).rows;
     });
   }
 

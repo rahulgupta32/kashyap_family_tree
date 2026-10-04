@@ -14,6 +14,12 @@ export class CommunityController {
   }
   @Post('posts')
   create(@CurrentUser() user: AuthenticatedUser,@Body() body:any) { return this.service.createPost(user,body); }
+  @Put('posts/:id')
+  edit(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.editPost(id,user,body); }
+  @Get('posts/:id/revisions')
+  revisions(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Query('page') page?:string) {
+    return this.service.revisions(id,user,page===undefined?1:Number(page));
+  }
   @Put('posts/:id/like')
   like(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['liked']); return this.service.react(id,user,body.liked);

@@ -15,8 +15,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 106 | 40.8% |
-| MISSING | 40 | 15.4% |
+| PARTIALLY_COMPLETED | 107 | 41.2% |
+| MISSING | 39 | 15.0% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -36,7 +36,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | JUT | 3 | 4 | 0 | 2 |
 | NOT | 6 | 5 | 0 | 0 |
 | INV | 2 | 4 | 6 | 0 |
-| COM | 2 | 10 | 2 | 0 |
+| COM | 2 | 11 | 1 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 9 | 3 | 0 |
 | ADM | 4 | 8 | 4 | 0 |
@@ -84,3 +84,5 @@ Independent write provenance, late-link fencing and reviewed exact-version orpha
 ## Reviewed legacy media migration checkpoint — 2026-10-04
 
 Verified opt-in legacy reads and reviewed migration to private S3 advance MEDIA-FR-006 and ADM-FR-016 without changing classifications or original acceptance fields. See `LEGACY_MEDIA_MIGRATION_REPORT.md`. Asset IDs/references/holds and original local files are preserved. Real migration/provider/backup acceptance and broader integrations remain mandatory; exact-head CI evidence is recorded in PR #5.
+
+- Updated 2026-10-04: author-only community edits, retained text/category revision snapshots and web/native history controls are implemented; changed content returns to independent review. COM-FR-010 advances from missing to partial pending media revision integration and configurable policy. See `COMMUNITY_REVISIONS_REPORT.md`. Original acceptance fields and all frozen NFR targets remain unchanged.

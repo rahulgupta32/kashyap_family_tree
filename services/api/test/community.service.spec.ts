@@ -31,4 +31,13 @@ describe('Community authorization and request integrity',()=>{
     await expect(service.createPost(member,{title:'Title',content:'Content',category:'IMPERSONATION'})).rejects.toThrow('Invalid category');
     expect(db.transaction).not.toHaveBeenCalled();
   });
+  it('rejects invalid edit versions, categories, reasons and revision pages before persistence',async()=>{
+    const body={title:'Title',content:'Content',category:'DISCUSSION',version:1,reason:'Correct details'};
+    for(const version of [0,-1,1.5,'1']) await expect(service.editPost('post',member,{...body,version})).rejects.toThrow('Invalid version');
+    await expect(service.editPost('post',member,{...body,category:'UNKNOWN'})).rejects.toThrow('Invalid category');
+    await expect(service.editPost('post',member,{...body,reason:'bad'})).rejects.toThrow('Edit reason must contain');
+    await expect(service.revisions('post',member,0)).rejects.toThrow('Invalid page');
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
 });

@@ -71,6 +71,44 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:1,notes:'Stale review attempt'}).expect(409);
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:pending.version,notes:'Resolved fictional report'}).expect(201);
  });
+ it('returns published edits to moderation with restricted durable revision history',async()=>{
+  const current=(await db.query('SELECT * FROM community_posts WHERE id=$1',[post.id])).rows[0];
+  const payload={title:current.title,content:'Updated fictional content',category:'DISCUSSION',version:current.version,reason:'Correct fictional gathering details'};
+  await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(reader)).send(payload).expect(403);
+  await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(moderator)).send(payload).expect(403);
+  await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(author)).send({...payload,branchId:otherBranch}).expect(400);
+  const edited=(await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(author)).send(payload).expect(200)).body;
+  expect(edited.moderationStatus).toBe('PENDING');expect(edited.version).toBe(current.version+1);expect(edited.canEdit).toBe(true);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).expect(404);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions`).set('Authorization',token(reader)).expect(404);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions`).set('Authorization',token(outsider)).expect(403);
+  const rows=(await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions`).set('Authorization',token(moderator)).expect(200)).body;
+  expect(rows).toHaveLength(2);expect(rows[0]).toMatchObject({version:edited.version,content:payload.content,reason:payload.reason});
+  expect(rows[1].content).toBe('Fictional community acceptance message');
+  expect(rows[0].editorUserId).toBeUndefined();
+  const reopened=new CommunityService(db,audit);expect(await reopened.revisions(post.id,author)).toHaveLength(2);
+  await request(app.getHttpServer()).post(`/community/posts/${post.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:current.version,notes:'Stale pre-edit approval'}).expect(409);
+  await request(app.getHttpServer()).post(`/community/posts/${post.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:edited.version,notes:'Review updated content independently'}).expect(201);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions`).set('Authorization',token(reader)).expect(403);
+ });
+ it('serializes competing edits and retains exactly one winning revision',async()=>{
+  const current=(await db.query('SELECT * FROM community_posts WHERE id=$1',[post.id])).rows[0];
+  const results=await Promise.all(['First competing edit','Second competing edit'].map(content=>request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(author)).send({title:current.title,content,category:current.category,version:current.version,reason:'Concurrent edit fixture'})));
+  expect(results.map(r=>r.status).sort()).toEqual([200,409]);
+  expect((await db.query('SELECT count(*)::int AS n FROM community_post_revisions WHERE post_id=$1',[post.id])).rows[0].n).toBe(3);
+  const now=(await db.query('SELECT * FROM community_posts WHERE id=$1',[post.id])).rows[0];
+  await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(author)).send({title:now.title,content:now.content,category:now.category,version:now.version,reason:'No changed content fixture'}).expect(200);
+  expect((await db.query('SELECT version FROM community_posts WHERE id=$1',[post.id])).rows[0].version).toBe(now.version);
+ });
+ it('rolls back edits and revision snapshots together when audit fails',async()=>{
+  const current=(await db.query('SELECT * FROM community_posts WHERE id=$1',[post.id])).rows[0];
+  const before=(await db.query('SELECT count(*)::int AS n FROM community_post_revisions WHERE post_id=$1',[post.id])).rows[0].n;
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected edit audit failure'));
+  try{await request(app.getHttpServer()).put(`/community/posts/${post.id}`).set('Authorization',token(author)).send({title:current.title,content:'Must roll back revision',category:current.category,version:current.version,reason:'Audit failure fixture'}).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT version,content FROM community_posts WHERE id=$1',[post.id])).rows[0]).toMatchObject({version:current.version,content:current.content});
+  expect((await db.query('SELECT count(*)::int AS n FROM community_post_revisions WHERE post_id=$1',[post.id])).rows[0].n).toBe(before);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions?page=0`).set('Authorization',token(author)).expect(400);
+ });
  it('rolls back content if durable audit intent cannot be written',async()=>{
   const before=(await db.query('SELECT count(*)::int AS count FROM community_posts')).rows[0].count;
   const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected outbox failure'));
@@ -82,6 +120,8 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).delete(`/community/posts/${post.id}`).set('Authorization',token(reader)).expect(403);
   await request(app.getHttpServer()).delete(`/community/posts/${post.id}`).set('Authorization',token(author)).expect(200);
   await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(moderator)).expect(404);
+  await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions`).set('Authorization',token(author)).expect(404);
+  expect((await db.query('SELECT count(*)::int AS n FROM community_post_revisions WHERE post_id=$1',[post.id])).rows[0].n).toBe(3);
   expect((await db.query('SELECT deleted_at FROM community_posts WHERE id=$1',[post.id])).rows[0].deleted_at).not.toBeNull();
   expect((await db.query('SELECT count(*)::int AS count FROM persons')).rows[0].count).toBe(people);
  });
