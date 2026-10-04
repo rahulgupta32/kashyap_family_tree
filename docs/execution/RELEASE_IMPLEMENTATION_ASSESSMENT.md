@@ -15,8 +15,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 104 | 40.0% |
-| MISSING | 42 | 16.2% |
+| PARTIALLY_COMPLETED | 105 | 40.4% |
+| MISSING | 41 | 15.8% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -43,7 +43,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
 | I18N | 1 | 4 | 0 | 0 |
-| MEDIA | 3 | 2 | 1 | 0 |
+| MEDIA | 3 | 3 | 0 | 0 |
 | NFR | 0 | 14 | 13 | 4 |
 
 ## Concrete source findings
@@ -53,7 +53,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 - Cultural publication is a read-only surface; rule proposal/review/approval is kept in an in-memory Map. These are implementation gaps in addition to missing authority signatures.
 - Community comment parent references already exist, so threaded backend replies should not be described as wholly missing. Complete rendering/moderation/pagination acceptance remains. Required post categories, revision history and appeal workflows are incomplete.
 - Chat groups are one per branch, with join/leave; they do not yet meet arbitrary group owner/admin/member management. Server idempotency does not provide a persistent mobile offline outbox.
-- Private scanned local media is implemented. It does not yet meet durable object storage, image derivatives and production lifecycle acceptance.
+- Updated 2026-10-04: private S3 storage, safe image derivatives and web/native profile crop controls are implemented. Community/gallery integration, bulk inventory/orphan reconciliation and production lifecycle acceptance remain open. See `IMAGE_DERIVATIVES_REPORT.md`; original ledger fields and signed acceptance status remain unchanged.
 - The original ledger abbreviates NFRs to area/verification labels. The assessment restores the exact frozen targets, including p95 latency, scale, RPO/RTO and accessibility targets.
 
 ## Next engineering order
@@ -68,3 +68,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 ## Verification of this assessment
 
 Run `python scripts/validate_release_assessment.py` to check one-to-one coverage, immutable requirement/acceptance text, all NFR targets and cited paths. The evidence belongs to the reviewed source snapshot; new implementation needs its own CI evidence before changing classifications.
+
+## Media checkpoint — 2026-10-04
+
+Profile/chat derivatives, source-bound authorization, crop/compression and retention inheritance advance PROF-FR-003 and MEDIA-FR-004/006. The appended implementation evidence is updated conservatively; MEDIA-FR-004 moves from missing to partial because broader integrations and acceptance remain. All 260 original acceptance rows and frozen NFR targets are preserved. Exact-head CI evidence is recorded in PR #5.

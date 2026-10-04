@@ -14,5 +14,5 @@ test('profile photo crop persists original bytes and offers safe processing, ret
  const auth=await headers(page),original=await page.request.get(`${API}/profile/media/${assetId}`,{headers:auth});expect(original.ok()).toBeTruthy();expect(await original.body()).toEqual(png);
  await page.reload();await expect(page.getByText('फोटो तयार हुँदैछ / Processing photo',{exact:true})).toBeVisible();
  const remove=page.waitForResponse(r=>r.url()===`${API}/profile/photo`&&r.request().method()==='DELETE');await page.getByRole('button',{name:'फोटो हटाउनुहोस् / Remove photo',exact:true}).click();expect((await remove).ok()).toBeTruthy();
- await expect(page.getByRole('button',{name:'फोटो हटाउनुहोस् / Remove photo',exact:true})).toHaveCount(0);expect((await page.request.get(`${API}/profile/media/${assetId}?variant=display`,{headers:auth})).status()).toBe(404);
+ await expect(page.getByRole('button',{name:'फोटो हटाउनुहोस् / Remove photo',exact:true})).toHaveCount(0);expect((await page.request.get(`${API}/profile/media/${assetId}?variant=display`,{headers:await headers(page)})).status()).toBe(404);
 });
