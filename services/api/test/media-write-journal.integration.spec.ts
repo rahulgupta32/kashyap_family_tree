@@ -63,6 +63,11 @@ describe('Durable write journal and reviewed orphan cleanup (real PostgreSQL)',(
  async function itemFor(id:string,location:string){return (await db.query('SELECT * FROM media_inventory_items WHERE run_id=$1 AND observed_location=$2 AND asset_id IS NULL',[id,location])).rows[0];}
  async function link(intent:any,location=intent.object_location){return db.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path)
  VALUES($1,$2,$3,$4,$3,$5,$6,$7,true,'CLEAN','ACTIVE',$8) RETURNING id`,[randomUUID(),author.id,intent.file_name,intent.bucket,intent.mime_type,intent.byte_size,intent.sha256_checksum,location]);}
+ it('authenticates the independent pool with explicit database settings and no database URL',async()=>{
+  const url=process.env.DATABASE_URL,standalone=new DatabaseService();delete process.env.DATABASE_URL;
+  try{await standalone.onModuleInit();expect((await standalone.journalQuery('SELECT current_database() AS name')).rows[0].name).toBe(iso.dbName);}
+  finally{await standalone.onModuleDestroy();if(url!==undefined)process.env.DATABASE_URL=url;}
+ });
  it('commits source and derivative write provenance without changing original bytes',async()=>{
   const photo=await app.get(ProfileService).uploadPhoto(author.id,'image/png',png);source=(await db.query('SELECT * FROM media_assets WHERE id=$1',[photo.assetId])).rows[0];await app.get(ImageDerivativesService).processPending(1);
   const intents=(await db.query('SELECT * FROM media_upload_intents WHERE asset_id=$1 OR asset_id IN (SELECT asset_id FROM media_derivatives WHERE source_asset_id=$1)',[photo.assetId])).rows;expect(intents).toHaveLength(3);for(const intent of intents){expect(intent.state).toBe('COMMITTED');expect(intent.uploader_user_id).toBe(author.id);expect(intent.object_location).toBeTruthy();}expect(await store().read(source)).toEqual(bytes());

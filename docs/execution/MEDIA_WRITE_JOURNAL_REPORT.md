@@ -47,8 +47,8 @@ and hides selection for pending/processed cleanup. Session changes invalidate pe
 ## Verification scope
 
 Two storage unit cases cover reservation-before-write ordering, exact version acknowledgement,
-fencing failure and no physical write on reservation failure. Ten real PostgreSQL cases cover
-source/derivative provenance, outer rollback, uncertain writes, classifications/redaction,
+fencing failure and no physical write on reservation failure. Eleven real PostgreSQL cases cover
+explicit database credentials without a URL, source/derivative provenance, outer rollback, uncertain writes, classifications/redaction,
 authority, audit rollback, stale links, holds, retries, integrity and lost commit acknowledgement.
 The real S3 suite covers an accepted PUT whose acknowledgement is lost, exact-version cleanup,
 late-link rejection, preservation of a later version and current referenced attachment bytes.

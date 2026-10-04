@@ -143,7 +143,8 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   /** Autocommit write evidence must survive caller rollback, including saturated worker pools. */
   async journalQuery(text:string,params:any[]=[]):Promise<QueryResult> {
     if(!this.pool||this.isMemoryDb)throw new Error('Real PostgreSQL required for media write journal');
-    if(!this.journalPool)this.journalPool=new Pool({...this.pool.options,max:2,connectionTimeoutMillis:5000,query_timeout:10000});
+    // pg-pool deliberately makes password non-enumerable; spreading options loses it.
+    if(!this.journalPool)this.journalPool=new Pool({...this.pool.options,password:this.pool.options.password,max:2,connectionTimeoutMillis:5000,query_timeout:10000});
     return this.journalPool.query(text,params);
   }
 
