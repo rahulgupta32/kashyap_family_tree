@@ -7,7 +7,7 @@ export function ProfilePhoto({token,owner,initialAsset}:{token:string;owner:stri
  const [asset,setAsset]=useState(initialAsset),[selected,setSelected]=useState<{mimeType:string;dataBase64:string;image:HTMLImageElement}|null>(null),[crop,setCrop]=useState<Crop>(full),[status,setStatus]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[imageUrl,setImageUrl]=useState(''),[revision,setRevision]=useState(0);
  const current=useRef(owner),selection=useRef(0),canvas=useRef<HTMLCanvasElement>(null);current.current=owner;
  useEffect(()=>{setAsset(initialAsset);setSelected(null);setCrop(full);setStatus('');setError('');setBusy(false);selection.current++;},[owner,initialAsset]);
- useEffect(()=>{return()=>{current.current='';selection.current++;};},[]);
+ useEffect(()=>{current.current=owner;return()=>{current.current='';selection.current++;};},[owner]);
  useEffect(()=>{
   let cancelled=false,timer:ReturnType<typeof setTimeout>|undefined,url='';setImageUrl('');
   if(!asset||!token)return;

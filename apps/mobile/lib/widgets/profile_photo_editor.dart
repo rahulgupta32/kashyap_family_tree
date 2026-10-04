@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,7 +59,7 @@ class _ProfilePhotoEditorState extends State<ProfilePhotoEditor> {
           try{decoded=(await codec.getNextFrame()).image;}finally{codec.dispose();}
         }finally{descriptor.dispose();}
       }finally{buffer.dispose();}
-      if(!_current(generation)){decoded?.dispose();return;}
+      if(!_current(generation)){decoded.dispose();return;}
       final previous=_preview;
       setState((){_preview=decoded;_mime=mime as String;_encoded=encoded;_crop={'left':0,'top':0,'width':10000,'height':10000};});
       WidgetsBinding.instance.addPostFrameCallback((_){previous?.dispose();});
