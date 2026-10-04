@@ -117,6 +117,9 @@ describe('Community persistent HTTP workflows and isolation',()=>{
  });
  it('soft-deletes only for the author or scoped moderator and preserves lineage',async()=>{
   const people=(await db.query('SELECT count(*)::int AS count FROM persons')).rows[0].count;
+  await request(app.getHttpServer()).delete(`/community/posts/${post.id}`).set('Authorization',token(reader)).expect(404);
+  const pending=(await db.query('SELECT version FROM community_posts WHERE id=$1',[post.id])).rows[0];
+  await request(app.getHttpServer()).post(`/community/posts/${post.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:pending.version,notes:'Publish fixture before deletion authorization check'}).expect(201);
   await request(app.getHttpServer()).delete(`/community/posts/${post.id}`).set('Authorization',token(reader)).expect(403);
   await request(app.getHttpServer()).delete(`/community/posts/${post.id}`).set('Authorization',token(author)).expect(200);
   await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(moderator)).expect(404);
