@@ -65,9 +65,11 @@ describe('Chat private attachments and durable retry integrity (real PostgreSQL)
   expect(result.body).toEqual(Buffer.from(png,'base64'));expect(result.headers['cache-control']).toBe('no-store');expect(result.headers['x-content-type-options']).toBe('nosniff');
   const asset=(await db.query('SELECT asset_id FROM chat_message_attachments WHERE message_id=$1',[message.id])).rows[0];
   await request(app.getHttpServer()).get(`/profile/media/${asset.asset_id}`).set('Authorization',auth(author)).expect(404);
+  await request(app.getHttpServer()).get(`/claims/evidence/${asset.asset_id}`).set('Authorization',auth(author)).expect(404);
   await app.get(UserRepository).assignRole(outsider.id,Role.CENTRAL_ADMIN);
   await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(outsider)).expect(404);
   await request(app.getHttpServer()).get(`/profile/media/${asset.asset_id}`).set('Authorization',auth(outsider)).expect(404);
+  await request(app.getHttpServer()).get(`/claims/evidence/${asset.asset_id}`).set('Authorization',auth(outsider)).expect(404);
   await request(app.getHttpServer()).post(`/chat/conversations/${group}/messages/${message.id}/report`).set('Authorization',auth(reader)).send({reason:'Fictional attachment report'}).expect(201);
   const report=(await db.query('SELECT id FROM chat_message_reports')).rows[0];
   await request(app.getHttpServer()).get(`/chat/reports/${report.id}/attachment`).set('Authorization',auth(reader)).expect(403);

@@ -155,9 +155,11 @@ export class ProfileController {
   ) {
     const effectiveUser = queryUser || queryU;
     const media = await this.profileService.getMediaAsset(assetId, user, effectiveUser, queryExpires, querySig);
-    if (res && res.setHeader && res.sendFile) {
+    if (res && res.setHeader && res.send) {
       res.setHeader('Content-Type', media.mimeType);
-      res.sendFile(media.filePath);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(media.buffer);
       return;
     }
     return media;

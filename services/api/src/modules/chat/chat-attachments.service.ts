@@ -1,7 +1,6 @@
-import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Optional, Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
-import { promises as fs } from 'fs';
-import * as path from 'path';
+import { MediaStorageService } from '../../media/media-storage.service';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service';
 import { ChatService } from './chat.service';
@@ -29,8 +28,7 @@ export function decodeChatAttachment(body:any){
 
 @Injectable()
 export class ChatAttachmentsService {
- constructor(private readonly db:DatabaseService,private readonly chat:ChatService,private readonly scanner:MalwareScannerService){}
- private directory(){return path.resolve(process.env.STORAGE_PATH||path.resolve(process.cwd(),'storage/uploads'),'chat');}
+ constructor(private readonly db:DatabaseService,private readonly chat:ChatService,private readonly scanner:MalwareScannerService,@Optional() private readonly storage:MediaStorageService=new MediaStorageService()){}
  private async retry(id:string,user:AuthenticatedUser,input:ReturnType<typeof decodeChatAttachment>,client:PoolClient){
   const row=(await client.query(`SELECT m.id,m.message_text,a.sha256_checksum,a.mime_type FROM chat_messages m
    LEFT JOIN chat_message_attachments link ON link.message_id=m.id LEFT JOIN media_assets a ON a.id=link.asset_id
@@ -49,9 +47,8 @@ export class ChatAttachmentsService {
   const scan=await this.scanner.scanFile(input.buffer,fileName);
   if(scan.status===ScanResultStatus.INFECTED)throw new BadRequestException('Attachment rejected by malware scanning');
   if(scan.status!==ScanResultStatus.CLEAN)throw new ServiceUnavailableException('Attachment scanner unavailable; nothing was sent');
-  const directory=this.directory(),filePath=path.join(directory,fileName);
-  await fs.mkdir(directory,{recursive:true,mode:0o700});
-  try{await fs.writeFile(filePath,input.buffer,{flag:'wx',mode:0o600});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')await fs.unlink(filePath).catch(()=>{});throw error;}
+  const filePath=await this.storage.put('private-chat',fileName,input.buffer,input.mimeType);
+  const candidate={bucket:'private-chat',file_name:fileName,storage_key:fileName,storage_path:filePath};
   let linked=false;
   try{
    const result=await this.db.transaction(async client=>{
@@ -63,12 +60,12 @@ export class ChatAttachmentsService {
     await client.query('INSERT INTO chat_message_attachments(message_id,asset_id) VALUES($1,$2)',[message.id,assetId]);
     linked=true;return message;
    });
-   if(!linked)await fs.unlink(filePath).catch(()=>{});
+   if(!linked)await this.storage.remove(candidate).catch(()=>{});
    return result;
   }catch(error){
    // A lost COMMIT acknowledgement is uncertain. Remove bytes only after a
    // separate read proves no asset was committed; otherwise retain for recovery.
-   try{const stored=await this.db.query('SELECT id FROM media_assets WHERE id=$1',[assetId]);if(!stored.rows.length)await fs.unlink(filePath).catch(()=>{});}catch{}
+   try{const stored=await this.db.query('SELECT id FROM media_assets WHERE id=$1',[assetId]);if(!stored.rows.length)await this.storage.remove(candidate).catch(()=>{});}catch{}
    throw error;
   }
  }
@@ -96,10 +93,7 @@ export class ChatAttachmentsService {
   });
  }
  private async readFile(row:any){
-  const expected=path.join(this.directory(),row.file_name);
-  if(path.dirname(expected)!==this.directory()||path.resolve(row.storage_path||'')!==expected)throw new NotFoundException('Attachment not available');
-  let buffer:Buffer;try{const stat=await fs.stat(expected);if(!stat.isFile()||stat.size<1||stat.size>MAX_BYTES||stat.size!==Number(row.byte_size))throw new ServiceUnavailableException('Attachment integrity verification failed');buffer=await fs.readFile(expected);}catch(error){if(error instanceof ServiceUnavailableException)throw error;throw new NotFoundException('Attachment not available');}
-  if(buffer.length!==Number(row.byte_size)||createHash('sha256').update(buffer).digest('hex')!==row.sha256_checksum)throw new ServiceUnavailableException('Attachment integrity verification failed');
+  const buffer=await this.storage.read(row,MAX_BYTES);
   return {buffer,mimeType:row.mime_type,fileName:row.file_name};
  }
 

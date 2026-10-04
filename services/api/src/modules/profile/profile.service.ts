@@ -1,5 +1,7 @@
 import {
   Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
@@ -24,8 +26,7 @@ import {
   Role,
 } from '@kashyap/contracts';
 import * as crypto from 'crypto';
-import * as path from 'path';
-import * as fs from 'fs';
+import { MediaStorageService } from '../../media/media-storage.service';
 
 export interface MediaUploadResult {
   assetId: string;
@@ -48,9 +49,19 @@ export interface UserSessionDto {
 }
 
 @Injectable()
-export class ProfileService {
+export class ProfileService implements OnModuleInit, OnModuleDestroy {
+  private deletionTimer?: NodeJS.Timeout;
+  private deletionWork?: Promise<number>;
+  onModuleInit() {
+    if (process.env.NODE_ENV !== 'test') {
+      this.deletionTimer = setInterval(() => {
+        if (!this.deletionWork) this.deletionWork = this.processMediaDeletionQueue().finally(() => { this.deletionWork = undefined; });
+      }, 60000);
+      this.deletionTimer.unref();
+    }
+  }
+  async onModuleDestroy() { if (this.deletionTimer) clearInterval(this.deletionTimer); await this.deletionWork; }
   private readonly logger = new Logger(ProfileService.name);
-  private readonly storageBaseDir: string;
   private readonly hmacSecret: string;
 
   constructor(
@@ -61,12 +72,10 @@ export class ProfileService {
     private readonly auditOutboxRepo: AuditOutboxRepository,
     private readonly malwareScanner: MalwareScannerService,
     @Optional() @Inject(SMS_PROVIDER) private readonly smsProvider?: ISmsProvider,
+    @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
   ) {
-    this.storageBaseDir = process.env.STORAGE_PATH || path.resolve(process.cwd(), 'storage/uploads');
     this.hmacSecret = process.env.MEDIA_HMAC_SECRET || 'kashyap_secure_media_hmac_secret_key_minimum_32_chars';
-    if (!fs.existsSync(this.storageBaseDir)) {
-      fs.mkdirSync(this.storageBaseDir, { recursive: true });
-    }
+
   }
 
   async getMe(userId: string, client?: any) {
@@ -367,62 +376,67 @@ export class ProfileService {
     const assetId = crypto.randomUUID();
     const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/png' ? 'png' : 'webp';
     const fileName = `avatar_${assetId}.${ext}`;
-    const storagePath = path.join(this.storageBaseDir, fileName);
-
-    fs.writeFileSync(storagePath, buffer);
-
     const scanResult = await this.malwareScanner.scanFile(buffer, fileName);
+    const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType);
 
-    if (scanResult.status === ScanResultStatus.INFECTED) {
-      await this.db.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'QUARANTINED', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
+    try {
+      if (scanResult.status === ScanResultStatus.INFECTED) {
+        await this.db.query(
+          `INSERT INTO media_assets (
+            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
+            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
+          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'QUARANTINED', 'ACTIVE', $8, $9)`,
+          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
+        );
 
-      throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName || 'Malware detected'}`);
+        throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName || 'Malware detected'}`);
+      }
+
+      if (scanResult.status === ScanResultStatus.SCANNER_FAILED) {
+        await this.db.query(
+          `INSERT INTO media_assets (
+            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
+            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
+          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'SCANNER_FAILED', 'ACTIVE', $8, $9)`,
+          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
+        );
+
+        throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
+      }
+
+      const signedUrl = this.generateSignedMediaUrl(assetId, userId, 3600);
+
+      await this.db.transaction(async (client) => {
+        await client.query(
+          `INSERT INTO media_assets (
+            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
+            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
+          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'CLEAN', 'ACTIVE', $8, $9)`,
+          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
+        );
+
+        await client.query(
+          'UPDATE user_accounts SET avatar_asset_id = $1, updated_at = NOW() WHERE id = $2',
+          [assetId, userId],
+        );
+      });
+
+      return {
+        assetId,
+        url: signedUrl,
+        sha256,
+        sizeBytes: buffer.length,
+        mimeType,
+        quarantineStatus: 'CLEAN',
+        scanEvidence: scanResult.evidence,
+      };
+    } catch (error) {
+      // A missing commit acknowledgement must never remove committed bytes.
+      try { const stored = await this.db.query('SELECT id FROM media_assets WHERE id=$1', [assetId]);
+        if (!stored.rows.length) await this.storage.remove({bucket:'private-profiles',file_name:fileName,storage_key:fileName,storage_path:storagePath});
+      } catch {}
+      throw error;
     }
-
-    if (scanResult.status === ScanResultStatus.SCANNER_FAILED) {
-      await this.db.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'SCANNER_FAILED', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
-
-      throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
-    }
-
-    const signedUrl = this.generateSignedMediaUrl(assetId, userId, 3600);
-
-    await this.db.transaction(async (client) => {
-      await client.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'CLEAN', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
-
-      await client.query(
-        'UPDATE user_accounts SET avatar_asset_id = $1, updated_at = NOW() WHERE id = $2',
-        [assetId, userId],
-      );
-    });
-
-    return {
-      assetId,
-      url: signedUrl,
-      sha256,
-      sizeBytes: buffer.length,
-      mimeType,
-      quarantineStatus: 'CLEAN',
-      scanEvidence: scanResult.evidence,
-    };
   }
 
   generateSignedMediaUrl(assetId: string, userId: string, expiresInSec: number = 3600): string {
@@ -495,12 +509,9 @@ export class ProfileService {
     }
 
 
-    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
-      throw new NotFoundException('Physical media file not found on storage volume');
-    }
-
+    const buffer = await this.storage.read(asset);
     return {
-      filePath: asset.storage_path,
+      buffer,
       fileName: asset.file_name,
       mimeType: asset.mime_type,
       byteSize: asset.byte_size,
@@ -729,22 +740,28 @@ export class ProfileService {
     let processed = 0;
     try {
       const pendingRes = await this.db.query(
-        `SELECT id, storage_path FROM media_deletion_queue WHERE status = 'PENDING' FOR UPDATE SKIP LOCKED LIMIT 50`,
+        "SELECT id FROM media_deletion_queue WHERE status = 'PENDING' ORDER BY attempts, created_at LIMIT 50",
       );
-      for (const row of pendingRes.rows) {
+      for (const pending of pendingRes.rows) {
         try {
-          if (row.storage_path && fs.existsSync(row.storage_path)) {
-            fs.unlinkSync(row.storage_path);
-          }
-          await this.db.query(
-            `UPDATE media_deletion_queue SET status = 'PROCESSED', processed_at = NOW() WHERE id = $1`,
-            [row.id],
-          );
-          processed++;
+          const removed = await this.db.transaction(async client => {
+            // Serialize both retention changes and other cleanup workers until bytes are removed.
+            const row = (await client.query(
+              `SELECT a.*, q.id AS queue_id, q.storage_path AS queued_path FROM media_deletion_queue q
+               JOIN media_assets a ON a.id=q.asset_id WHERE q.id=$1 AND q.status='PENDING'
+               FOR UPDATE OF q,a SKIP LOCKED`, [pending.id],
+            )).rows[0];
+            if (!row) return false;
+            if (row.queued_path !== row.storage_path || !['DELETED','PURGED'].includes(row.retention_status)) throw new Error('Media deletion location or retention mismatch');
+            await this.storage.remove(row);
+            await client.query("UPDATE media_deletion_queue SET status='PROCESSED', processed_at=NOW(), error_message=NULL WHERE id=$1", [row.queue_id]);
+            return true;
+          });
+          if (removed) processed++;
         } catch (err: any) {
           await this.db.query(
-            `UPDATE media_deletion_queue SET attempts = attempts + 1, error_message = $1 WHERE id = $2`,
-            [err.message, row.id],
+            "UPDATE media_deletion_queue SET attempts=attempts+1, error_message=$1 WHERE id=$2 AND status='PENDING'",
+            [String(err.message).slice(0,1000), pending.id],
           );
         }
       }

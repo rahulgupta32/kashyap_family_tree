@@ -1,3 +1,4 @@
+import { MediaStorageModule } from './media/media-storage.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -30,6 +31,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
       },
     ]),
     DatabaseModule,
+    MediaStorageModule,
     RedisModule,
     HealthModule,
     AuthModule,

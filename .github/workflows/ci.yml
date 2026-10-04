@@ -278,3 +278,62 @@ jobs:
             test-results/m4-device-*.json
             test-results/kashyap-m4-debug.apk
           retention-days: 14
+
+  private-object-storage:
+    name: Private S3 media with real object storage and PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      RUN_S3_ACCEPTANCE: 'true'
+      MEDIA_STORAGE_BACKEND: s3
+      MEDIA_S3_ENDPOINT: http://127.0.0.1:9000
+      MEDIA_S3_BUCKET: kashyap-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      MEDIA_S3_REGION: us-east-1
+      MEDIA_S3_FORCE_PATH_STYLE: 'true'
+      AWS_ACCESS_KEY_ID: fictional_ci_storage
+      AWS_SECRET_ACCESS_KEY: fictional_ci_storage_password
+      USE_REAL_POSTGRES: 'true'
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: kashyap_test_user
+      DB_PASSWORD: kashyap_test_password
+      DB_NAME: kashyap_test_s3
+      JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
+      SPARROW_SMS_TOKEN: test_sparrow_token
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: kashyap_test_s3
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages
+      - name: Start isolated object storage fixture
+        run: |
+          docker run -d --name kashyap-ci-minio -p 127.0.0.1:9000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:9000/minio/health/live
+      - name: Verify private bytes, authorization, retries, integrity and cleanup
+        run: pnpm --filter @kashyap/api run test:integration --testPathPattern=s3-media
+      - name: Object storage diagnostics
+        if: failure()
+        run: docker logs kashyap-ci-minio

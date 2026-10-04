@@ -20,6 +20,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
               rows: [{
                 id: params[0],
                 uploader_user_id: 'u-401',
+                bucket: 'private-profiles',
                 quarantine_status: 'CLEAN',
                 retention_status: 'ACTIVE',
               }],
