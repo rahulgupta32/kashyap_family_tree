@@ -52,4 +52,19 @@ void main(){
   expect(find.text('A fictional message'),findsOneWidget);expect(find.text('You · पढियो (Read)'),findsOneWidget);expect(connection.sent,contains(equals({'type':'read','sequence':1})));
   await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
  });
+ testWidgets('Reporting shares only the selected message and entered reason',(tester)async{
+  final connection=FakeChatConnection();final requests=<http.Request>[];
+  final api=ChatTestApi(connection,MockClient((request)async{requests.add(request);return http.Response('{"alreadyReported":false}',201);}));
+  api.setAuthToken('header.${base64Url.encode(utf8.encode(jsonEncode({'sub':'viewer'})))}.signature');addTearDown(api.dispose);
+  await tester.pumpWidget(MaterialApp(home:ChatConversationScreen(api:api,conversation:const {'id':conversation,'title':'Fictional family','type':'DIRECT'},userId:'viewer')));await tester.pump();
+  connection.events.add({'type':'snapshot','conversationId':conversation,'typingUserIds':[],'messages':[{'id':'reported','senderUserId':'other','sequence':1,'content':'Selected message','isDeleted':false,'readByUserIds':[],'deliveredToUserIds':[]}]});await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('उजुरी (Report message)'));await tester.pumpAndSettle();
+  await tester.enterText(find.widgetWithText(TextField,'उजुरीको कारण (Report reason)'),'Fictional spam');await tester.pump();
+  await tester.tap(find.text('पठाउनुहोस् (Submit report)'));await tester.pumpAndSettle();
+  expect(requests.single.url.path,'/chat/conversations/$conversation/messages/reported/report');
+  expect(jsonDecode(requests.single.body),{'reason':'Fictional spam'});
+  expect(find.text('उजुरी पठाइयो (Report submitted)'),findsOneWidget);
+  await tester.pumpWidget(const SizedBox.shrink());await tester.pump();
+ });
+
 }

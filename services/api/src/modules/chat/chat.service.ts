@@ -316,4 +316,47 @@ export class ChatService {
    return this.groupChange(row,user,'CHAT_GROUP_OWNER_TRANSFERRED',{previousOwnerUserId:user.id,ownerUserId:body.userId},client);
   });
  }
+ async reportMessage(id:string,messageId:string,user:AuthenticatedUser,body:any){
+  allowedFields(body,['reason']);uuid(messageId,'message');
+  const reason=textField(body.reason,'Report reason',1000);
+  return this.db.transaction(async client=>{
+   await this.access(id,user,client);
+   const message=(await client.query(`SELECT m.id FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=$3
+    WHERE m.conversation_id=$1 AND m.id=$2 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence`,[id,messageId,user.id])).rows[0];
+   if(!message)throw new NotFoundException('Visible message not found');
+   const report=(await client.query(`INSERT INTO chat_message_reports(message_id,reporter_id,reason) VALUES($1,$2,$3)
+    ON CONFLICT(message_id,reporter_id) DO NOTHING RETURNING id,status`,[messageId,user.id,reason])).rows[0];
+   if(!report)return {alreadyReported:true};
+   await this.audit.recordAuditIntent({action:'CHAT_MESSAGE_REPORTED',entityType:'chat_report',entityId:report.id,actorId:user.id},client);
+   return {...report,alreadyReported:false};
+  });
+ }
+ async reviewReports(user:AuthenticatedUser){
+  member(user);
+  if(!canModerate(user))throw new ForbiddenException('Central moderation authority required');
+  // Only the explicitly reported record is disclosed, never surrounding history.
+  return (await this.db.query(`SELECT r.id,r.reason,r.status,r.created_at AS "createdAt",r.resolved_at AS "resolvedAt",
+   CASE WHEN m.deleted_at IS NULL THEN m.message_text ELSE '' END AS content,m.deleted_at IS NOT NULL AS "isDeleted"
+   FROM chat_message_reports r JOIN chat_messages m ON m.id=r.message_id
+   ORDER BY r.created_at DESC,r.id LIMIT 100`)).rows;
+ }
+ async resolveReport(reportId:string,user:AuthenticatedUser,body:any){
+  member(user);uuid(reportId,'report');allowedFields(body,['decision','note']);
+  if(!canModerate(user))throw new ForbiddenException('Central moderation authority required');
+  if(!['DISMISSED','REMOVED'].includes(body.decision))throw new BadRequestException('Choose DISMISSED or REMOVED');
+  const note=textField(body.note,'Moderation note',1000);
+  return this.db.transaction(async client=>{
+   const report=(await client.query('SELECT * FROM chat_message_reports WHERE id=$1 FOR UPDATE',[reportId])).rows[0];
+   if(!report)throw new NotFoundException('Report not found');
+   if(report.status!=='OPEN')throw new ConflictException('Report already resolved');
+   if(report.reporter_id===user.id)throw new ForbiddenException('Another moderator must review your report');
+   const message=(await client.query('SELECT sender_id FROM chat_messages WHERE id=$1 FOR UPDATE',[report.message_id])).rows[0];
+   if(message.sender_id===user.id)throw new ForbiddenException('Another moderator must review your message');
+   if(body.decision==='REMOVED')await client.query('UPDATE chat_messages SET deleted_at=coalesce(deleted_at,NOW()) WHERE id=$1',[report.message_id]);
+   await client.query('UPDATE chat_message_reports SET status=$2,resolved_by=$3,resolved_at=NOW(),resolution_note=$4 WHERE id=$1',[reportId,body.decision,user.id,note]);
+   await this.audit.recordAuditIntent({action:'CHAT_REPORT_RESOLVED',entityType:'chat_report',entityId:reportId,actorId:user.id,newValue:{decision:body.decision}},client);
+   return {success:true};
+  });
+ }
+
 }

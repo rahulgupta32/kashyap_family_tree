@@ -161,6 +161,16 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     try {if(discard){await widget.api.chatOutbox.discard(row.id);}else{await widget.api.chatOutbox.retry(row.id);unawaited(_pump());}}
     catch(e){if(mounted){setState(()=>_error=chatOutboxLabels['storage']);}}
   }
+  Future<void> _report(String messageId) async {
+    var reason='';
+    final submitted=await showDialog<String>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,update)=>AlertDialog(
+      title:const Text('उजुरी (Report message)'),
+      content:Column(mainAxisSize:MainAxisSize.min,children:[const Text('यो सन्देश र कारण समीक्षकलाई पठाइनेछ (This message and reason will be shared with a moderator).'),TextField(maxLength:1000,decoration:const InputDecoration(labelText:'उजुरीको कारण (Report reason)'),onChanged:(value)=>update(()=>reason=value))]),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('रद्द (Cancel)')),FilledButton(onPressed:reason.trim().isEmpty?null:()=>Navigator.pop(ctx,reason.trim()),child:const Text('पठाउनुहोस् (Submit report)'))])));
+    if(submitted==null||!mounted){return;}
+    try{await widget.api.requestJson('$_path/messages/$messageId/report',method:'POST',data:{'reason':submitted});if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('उजुरी पठाइयो (Report submitted)')));}}
+    catch(e){if(mounted){setState(()=>_error=e.toString());}}
+  }
   Future<void> _older()async{
     try{final rows=await widget.api.requestJson('$_path/messages?before=${_messages.first['sequence']}') as List;if(mounted){setState(()=>_messages=[...rows,..._messages]);}}
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
@@ -179,7 +189,7 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
         if(_messages.length>=100)TextButton(onPressed:_older,child:const Text('Load earlier messages')),
-        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):null));}),
+        ..._messages.map((m){final own=m['senderUserId']==widget.userId;return Card(color:own?Colors.amber.shade50:null,child:ListTile(title:Text(m['isDeleted']==true?'Message removed':m['content'] as String),subtitle:Text('${own?'You':'Member'} · ${own&&(m['readByUserIds'] as List).any((id)=>id!=widget.userId)?chatReceiptLabels['read']:own&&(m['deliveredToUserIds'] as List? ?? []).any((id)=>id!=widget.userId)?chatReceiptLabels['delivered']:chatReceiptLabels['sent']}'),trailing:own&&m['isDeleted']!=true?IconButton(tooltip:'Remove message',icon:const Icon(Icons.delete_outline),onPressed:()async{try{await widget.api.requestJson('$_path/messages/${m['id']}',method:'DELETE');}catch(e){if(mounted){setState(()=>_error=e.toString());}}}):!own&&m['isDeleted']!=true?IconButton(tooltip:'उजुरी (Report message)',icon:const Icon(Icons.flag_outlined),onPressed:()=>_report(m['id'] as String)):null));}),
       ])),
       if(_pending.isNotEmpty)ConstrainedBox(constraints:const BoxConstraints(maxHeight:160),child:ListView(shrinkWrap:true,children:_pending.map((row)=>ListTile(key:ValueKey('queued-${row.id}'),title:Text(row.content),subtitle:Text(row.state=='failed'?chatOutboxLabels['failed']!:chatOutboxLabels['queued']!),trailing:Row(mainAxisSize:MainAxisSize.min,children:[IconButton(tooltip:chatOutboxLabels['retry'],onPressed:()=>_queuedAction(row,false),icon:const Icon(Icons.refresh)),IconButton(tooltip:chatOutboxLabels['discard'],onPressed:()=>_queuedAction(row,true),icon:const Icon(Icons.close))]))).toList())),
       if(_typing)const Text('Someone is typing…'),

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/auth-context';
 import { PrivateGroupCreator, GroupManager } from './group-controls';
 import { chatManagement, chatReceipts, chatOutboxLabels } from '@kashyap/localization';
 import { BrowserChatOutbox, QueuedChatMessage } from '../../lib/chat-outbox';
+import { ChatReports } from './report-controls';
 import { ApiClient } from '../../lib/api-client';
 interface Conversation {id:string;title:string;type:string;isParticipant:boolean;unreadCount:number}
 interface Message {id:string;senderUserId:string;content:string;sequence:number;isDeleted:boolean;readByUserIds:string[];deliveredToUserIds:string[]}
@@ -13,11 +14,12 @@ export default function ChatPage(){
  const [conversations,setConversations]=useState<Conversation[]>([]),[selected,setSelected]=useState<Conversation|null>(null),[messages,setMessages]=useState<Message[]>([]);
  const [error,setError]=useState(''),[busy,setBusy]=useState(false),[text,setText]=useState(''),[query,setQuery]=useState(''),[people,setPeople]=useState<any[]>([]);
  const [managing,setManaging]=useState(false);
+ const [reporting,setReporting]=useState<string|null>(null),[reason,setReason]=useState(''),[notice,setNotice]=useState('');
  const [branches,setBranches]=useState<any[]>([]),[branch,setBranch]=useState(''),[groupTitle,setGroupTitle]=useState(''),[live,setLive]=useState(false),[typing,setTyping]=useState(false);
  const socket=useRef<WebSocket|null>(null),lastTyping=useRef(0);
  const outbox=useRef<BrowserChatOutbox|null>(null),[pending,setPending]=useState<QueuedChatMessage[]>([]);
  const refreshRef=useRef(refreshSession);refreshRef.current=refreshSession;
- useEffect(()=>{setSelected(null);setMessages([]);setText('');setConversations([]);},[user?.id]);
+ useEffect(()=>{setSelected(null);setMessages([]);setText('');setConversations([]);setReporting(null);setReason('');setNotice('');},[user?.id]);
  useEffect(()=>{
   if(!user||!accessToken||isLoading)return;let stopped=false;
   let queue:BrowserChatOutbox;try{queue=new BrowserChatOutbox({owner:user.id,api:API,getToken:()=>localStorage.getItem('kashyap_admin_access_token'),refresh:()=>refreshRef.current()});outbox.current=queue;}catch{setError(chatOutboxLabels.storage);return;}
@@ -56,12 +58,15 @@ export default function ChatPage(){
   connect();return()=>{stopped=true;document.removeEventListener('visibilitychange',acknowledgeRead);clearTimeout(timer);socket.current?.close();socket.current=null;};
  },[selected?.id,accessToken,isLoading,refreshSession]);
  async function action(work:()=>Promise<void>){setBusy(true);setError('');try{await work();await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function open(c:Conversation){await action(async()=>{if(!c.isParticipant)await call(`/conversations/${c.id}/join`,'POST');setSelected({...c,isParticipant:true});setMessages(await call(`/conversations/${c.id}/messages`));});}
+ async function open(c:Conversation){setReporting(null);setReason('');await action(async()=>{if(!c.isParticipant)await call(`/conversations/${c.id}/join`,'POST');setSelected({...c,isParticipant:true});setMessages(await call(`/conversations/${c.id}/messages`));});}
  async function send(){if(!selected||!text.trim()||!outbox.current)return;setBusy(true);setError('');try{await outbox.current.enqueue(selected.id,text.trim());setText('');void outbox.current.pump().catch(()=>setError(chatOutboxLabels.storage));}catch(e){setError(chatOutboxLabels.storage);}finally{setBusy(false);}}
  async function queuedAction(row:QueuedChatMessage,discard:boolean){if(discard&&!confirm(chatOutboxLabels.discardNote))return;try{await outbox.current?.change(row.id,discard);void outbox.current?.pump().catch(()=>setError(chatOutboxLabels.storage));}catch(e){setError(chatOutboxLabels.storage);}}
  if(isLoading)return <p>लोड हुँदैछ…</p>;
  if(!accessToken)return <p>सन्देशका लागि प्रवेश गर्नुहोस् (Sign in for messaging).</p>;
  return <section className="space-y-4 max-w-6xl"><h1 className="text-2xl font-bold">सन्देश (Messages)</h1>
+  {notice&&<p role="status">{notice}</p>}
+  <ChatReports key={user?.id} call={call} roles={user?.roles||[]}/>
+  {reporting&&selected&&<form className="border rounded p-3 space-y-2" onSubmit={e=>{e.preventDefault();void action(async()=>{await call(`/conversations/${selected.id}/messages/${reporting}/report`,'POST',{reason});setReporting(null);setReason('');setNotice('उजुरी पठाइयो (Report submitted)');});}}><label>उजुरीको कारण (Report reason)<textarea required maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)} className="block border p-2 w-full"/></label><p>यो सन्देश र कारण समीक्षकलाई पठाइनेछ (This message and reason will be shared with a moderator).</p><button disabled={busy}>पठाउनुहोस् (Submit report)</button><button type="button" onClick={()=>setReporting(null)}>रद्द (Cancel)</button></form>}
   {error&&<p role="alert" className="p-3 bg-red-50 text-red-800">{error}</p>}
   <div className="grid gap-4 md:grid-cols-[280px_1fr]"><aside className="border rounded-xl p-4 space-y-4">
    {pending.length>0&&<section aria-label="Queued messages" className="space-y-2"><h2 className="font-bold">{chatOutboxLabels.title}</h2>{pending.map(row=><div key={row.id} data-queued-id={row.id} className="border rounded p-2"><p className="break-words">{row.content}</p><p className="text-xs">{row.state==='failed'?chatOutboxLabels.failed:chatOutboxLabels.queued}</p><button onClick={()=>void queuedAction(row,false)}>{chatOutboxLabels.retry}</button><button onClick={()=>void queuedAction(row,true)}>{chatOutboxLabels.discard}</button></div>)}</section>}
@@ -74,7 +79,7 @@ export default function ChatPage(){
   </aside><div className="border rounded-xl p-4 space-y-3">{selected?<>
    <header className="flex flex-wrap justify-between gap-3"><h2 className="font-bold">{selected.title}</h2><span role="status">{live?'Live':'Connecting…'}</span><button className="border rounded px-2" onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/leave`,'POST');setSelected(null);setMessages([]);})}>Leave conversation</button>{selected.type!=='DIRECT'&&<button onClick={()=>setManaging(true)}>{chatManagement.info}</button>}{selected.type==='DIRECT'&&<button className="border rounded px-2" onClick={()=>{if(confirm('Block direct messages from this person?'))void action(async()=>{await call(`/conversations/${selected.id}/block`,'POST');setSelected(null);});}}>Block</button>}</header>
    {messages.length>=100&&<button onClick={()=>void action(async()=>{const older=await call(`/conversations/${selected.id}/messages?before=${messages[0].sequence}`);setMessages(previous=>[...older,...previous]);})}>Load earlier messages</button>}
-   <ol aria-label="Message history" className="space-y-3 min-h-64 max-h-[55vh] overflow-y-auto">{messages.map(m=><li key={m.id} className={`p-3 rounded-lg ${m.senderUserId===user?.id?'bg-amber-50 ml-8':'bg-slate-50 mr-8'}`}><p className="text-xs">{m.senderUserId===user?.id?'You':'Member'}</p><p className="whitespace-pre-wrap break-words">{m.isDeleted?'Message removed':m.content}</p>{m.senderUserId===user?.id&&!m.isDeleted&&<div className="flex gap-3 text-xs"><span>{m.readByUserIds.some(id=>id!==user.id)?chatReceipts.read:(m.deliveredToUserIds||[]).some(id=>id!==user.id)?chatReceipts.delivered:chatReceipts.sent}</span><button onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/messages/${m.id}`,'DELETE');setMessages(await call(`/conversations/${selected.id}/messages`));})}>Remove message</button></div>}</li>)}</ol>
+   <ol aria-label="Message history" className="space-y-3 min-h-64 max-h-[55vh] overflow-y-auto">{messages.map(m=><li key={m.id} className={`p-3 rounded-lg ${m.senderUserId===user?.id?'bg-amber-50 ml-8':'bg-slate-50 mr-8'}`}><p className="text-xs">{m.senderUserId===user?.id?'You':'Member'}</p><p className="whitespace-pre-wrap break-words">{m.isDeleted?'Message removed':m.content}</p>{m.senderUserId===user?.id&&!m.isDeleted&&<div className="flex gap-3 text-xs"><span>{m.readByUserIds.some(id=>id!==user.id)?chatReceipts.read:(m.deliveredToUserIds||[]).some(id=>id!==user.id)?chatReceipts.delivered:chatReceipts.sent}</span><button onClick={()=>void action(async()=>{await call(`/conversations/${selected.id}/messages/${m.id}`,'DELETE');setMessages(await call(`/conversations/${selected.id}/messages`));})}>Remove message</button></div>}{!m.isDeleted&&m.senderUserId!==user?.id&&<button disabled={busy} onClick={()=>{setReporting(m.id);setReason('');setNotice('');}}>उजुरी (Report message)</button>}</li>)}</ol>
    {typing&&<p aria-live="polite" className="text-sm">Someone is typing…</p>}
    <form onSubmit={e=>{e.preventDefault();void send();}} className="flex items-end gap-3"><label className="grow">सन्देश (Your message)<textarea required maxLength={4000} value={text} onChange={e=>{setText(e.target.value);if(socket.current?.readyState===WebSocket.OPEN&&Date.now()-lastTyping.current>1500){socket.current.send(JSON.stringify({type:'typing'}));lastTyping.current=Date.now();}}} className="block border rounded p-2 w-full"/></label><button disabled={busy||!text.trim()} className="bg-slate-900 text-white rounded p-3">पठाउनुहोस् (Send)</button></form>
   </>:<p>कुराकानी चयन गर्नुहोस् (Select or create a conversation).</p>}</div></div>{managing&&selected&&<GroupManager id={selected.id} token={accessToken} call={call} onClose={()=>setManaging(false)} onChanged={info=>{setSelected(current=>current&&current.id===info.id?{...current,title:info.title}:current);void load();}}/>}</section>;

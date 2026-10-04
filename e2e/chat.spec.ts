@@ -44,6 +44,17 @@ test('Branch messaging authenticates both browsers and persists messages, separa
   expect((await unread.json()).find((c:any)=>c.id===group.id).unreadCount).toBeGreaterThan(0);
   await reader.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'visible'});document.dispatchEvent(new Event('visibilitychange'));});
   await expect(delivered).toContainText('(Read)');
+  const reported=reader.getByRole('listitem').filter({hasText:content});
+  await reported.getByRole('button',{name:'उजुरी (Report message)',exact:true}).click();
+  await reader.getByLabel('उजुरीको कारण (Report reason)',{exact:true}).fill('Fictional report for acceptance');
+  await reader.getByRole('button',{name:'पठाउनुहोस् (Submit report)',exact:true}).click();
+  await expect(reader.getByText('उजुरी पठाइयो (Report submitted)',{exact:true})).toBeVisible();
+  await reader.getByRole('button',{name:'सन्देश उजुरी समीक्षा (Review message reports)',exact:true}).click();
+  const review=reader.locator('article').filter({hasText:content});await expect(review).toContainText('Fictional report for acceptance');
+  await review.getByRole('button',{name:'समीक्षा (Review)',exact:true}).click();
+  await reader.getByLabel('समीक्षा टिप्पणी (Review note)',{exact:true}).fill('Independent reviewer required');
+  await reader.getByRole('button',{name:'खारेज (Dismiss report)',exact:true}).click();
+  await expect(reader.getByRole('alert')).toContainText('Another moderator must review your report');
   await own.getByRole('button',{name:'Remove message',exact:true}).click();await expect(reader.getByRole('list',{name:'Message history'})).not.toContainText(content);await expect(reader.getByText('Message removed',{exact:true})).toBeVisible();
  }finally{await otherContext.close();}
 });

@@ -7,6 +7,9 @@ import { allowedFields } from '../community/community-policy';
 @UseGuards(JwtAuthGuard)
 export class ChatController {
  constructor(private readonly chat:ChatService){}
+ @Get('reports') reports(@CurrentUser() u:AuthenticatedUser){return this.chat.reviewReports(u);}
+ @Post('reports/:reportId/resolve') resolve(@Param('reportId') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.resolveReport(id,u,b);}
+ @Post('conversations/:id/messages/:messageId/report') report(@Param('id') id:string,@Param('messageId') msg:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.reportMessage(id,msg,u,b);}
  @Get('conversations') list(@CurrentUser() u:AuthenticatedUser){return this.chat.list(u);}
  @Post('conversations') create(@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.chat.create(u,b);}
  @Post('conversations/:id/join') join(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser){return this.chat.join(id,u);}
