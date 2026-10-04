@@ -1,3 +1,5 @@
+import { ImageDerivativesService } from '../../media/image-derivatives.service';
+import { ImageProcessorService } from '../../media/image-processor.service';
 import { Optional, Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { MediaStorageService } from '../../media/media-storage.service';
@@ -28,7 +30,7 @@ export function decodeChatAttachment(body:any){
 
 @Injectable()
 export class ChatAttachmentsService {
- constructor(private readonly db:DatabaseService,private readonly chat:ChatService,private readonly scanner:MalwareScannerService,@Optional() private readonly storage:MediaStorageService=new MediaStorageService()){}
+ constructor(private readonly db:DatabaseService,private readonly chat:ChatService,private readonly scanner:MalwareScannerService,@Optional() private readonly storage:MediaStorageService=new MediaStorageService(),@Optional() private readonly images?:ImageDerivativesService,@Optional() private readonly processor:ImageProcessorService=new ImageProcessorService()){}
  private async retry(id:string,user:AuthenticatedUser,input:ReturnType<typeof decodeChatAttachment>,client:PoolClient){
   const row=(await client.query(`SELECT m.id,m.message_text,a.sha256_checksum,a.mime_type FROM chat_messages m
    LEFT JOIN chat_message_attachments link ON link.message_id=m.id LEFT JOIN media_assets a ON a.id=link.asset_id
@@ -47,6 +49,7 @@ export class ChatAttachmentsService {
   const scan=await this.scanner.scanFile(input.buffer,fileName);
   if(scan.status===ScanResultStatus.INFECTED)throw new BadRequestException('Attachment rejected by malware scanning');
   if(scan.status!==ScanResultStatus.CLEAN)throw new ServiceUnavailableException('Attachment scanner unavailable; nothing was sent');
+  if(input.mimeType.startsWith('image/'))await this.processor.inspect(input.buffer,input.mimeType);
   const filePath=await this.storage.put('private-chat',fileName,input.buffer,input.mimeType);
   const candidate={bucket:'private-chat',file_name:fileName,storage_key:fileName,storage_path:filePath};
   let linked=false;
@@ -58,6 +61,7 @@ export class ChatAttachmentsService {
     await client.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path,scan_evidence)
      VALUES($1,$2,$3,'private-chat',$3,$4,$5,$6,TRUE,'CLEAN','ACTIVE',$7,$8)`,[assetId,user.id,fileName,input.mimeType,input.buffer.length,input.checksum,filePath,JSON.stringify(scan.evidence)]);
     await client.query('INSERT INTO chat_message_attachments(message_id,asset_id) VALUES($1,$2)',[message.id,assetId]);
+    if(this.images&&input.mimeType.startsWith('image/'))await this.images.enqueue(client,assetId);
     linked=true;return message;
    });
    if(!linked)await this.storage.remove(candidate).catch(()=>{});
@@ -69,7 +73,17 @@ export class ChatAttachmentsService {
    throw error;
   }
  }
- async download(id:string,messageId:string,user:AuthenticatedUser){
+ async retryImage(id:string,messageId:string,user:AuthenticatedUser){
+  uuid(messageId,'message');
+  const source=await this.db.transaction(async client=>{
+   await this.chat.access(id,user,client);
+   const row=(await client.query(`SELECT a.* FROM chat_messages m JOIN chat_message_attachments l ON l.message_id=m.id JOIN media_assets a ON a.id=l.asset_id
+    WHERE m.conversation_id=$1 AND m.id=$2 AND m.sender_id=$3 AND m.deleted_at IS NULL AND a.quarantine_status='CLEAN' AND a.retention_status='ACTIVE'`,[id,messageId,user.id])).rows[0];
+   if(!row)throw new NotFoundException('Image not available');return row;
+  });
+  if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');return this.images.retry(source.id);
+ }
+ async download(id:string,messageId:string,user:AuthenticatedUser,variant='original'){
   uuid(messageId,'message');
   return this.db.transaction(async client=>{
    await this.chat.access(id,user,client);
@@ -78,10 +92,10 @@ export class ChatAttachmentsService {
     WHERE m.conversation_id=$1 AND m.id=$2 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence
     AND a.bucket='private-chat' AND a.quarantine_status='CLEAN' AND a.retention_status='ACTIVE'`,[id,messageId,user.id])).rows[0];
    if(!row)throw new NotFoundException('Attachment not available');
-   return this.readFile(row);
+   return this.readFile(row,variant);
   });
  }
- async downloadReported(reportId:string,user:AuthenticatedUser){
+ async downloadReported(reportId:string,user:AuthenticatedUser,variant='original'){
   member(user);uuid(reportId,'report');if(!canModerate(user))throw new ForbiddenException('Central moderation authority required');
   return this.db.transaction(async client=>{
    const row=(await client.query(`SELECT a.* FROM chat_message_reports r JOIN chat_messages m ON m.id=r.message_id
@@ -89,10 +103,11 @@ export class ChatAttachmentsService {
     WHERE r.id=$1 AND m.deleted_at IS NULL AND a.bucket='private-chat' AND a.retention_status='ACTIVE' AND a.quarantine_status='CLEAN'
     FOR SHARE OF m,a`,[reportId])).rows[0];
    if(!row)throw new NotFoundException('Reported attachment not available');
-   return this.readFile(row);
+   return this.readFile(row,variant);
   });
  }
- private async readFile(row:any){
+ private async readFile(row:any,variant='original'){
+  if(variant!=='original'){if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');return this.images.read(row,variant); }
   const buffer=await this.storage.read(row,MAX_BYTES);
   return {buffer,mimeType:row.mime_type,fileName:row.file_name};
  }

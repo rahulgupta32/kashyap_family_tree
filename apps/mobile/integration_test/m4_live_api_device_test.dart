@@ -209,6 +209,30 @@ void main() {
     await back(tester);
     debugPrint('[M4 DEVICE] Governed change and linked/unlinked profile save/reload passed');
 
+    final photoOwner=service.chatAccountId!;
+    const photoPng='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=';
+    final uploadedPhoto=await service.profilePhotoRequest('/photo',photoOwner,method:'POST',data:{'mimeType':'image/png','dataBase64':photoPng,'crop':{'left':0,'top':0,'width':5000,'height':10000}});
+    var photoReady=false;
+    for(var attempt=0;attempt<25;attempt++){
+      final processing=await service.profilePhotoRequest('/media/${uploadedPhoto['assetId']}/processing',photoOwner);
+      if(processing['status']=='READY'){photoReady=true;break;}
+      await Future<void>.delayed(const Duration(seconds:1));
+    }
+    expect(photoReady,isTrue);
+    final processedPhoto=await service.downloadProfilePhoto(uploadedPhoto['assetId'] as String,photoOwner);
+    expect(processedPhoto.headers['content-type'],contains('image/webp'));expect(utf8.decode(processedPhoto.bodyBytes.take(4).toList()),'RIFF');
+    final originalPhoto=await http.get(Uri.parse('$base/profile/media/${uploadedPhoto['assetId']}'),headers:{'Authorization':'Bearer ${service.authToken}'});
+    expect(originalPhoto.statusCode,200);expect(originalPhoto.bodyBytes,base64Decode(photoPng));
+    await drawer(tester,'प्रोफाइल तथा गोपनीयता (Profile Privacy)');
+    await until(tester,find.text('फोटो तयार छ / Photo ready'));
+    await press(tester,find.text('फोटो हटाउनुहोस् / Remove photo'));
+    final removalDeadline=DateTime.now().add(const Duration(seconds:30));
+    while(find.text('फोटो हटाउनुहोस् / Remove photo').evaluate().isNotEmpty && DateTime.now().isBefore(removalDeadline)){await tester.pump(const Duration(milliseconds:100));}
+    expect(find.text('फोटो हटाउनुहोस् / Remove photo'),findsNothing);
+    final photoRemoved=await service.getMyProfile();expect(photoRemoved['avatarAssetId'],isNull);
+    await back(tester);
+    debugPrint('[M4 DEVICE] Live image worker produced private cropped WebP, preserved original bytes and native photo removal cleared the display reference');
+
     await drawer(tester, 'पात्रो तथा कार्यक्रम (Calendar)');
     final going = find.byKey(const ValueKey('rsvp-$eventId-GOING'));
     await until(tester, going);

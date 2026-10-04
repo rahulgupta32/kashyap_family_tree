@@ -1,3 +1,4 @@
+import { ImageDerivativesService } from '../src/media/image-derivatives.service';
 import { ChatAttachmentsService } from '../src/modules/chat/chat-attachments.service';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
@@ -88,6 +89,18 @@ const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT
   expect((await db.query('SELECT status,attempts FROM media_deletion_queue WHERE id=$1',[queued.id])).rows[0]).toMatchObject({status:'PENDING',attempts:2});
   expect(await app.get(ProfileService).processMediaDeletionQueue()).toBe(1);
   await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
+ });
+ it('stores sanitized cropped derivatives privately in S3 and removes them with the source',async()=>{
+  const valid='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=';
+  const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',valid,{left:0,top:0,width:5000,height:10000});
+  // Earlier fixture files intentionally contain damaged pixel data; target this new job first.
+  await db.query("UPDATE media_image_jobs SET next_attempt_at=NOW()+INTERVAL '1 hour' WHERE source_asset_id<>$1",[upload.assetId]);
+  expect(await app.get(ImageDerivativesService).processPending(1)).toBe(1);
+  const children=(await db.query('SELECT a.* FROM media_derivatives d JOIN media_assets a ON a.id=d.asset_id WHERE d.source_asset_id=$1',[upload.assetId])).rows;expect(children).toHaveLength(2);
+  for(const child of children){expect(child.storage_path).toMatch(/^s3:\/\//);const anonymous=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-derivatives/${child.file_name}`);expect(anonymous.status).toBe(403);}
+  await request(app.getHttpServer()).get(`/profile/media/${upload.assetId}?variant=display`).set('Authorization',auth(author)).expect(200).expect('Content-Type',/image\/webp/);
+  await app.get(ProfileService).removePhoto(author.id);
+  for(const child of children)await expect(new MediaStorageService().read(child)).rejects.toThrow('not found');
  });
  it('pins a version and physically removes it from a versioned bucket rather than adding a delete marker',async()=>{
   await s3.send(new PutBucketVersioningCommand({Bucket:process.env.MEDIA_S3_BUCKET,VersioningConfiguration:{Status:'Enabled'}}));

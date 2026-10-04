@@ -329,6 +329,17 @@ class GenealogyApiService {
     return json.decode(response.body) as Map<String, dynamic>;
   }
 
+  Future<Map<String,dynamic>> profilePhotoRequest(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/profile$path'),boundAccountId:owner,body:data==null?null:json.encode(data));
+    final result=json.decode(response.body);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception(result is Map?result['message']??'Photo request failed':'Photo request failed');}
+    return Map<String,dynamic>.from(result as Map);
+  }
+  Future<http.Response> downloadProfilePhoto(String assetId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/profile/media/$assetId?variant=thumbnail'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Photo unavailable');}return response;
+  }
+
   Future<void> rsvpEvent(String eventId, String response) async {
     final result = await _send('POST', Uri.parse('$baseUrl/calendar/events/$eventId/rsvp'),
       body: json.encode({'response': response}));

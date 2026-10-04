@@ -39,6 +39,14 @@ export class SessionRefreshError extends Error {
 }
 
 export class ApiClient {
+  static async profilePhoto(path:string,token:string,method='GET',body?:unknown):Promise<any> {
+    const response=await fetch(`${API_BASE}/profile${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'Photo request failed');return data;
+  }
+  static async profileImage(assetId:string,token:string):Promise<Blob> {
+    const response=await fetch(`${API_BASE}/profile/media/${assetId}?variant=thumbnail`,{headers:{Authorization:`Bearer ${token}`},credentials:'include',cache:'no-store'});
+    if(!response.ok)throw new Error('Photo is not ready');return response.blob();
+  }
   static async community<T = unknown>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE}/community${path}`, {
       method, headers: this.getHeaders(token), credentials: 'include', cache: 'no-store',

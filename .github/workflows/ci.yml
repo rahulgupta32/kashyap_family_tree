@@ -196,6 +196,7 @@ jobs:
     timeout-minutes: 45
     env:
       NODE_ENV: test
+      RUN_IMAGE_WORKER: 'true'
       USE_REAL_POSTGRES: 'true'
       DB_HOST: 127.0.0.1
       DB_PORT: 5432

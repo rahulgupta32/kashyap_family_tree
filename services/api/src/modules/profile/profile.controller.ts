@@ -1,3 +1,4 @@
+import { allowedFields } from '../community/community-policy';
 import {
   Controller,
   Get,
@@ -50,10 +51,23 @@ export class ProfileController {
   @UseGuards(JwtAuthGuard)
   async uploadPhoto(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { mimeType: string; dataBase64: string },
+    @Body() body: { mimeType: string; dataBase64: string; crop?: unknown },
   ) {
-    return this.profileService.uploadPhoto(user.id, body.mimeType, body.dataBase64);
+    allowedFields(body,['mimeType','dataBase64','crop']);
+    return this.profileService.uploadPhoto(user.id, body.mimeType, body.dataBase64, body.crop);
   }
+
+  @Get('media/:assetId/processing')
+  @UseGuards(JwtAuthGuard)
+  imageProcessing(@CurrentUser() user:AuthenticatedUser,@Param('assetId') id:string){return this.profileService.imageProcessing(id,user);}
+
+  @Post('media/:assetId/retry')
+  @UseGuards(JwtAuthGuard)
+  retryImage(@CurrentUser() user:AuthenticatedUser,@Param('assetId') id:string){return this.profileService.imageProcessing(id,user,true);}
+
+  @Delete('photo')
+  @UseGuards(JwtAuthGuard)
+  removePhoto(@CurrentUser() user:AuthenticatedUser){return this.profileService.removePhoto(user.id);}
 
   @Get('privacy')
   @UseGuards(JwtAuthGuard)
@@ -151,10 +165,11 @@ export class ProfileController {
     @Query('u') queryU?: string,
     @Query('expires') queryExpires?: string,
     @Query('sig') querySig?: string,
+    @Query('variant') variant?: string,
     @Res() res?: any,
   ) {
     const effectiveUser = queryUser || queryU;
-    const media = await this.profileService.getMediaAsset(assetId, user, effectiveUser, queryExpires, querySig);
+    const media = await this.profileService.getMediaAsset(assetId, user, effectiveUser, queryExpires, querySig, variant);
     if (res && res.setHeader && res.send) {
       res.setHeader('Content-Type', media.mimeType);
       res.setHeader('Cache-Control', 'no-store');

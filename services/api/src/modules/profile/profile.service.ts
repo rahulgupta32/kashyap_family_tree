@@ -1,3 +1,6 @@
+import { uuid } from '../community/community-policy';
+import { ImageDerivativesService } from '../../media/image-derivatives.service';
+import { ImageProcessorService, validateImageCrop } from '../../media/image-processor.service';
 import {
   Injectable,
   OnModuleInit,
@@ -73,6 +76,8 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     private readonly malwareScanner: MalwareScannerService,
     @Optional() @Inject(SMS_PROVIDER) private readonly smsProvider?: ISmsProvider,
     @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
+    @Optional() private readonly images?: ImageDerivativesService,
+    @Optional() private readonly processor: ImageProcessorService = new ImageProcessorService(),
   ) {
     this.hmacSecret = process.env.MEDIA_HMAC_SECRET || 'kashyap_secure_media_hmac_secret_key_minimum_32_chars';
 
@@ -155,7 +160,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
 
     let avatarUrl: string | undefined;
     if (user.avatar_asset_id) {
-      avatarUrl = this.generateSignedMediaUrl(user.avatar_asset_id, userId, 3600);
+      avatarUrl = this.generateSignedMediaUrl(user.avatar_asset_id, userId, 3600)+'&variant=display';
     }
 
     return {
@@ -340,13 +345,16 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     return this.db.transaction(runner);
   }
 
-  async uploadPhoto(userId: string, mimeType: string, base64Data: string): Promise<MediaUploadResult> {
+  async uploadPhoto(userId: string, mimeType: string, base64Data: string, cropInput?: unknown): Promise<MediaUploadResult> {
+    const crop = validateImageCrop(cropInput);
     const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimes.includes(mimeType)) {
       throw new BadRequestException('Invalid image MIME type. Supported formats: JPEG, PNG, WebP');
     }
 
+    if(typeof base64Data!=='string'||!base64Data.length||base64Data.length>Math.ceil(10*1024*1024/3)*4||base64Data.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(base64Data))throw new BadRequestException('Invalid or oversized image data');
     const buffer = Buffer.from(base64Data, 'base64');
+    if(buffer.toString('base64')!==base64Data)throw new BadRequestException('Invalid image data');
     if (buffer.length === 0) {
       throw new BadRequestException('Empty file data provided');
     }
@@ -377,59 +385,26 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/png' ? 'png' : 'webp';
     const fileName = `avatar_${assetId}.${ext}`;
     const scanResult = await this.malwareScanner.scanFile(buffer, fileName);
+    if(scanResult.status==='CLEAN') await this.processor.inspect(buffer,mimeType);
     const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType);
 
     try {
-      if (scanResult.status === ScanResultStatus.INFECTED) {
-        await this.db.query(
-          `INSERT INTO media_assets (
-            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'QUARANTINED', 'ACTIVE', $8, $9)`,
-          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-        );
-
-        throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName || 'Malware detected'}`);
-      }
-
-      if (scanResult.status === ScanResultStatus.SCANNER_FAILED) {
-        await this.db.query(
-          `INSERT INTO media_assets (
-            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'SCANNER_FAILED', 'ACTIVE', $8, $9)`,
-          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-        );
-
-        throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
-      }
-
-      const signedUrl = this.generateSignedMediaUrl(assetId, userId, 3600);
-
-      await this.db.transaction(async (client) => {
-        await client.query(
-          `INSERT INTO media_assets (
-            id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-            byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-          ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'CLEAN', 'ACTIVE', $8, $9)`,
-          [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-        );
-
-        await client.query(
-          'UPDATE user_accounts SET avatar_asset_id = $1, updated_at = NOW() WHERE id = $2',
-          [assetId, userId],
-        );
+      const quarantineStatus=scanResult.status===ScanResultStatus.CLEAN?'CLEAN':scanResult.status===ScanResultStatus.INFECTED?'QUARANTINED':'SCANNER_FAILED';
+      await this.db.transaction(async client=>{
+        const account=(await client.query('SELECT is_active FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+        if(!account?.is_active)throw new ForbiddenException('Active account required to upload a photo');
+        await client.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path,scan_evidence)
+          VALUES($1,$2,$3,'private-profiles',$3,$4,$5,$6,TRUE,$7,'ACTIVE',$8,$9)`,
+          [assetId,userId,fileName,mimeType,buffer.length,sha256,quarantineStatus,storagePath,JSON.stringify(scanResult.evidence)]);
+        if(quarantineStatus==='CLEAN'){
+          if(this.images)await this.images.enqueue(client,assetId,crop);
+          await client.query('UPDATE user_accounts SET avatar_asset_id=$1,updated_at=NOW() WHERE id=$2',[assetId,userId]);
+        }
+        await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_PHOTO_UPLOADED',entityType:'MEDIA_ASSET',entityId:assetId,actorId:userId,actorRole:'MEMBER',newValue:{quarantineStatus,sha256}},client);
       });
-
-      return {
-        assetId,
-        url: signedUrl,
-        sha256,
-        sizeBytes: buffer.length,
-        mimeType,
-        quarantineStatus: 'CLEAN',
-        scanEvidence: scanResult.evidence,
-      };
+      if(quarantineStatus==='QUARANTINED')throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName||'Malware detected'}`);
+      if(quarantineStatus!=='CLEAN')throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
+      return {assetId,url:this.generateSignedMediaUrl(assetId,userId,3600),sha256,sizeBytes:buffer.length,mimeType,quarantineStatus:'CLEAN',scanEvidence:scanResult.evidence};
     } catch (error) {
       // A missing commit acknowledgement must never remove committed bytes.
       try { const stored = await this.db.query('SELECT id FROM media_assets WHERE id=$1', [assetId]);
@@ -437,6 +412,32 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
       } catch {}
       throw error;
     }
+  }
+
+  async imageProcessing(assetId:string,viewer:any,retry=false) {
+    await this.authorizedProfileAsset(assetId,viewer);
+    if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');
+    return retry?this.images.retry(assetId):this.images.status(assetId);
+  }
+
+  async removePhoto(userId:string) {
+    const result=await this.db.transaction(async client=>{
+      const account=(await client.query('SELECT avatar_asset_id FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+      if(!account)throw new NotFoundException('User account not found');
+      if(!account.avatar_asset_id)return {removed:true,retainedForEvidence:false};
+      const asset=(await client.query('SELECT * FROM media_assets WHERE id=$1 FOR UPDATE',[account.avatar_asset_id])).rows[0];
+      if(!asset||asset.uploader_user_id!==userId||asset.bucket!=='private-profiles')throw new ForbiddenException('Photo ownership mismatch');
+      const evidence=await client.query('SELECT 1 FROM claim_evidence_attachments WHERE media_asset_id=$1 LIMIT 1',[asset.id]);
+      const retainedForEvidence=evidence.rows.length>0||asset.retention_status==='LEGAL_HOLD';
+      await client.query('UPDATE user_accounts SET avatar_asset_id=NULL,updated_at=NOW() WHERE id=$1',[userId]);
+      if(!retainedForEvidence){
+        await client.query("UPDATE media_assets SET retention_status='DELETED' WHERE id=$1",[asset.id]);
+        await client.query("INSERT INTO media_deletion_queue(asset_id,storage_path,status) VALUES($1,$2,'PENDING')",[asset.id,asset.storage_path]);
+      }
+      await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_PHOTO_REMOVED',entityType:'MEDIA_ASSET',entityId:asset.id,actorId:userId,actorRole:'MEMBER',newValue:{retainedForEvidence}},client);
+      return {removed:true,retainedForEvidence};
+    });
+    await this.processMediaDeletionQueue();return result;
   }
 
   generateSignedMediaUrl(assetId: string, userId: string, expiresInSec: number = 3600): string {
@@ -456,7 +457,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
   }
 
-  async getMediaAsset(
+  private async authorizedProfileAsset(
     assetId: string,
     viewer?: { id: string; roles: string[] },
     queryUser?: string,
@@ -467,14 +468,15 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
       throw new UnauthorizedException('Authentication required to access media asset');
     }
 
+    uuid(assetId,'media asset');
     const assetRes = await this.db.query('SELECT * FROM media_assets WHERE id = $1', [assetId]);
     const asset = assetRes.rows[0];
     if (!asset) {
       throw new NotFoundException('Media asset not found');
     }
 
-    if (asset.bucket === 'private-chat') {
-      throw new NotFoundException('Use the authorized conversation attachment endpoint');
+    if (asset.bucket !== 'private-profiles') {
+      throw new NotFoundException('Media asset not found');
     }
 
     if (asset.quarantine_status !== 'CLEAN') {
@@ -509,6 +511,12 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     }
 
 
+    return asset;
+  }
+
+  async getMediaAsset(assetId:string,viewer?:{id:string;roles:string[]},queryUser?:string,queryExpires?:string,querySig?:string,variant='original') {
+    const asset=await this.authorizedProfileAsset(assetId,viewer,queryUser,queryExpires,querySig);
+    if (variant !== 'original') { if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');return this.images.read(asset,variant); }
     const buffer = await this.storage.read(asset);
     return {
       buffer,
@@ -670,7 +678,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
 
       const nonHeldRes = await client.query(
         `SELECT id, storage_path FROM media_assets 
-         WHERE uploader_user_id = $1 AND id != ALL($2::uuid[])`,
+         WHERE uploader_user_id = $1 AND bucket <> 'private-derivatives' AND id != ALL($2::uuid[])`,
         [userId, heldAssetIds.length > 0 ? heldAssetIds : ['00000000-0000-0000-0000-000000000000']],
       );
 

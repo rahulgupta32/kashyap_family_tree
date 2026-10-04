@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream
 class MainActivity : FlutterActivity() {
     private var pending: MethodChannel.Result? = null
     private var saveBytes: ByteArray? = null
+    private var profilePick = false
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "kashyap/chat_attachments").setMethodCallHandler { call, result ->
@@ -31,14 +32,15 @@ class MainActivity : FlutterActivity() {
                     } catch (error: Exception) { pending = null; saveBytes = null; result.error("SAVE", "Attachment save unavailable", null) }
                 }
             }
-            else if (call.method != "pick") { result.notImplemented() }
+            else if (call.method != "pick" && call.method != "pickProfile") { result.notImplemented() }
             else if (pending != null) { result.error("BUSY", "Attachment picker already open", null) }
             else {
                 pending = result
+                profilePick = call.method == "pickProfile"
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/png", "image/jpeg", "image/webp", "application/pdf"))
+                    putExtra(Intent.EXTRA_MIME_TYPES, if (profilePick) arrayOf("image/png", "image/jpeg", "image/webp") else arrayOf("image/png", "image/jpeg", "image/webp", "application/pdf"))
                 }
                 try { startActivityForResult(intent, 4402) }
                 catch (error: Exception) { pending = null; result.error("PICKER", "Attachment picker unavailable", null) }
@@ -63,23 +65,24 @@ class MainActivity : FlutterActivity() {
             }.start()
             return
         }
+        val profile = profilePick
         Thread {
             try {
                 val mime = contentResolver.getType(uri)
-                if (mime !in listOf("image/png", "image/jpeg", "image/webp", "application/pdf")) throw IllegalArgumentException("Unsupported file format")
+                if (mime !in (if (profile) listOf("image/png", "image/jpeg", "image/webp") else listOf("image/png", "image/jpeg", "image/webp", "application/pdf"))) throw IllegalArgumentException("Unsupported file format")
                 val bytes = contentResolver.openInputStream(uri)?.use { input ->
                     val output = ByteArrayOutputStream()
                     val chunk = ByteArray(8192)
                     while (true) {
                         val count = input.read(chunk)
                         if (count < 0) break
-                        if (output.size() + count > 5 * 1024 * 1024) throw IllegalArgumentException("Attachment exceeds 5 MB")
+                        if (output.size() + count > (if (profile) 10 else 5) * 1024 * 1024) throw IllegalArgumentException("Image or attachment exceeds size limit")
                         output.write(chunk, 0, count)
                     }
                     output.toByteArray()
                 } ?: throw IllegalArgumentException("Attachment unavailable")
                 runOnUiThread { result.success(mapOf("mimeType" to mime, "dataBase64" to Base64.encodeToString(bytes, Base64.NO_WRAP))) }
-            } catch (error: Exception) { runOnUiThread { result.error("FILE", "Choose a PNG, JPEG, WebP or PDF up to 5 MB", null) } }
+            } catch (error: Exception) { runOnUiThread { result.error("FILE", if (profile) "Choose a JPEG, PNG or WebP up to 10 MB" else "Choose a PNG, JPEG, WebP or PDF up to 5 MB", null) } }
         }.start()
     }
 }

@@ -36,12 +36,12 @@ export class MediaStorageService implements OnModuleDestroy {
     }
   }
   private key(bucket: string, fileName: string) {
-    if (!['private-profiles', 'private-chat'].includes(bucket) || !/^(avatar|attachment)_[a-f0-9-]{36}\.(png|jpg|webp|pdf)$/.test(fileName)) throw new NotFoundException('Invalid media location');
+    if (!['private-profiles', 'private-chat', 'private-derivatives'].includes(bucket) || !/^(avatar|attachment|derivative)_[a-f0-9-]{36}\.(png|jpg|webp|pdf)$/.test(fileName)) throw new NotFoundException('Invalid media location');
     return `${bucket}/${fileName}`;
   }
   location(bucket: string, fileName: string) {
     const key = this.key(bucket, fileName);
-    return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : []), fileName);
+    return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : bucket === 'private-derivatives' ? ['derivatives'] : []), fileName);
   }
   private validate(row: any) {
     const expected = this.location(row.bucket, row.file_name);
@@ -70,7 +70,7 @@ export class MediaStorageService implements OnModuleDestroy {
         await fs.mkdir(path.dirname(location), { recursive: true, mode: 0o700 });
         const directory = await fs.realpath(path.dirname(location));
         const root = await fs.realpath(this.root);
-        if (directory !== root && directory !== path.join(root, 'chat')) throw new Error('Unsafe storage directory');
+        if (directory !== root && directory !== path.join(root, 'chat') && directory !== path.join(root, 'derivatives')) throw new Error('Unsafe storage directory');
         await fs.writeFile(location, buffer, { flag: 'wx', mode: 0o600 });
       }
       return location;
@@ -92,7 +92,7 @@ export class MediaStorageService implements OnModuleDestroy {
       } else {
         const real = await fs.realpath(location);
         const root = await fs.realpath(this.root);
-        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : []), row.file_name)) throw new Error('Unsafe storage path');
+        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : []), row.file_name)) throw new Error('Unsafe storage path');
         const handle = await fs.open(location, constants.O_RDONLY | constants.O_NOFOLLOW);
         try { const stat = await handle.stat(); if (!stat.isFile() || stat.size !== size) throw new Error('Size mismatch'); const chunks: Buffer[]=[]; let total=0;
           for await (const chunk of handle.createReadStream({autoClose:false,end:size})) { const bytes=Buffer.from(chunk); total+=bytes.length; if(total>size) throw new Error('Size mismatch'); chunks.push(bytes); }
@@ -113,7 +113,7 @@ export class MediaStorageService implements OnModuleDestroy {
     } else {
       try {
         const real = await fs.realpath(location), root = await fs.realpath(this.root);
-        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : []), row.file_name)) throw new Error('Unsafe storage path');
+        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : []), row.file_name)) throw new Error('Unsafe storage path');
         const stat = await fs.lstat(location); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Unsafe storage path');
         await fs.unlink(location);
       } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
