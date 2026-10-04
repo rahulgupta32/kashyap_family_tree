@@ -26,7 +26,7 @@ test('Community publication, likes, comments and reports persist through authent
   await page.reload();await expect(authorCard).toContainText('PUBLISHED');
   await authorCard.getByRole('button',{name:/Edit/}).click();
   const edit=page.getByRole('dialog',{name:'Edit community post'});
-  await edit.getByLabel('Message',{exact:true}).fill('Revised fictional gathering details.');
+  await edit.getByRole('textbox',{name:'Edit message',exact:true}).fill('Revised fictional gathering details.');
   await edit.getByLabel('Edit reason').fill('Correct the gathering details.');
   await edit.getByRole('button',{name:'Save for review'}).click();
   await expect(edit).toHaveCount(0);await expect(authorCard).toContainText('PENDING');

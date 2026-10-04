@@ -54,7 +54,7 @@ export default function CommunityPage(){
   {editing&&<div role="dialog" aria-modal="true" aria-label="Edit community post" className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><form className="bg-white rounded-xl p-6 max-w-lg w-full space-y-3" onSubmit={e=>{e.preventDefault();void action(async()=>{await ApiClient.community(`/posts/${editing.id}`,accessToken,'PUT',{title:editTitle,content:editContent,category:editing.category,version:editing.version,reason:editReason});setEditing(null);setNotice('Changes submitted for independent moderation.');});}}>
    <h2 className="font-bold">सम्पादन (Edit post)</h2><p>Changes require independent review before publication.</p>
    <label className="block">Title<input required maxLength={180} value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="block border rounded w-full p-2"/></label>
-   <label className="block">Message<textarea required maxLength={10000} value={editContent} onChange={e=>setEditContent(e.target.value)} className="block border rounded w-full p-2"/></label>
+   <label className="block">Message<textarea aria-label="Edit message" required maxLength={10000} value={editContent} onChange={e=>setEditContent(e.target.value)} className="block border rounded w-full p-2"/></label>
    <label className="block">Edit reason<textarea required minLength={5} maxLength={1000} value={editReason} onChange={e=>setEditReason(e.target.value)} className="block border rounded w-full p-2"/></label>
    <button disabled={busy||editReason.trim().length<5} className="border rounded p-2">Save for review</button><button type="button" disabled={busy} onClick={()=>setEditing(null)} className="border rounded p-2">Cancel</button>
   </form></div>}
