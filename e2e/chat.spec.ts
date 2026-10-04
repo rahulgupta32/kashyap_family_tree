@@ -54,7 +54,7 @@ test('Branch messaging authenticates both browsers and persists messages, separa
   await review.getByRole('button',{name:'समीक्षा (Review)',exact:true}).click();
   await reader.getByLabel('समीक्षा टिप्पणी (Review note)',{exact:true}).fill('Independent reviewer required');
   await reader.getByRole('button',{name:'खारेज (Dismiss report)',exact:true}).click();
-  await expect(reader.getByRole('alert')).toContainText('Another moderator must review your report');
+  await expect(reader.getByText('Another moderator must review your report',{exact:true})).toBeVisible();
   await own.getByRole('button',{name:'Remove message',exact:true}).click();await expect(reader.getByRole('list',{name:'Message history'})).not.toContainText(content);await expect(reader.getByText('Message removed',{exact:true})).toBeVisible();
  }finally{await otherContext.close();}
 });
