@@ -48,4 +48,20 @@ describe('Private media storage boundaries', () => {
     const store=new MediaStorageService(),name=file(),row=record(name,store.location('private-profiles',name));await expect(store.put('private-profiles',name,bytes,'image/png')).rejects.toThrow('write failed');await expect(store.read(row)).rejects.toThrow('read failed');await expect(store.remove(row)).rejects.toThrow('offline');
     send.mockResolvedValue({Body:Readable.from([bytes,bytes]),ContentLength:bytes.length});await expect(store.read(row)).rejects.toThrow('read failed');
   });
+  it('inventories bounded local pages without following symlinks or exposing untrusted names as managed',async()=>{
+    const store=new MediaStorageService(),names=Array.from({length:103},()=>file()).sort();
+    await Promise.all(names.map(name=>store.put('private-profiles',name,bytes,'image/png')));
+    const first=await store.inventoryPage();expect(first.objects).toHaveLength(100);expect(first.next.index).toBe(0);
+    const second=await store.inventoryPage(first.next);expect(second.objects).toHaveLength(3);expect(second.next.index).toBe(1);
+    expect(new Set([...first.objects,...second.objects].map(o=>o.location)).size).toBe(103);
+    const target=path.join(directory,'outside.txt');await fs.writeFile(target,bytes);await fs.symlink(target,path.join(directory,'avatar_00000000-0000-4000-8000-000000000000.png'));
+    const page=await store.inventoryPage();expect(page.objects.some(o=>!o.managed)).toBe(true);
+    await expect(store.inventoryPage({index:-1})).rejects.toThrow('cursor');
+  });
+  it('uses version-aware S3 inventory and retains explicit continuation markers',async()=>{
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';
+    const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance,name=file();send.mockResolvedValue({Versions:[{Key:'private-profiles/'+name,VersionId:'v+1',LastModified:new Date()}],DeleteMarkers:[{Key:'private-profiles/'+name,VersionId:'marker',LastModified:new Date()}],IsTruncated:true,NextKeyMarker:'private-profiles/'+name,NextVersionIdMarker:'marker'});
+    const page=await new MediaStorageService().inventoryPage();expect(page.objects[0].location).toContain('versionId=v%2B1');expect(page.objects[1].deleteMarker).toBe(true);expect(page.next.version).toBe('marker');expect(send.mock.calls[0][0].input).toMatchObject({Prefix:'private-profiles/',MaxKeys:100});
+  });
+
 });

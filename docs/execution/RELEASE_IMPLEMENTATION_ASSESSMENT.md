@@ -15,8 +15,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 105 | 40.4% |
-| MISSING | 41 | 15.8% |
+| PARTIALLY_COMPLETED | 106 | 40.8% |
+| MISSING | 40 | 15.4% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -39,7 +39,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | COM | 2 | 10 | 2 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 9 | 3 | 0 |
-| ADM | 4 | 7 | 5 | 0 |
+| ADM | 4 | 8 | 4 | 0 |
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
 | I18N | 1 | 4 | 0 | 0 |
@@ -72,3 +72,7 @@ Run `python scripts/validate_release_assessment.py` to check one-to-one coverage
 ## Media checkpoint — 2026-10-04
 
 Profile/chat derivatives, source-bound authorization, crop/compression and retention inheritance advance PROF-FR-003 and MEDIA-FR-004/006. The appended implementation evidence is updated conservatively; MEDIA-FR-004 moves from missing to partial because broader integrations and acceptance remain. All 260 original acceptance rows and frozen NFR targets are preserved. Exact-head CI evidence is recorded in PR #5.
+
+## Media inventory checkpoint — 2026-10-04
+
+Resumable redacted inventory and guarded existing-asset recovery advance MEDIA-FR-006 and ADM-FR-016. The latter moves from missing to partial; full operational dashboards and production acceptance remain mandatory. See `MEDIA_INVENTORY_REPORT.md`. Original ledger fields and authority gates remain unchanged.

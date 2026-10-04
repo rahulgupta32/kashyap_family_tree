@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, ListObjectVersionsCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 import { promises as fs, constants } from 'fs';
 import * as path from 'path';
@@ -43,7 +43,7 @@ export class MediaStorageService implements OnModuleDestroy {
     const key = this.key(bucket, fileName);
     return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : bucket === 'private-derivatives' ? ['derivatives'] : []), fileName);
   }
-  private validate(row: any) {
+  validateLocation(row: any) {
     const expected = this.location(row.bucket, row.file_name);
     if (row.storage_key !== row.file_name) throw new NotFoundException('Invalid media location');
     if (this.s3) {
@@ -57,6 +57,43 @@ export class MediaStorageService implements OnModuleDestroy {
     }
     if(row.storage_path !== expected) throw new NotFoundException('Invalid media location');
     return expected;
+  }
+  inventoryScope() {
+    return createHash('sha256').update(JSON.stringify([this.s3?'s3':'local',this.bucket||this.root,process.env.MEDIA_S3_ENDPOINT||'aws'])).digest('hex');
+  }
+  async inventoryPage(cursor:any=null) {
+    const prefixes=['private-profiles','private-chat','private-derivatives'];
+    const index=cursor?.index||0;
+    if(!Number.isInteger(index)||index<0||index>=prefixes.length)throw new Error('Invalid inventory cursor');
+    const bucket=prefixes[index],objects:any[]=[];
+    let next:any=null;
+    if(this.s3){
+      const result=await this.s3.send(new ListObjectVersionsCommand({Bucket:this.bucket,Prefix:bucket+'/',MaxKeys:100,KeyMarker:cursor?.key,VersionIdMarker:cursor?.version}),{abortSignal:AbortSignal.timeout(30000)});
+      for(const entry of [...(result.Versions||[]).map(value=>({...value,deleted:false})),...(result.DeleteMarkers||[]).map(value=>({...value,deleted:true}))]){
+        const name=entry.Key?.slice(bucket.length+1)||'';
+        let managed=true;try{this.key(bucket,name);}catch{managed=false;}
+        objects.push({bucket,fileName:managed?name:null,location:`s3://${this.bucket}/${entry.Key}?versionId=${encodeURIComponent(entry.VersionId||'null')}`,modifiedAt:entry.LastModified,deleteMarker:entry.deleted,managed});
+      }
+      if(result.IsTruncated){if(!result.NextKeyMarker)throw new Error('Missing inventory continuation');next={index,key:result.NextKeyMarker,version:result.NextVersionIdMarker};}
+    }else{
+      const directory=path.join(this.root,...(index===1?['chat']:index===2?['derivatives']:[]));
+      let handle:Awaited<ReturnType<typeof fs.opendir>>|undefined;
+      try{
+        const root=await fs.realpath(this.root),real=await fs.realpath(directory);
+        if(real!==path.join(root,...(index===1?['chat']:index===2?['derivatives']:[])))throw new Error('Unsafe inventory directory');
+        handle=await fs.opendir(directory);const names:string[]=[];
+        for await(const entry of handle){if(index===0&&['chat','derivatives'].includes(entry.name))continue;if(entry.name<=(cursor?.after||''))continue;names.push(entry.name);names.sort();if(names.length>101)names.pop();}
+        handle=undefined;
+        for(const name of names.slice(0,100)){
+          const location=path.join(directory,name),stat=await fs.lstat(location);let managed=stat.isFile()&&!stat.isSymbolicLink();
+          try{this.key(bucket,name);}catch{managed=false;}
+          objects.push({bucket,fileName:managed?name:null,location,modifiedAt:stat.mtime,deleteMarker:false,managed});
+        }
+        if(names.length>100)next={index,after:names[99]};
+      }catch(error:any){if(error.code!=='ENOENT')throw error;}finally{if(handle)await handle.close().catch(()=>undefined);}
+    }
+    if(!next&&index<2)next={index:index+1};
+    return {objects,next};
   }
   async put(bucket: string, fileName: string, buffer: Buffer, mimeType: string) {
     const location = this.location(bucket, fileName);
@@ -77,7 +114,7 @@ export class MediaStorageService implements OnModuleDestroy {
     } catch { throw new ServiceUnavailableException('Private media storage write failed'); }
   }
   async read(row: any, maximumBytes = 10 * 1024 * 1024): Promise<Buffer> {
-    const location = this.validate(row);
+    const location = this.validateLocation(row);
     const size = Number(row.byte_size);
     if (!Number.isSafeInteger(size) || size < 1 || size > maximumBytes) throw new ServiceUnavailableException('Media integrity verification failed');
     let buffer: Buffer;
@@ -107,7 +144,7 @@ export class MediaStorageService implements OnModuleDestroy {
     return buffer;
   }
   async remove(row: any) {
-    const location = this.validate(row);
+    const location = this.validateLocation(row);
     if (this.s3) {
       await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(row.bucket, row.file_name), VersionId: decodeURIComponent(location.split('?versionId=')[1]) }), { abortSignal: AbortSignal.timeout(30000) });
     } else {

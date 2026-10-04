@@ -1,3 +1,4 @@
+import { MediaInventoryService } from '../src/media/media-inventory.service';
 import { ImageDerivativesService } from '../src/media/image-derivatives.service';
 import { ChatAttachmentsService } from '../src/modules/chat/chat-attachments.service';
 import { Test } from '@nestjs/testing';
@@ -113,6 +114,18 @@ const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT
   await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`,VersionId:originalVersion}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
   const versions=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:`private-profiles/${row.file_name}`}));
   expect(versions.Versions?.some(v=>v.VersionId===originalVersion)).toBe(false);expect(versions.DeleteMarkers||[]).toHaveLength(0);
+ });
+
+ it('inventories exact object versions and delete markers without removing unreferenced bytes',async()=>{
+  const key=`private-profiles/avatar_${randomUUID()}.png`,body=Buffer.from(png,'base64');
+  const first=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));const second=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));await s3.send(new DeleteObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key}));
+  const operator={...author,roleAssignments:[{role:Role.SUPER_ADMIN,branchId:null}]},inventory=app.get(MediaInventoryService),run=await inventory.start(operator);
+  for(let i=0;i<40;i++){if((await inventory.report(operator,run.id)).run.status==='COMPLETE')break;await inventory.advance(operator,run.id);}
+  expect((await inventory.report(operator,run.id)).run.status).toBe('COMPLETE');
+  const rows=(await db.query('SELECT finding,observed_location FROM media_inventory_items WHERE run_id=$1 AND observed_location LIKE $2',[run.id,`s3://${process.env.MEDIA_S3_BUCKET}/${key}?%`])).rows;
+  expect(rows.filter(r=>r.finding==='UNREFERENCED_GRACE')).toHaveLength(2);expect(rows.filter(r=>r.finding==='DELETE_MARKER')).toHaveLength(1);
+  expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(first.VersionId!)))).toBe(true);expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(second.VersionId!)))).toBe(true);
+  for(const version of [first.VersionId,second.VersionId]){const object=await s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:version}));expect(object.ContentLength).toBe(body.length);(object.Body as any)?.destroy?.();}
  });
 
 });
