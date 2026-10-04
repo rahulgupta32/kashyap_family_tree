@@ -42,7 +42,7 @@ export class ImageDerivativesService implements OnModuleInit,OnModuleDestroy {
      const bytes=await this.storage.read(source);
      const outputs=await this.processor.generate(bytes,source.mime_type,job.crop);
      for(const output of outputs){
-      const id=randomUUID(),fileName=`derivative_${id}.webp`,storagePath=await this.storage.put('private-derivatives',fileName,output.buffer,'image/webp');
+      const id=randomUUID(),fileName=`derivative_${id}.webp`,storagePath=await this.storage.put('private-derivatives',fileName,output.buffer,'image/webp',source.uploader_user_id);
       const candidate={id,bucket:'private-derivatives',storage_key:fileName,file_name:fileName,storage_path:storagePath};candidates.push(candidate);
       const checksum=createHash('sha256').update(output.buffer).digest('hex');
       await client.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path,scan_evidence)

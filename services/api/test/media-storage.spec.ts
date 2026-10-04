@@ -64,4 +64,19 @@ describe('Private media storage boundaries', () => {
     const page=await new MediaStorageService().inventoryPage();expect(page.objects[0].location).toContain('versionId=v%2B1');expect(page.objects[1].deleteMarker).toBe(true);expect(page.next.version).toBe('marker');expect(send.mock.calls[0][0].input).toMatchObject({Prefix:'private-profiles/',MaxKeys:100});
   });
 
+  it('reserves durable provenance before bytes and retains an uncertain fenced write',async()=>{
+    const order:string[]=[],query=jest.fn(async(sql:string)=>{order.push(sql.startsWith('INSERT')?'reserve':'finish');return {rows:sql.startsWith('INSERT')?[{id:'fictional-intent'}]:[]};});
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';
+    const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance;send.mockImplementation(async()=>{order.push('put');return {VersionId:'exact+version'};});
+    const store=new MediaStorageService({getIsMemoryDb:()=>false,journalQuery:query} as any),name=file();
+    await expect(store.put('private-profiles',name,bytes,'image/png')).rejects.toThrow('write failed');expect(order).toEqual(['reserve','put','finish']);expect(query.mock.calls[1][0]).toContain("state='WRITING'");
+    expect((query.mock.calls as any)[1][1][1]).toContain('versionId=exact%2Bversion');expect(send).toHaveBeenCalledTimes(1);
+  });
+  it('writes no physical object when the durable reservation is unavailable',async()=>{
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';
+    const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance;send.mockResolvedValue({});
+    const store=new MediaStorageService({getIsMemoryDb:()=>false,journalQuery:jest.fn().mockRejectedValue(new Error('unavailable'))} as any);
+    await expect(store.put('private-profiles',file(),bytes,'image/png')).rejects.toThrow('reservation');expect(send).not.toHaveBeenCalled();
+  });
+
 });

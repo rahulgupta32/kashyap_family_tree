@@ -50,7 +50,7 @@ export class ChatAttachmentsService {
   if(scan.status===ScanResultStatus.INFECTED)throw new BadRequestException('Attachment rejected by malware scanning');
   if(scan.status!==ScanResultStatus.CLEAN)throw new ServiceUnavailableException('Attachment scanner unavailable; nothing was sent');
   if(input.mimeType.startsWith('image/'))await this.processor.inspect(input.buffer,input.mimeType);
-  const filePath=await this.storage.put('private-chat',fileName,input.buffer,input.mimeType);
+  const filePath=await this.storage.put('private-chat',fileName,input.buffer,input.mimeType,user.id);
   const candidate={bucket:'private-chat',file_name:fileName,storage_key:fileName,storage_path:filePath};
   let linked=false;
   try{

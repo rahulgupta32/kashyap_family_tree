@@ -1,3 +1,4 @@
+import { OrphanCleanupService } from '../src/media/orphan-cleanup.service';
 import { MediaInventoryService } from '../src/media/media-inventory.service';
 import { ImageDerivativesService } from '../src/media/image-derivatives.service';
 import { ChatAttachmentsService } from '../src/modules/chat/chat-attachments.service';
@@ -126,6 +127,34 @@ const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT
   expect(rows.filter(r=>r.finding==='UNREFERENCED_GRACE')).toHaveLength(2);expect(rows.filter(r=>r.finding==='DELETE_MARKER')).toHaveLength(1);
   expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(first.VersionId!)))).toBe(true);expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(second.VersionId!)))).toBe(true);
   for(const version of [first.VersionId,second.VersionId]){const object=await s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:version}));expect(object.ContentLength).toBe(body.length);(object.Body as any)?.destroy?.();}
+ });
+
+ it('reconciles lost PUT acknowledgements and cleans only the reviewed exact version',async()=>{
+  const storage=app.get(MediaStorageService),fileName=`avatar_${randomUUID()}.png`,key=`private-profiles/${fileName}`,body=Buffer.from(png,'base64');
+  const real=S3Client.prototype.send;let lost=false;
+  const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance;
+  send.mockImplementation(async function(this:S3Client,command:any,options:any){
+   const result=await (real as any).call(this,command,options);
+   if(command instanceof PutObjectCommand&&command.input.Key===key&&!lost){lost=true;throw new Error('lost PUT acknowledgement');}return result;
+  });
+  try{await expect(storage.put('private-profiles',fileName,body,'image/png',author.id)).rejects.toThrow('write failed');}finally{send.mockRestore();}
+  const intent=(await db.query('SELECT * FROM media_upload_intents WHERE file_name=$1',[fileName])).rows[0];expect(intent.state).toBe('WRITING');expect(intent.object_location).toBeNull();
+  const versions=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:key}));expect(versions.Versions).toHaveLength(1);const version=versions.Versions![0].VersionId!;
+  await db.query("UPDATE media_upload_intents SET created_at=NOW()-INTERVAL '2 days',expires_at=NOW()-INTERVAL '1 day' WHERE id=$1",[intent.id]);
+  const operator={...author,roleAssignments:[{role:Role.SUPER_ADMIN,branchId:null}]},inventory=app.get(MediaInventoryService),cleanup=app.get(OrphanCleanupService),run=await inventory.start(operator);
+  for(let i=0;i<60;i++){if((await inventory.report(operator,run.id)).run.status==='COMPLETE')break;await inventory.advance(operator,run.id);}
+  expect((await inventory.report(operator,run.id)).run.status).toBe('COMPLETE');
+  const item=(await db.query('SELECT * FROM media_inventory_items WHERE run_id=$1 AND upload_intent_id=$2',[run.id,intent.id])).rows[0];expect(item.finding).toBe('ABANDONED_UPLOAD_REVIEW');expect(item.observed_location).toContain(encodeURIComponent(version));
+  expect((await cleanup.approve(operator,run.id,[String(item.id)],'Fictional exact-version review')).scheduled).toBe(1);
+  // A subsequent externally-created version must survive deletion of the reviewed version.
+  const later=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));expect(later.VersionId).not.toBe(version);
+  expect(await cleanup.processPending()).toBe(1);
+  await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:version}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
+  const retained=await s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:later.VersionId}));expect(retained.ContentLength).toBe(body.length);(retained.Body as any)?.destroy?.();
+  const after=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:key}));expect(after.DeleteMarkers||[]).toHaveLength(0);
+  const journal=(await db.query('SELECT state FROM media_upload_intents WHERE id=$1',[intent.id])).rows[0];expect(journal.state).toBe('ABANDONED');
+  await expect(db.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path) VALUES($1,$2,$3,$4,$3,$5,$6,$7,true,'CLEAN','ACTIVE',$8)`,[randomUUID(),author.id,fileName,intent.bucket,intent.mime_type,intent.byte_size,intent.sha256_checksum,item.observed_location])).rejects.toThrow('not linkable');
+  const referenced=(await db.query("SELECT a.* FROM media_assets a JOIN chat_message_attachments l ON l.asset_id=a.id WHERE l.message_id=$1",[message.id])).rows[0];expect(await storage.read(referenced)).toEqual(body);
  });
 
 });

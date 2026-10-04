@@ -11,9 +11,9 @@ import { MediaStorageService } from './media-storage.service';
 export class MediaInventoryService {
  constructor(private readonly db:DatabaseService,private readonly storage:MediaStorageService,private readonly audit:AuditOutboxRepository){}
  private authority(user:AuthenticatedUser){if(!user.roleAssignments?.some(r=>r.role===Role.SUPER_ADMIN&&r.branchId===null))throw new ForbiddenException('Global Super Admin required for media operations');}
- private async record(client:PoolClient,runId:string,finding:string,asset:any,location?:string){
+ private async record(client:PoolClient,runId:string,finding:string,asset:any,location?:string,uploadIntentId?:string){
   const identity=asset?.id?'asset:'+asset.id:'object:'+location;
-  await client.query(`INSERT INTO media_inventory_items(run_id,item_key,asset_id,finding,bucket,observed_location) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,[runId,createHash('sha256').update(identity).digest('hex'),asset?.id||null,finding,asset?.bucket||null,location||asset?.storage_path||null]);
+  await client.query(`INSERT INTO media_inventory_items(run_id,item_key,asset_id,finding,bucket,observed_location,upload_intent_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,[runId,createHash('sha256').update(identity).digest('hex'),asset?.id||null,finding,asset?.bucket||null,location||asset?.storage_path||null,uploadIntentId||null]);
  }
  private async intent(client:PoolClient,user:AuthenticatedUser,action:string,id:string,newValue:any){await this.audit.recordAuditIntent({action,entityType:'MEDIA_INVENTORY',entityId:id,actorId:user.id,actorRole:Role.SUPER_ADMIN,newValue},client);}
  async start(user:AuthenticatedUser){this.authority(user);return this.db.transaction(async client=>{
@@ -27,7 +27,7 @@ export class MediaInventoryService {
  async report(user:AuthenticatedUser,id:string,after='0'){
   this.authority(user);uuid(id);if(!/^\d{1,18}$/.test(after))throw new BadRequestException('Invalid report cursor');
   const run=(await this.db.query('SELECT id,status,phase,created_at,completed_at FROM media_inventory_runs WHERE id=$1',[id])).rows[0];if(!run)throw new NotFoundException('Inventory not found');
-  const items=(await this.db.query('SELECT id,asset_id,finding,bucket,item_key FROM media_inventory_items WHERE run_id=$1 AND id>$2 ORDER BY id LIMIT 51',[id,after])).rows;
+  const items=(await this.db.query('SELECT i.id,i.asset_id,i.finding,i.bucket,i.item_key,q.status AS cleanup_status,q.error_code AS cleanup_error,u.byte_size AS expected_bytes,u.mime_type AS expected_type,u.sha256_checksum AS expected_checksum,u.state AS upload_state,u.expires_at AS upload_expires_at FROM media_inventory_items i LEFT JOIN media_orphan_deletion_queue q ON q.object_location=i.observed_location LEFT JOIN media_upload_intents u ON u.id=i.upload_intent_id WHERE i.run_id=$1 AND i.id>$2 ORDER BY i.id LIMIT 51',[id,after])).rows;
   const summary=(await this.db.query('SELECT finding,count(*)::int AS count FROM media_inventory_items WHERE run_id=$1 GROUP BY finding ORDER BY finding',[id])).rows;
   return {run,summary,items:items.slice(0,50),next:items.length>50?String(items[49].id):null};
  }
@@ -63,8 +63,10 @@ export class MediaInventoryService {
    const page=await this.storage.inventoryPage(run.object_cursor);
    for(const object of page.objects){
     const refs=(await client.query('SELECT id,bucket FROM media_assets WHERE storage_path=$1 LIMIT 2',[object.location])).rows;
-    const finding=!object.managed?'UNMANAGED_OBJECT':object.deleteMarker?'DELETE_MARKER':refs.length>1?'AMBIGUOUS_LOCATION':refs.length===1?'OBJECT_REFERENCED':Date.now()-new Date(object.modifiedAt||Date.now()).getTime()<86400000?'UNREFERENCED_GRACE':'UNREFERENCED_REVIEW_REQUIRED';
-    await this.record(client,id,finding,refs.length===1?refs[0]:{bucket:object.bucket},object.location);
+    const upload=object.managed?(await client.query('SELECT id,state,expires_at,created_at FROM media_upload_intents WHERE storage_scope=$1 AND bucket=$2 AND file_name=$3',[run.storage_scope,object.bucket,object.fileName])).rows[0]:null;
+    const uploadFinding=upload?.state==='ABANDONED'?'CLEANUP_FENCED':upload&&['WRITING','STORED'].includes(upload.state)?(new Date(upload.expires_at).getTime()<=Date.now()&&new Date(upload.created_at).getTime()<=Date.now()-86400000?'ABANDONED_UPLOAD_REVIEW':'UPLOAD_PENDING'):upload?.state==='COMMITTED'?'LINKED_UPLOAD_REVIEW':null;
+    const finding=!object.managed?'UNMANAGED_OBJECT':object.deleteMarker?'DELETE_MARKER':refs.length>1?'AMBIGUOUS_LOCATION':refs.length===1?'OBJECT_REFERENCED':uploadFinding|| (Date.now()-new Date(object.modifiedAt||Date.now()).getTime()<86400000?'UNREFERENCED_GRACE':'UNREFERENCED_REVIEW_REQUIRED');
+    await this.record(client,id,finding,refs.length===1?refs[0]:{bucket:object.bucket},object.location,upload?.id);
    }
    await client.query("UPDATE media_inventory_runs SET object_cursor=$2,phase=$3,status=$4::varchar,completed_at=CASE WHEN $4::varchar='COMPLETE' THEN NOW() ELSE NULL END WHERE id=$1",[id,page.next?JSON.stringify(page.next):null,page.next?'OBJECTS':'COMPLETE',page.next?'RUNNING':'COMPLETE']);
   }

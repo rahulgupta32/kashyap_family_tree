@@ -386,7 +386,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     const fileName = `avatar_${assetId}.${ext}`;
     const scanResult = await this.malwareScanner.scanFile(buffer, fileName);
     if(scanResult.status==='CLEAN') await this.processor.inspect(buffer,mimeType);
-    const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType);
+    const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType,userId);
 
     try {
       const quarantineStatus=scanResult.status===ScanResultStatus.CLEAN?'CLEAN':scanResult.status===ScanResultStatus.INFECTED?'QUARANTINED':'SCANNER_FAILED';

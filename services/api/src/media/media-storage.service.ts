@@ -1,4 +1,5 @@
-import { Injectable, OnModuleDestroy, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
+import { Injectable, Optional, OnModuleDestroy, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, ListObjectVersionsCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 import { promises as fs, constants } from 'fs';
@@ -15,7 +16,7 @@ export class MediaStorageService implements OnModuleDestroy {
   private readonly root = path.resolve(process.env.STORAGE_PATH || path.resolve(process.cwd(), 'storage/uploads'));
   private readonly bucket?: string;
   private readonly s3?: S3Client;
-  constructor() {
+  constructor(@Optional() private readonly db?:DatabaseService) {
     const backend = process.env.MEDIA_STORAGE_BACKEND || 'local';
     if (!['local', 's3'].includes(backend)) throw new Error('Unsupported MEDIA_STORAGE_BACKEND');
     if (['production', 'staging'].includes(process.env.NODE_ENV || '') && backend !== 's3') {
@@ -95,14 +96,19 @@ export class MediaStorageService implements OnModuleDestroy {
     if(!next&&index<2)next={index:index+1};
     return {objects,next};
   }
-  async put(bucket: string, fileName: string, buffer: Buffer, mimeType: string) {
+  async put(bucket: string, fileName: string, buffer: Buffer, mimeType: string, uploaderUserId?:string) {
     const location = this.location(bucket, fileName);
+    const journal=this.db && !this.db.getIsMemoryDb();
+    if(!journal && process.env.NODE_ENV!=='test')throw new ServiceUnavailableException('Durable media write journal required');
+    let intentId:string|undefined;
+    if(journal){try{const record=await this.db!.journalQuery('INSERT INTO media_upload_intents(storage_scope,bucket,file_name,byte_size,sha256_checksum,mime_type,uploader_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[this.inventoryScope(),bucket,fileName,buffer.length,createHash('sha256').update(buffer).digest('hex'),mimeType,uploaderUserId||null]);intentId=record.rows[0].id;}catch{throw new ServiceUnavailableException('Private media write reservation failed');}}
+    const finish=async(objectLocation:string)=>{if(intentId){const result=await this.db!.journalQuery("UPDATE media_upload_intents SET state='STORED',object_location=$2 WHERE id=$1 AND state='WRITING' RETURNING id",[intentId,objectLocation]);if(!result.rows.length)throw new Error('Media write fenced');}return objectLocation;};
     try {
       if (this.s3) {
         const result = await this.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: this.key(bucket, fileName), Body: buffer,
           ContentType: mimeType, ContentLength: buffer.length, IfNoneMatch: '*',
           Metadata: { sha256: createHash('sha256').update(buffer).digest('hex') } }), { abortSignal: AbortSignal.timeout(30000) });
-        return location.replace('?versionId=null', '?versionId='+encodeURIComponent(result.VersionId || 'null'));
+        return await finish(location.replace('?versionId=null', '?versionId='+encodeURIComponent(result.VersionId || 'null')));
       } else {
         await fs.mkdir(path.dirname(location), { recursive: true, mode: 0o700 });
         const directory = await fs.realpath(path.dirname(location));
@@ -110,7 +116,7 @@ export class MediaStorageService implements OnModuleDestroy {
         if (directory !== root && directory !== path.join(root, 'chat') && directory !== path.join(root, 'derivatives')) throw new Error('Unsafe storage directory');
         await fs.writeFile(location, buffer, { flag: 'wx', mode: 0o600 });
       }
-      return location;
+      return await finish(location);
     } catch { throw new ServiceUnavailableException('Private media storage write failed'); }
   }
   async read(row: any, maximumBytes = 10 * 1024 * 1024): Promise<Buffer> {

@@ -76,3 +76,7 @@ Profile/chat derivatives, source-bound authorization, crop/compression and reten
 ## Media inventory checkpoint — 2026-10-04
 
 Resumable redacted inventory and guarded existing-asset recovery advance MEDIA-FR-006 and ADM-FR-016. The latter moves from missing to partial; full operational dashboards and production acceptance remain mandatory. See `MEDIA_INVENTORY_REPORT.md`. Original ledger fields and authority gates remain unchanged.
+
+## Durable media write checkpoint — 2026-10-04
+
+Independent write provenance, late-link fencing and reviewed exact-version orphan cleanup advance MEDIA-FR-006 and ADM-FR-016 without closing either requirement. See `MEDIA_WRITE_JOURNAL_REPORT.md`; classifications, original ledger fields and authority gates remain unchanged. Legacy backfill, untracked reconciliation and production acceptance remain mandatory. Exact-head evidence is recorded in PR #5.

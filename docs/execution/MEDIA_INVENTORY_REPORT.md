@@ -61,3 +61,7 @@ operator review of individual unmanaged objects, recurring inventory scheduler o
 production observability/load acceptance is claimed. These remain required work. Community/
 gallery integration and broader entity-retention policies also remain open. No merge,
 production deployment, HG gate opening or signed Release 1 acceptance is performed.
+
+## Subsequent write-journal checkpoint
+
+`MEDIA_WRITE_JOURNAL_REPORT.md` records migration 027 and the subsequent reviewed cleanup of expired journaled writes. The earlier no-orphan-cleanup statement describes this inventory checkpoint; untracked objects still remain for reconciliation.
