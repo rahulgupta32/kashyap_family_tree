@@ -86,7 +86,9 @@ describe('Resumable private media inventory and guarded recovery (real PostgreSQ
   const report=await inventory().report(author,runId),items=report.items.filter((r:any)=>['IMAGE_JOB_MISSING','DELETION_QUEUE_MISSING'].includes(r.finding)).map((r:any)=>String(r.id));
   await db.query("UPDATE media_assets SET retention_status='LEGAL_HOLD' WHERE id=$1",[assets[2].id]);
   expect(await inventory().recover(author,runId,items)).toEqual({scheduled:3,skipped:1});expect((await db.query('SELECT * FROM media_deletion_queue WHERE asset_id=$1',[assets[2].id])).rows).toHaveLength(0);
-  await db.query("UPDATE media_assets SET retention_status='DELETED' WHERE id=$1",[assets[2].id]);expect((await inventory().recover(author,runId,items)).scheduled).toBe(1);expect((await inventory().recover(author,runId,items)).scheduled).toBe(0);
+  await db.query("UPDATE media_assets SET retention_status='DELETED' WHERE id=$1",[assets[2].id]);
+  await db.query('UPDATE media_assets SET storage_path=$2 WHERE id=$1',[assets[5].id,assets[2].storage_path]);expect((await inventory().recover(author,runId,items)).scheduled).toBe(0);
+  await db.query('UPDATE media_assets SET storage_path=$2 WHERE id=$1',[assets[5].id,assets[5].storage_path]);expect((await inventory().recover(author,runId,items)).scheduled).toBe(1);expect((await inventory().recover(author,runId,items)).scheduled).toBe(0);
   expect((await db.query("SELECT * FROM media_deletion_queue WHERE asset_id=$1 AND status='PENDING'",[assets[2].id])).rows).toHaveLength(1);
   await request(app.getHttpServer()).post(`/media-operations/inventories/${runId}/recover`).set('Authorization',auth(outsider)).send({itemIds:items}).expect(403);
   await expect(inventory().recover(author,runId,[items[0],items[0]])).rejects.toThrow();

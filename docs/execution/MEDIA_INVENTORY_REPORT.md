@@ -27,6 +27,7 @@ cancellation remains possible. Rollback refuses discarding inventory evidence.
 
 A completed inventory can schedule at most 20 selected existing-asset recovery items. The
 transaction locks and rechecks current asset location, scan/retention state and eligibility.
+Shared storage locations are retained for review rather than scheduled for recovery.
 Missing deletion queues are recreated only for currently deleted/purged assets. Missing
 image jobs are created only for clean, active/held source images. Recovery neither releases
 holds nor resets existing image jobs nor performs direct object deletion. Existing workers

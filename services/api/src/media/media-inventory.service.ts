@@ -66,7 +66,7 @@ export class MediaInventoryService {
     const finding=!object.managed?'UNMANAGED_OBJECT':object.deleteMarker?'DELETE_MARKER':refs.length>1?'AMBIGUOUS_LOCATION':refs.length===1?'OBJECT_REFERENCED':Date.now()-new Date(object.modifiedAt||Date.now()).getTime()<86400000?'UNREFERENCED_GRACE':'UNREFERENCED_REVIEW_REQUIRED';
     await this.record(client,id,finding,refs.length===1?refs[0]:{bucket:object.bucket},object.location);
    }
-   await client.query("UPDATE media_inventory_runs SET object_cursor=$2,phase=$3,status=$4,completed_at=CASE WHEN $4='COMPLETE' THEN NOW() ELSE NULL END WHERE id=$1",[id,page.next?JSON.stringify(page.next):null,page.next?'OBJECTS':'COMPLETE',page.next?'RUNNING':'COMPLETE']);
+   await client.query("UPDATE media_inventory_runs SET object_cursor=$2,phase=$3,status=$4::varchar,completed_at=CASE WHEN $4::varchar='COMPLETE' THEN NOW() ELSE NULL END WHERE id=$1",[id,page.next?JSON.stringify(page.next):null,page.next?'OBJECTS':'COMPLETE',page.next?'RUNNING':'COMPLETE']);
   }
   await this.intent(client,user,'MEDIA_INVENTORY_PAGE_COMPLETED',id,{phase:run.phase});return {advanced:true};
  });}
@@ -81,6 +81,7 @@ export class MediaInventoryService {
     const asset=(await client.query('SELECT * FROM media_assets WHERE id=$1 FOR UPDATE',[item.asset_id])).rows[0];
     if(!asset||asset.storage_path!==item.observed_location){skipped++;continue;}
     try{this.storage.validateLocation(asset);}catch{skipped++;continue;}
+    if((await client.query('SELECT id FROM media_assets WHERE storage_path=$1 AND id<>$2 LIMIT 1',[asset.storage_path,asset.id])).rows.length){skipped++;continue;}
     if(item.finding==='DELETION_QUEUE_MISSING'&&['DELETED','PURGED'].includes(asset.retention_status)){
      const result=await client.query("INSERT INTO media_deletion_queue(asset_id,storage_path,status) SELECT $1,$2,'PENDING' WHERE NOT EXISTS(SELECT 1 FROM media_deletion_queue WHERE asset_id=$1 AND storage_path=$2 AND status='PENDING')",[asset.id,asset.storage_path]);scheduled+=result.rowCount||0;
     }else if(item.finding==='IMAGE_JOB_MISSING'&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status)&&['private-profiles','private-chat'].includes(asset.bucket)&&['image/png','image/jpeg','image/webp'].includes(asset.mime_type)){
