@@ -31,7 +31,11 @@ test('private group creation, admin promotion, settings, removal and transfer pe
    return {phone,id:member.user.id,personId:person.id,name:label+suffix+' Fictional',token:member.accessToken};
   }
   const owner=await fixture('Owner'),member=await fixture('Member');
-  await page.getByRole('button',{name:/Logout/}).click();await expect(page).toHaveURL(/\/login/);await login(page,owner.phone);await page.goto('/chat');
+  // Clearing UI state can route to login before the server logout and final reload finish.
+  const loggedOut=page.waitForResponse(r=>r.url()===`${API}/auth/logout`&&r.request().method()==='POST');
+  const loginDocument=page.waitForResponse(r=>r.request().resourceType()==='document'&&new URL(r.url()).pathname==='/login');
+  await page.getByRole('button',{name:/Logout/}).click();expect((await loggedOut).ok()).toBeTruthy();await (await loginDocument).finished();await page.waitForLoadState('load');
+  await expect(page.locator('input[type=tel]')).toBeVisible();await login(page,owner.phone);await page.goto('/chat');
   const creator=page.getByRole('group',{name:/Create private group/});
   const title=`Fictional private ${label}`;
   await creator.getByLabel(/Private group title/).fill(title);
