@@ -324,9 +324,23 @@ jobs:
           version: 9
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:packages
+      - name: Checkout pinned object storage fixture source
+        uses: actions/checkout@v4
+        with:
+          repository: minio/minio
+          ref: RELEASE.2025-09-07T16-13-09Z
+          path: .ci/minio
+      - name: Setup fixture Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: .ci/minio/go.mod
+          cache: false
+      - name: Build pinned object storage fixture
+        run: go build -o "$RUNNER_TEMP/kashyap-ci-minio" .
+        working-directory: .ci/minio
       - name: Start isolated object storage fixture
         run: |
-          docker run -d --name kashyap-ci-minio -p 127.0.0.1:9000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" "$RUNNER_TEMP/kashyap-ci-minio" server "$RUNNER_TEMP/kashyap-ci-objects" --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 > "$RUNNER_TEMP/kashyap-ci-minio.log" 2>&1 &
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:9000/minio/health/live; then break; fi
             sleep 1
@@ -336,4 +350,4 @@ jobs:
         run: pnpm --filter @kashyap/api run test:integration --testPathPattern=s3-media
       - name: Object storage diagnostics
         if: failure()
-        run: docker logs kashyap-ci-minio
+        run: cat "$RUNNER_TEMP/kashyap-ci-minio.log"

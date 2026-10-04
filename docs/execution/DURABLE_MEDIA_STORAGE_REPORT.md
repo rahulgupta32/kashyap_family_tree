@@ -27,8 +27,8 @@ All 260 frozen requirements and cultural authority gates remain in scope.
 - Migration 024 expands storage locations to text; rollback refuses truncation.
 - The HTTP JSON limit supports the existing 10 MiB profile upload contract.
 
-Local API typecheck, build and 148 unit tests passed. The new separate CI job uses a
-pinned, disposable MinIO fixture and real isolated PostgreSQL. It verifies private
+Local API typecheck, build and 150 unit tests passed. The new separate CI job uses a
+pinned, source-built disposable MinIO fixture and real isolated PostgreSQL. It verifies private
 unsigned storage access, application authorization, instance recreation, concurrent
 retries, scanner outage, lost database commit acknowledgement, tampered bytes,
 retryable deletion, legal holds, and version-pinned reads/physical deletion.

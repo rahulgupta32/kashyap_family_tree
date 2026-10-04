@@ -53,6 +53,8 @@ const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT
   const direct=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-profiles/${row.file_name}`);expect(direct.status).toBe(403);
   await request(app.getHttpServer()).get(`/profile/media/${row.id}`).set('Authorization',auth(author)).expect(200);
   await request(app.getHttpServer()).get(`/profile/media/${row.id}`).set('Authorization',auth(reader)).expect(403);
+  await request(app.getHttpServer()).get(`/claims/evidence/${row.id}`).set('Authorization',auth(author)).expect(200);
+  await request(app.getHttpServer()).get(`/claims/evidence/${row.id}`).set('Authorization',auth(reader)).expect(403);
  });
  it('recovers concurrent attachment retries as one durable message and keeps conversation authorization',async()=>{
   const body=payload(),endpoint=`/chat/conversations/${group}/attachments`;

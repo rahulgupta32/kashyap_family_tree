@@ -78,9 +78,7 @@ export class ClaimsService {
           message: `Evidence media asset does not belong to the submitting user: ${att.mediaAssetId}`,
         });
       }
-      if (asset.bucket !== 'private-profiles') throw new NotFoundException('Evidence media asset not found');
-
-    if (asset.quarantine_status !== 'CLEAN') {
+      if (asset.quarantine_status !== 'CLEAN') {
         throw new BadRequestException({
           errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
           message: `Evidence media asset is quarantined or has not passed malware scan (status: ${asset.quarantine_status})`,
@@ -111,6 +109,8 @@ export class ClaimsService {
     if (!asset) {
       throw new NotFoundException('Evidence media asset not found');
     }
+
+    if (asset.bucket !== 'private-profiles') throw new NotFoundException('Evidence media asset not found');
 
     if (asset.quarantine_status !== 'CLEAN') {
       throw new ForbiddenException('Media asset failed malware scan and has been quarantined');
