@@ -80,3 +80,7 @@ Resumable redacted inventory and guarded existing-asset recovery advance MEDIA-F
 ## Durable media write checkpoint — 2026-10-04
 
 Independent write provenance, late-link fencing and reviewed exact-version orphan cleanup advance MEDIA-FR-006 and ADM-FR-016 without closing either requirement. See `MEDIA_WRITE_JOURNAL_REPORT.md`; classifications, original ledger fields and authority gates remain unchanged. Legacy backfill, untracked reconciliation and production acceptance remain mandatory. Exact-head evidence is recorded in PR #5.
+
+## Reviewed legacy media migration checkpoint — 2026-10-04
+
+Verified opt-in legacy reads and reviewed migration to private S3 advance MEDIA-FR-006 and ADM-FR-016 without changing classifications or original acceptance fields. See `LEGACY_MEDIA_MIGRATION_REPORT.md`. Asset IDs/references/holds and original local files are preserved. Real migration/provider/backup acceptance and broader integrations remain mandatory; exact-head CI evidence is recorded in PR #5.

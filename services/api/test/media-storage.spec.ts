@@ -79,4 +79,26 @@ describe('Private media storage boundaries', () => {
     await expect(store.put('private-profiles',file(),bytes,'image/png')).rejects.toThrow('reservation');expect(send).not.toHaveBeenCalled();
   });
 
+  it('reads a precisely mapped Windows legacy path without changing or deleting its source',async()=>{
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';process.env.MEDIA_LEGACY_STORAGE_PATH=directory;
+    process.env.MEDIA_LEGACY_LOCATION_PREFIX='D:\\Jyphra\\kashyap_family_tree\\storage\\uploads';const name=file();await fs.writeFile(path.join(directory,name),bytes);
+    const store=new MediaStorageService(),row=record(name,path.win32.join(process.env.MEDIA_LEGACY_LOCATION_PREFIX,name));expect(store.isLegacyLocation(row)).toBe(true);expect(await store.read(row)).toEqual(bytes);
+    await expect(store.remove(row)).rejects.toThrow('Legacy source files are retained');expect(await fs.readFile(path.join(directory,name))).toEqual(bytes);
+    expect(store.isLegacyLocation({...row,storage_path:row.storage_path+'x'})).toBe(false);await expect(store.read({...row,storage_path:'/etc/passwd'})).rejects.toThrow('Invalid media location');
+  });
+  it('requires explicit legacy configuration and rejects source symlinks and altered bytes',async()=>{
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';const name=file(),row=record(name,path.join(directory,name));
+    const disabled=new MediaStorageService();expect(disabled.canMigrateLegacy()).toBe(false);await expect(disabled.read(row)).rejects.toThrow('Invalid media location');
+    process.env.MEDIA_LEGACY_STORAGE_PATH=directory;const store=new MediaStorageService();expect(store.inventoryScope()).not.toBe(disabled.inventoryScope());
+    const external=path.join(directory,'outside.txt');await fs.writeFile(external,bytes);await fs.symlink(external,row.storage_path);await expect(store.read(row)).rejects.toThrow();await fs.unlink(row.storage_path);await fs.writeFile(row.storage_path,Buffer.alloc(bytes.length));await expect(store.read(row)).rejects.toThrow('integrity');
+  });
+  it('rejects unbounded or relative source roots and a prefix without its source mount',()=>{
+    process.env.MEDIA_LEGACY_STORAGE_PATH='/';expect(()=>new MediaStorageService()).toThrow('bounded');process.env.MEDIA_LEGACY_STORAGE_PATH='relative';expect(()=>new MediaStorageService()).toThrow('absolute');delete process.env.MEDIA_LEGACY_STORAGE_PATH;process.env.MEDIA_LEGACY_LOCATION_PREFIX='/old/uploads';expect(()=>new MediaStorageService()).toThrow('mounted source root');
+  });
+
+  it('fails readiness when the configured legacy mount is unavailable',async()=>{
+    process.env.MEDIA_STORAGE_BACKEND='s3';process.env.MEDIA_S3_BUCKET='fictional-private';process.env.MEDIA_LEGACY_STORAGE_PATH=path.join(directory,'mount');
+    const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance;send.mockResolvedValue({});const store=new MediaStorageService();expect(await store.checkHealth()).toBe('down');expect(send).not.toHaveBeenCalled();await fs.mkdir(process.env.MEDIA_LEGACY_STORAGE_PATH);expect(await store.checkHealth()).toBe('up');
+  });
+
 });

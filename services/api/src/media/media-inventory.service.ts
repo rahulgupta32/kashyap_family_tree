@@ -27,7 +27,7 @@ export class MediaInventoryService {
  async report(user:AuthenticatedUser,id:string,after='0'){
   this.authority(user);uuid(id);if(!/^\d{1,18}$/.test(after))throw new BadRequestException('Invalid report cursor');
   const run=(await this.db.query('SELECT id,status,phase,created_at,completed_at FROM media_inventory_runs WHERE id=$1',[id])).rows[0];if(!run)throw new NotFoundException('Inventory not found');
-  const items=(await this.db.query('SELECT i.id,i.asset_id,i.finding,i.bucket,i.item_key,q.status AS cleanup_status,q.error_code AS cleanup_error,u.byte_size AS expected_bytes,u.mime_type AS expected_type,u.sha256_checksum AS expected_checksum,u.state AS upload_state,u.expires_at AS upload_expires_at FROM media_inventory_items i LEFT JOIN media_orphan_deletion_queue q ON q.object_location=i.observed_location LEFT JOIN media_upload_intents u ON u.id=i.upload_intent_id WHERE i.run_id=$1 AND i.id>$2 ORDER BY i.id LIMIT 51',[id,after])).rows;
+  const items=(await this.db.query('SELECT i.id,i.asset_id,i.finding,i.bucket,i.item_key,q.status AS cleanup_status,q.error_code AS cleanup_error,lm.status AS migration_status,lm.error_code AS migration_error,COALESCE(u.byte_size,a.byte_size) AS expected_bytes,COALESCE(u.mime_type,a.mime_type) AS expected_type,COALESCE(u.sha256_checksum,a.sha256_checksum) AS expected_checksum,u.state AS upload_state,u.expires_at AS upload_expires_at FROM media_inventory_items i LEFT JOIN media_assets a ON a.id=i.asset_id LEFT JOIN media_orphan_deletion_queue q ON q.object_location=i.observed_location LEFT JOIN media_upload_intents u ON u.id=i.upload_intent_id LEFT JOIN media_legacy_migration_queue lm ON lm.asset_id=i.asset_id AND lm.source_location=i.observed_location WHERE i.run_id=$1 AND i.id>$2 ORDER BY i.id LIMIT 51',[id,after])).rows;
   const summary=(await this.db.query('SELECT finding,count(*)::int AS count FROM media_inventory_items WHERE run_id=$1 GROUP BY finding ORDER BY finding',[id])).rows;
   return {run,summary,items:items.slice(0,50),next:items.length>50?String(items[49].id):null};
  }
@@ -50,6 +50,7 @@ export class MediaInventoryService {
     if(!valid){await this.record(client,id,'LOCATION_REVIEW_REQUIRED',asset);continue;}
     let present=true;try{await this.storage.read(asset);}catch(error:any){present=false;await this.record(client,id,error?.status===404?(['DELETED','PURGED'].includes(asset.retention_status)?'BYTES_REMOVED':'BYTES_MISSING'):'INTEGRITY_OR_STORAGE_FAILURE',asset);}
     if(present)await this.record(client,id,'BYTES_VERIFIED',asset);
+    if(present&&this.storage.isLegacyLocation(asset)&&asset.is_private&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status))await this.record(client,id,'LEGACY_MIGRATION_REVIEW',asset);
     if(['DELETED','PURGED'].includes(asset.retention_status)&&present){
      const queued=(await client.query("SELECT id FROM media_deletion_queue WHERE asset_id=$1 AND status='PENDING' AND storage_path=$2",[asset.id,asset.storage_path])).rows.length;
      await this.record(client,id,queued?'DELETION_PENDING':'DELETION_QUEUE_MISSING',asset);

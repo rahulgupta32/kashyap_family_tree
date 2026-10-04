@@ -11,9 +11,12 @@ export class MediaStorageService implements OnModuleDestroy {
   onModuleDestroy() { this.s3?.destroy(); }
   async checkHealth(): Promise<'up' | 'down'> {
     if (!this.s3) return 'up';
-    try { await this.s3.send(new HeadBucketCommand({Bucket:this.bucket}), {abortSignal:AbortSignal.timeout(3000)}); return 'up'; } catch { return 'down'; }
+    try { if(this.legacyRoot){if(!(await fs.stat(this.legacyRoot)).isDirectory())return 'down';await fs.access(this.legacyRoot,constants.R_OK|constants.X_OK);}
+      await this.s3.send(new HeadBucketCommand({Bucket:this.bucket}), {abortSignal:AbortSignal.timeout(3000)}); return 'up'; } catch { return 'down'; }
   }
   private readonly root = path.resolve(process.env.STORAGE_PATH || path.resolve(process.cwd(), 'storage/uploads'));
+  private readonly legacyRoot?: string;
+  private readonly legacyPrefix?: string;
   private readonly bucket?: string;
   private readonly s3?: S3Client;
   constructor(@Optional() private readonly db?:DatabaseService) {
@@ -22,6 +25,14 @@ export class MediaStorageService implements OnModuleDestroy {
     if (['production', 'staging'].includes(process.env.NODE_ENV || '') && backend !== 's3') {
       throw new Error('Production and staging require private S3 media storage');
     }
+    if (process.env.MEDIA_LEGACY_STORAGE_PATH) {
+      const root=process.env.MEDIA_LEGACY_STORAGE_PATH;
+      if(!path.isAbsolute(root)||path.resolve(root)===path.parse(root).root)throw new Error('Configure an absolute bounded MEDIA_LEGACY_STORAGE_PATH');
+      this.legacyRoot=path.resolve(root);
+      const prefix=process.env.MEDIA_LEGACY_LOCATION_PREFIX||this.legacyRoot;
+      if(!path.isAbsolute(prefix)&&!path.win32.isAbsolute(prefix))throw new Error('Configure an absolute MEDIA_LEGACY_LOCATION_PREFIX');
+      this.legacyPrefix=prefix;
+    }else if(process.env.MEDIA_LEGACY_LOCATION_PREFIX)throw new Error('Legacy location prefix requires a mounted source root');
     if (backend === 's3') {
       this.bucket = process.env.MEDIA_S3_BUCKET;
       if (!this.bucket || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(this.bucket)) throw new Error('Configure MEDIA_S3_BUCKET');
@@ -44,9 +55,21 @@ export class MediaStorageService implements OnModuleDestroy {
     const key = this.key(bucket, fileName);
     return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : bucket === 'private-derivatives' ? ['derivatives'] : []), fileName);
   }
+  canMigrateLegacy(){return !!this.s3&&!!this.legacyRoot;}
+  private legacyLocation(row:any):string|null {
+    if(!this.canMigrateLegacy())return null;
+    this.key(row.bucket,row.file_name);
+    if(row.storage_key!==row.file_name)return null;
+    const directories=row.bucket==='private-chat'?['chat']:row.bucket==='private-derivatives'?['derivatives']:[];
+    const join=/^[a-zA-Z]:[\\/]/.test(this.legacyPrefix!)||this.legacyPrefix!.startsWith('\\\\')?path.win32.join:path.join;
+    const expected=join(this.legacyPrefix!,...directories,row.file_name);
+    return row.storage_path===expected?path.join(this.legacyRoot!,...directories,row.file_name):null;
+  }
+  isLegacyLocation(row:any){try{return !!this.legacyLocation(row);}catch{return false;}}
   validateLocation(row: any) {
     const expected = this.location(row.bucket, row.file_name);
     if (row.storage_key !== row.file_name) throw new NotFoundException('Invalid media location');
+    if(this.legacyLocation(row))return row.storage_path;
     if (this.s3) {
       const base=expected.slice(0, expected.indexOf('?'));
       const location=row.storage_path;
@@ -60,7 +83,7 @@ export class MediaStorageService implements OnModuleDestroy {
     return expected;
   }
   inventoryScope() {
-    return createHash('sha256').update(JSON.stringify([this.s3?'s3':'local',this.bucket||this.root,process.env.MEDIA_S3_ENDPOINT||'aws'])).digest('hex');
+    return createHash('sha256').update(JSON.stringify([this.s3?'s3':'local',this.bucket||this.root,process.env.MEDIA_S3_ENDPOINT||'aws',this.legacyRoot||null,this.legacyPrefix||null])).digest('hex');
   }
   async inventoryPage(cursor:any=null) {
     const prefixes=['private-profiles','private-chat','private-derivatives'];
@@ -120,12 +143,13 @@ export class MediaStorageService implements OnModuleDestroy {
     } catch { throw new ServiceUnavailableException('Private media storage write failed'); }
   }
   async read(row: any, maximumBytes = 10 * 1024 * 1024): Promise<Buffer> {
-    const location = this.validateLocation(row);
+    const legacy=this.legacyLocation(row);
+    const location = legacy||this.validateLocation(row);
     const size = Number(row.byte_size);
     if (!Number.isSafeInteger(size) || size < 1 || size > maximumBytes) throw new ServiceUnavailableException('Media integrity verification failed');
     let buffer: Buffer;
     try {
-      if (this.s3) {
+      if (this.s3&&!legacy) {
         const result = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(row.bucket, row.file_name), VersionId: decodeURIComponent(location.split('?versionId=')[1]) }), { abortSignal: AbortSignal.timeout(30000) });
         if (!result.Body || result.ContentLength !== size) { (result.Body as any)?.destroy?.(); throw new Error('Size mismatch'); }
         const chunks: Buffer[] = []; let total = 0;
@@ -134,7 +158,7 @@ export class MediaStorageService implements OnModuleDestroy {
         buffer = Buffer.concat(chunks, total);
       } else {
         const real = await fs.realpath(location);
-        const root = await fs.realpath(this.root);
+        const root = await fs.realpath(legacy?this.legacyRoot!:this.root);
         if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : []), row.file_name)) throw new Error('Unsafe storage path');
         const handle = await fs.open(location, constants.O_RDONLY | constants.O_NOFOLLOW);
         try { const stat = await handle.stat(); if (!stat.isFile() || stat.size !== size) throw new Error('Size mismatch'); const chunks: Buffer[]=[]; let total=0;
@@ -150,6 +174,7 @@ export class MediaStorageService implements OnModuleDestroy {
     return buffer;
   }
   async remove(row: any) {
+    if(this.isLegacyLocation(row))throw new ServiceUnavailableException('Legacy source files are retained; migrate the asset before object cleanup');
     const location = this.validateLocation(row);
     if (this.s3) {
       await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(row.bucket, row.file_name), VersionId: decodeURIComponent(location.split('?versionId=')[1]) }), { abortSignal: AbortSignal.timeout(30000) });
