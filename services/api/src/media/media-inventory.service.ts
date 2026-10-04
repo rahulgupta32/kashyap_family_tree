@@ -44,7 +44,7 @@ export class MediaInventoryService {
  async advance(user:AuthenticatedUser,id:string){this.authority(user);return this.db.transaction(async client=>{
   const run=await this.lock(client,id);
   if(run.phase==='ASSETS'){
-   const assets=(await client.query('SELECT * FROM media_assets WHERE ($1::uuid IS NULL OR id>$1) AND created_at<=$2 ORDER BY id LIMIT 5',[run.last_asset_id,run.created_at])).rows;
+   const assets=(await client.query('SELECT * FROM media_assets WHERE ($1::uuid IS NULL OR id>$1) AND created_at<=(SELECT created_at FROM media_inventory_runs WHERE id=$2) ORDER BY id LIMIT 5',[run.last_asset_id,id])).rows;
    for(const asset of assets){
     let valid=true;try{this.storage.validateLocation(asset);}catch{valid=false;}
     if(!valid){await this.record(client,id,'LOCATION_REVIEW_REQUIRED',asset);continue;}

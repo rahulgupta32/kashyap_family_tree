@@ -58,11 +58,11 @@ release obligation. No real user files are migrated by this engineering checkpoi
 
 Four storage unit cases cover Windows-prefix mapping, retained originals, explicit opt-in,
 symlink/tampering refusal, configuration fingerprints invalid root configuration and unavailable-mount readiness.
-Ten isolated real PostgreSQL cases use a mocked S3 transport to exercise authority,
+Eleven isolated real PostgreSQL cases use a mocked S3 transport to exercise authority, precise sub-millisecond inventory cutoffs,
 redacted reports, stable identity/references, retries, verification failure, worker recreation, stale/deleted/
 shared sources, deletion queues, legal holds, audit rollback, lost COMMIT and rollback guards.
 The dedicated real S3/PostgreSQL suite separately migrates held profile/chat/derivative
-files, verifies private unsigned access and authorized reads, retains all local sources
+files and an active chat file, verifies private unsigned access and current held/active read rules, retains all local sources
 and checks derivative/conversation references. The browser migration approval scenario
 uses mocked inventory responses; existing inventory/browser upload flows use the live API.
 Exact-commit execution results are recorded in PR #5 after CI completes.

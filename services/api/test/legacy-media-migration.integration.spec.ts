@@ -80,6 +80,13 @@ describe('Reviewed legacy media migration (real PostgreSQL; mocked S3 transport)
   await request(app.getHttpServer()).get(`/profile/media/${source.id}`).set('Authorization',auth(author)).expect(200);await request(app.getHttpServer()).get(`/profile/media/${source.id}`).set('Authorization',auth(reader)).expect(403);
   runId=await scan();item=await finding(runId,source.id);expect(item).toBeTruthy();const report=await inventory().report(author,runId);expect(JSON.stringify(report)).not.toContain(storage);expect(report.items.find((i:any)=>String(i.id)===String(item.id))!.expected_checksum).toBe(source.sha256_checksum);
  });
+ it('uses the exact PostgreSQL cutoff for assets created within the same millisecond',async()=>{
+  const included=await legacy(),excluded=await legacy(),run=await inventory().start(author);
+  await db.query("UPDATE media_inventory_runs SET created_at='2026-10-03T00:00:00.123999Z' WHERE id=$1",[run.id]);
+  await db.query("UPDATE media_assets SET created_at='2026-10-03T00:00:00.123500Z' WHERE id=$1",[included.id]);await db.query("UPDATE media_assets SET created_at='2026-10-03T00:00:00.124001Z' WHERE id=$1",[excluded.id]);
+  for(let i=0;i<60;i++){if((await inventory().report(author,run.id)).run.status==='COMPLETE')break;await inventory().advance(author,run.id);}
+  expect(await finding(run.id,included.id)).toBeTruthy();expect(await finding(run.id,excluded.id)).toBeUndefined();
+ });
  it('requires global review authority and rolls approval back when its audit fails',async()=>{
   await request(app.getHttpServer()).post(`/media-operations/inventories/${runId}/legacy-migration`).set('Authorization',auth(outsider)).send({itemIds:[String(item.id)],reason:'Fictional review'}).expect(403);
   await expect(migration().approve(author,runId,[String(item.id)],'x')).rejects.toThrow();await expect(migration().approve(author,runId,[String(item.id),String(item.id)],'Fictional review')).rejects.toThrow();
