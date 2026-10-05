@@ -71,4 +71,21 @@ void main() {
     expect(find.text('Reason: Correct gathering details'),findsOneWidget);
   });
 
+  testWidgets('Private moderation history renders resolved appeal outcomes', (tester) async {
+    final service = GenealogyApiService(sessionStore: MemorySessionStore(), client: MockClient((request) async {
+      expect(request.headers['Authorization'], 'Bearer history-session');
+      if (request.url.path.endsWith('/moderation-history')) {
+        return http.Response(jsonEncode({'items':[{'version':2,'decision':'REJECTED','notes':'Fictional review reason','createdAt':'2026-10-05T00:00:00Z','appeal':{'status':'RESOLVED','reason':'Fictional appeal explanation','createdAt':'2026-10-05T01:00:00Z','resolvedAt':'2026-10-05T02:00:00Z'}}],'nextBeforeVersion':null}),200);
+      }
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional history','content':'Fictional content','moderationStatus':'PENDING','canViewRevisions':true}]),200);
+    }));
+    service.setAuthToken('history-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('समीक्षा इतिहास (Moderation history)'));await tester.pumpAndSettle();
+    expect(find.text('Fictional review reason'),findsOneWidget);
+    expect(find.text('Appeal: RESOLVED'),findsOneWidget);
+    expect(find.text('Fictional appeal explanation'),findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Older decisions')).onPressed,isNull);
+  });
+
 }

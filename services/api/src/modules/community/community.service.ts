@@ -120,6 +120,26 @@ export class CommunityService {
     });
   }
 
+  async moderationHistory(id: string, user: AuthenticatedUser, beforeVersion?: number) {
+    if (beforeVersion !== undefined && (!Number.isSafeInteger(beforeVersion) || beforeVersion < 1 || beforeVersion > 2147483647)) {
+      throw new BadRequestException('Invalid history cursor');
+    }
+    return this.db.transaction(async client => {
+      const post = await this.visiblePost(id,user,client);
+      if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) {
+        throw new ForbiddenException('Moderation history requires author or moderator authority');
+      }
+      const rows = (await client.query(`SELECT d.version,d.decision,d.notes,d.created_at AS "createdAt",
+        CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object('reason',a.reason,'status',a.status,
+          'createdAt',a.created_at,'resolvedAt',a.resolved_at) END AS appeal
+        FROM community_moderation_decisions d LEFT JOIN community_post_appeals a ON a.decision_id=d.id
+        WHERE d.post_id=$1 AND ($2::integer IS NULL OR d.version<$2)
+        ORDER BY d.version DESC LIMIT 51`,[id,beforeVersion ?? null])).rows;
+      const items = rows.slice(0,50);
+      return { items, nextBeforeVersion: rows.length > 50 ? items[49].version : null };
+    });
+  }
+
   async react(id: string, user: AuthenticatedUser, liked: boolean) {
     if (typeof liked !== 'boolean') throw new BadRequestException('liked must be a boolean');
     return this.db.transaction(async client => {

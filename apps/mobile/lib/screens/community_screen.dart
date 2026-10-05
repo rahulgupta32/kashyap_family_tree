@@ -100,6 +100,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 TextButton(onPressed: _busy ? null : () => _reason(p as Map, review: true), child: const Text('Review')),
               if (p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _edit(p as Map), child: const Text('सम्पादन (Edit)')),
               if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RevisionScreen(api: widget.apiService, post: p as Map))), child: const Text('Revision history')),
+              if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ModerationHistoryScreen(api: widget.apiService, post: p as Map))), child: const Text('समीक्षा इतिहास (Moderation history)')),
               if (p['canDelete'] == true) TextButton(onPressed: _busy ? null : () async {
                 final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
                   title: const Text('पोस्ट हटाउने? (Remove post?)'), actions: [
@@ -251,4 +252,43 @@ class _RevisionScreenState extends State<_RevisionScreen> {
         if (_error != null) TextButton(onPressed: _loading ? null : () => _load(_page), child: const Text('Retry')),
       ]),
     ]));
+}
+
+class _ModerationHistoryScreen extends StatefulWidget {
+  final GenealogyApiService api;
+  final Map post;
+  const _ModerationHistoryScreen({required this.api, required this.post});
+  @override
+  State<_ModerationHistoryScreen> createState() => _ModerationHistoryScreenState();
+}
+class _ModerationHistoryScreenState extends State<_ModerationHistoryScreen> {
+  List<dynamic> _items = [];
+  int? _next, _cursor;
+  bool _loading = true;
+  String? _error;
+  @override
+  void initState() { super.initState(); _load(null); }
+  Future<void> _load(int? cursor) async {
+    setState(() { _loading = true; _error = null; _cursor = cursor; });
+    try {
+      final result = await widget.api.requestJson('/community/posts/${widget.post['id']}/moderation-history${cursor == null ? '' : '?beforeVersion=$cursor'}') as Map;
+      if (mounted) { setState(() { _items = result['items'] as List; _next = result['nextBeforeVersion'] as int?; _loading = false; }); }
+    } catch (e) { if (mounted) { setState(() { _error = e.toString(); _items = []; _loading = false; }); } }
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('समीक्षा इतिहास (Moderation history)')),
+    body: _loading ? const Center(child: CircularProgressIndicator()) : ListView(padding: const EdgeInsets.all(16), children: [
+      if (_error != null) ...[Text(_error!), TextButton(onPressed: () => _load(_cursor), child: const Text('Retry'))]
+      else ...[
+        if (_items.isEmpty) const Text('No recorded decisions.'),
+        ..._items.map((d) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text("Version ${d['version']} · ${d['decision']}"), Text(d['notes'] as String), Text(d['createdAt'] as String),
+          if (d['appeal'] != null) ...[Text("Appeal: ${d['appeal']['status']}"), Text(d['appeal']['reason'] as String), Text(d['appeal']['createdAt'] as String), if (d['appeal']['resolvedAt'] != null) Text(d['appeal']['resolvedAt'] as String)],
+        ])))),
+        TextButton(onPressed: () => _load(null), child: const Text('Latest decisions')),
+        TextButton(onPressed: _next == null ? null : () => _load(_next), child: const Text('Older decisions')),
+      ],
+    ]),
+  );
 }

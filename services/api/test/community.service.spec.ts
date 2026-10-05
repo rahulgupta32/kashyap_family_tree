@@ -37,6 +37,7 @@ describe('Community authorization and request integrity',()=>{
     await expect(service.editPost('post',member,{...body,category:'UNKNOWN'})).rejects.toThrow('Invalid category');
     await expect(service.editPost('post',member,{...body,reason:'bad'})).rejects.toThrow('Edit reason must contain');
     await expect(service.revisions('post',member,0)).rejects.toThrow('Invalid page');
+    for(const cursor of [0,-1,1.5,NaN,2147483648]) await expect(service.moderationHistory('post',member,cursor)).rejects.toThrow('Invalid history cursor');
     expect(db.transaction).not.toHaveBeenCalled();
   });
 

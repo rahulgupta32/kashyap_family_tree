@@ -5,6 +5,8 @@ import { ApiClient } from '../../lib/api-client';
 
 interface Post { id:string; title:string; content:string; category:string; moderationStatus:string; version:number; createdAt:string; likesCount:number; isLiked:boolean; commentsCount:number; canModerate:boolean; canDelete:boolean; canAppeal:boolean; moderationOutcome?:{decision:string;notes:string}; appealReason?:string; canEdit:boolean; canViewRevisions:boolean; reportsCount?:number }
 interface Revision { version:number; title:string; content:string; category:string; reason:string; createdAt:string }
+interface Decision { version:number; decision:string; notes:string; createdAt:string; appeal?:{reason:string;status:string;createdAt:string;resolvedAt:string|null} }
+interface DecisionPage { items:Decision[]; nextBeforeVersion:number|null }
 interface Comment { id:string; content:string; parentCommentId?:string }
 export default function CommunityPage(){
  const {accessToken,user,isLoading}=useAuth();
@@ -15,6 +17,7 @@ export default function CommunityPage(){
  const [review,setReview]=useState<Post|null>(null),[notes,setNotes]=useState(''),[report,setReport]=useState<Post|null>(null);
  const [editing,setEditing]=useState<Post|null>(null),[editTitle,setEditTitle]=useState(''),[editContent,setEditContent]=useState(''),[editReason,setEditReason]=useState('');
  const [history,setHistory]=useState<Post|null>(null),[revisions,setRevisions]=useState<Revision[]>([]),[historyPage,setHistoryPage]=useState(1);
+ const [decisionPost,setDecisionPost]=useState<Post|null>(null),[decisionPage,setDecisionPage]=useState<DecisionPage>({items:[],nextBeforeVersion:null});
  const load=useCallback(async()=>{if(!accessToken)return;try{setPosts(await ApiClient.community<Post[]>(`/posts?queue=${queue}`,accessToken));setError('');}catch(e){setError((e as Error).message);}},[accessToken,queue]);
  useEffect(()=>{void load();},[load]);
  useEffect(()=>{ApiClient.listBranches().then(setBranches).catch(()=>setBranches([]));},[]);
@@ -50,6 +53,7 @@ export default function CommunityPage(){
     {p.canModerate&&p.moderationStatus==='PENDING'&&<button disabled={busy} onClick={()=>{setReview(p);setNotes('');}} className="border rounded px-3 py-1">समीक्षा गर्नुहोस् (Review)</button>}
     {p.canEdit&&<button disabled={busy} onClick={()=>{setEditing(p);setEditTitle(p.title);setEditContent(p.content);setEditReason('');}} className="border rounded px-3 py-1">सम्पादन (Edit)</button>}
     {p.canViewRevisions&&<button disabled={busy} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${p.id}/revisions`,accessToken));setHistoryPage(1);setHistory(p);})} className="border rounded px-3 py-1">संस्करण इतिहास (Revision history)</button>}
+    {p.canViewRevisions&&<button disabled={busy} onClick={()=>void action(async()=>{setDecisionPage(await ApiClient.community<DecisionPage>(`/posts/${p.id}/moderation-history`,accessToken));setDecisionPost(p);})} className="border rounded px-3 py-1">समीक्षा इतिहास (Moderation history)</button>}
     {p.canDelete&&<button disabled={busy} onClick={()=>{if(window.confirm('यो पोस्ट हटाउने? (Remove this post?)'))void action(async()=>{await ApiClient.community(`/posts/${p.id}`,accessToken,'DELETE');});}} className="border rounded px-3 py-1">हटाउनुहोस् (Remove)</button>}
    </div>
    {open===p.id&&<div className="border-t pt-3 space-y-2"><ul>{comments.map(c=><li key={c.id} className="border-b py-2 whitespace-pre-wrap">{c.parentCommentId?'↳ ':''}{c.content}</li>)}</ul><form onSubmit={e=>{e.preventDefault();void action(async()=>{await ApiClient.community(`/posts/${p.id}/comments`,accessToken,'POST',{content:comment});setComment('');setComments(await ApiClient.community<Comment[]>(`/posts/${p.id}/comments`,accessToken));});}}><label>टिप्पणी (Your comment)<textarea required maxLength={2000} value={comment} onChange={e=>setComment(e.target.value)} className="block w-full rounded border p-2"/></label><button disabled={busy} className="border rounded px-3 py-2 mt-2">पठाउनुहोस् (Send comment)</button></form></div>}
@@ -67,6 +71,14 @@ export default function CommunityPage(){
    <button disabled={busy||historyPage===1} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${history.id}/revisions?page=${historyPage-1}`,accessToken));setHistoryPage(historyPage-1);})} className="border rounded p-2">Newer versions</button>
    <button disabled={busy||revisions.length<50} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${history.id}/revisions?page=${historyPage+1}`,accessToken));setHistoryPage(historyPage+1);})} className="border rounded p-2">Older versions</button>
    <button disabled={busy} onClick={()=>setHistory(null)} className="border rounded p-2">Close history</button>
+  </div></div>}
+  {decisionPost&&<div role="dialog" aria-modal="true" aria-label="Community moderation history" className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[85vh] overflow-auto space-y-3">
+   <h2 className="font-bold">समीक्षा इतिहास (Moderation history)</h2>
+   {!decisionPage.items.length&&<p>No recorded decisions.</p>}
+   {decisionPage.items.map(d=><section key={d.version} className="border rounded p-3"><h3>Version {d.version} · {d.decision}</h3><p className="whitespace-pre-wrap break-words">{d.notes}</p><p>{new Date(d.createdAt).toLocaleString()}</p>{d.appeal&&<div><p>Appeal: {d.appeal.status}</p><p className="whitespace-pre-wrap break-words">{d.appeal.reason}</p><p>{new Date(d.appeal.createdAt).toLocaleString()}{d.appeal.resolvedAt&&` · ${new Date(d.appeal.resolvedAt).toLocaleString()}`}</p></div>}</section>)}
+   <button disabled={busy} onClick={()=>void action(async()=>setDecisionPage(await ApiClient.community<DecisionPage>(`/posts/${decisionPost.id}/moderation-history`,accessToken)))} className="border rounded p-2">Latest decisions</button>
+   <button disabled={busy||decisionPage.nextBeforeVersion===null} onClick={()=>void action(async()=>setDecisionPage(await ApiClient.community<DecisionPage>(`/posts/${decisionPost.id}/moderation-history?beforeVersion=${decisionPage.nextBeforeVersion}`,accessToken)))} className="border rounded p-2">Older decisions</button>
+   <button disabled={busy} onClick={()=>setDecisionPost(null)} className="border rounded p-2">Close moderation history</button>
   </div></div>}
   {(review||report)&&<div role="dialog" aria-modal="true" aria-label={review?'Review community post':'Report community post'} className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><div className="bg-white rounded-xl p-6 max-w-lg w-full space-y-3"><h2 className="font-bold">{(review||report)?.title}</h2><label>कारण / टिप्पणी (Reason / notes)<textarea value={notes} onChange={e=>setNotes(e.target.value)} minLength={5} maxLength={1000} className="block border rounded w-full p-2"/></label><div className="flex gap-3">
    {review?(['PUBLISHED','REJECTED'] as const).map(decision=><button key={decision} disabled={busy||notes.trim().length<5} className="border rounded p-2" onClick={()=>void action(async()=>{await ApiClient.community(`/posts/${review.id}/moderate`,accessToken,'POST',{decision,notes,version:review.version});setReview(null);})}>{decision==='PUBLISHED'?'प्रकाशित (Publish)':'अस्वीकृत (Reject)'}</button>):<button disabled={busy||notes.trim().length<5} className="border rounded p-2" onClick={()=>void action(async()=>{await ApiClient.community(`/posts/${report!.id}/flag`,accessToken,'POST',{reason:notes});setReport(null);})}>रिपोर्ट पठाउनुहोस् (Submit report)</button>}

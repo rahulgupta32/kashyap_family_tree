@@ -136,6 +136,30 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect((await db.query('SELECT status FROM community_post_appeals WHERE post_id=$1',[created.id])).rows[0].status).toBe('RESOLVED');
   const publicPost=(await request(app.getHttpServer()).get('/community/posts').set('Authorization',token(reader)).expect(200)).body.find((p:any)=>p.id===created.id);
   expect(publicPost.moderationOutcome).toBeUndefined();expect(publicPost.appealReason).toBeUndefined();
+  const history=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(author)).expect(200)).body;
+  expect(history.items.map((d:any)=>d.decision)).toEqual(['PUBLISHED','REJECTED']);
+  expect(history.items[1].appeal).toMatchObject({status:'RESOLVED'});
+  expect(history.items[1].appeal.reason).toBeTruthy();expect(history.nextBeforeVersion).toBeNull();
+  expect(history.items[0].reviewerUserId).toBeUndefined();expect(history.items[0].reviewer_user_id).toBeUndefined();
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(secondModerator)).expect(200);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(reader)).expect(403);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(outsider)).expect(403);
+  const older=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history?beforeVersion=${history.items[0].version}`).set('Authorization',token(author)).expect(200)).body;
+  expect(older.items.map((d:any)=>d.decision)).toEqual(['REJECTED']);
+ });
+ it('bounds moderation history and paginates without overlapping decisions',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'History pagination fixture',content:'Fictional history fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query(`INSERT INTO community_moderation_decisions(post_id,version,reviewer_user_id,decision,notes)
+    SELECT $1,n,$2,'REJECTED','Fictional pagination decision' FROM generate_series(1,51) n`,[created.id,moderator.id]);
+  const first=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(author)).expect(200)).body;
+  expect(first.items).toHaveLength(50);expect(first.nextBeforeVersion).toBe(2);
+  const last=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history?beforeVersion=2`).set('Authorization',token(author)).expect(200)).body;
+  expect(last.items.map((d:any)=>d.version)).toEqual([1]);expect(last.nextBeforeVersion).toBeNull();
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history?beforeVersion=2147483648`).set('Authorization',token(author)).expect(400);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(reader)).expect(404);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/moderation-history`).set('Authorization',token(author)).expect(404);
+  expect((await db.query('SELECT count(*)::int AS n FROM community_moderation_decisions WHERE post_id=$1',[created.id])).rows[0].n).toBe(51);
  });
  it('rolls back an appeal when its durable audit cannot be written',async()=>{
   const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Appeal rollback fixture',content:'Fictional appeal content',category:'DISCUSSION',branchId:branch}).expect(201)).body;

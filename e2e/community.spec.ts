@@ -42,6 +42,11 @@ test('Community publication, likes, comments and reports persist through authent
   await reviewer.getByRole('dialog').getByRole('button',{name:/Publish/}).click();
   await expect(reviewer.getByRole('dialog')).toHaveCount(0);
   await page.reload();await expect(authorCard).toContainText('PUBLISHED');
+  await authorCard.getByRole('button',{name:/Moderation history/}).click();
+  const decisions=page.getByRole('dialog',{name:'Community moderation history'});
+  await expect(decisions).toContainText('Independent fictional content review approved.');
+  await expect(decisions).toContainText('Independently reviewed revised gathering details.');
+  await decisions.getByRole('button',{name:'Close moderation history'}).click();
   await authorCard.getByRole('button',{name:/Like/}).click();
   await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   await authorCard.getByRole('button',{name:/Comments/}).click();

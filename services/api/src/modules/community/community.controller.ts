@@ -20,6 +20,10 @@ export class CommunityController {
   revisions(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Query('page') page?:string) {
     return this.service.revisions(id,user,page===undefined?1:Number(page));
   }
+  @Get('posts/:id/moderation-history')
+  moderationHistory(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Query('beforeVersion') before?:string) {
+    return this.service.moderationHistory(id,user,before===undefined?undefined:Number(before));
+  }
   @Put('posts/:id/like')
   like(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['liked']); return this.service.react(id,user,body.liked);
