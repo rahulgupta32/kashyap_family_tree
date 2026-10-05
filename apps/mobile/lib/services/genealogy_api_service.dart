@@ -192,6 +192,12 @@ class GenealogyApiService {
     return decoded;
   }
 
+  Future<dynamic> communityMedia(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/community$path'),body:data==null?null:json.encode(data),boundAccountId:owner);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception('Community image request failed (${response.statusCode})');}
+    return method=='GET'?response:json.decode(response.body);
+  }
+
   Future<http.Response> downloadChatAttachment(String conversationId,String messageId,String owner) async {
     final response=await _send('GET',Uri.parse('$baseUrl/chat/conversations/$conversationId/messages/$messageId/attachment'),boundAccountId:owner);
     if(response.statusCode!=200){throw Exception('Attachment unavailable (${response.statusCode})');}

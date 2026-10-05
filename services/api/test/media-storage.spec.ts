@@ -28,6 +28,14 @@ describe('Private media storage boundaries', () => {
     await fs.writeFile(location,Buffer.alloc(bytes.length));await expect(store.read(row)).rejects.toThrow('integrity');
     await store.remove(row);await store.remove(row);await expect(store.read(row)).rejects.toThrow('not found');
   });
+  it('stores and inventories community media in a bounded separate directory',async()=>{
+    const store=new MediaStorageService(),name=`community_${randomUUID()}.png`,location=await store.put('private-community',name,bytes,'image/png');
+    const row={...record(name,location),bucket:'private-community'};
+    expect(await store.read(row)).toEqual(bytes);
+    const page=await store.inventoryPage({index:3});expect(page.objects.map(o=>o.location)).toEqual([location]);expect(page.next).toBeNull();
+    expect((await store.inventoryPage()).objects.some(o=>o.location.endsWith('/community'))).toBe(false);
+    await store.remove(row);await expect(store.read(row)).rejects.toThrow('not found');
+  });
   it('rejects local symlinks on reads and deletion', async () => {
     const name=file(),store=new MediaStorageService(),location=store.location('private-profiles',name),target=path.join(directory,'unrelated.txt');await fs.writeFile(target,bytes);await fs.symlink(target,location);
     await expect(store.read(record(name,location))).rejects.toThrow();await expect(store.remove(record(name,location))).rejects.toThrow();expect(await fs.readFile(target)).toEqual(bytes);

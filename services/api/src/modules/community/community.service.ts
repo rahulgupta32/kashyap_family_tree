@@ -8,7 +8,7 @@ import { allowedFields, branchAccess, canModerate, globalAdmin, member, textFiel
 export class CommunityService {
   constructor(private readonly db: DatabaseService, private readonly audit: AuditOutboxRepository) {}
 
-  private async visiblePost(id: string, user: AuthenticatedUser, client?: any) {
+  async visiblePost(id: string, user: AuthenticatedUser, client?: any) {
     member(user);
     const result = await this.db.query('SELECT * FROM community_posts WHERE id = $1 AND deleted_at IS NULL' + (client ? ' FOR UPDATE' : ''), [uuid(id)], client);
     const row = result.rows[0];
@@ -34,6 +34,9 @@ export class CommunityService {
            'appealed',EXISTS(SELECT 1 FROM community_post_appeals a WHERE a.decision_id=d.id))
            FROM community_moderation_decisions d WHERE d.post_id=p.id ORDER BY d.version DESC LIMIT 1) AS outcome,
          (SELECT a.reason FROM community_post_appeals a WHERE a.post_id=p.id AND a.status='OPEN') AS appeal_reason,
+         (SELECT json_build_object('assetId',a.id,'mimeType',a.mime_type,'fileName',a.file_name)
+          FROM community_post_media m JOIN media_assets a ON a.id=m.asset_id
+          WHERE m.post_id=p.id AND m.removed_at IS NULL AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD')) AS media,
          (SELECT count(*)::int FROM community_reactions r WHERE r.post_id = p.id) AS reaction_count,
          EXISTS(SELECT 1 FROM community_reactions r WHERE r.post_id = p.id AND r.user_id = $1) AS is_liked,
          (SELECT count(*)::int FROM community_comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
@@ -51,7 +54,7 @@ export class CommunityService {
   private dto(row: any, user: AuthenticatedUser) {
     return { id: row.id, title: row.title, content: row.content, category: row.category, branchId: row.branch_id,
       authorUserId: row.author_user_id, authorName: 'Community member', moderationStatus: row.status,
-      version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+      media:row.media, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
       reportsCount: canModerate(user, row.branch_id) ? row.report_count || 0 : undefined,
       canModerate: canModerate(user, row.branch_id) && row.author_user_id !== user.id,
@@ -80,10 +83,12 @@ export class CommunityService {
     });
   }
 
-  private async saveRevision(post: any, editorId: string, reason: string, client: any) {
+  async saveRevision(post: any, editorId: string, reason: string, client: any) {
     await client.query(`INSERT INTO community_post_revisions
       (post_id,version,editor_user_id,title,content,category,reason) VALUES($1,$2,$3,$4,$5,$6,$7)`,
       [post.id,post.version,editorId,post.title,post.content,post.category,reason]);
+    await client.query(`INSERT INTO community_revision_media(post_id,version,asset_id)
+      SELECT post_id,$2,asset_id FROM community_post_media WHERE post_id=$1 AND removed_at IS NULL`,[post.id,post.version]);
   }
 
   async editPost(id: string, user: AuthenticatedUser, body: any) {
@@ -115,8 +120,10 @@ export class CommunityService {
     return this.db.transaction(async client => {
       const post = await this.visiblePost(id,user,client);
       if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Revision history requires author or moderator authority');
-      return (await client.query(`SELECT version,title,content,category,reason,created_at AS "createdAt"
-        FROM community_post_revisions WHERE post_id=$1 ORDER BY version DESC LIMIT 50 OFFSET $2`,[id,(page-1)*50])).rows;
+      return (await client.query(`SELECT r.version,r.title,r.content,r.category,r.reason,r.created_at AS "createdAt",
+          (SELECT json_agg(json_build_object('assetId',a.id,'mimeType',a.mime_type,'fileName',a.file_name))
+           FROM community_revision_media l JOIN media_assets a ON a.id=l.asset_id WHERE l.post_id=r.post_id AND l.version=r.version) AS media
+        FROM community_post_revisions r WHERE r.post_id=$1 ORDER BY r.version DESC LIMIT 50 OFFSET $2`,[id,(page-1)*50])).rows;
     });
   }
 

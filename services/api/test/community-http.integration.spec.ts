@@ -1,3 +1,7 @@
+import { CommunityMediaService } from '../src/modules/community/community-media.service';
+import { ImageDerivativesService } from '../src/media/image-derivatives.service';
+import { MediaStorageService } from '../src/media/media-storage.service';
+import { MalwareScannerService, ScanResultStatus } from '../src/modules/profile/malware-scanner.service';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -184,6 +188,63 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:created.version+1,reason:'Review this fictional appeal'}).expect(201);
   expect(JSON.stringify(await inbox.list(author.id))).not.toContain(rows[0].id);
   await dispatcher.processRecord(record);expect((await db.query('SELECT id FROM notification_inbox WHERE outbox_id=$1',[record.id])).rows).toHaveLength(1);
+ });
+ it('keeps scanned post images private, re-reviewed, replay-safe and retained in revisions',async()=>{
+  const bytes=await require('sharp')({create:{width:8,height:8,channels:3,background:'red'}}).jpeg().withMetadata().toBuffer();
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Media fixture',content:'Fictional media fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:created.version,notes:'Review initial text'}).expect(201);
+  const body={version:created.version+1,reason:'Add fictional gathering image',clientUploadId:randomUUID(),mimeType:'image/jpeg',dataBase64:bytes.toString('base64')},endpoint=`/community/posts/${created.id}/media`;
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(reader)).send(body).expect(403);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(outsider)).send(body).expect(403);
+  const results=await Promise.all([1,2,3].map(()=>request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send(body).expect(201)));
+  const asset=results[0].body.assetId;expect(new Set(results.map(r=>r.body.assetId)).size).toBe(1);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send({...body,reason:'Changed retry reason'}).expect(409);
+  expect((await db.query('SELECT status,version FROM community_posts WHERE id=$1',[created.id])).rows[0]).toEqual({status:'PENDING',version:body.version+1});
+  await request(app.getHttpServer()).get(`${endpoint}/${asset}`).set('Authorization',token(reader)).expect(404);
+  const original=await request(app.getHttpServer()).get(`${endpoint}/${asset}?variant=original`).set('Authorization',token(moderator)).expect(200);expect(original.body).toEqual(bytes);expect(original.headers['cache-control']).toBe('no-store');
+  await app.get(ImageDerivativesService).processPending(10);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:body.version+1,notes:'Review added image'}).expect(201);
+  const display=await request(app.getHttpServer()).get(`${endpoint}/${asset}`).set('Authorization',token(reader)).expect(200);expect(display.headers['content-type']).toContain('image/webp');
+  const metadata=await require('sharp')(display.body).metadata();expect(metadata.exif).toBeUndefined();expect(metadata.icc).toBeUndefined();
+  await request(app.getHttpServer()).get(`${endpoint}/${asset}?variant=original`).set('Authorization',token(reader)).expect(403);
+  await request(app.getHttpServer()).get(`${endpoint}/${asset}`).set('Authorization',token(outsider)).expect(403);
+  const removal={version:body.version+2,reason:'Remove fictional image'};
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(author)).send({...removal,version:1}).expect(409);
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(author)).send(removal).expect(200);
+  const history=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/revisions`).set('Authorization',token(author)).expect(200)).body;
+  expect(history[0].media).toBeNull();expect(history[1].media[0].assetId).toBe(asset);
+  await request(app.getHttpServer()).get(`${endpoint}/${asset}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).get(`${endpoint}/${asset}`).set('Authorization',token(author)).expect(404);
+  expect((await db.query('SELECT id FROM media_assets WHERE id=$1',[asset])).rows).toHaveLength(1);
+ });
+ it('refuses unsafe images and scanner outages before storage',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Scanner fixture',content:'Fictional scanner fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const bytes=await require('sharp')({create:{width:4,height:4,channels:3,background:'blue'}}).png().toBuffer();
+  const body={version:created.version,reason:'Scan fictional image',clientUploadId:randomUUID(),mimeType:'image/png',dataBase64:bytes.toString('base64')};
+  const endpoint=`/community/posts/${created.id}/media`;
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send({...body,mimeType:'application/pdf'}).expect(400);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send({...body,dataBase64:'AA=='}).expect(400);
+  const scanner=jest.spyOn(app.get(MalwareScannerService),'scanFile');
+  try{
+   scanner.mockResolvedValueOnce({status:ScanResultStatus.SCANNER_FAILED} as any);
+   await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send(body).expect(503);
+   scanner.mockResolvedValueOnce({status:ScanResultStatus.INFECTED} as any);
+   await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send(body).expect(400);
+  }finally{scanner.mockRestore();}
+  expect((await db.query('SELECT asset_id FROM community_post_media WHERE post_id=$1',[created.id])).rows).toHaveLength(0);
+ });
+ it('rolls back media, revisions and processing jobs when audit fails',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Media rollback fixture',content:'Fictional rollback fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const bytes=await require('sharp')({create:{width:4,height:4,channels:3,background:'green'}}).png().toBuffer();
+  const body={version:created.version,reason:'Audit rollback image',clientUploadId:randomUUID(),mimeType:'image/png',dataBase64:bytes.toString('base64')};
+  const before=(await db.query('SELECT count(*)::int AS n FROM media_assets')).rows[0].n;
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected media audit failure'));
+  try{await request(app.getHttpServer()).post(`/community/posts/${created.id}/media`).set('Authorization',token(author)).send(body).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT version FROM community_posts WHERE id=$1',[created.id])).rows[0].version).toBe(created.version);
+  expect((await db.query('SELECT asset_id FROM community_post_media WHERE post_id=$1',[created.id])).rows).toHaveLength(0);
+  expect((await db.query('SELECT count(*)::int AS n FROM media_assets')).rows[0].n).toBe(before);
+  expect((await db.query('SELECT version FROM community_post_revisions WHERE post_id=$1',[created.id])).rows).toHaveLength(1);
  });
  it('rolls back content if durable audit intent cannot be written',async()=>{
   const before=(await db.query('SELECT count(*)::int AS count FROM community_posts')).rows[0].count;

@@ -56,6 +56,20 @@ const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT
   direct=(await chat.create(author,{type:'DIRECT',personId:reader.personId})).id;
  });
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();const objects=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET}));for(const item of [...(objects.Versions||[]),...(objects.DeleteMarkers||[])])await s3.send(new DeleteObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:item.Key,VersionId:item.VersionId}));await s3.send(new DeleteBucketCommand({Bucket:process.env.MEDIA_S3_BUCKET}));s3.destroy();if(legacyRoot)await files.rm(legacyRoot,{recursive:true,force:true});if(oldLegacy===undefined)delete process.env.MEDIA_LEGACY_STORAGE_PATH;else process.env.MEDIA_LEGACY_STORAGE_PATH=oldLegacy;if(oldPrefix===undefined)delete process.env.MEDIA_LEGACY_LOCATION_PREFIX;else process.env.MEDIA_LEGACY_LOCATION_PREFIX=oldPrefix;});
+ it('keeps community images private in real storage and publishes only authorized metadata-free derivatives',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',auth(reader)).send({title:'S3 community fixture',content:'Fictional media fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const bytes=await require('sharp')({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();
+  const body={version:created.version,reason:'S3 community image fixture',clientUploadId:randomUUID(),mimeType:'image/png',dataBase64:bytes.toString('base64')};
+  const upload=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/media`).set('Authorization',auth(reader)).send(body).expect(201)).body;
+  const row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];expect(row.storage_path).toMatch(/^s3:\/\//);
+  expect(await app.get(MediaStorageService).read(row)).toEqual(bytes);
+  const anonymous=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-community/${row.file_name}`);expect(anonymous.status).toBe(403);
+  await app.get(ImageDerivativesService).processPending(10);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',auth(author)).send({version:upload.version,decision:'PUBLISHED',notes:'Review real private image'}).expect(201);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/media/${row.id}`).set('Authorization',auth(author)).expect(200);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/media/${row.id}`).set('Authorization',auth(outsider)).expect(403);
+  const jobs=(await db.query('SELECT state FROM media_upload_intents WHERE object_location=$1',[row.storage_path])).rows;expect(jobs[0].state).toBe('COMMITTED');
+ });
  it('stores profiles remotely, survives service recreation, and keeps unsigned storage private',async()=>{
   const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',png);
   const row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];

@@ -1,15 +1,17 @@
 'use client';
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 
-interface Post { id:string; title:string; content:string; category:string; moderationStatus:string; version:number; createdAt:string; likesCount:number; isLiked:boolean; commentsCount:number; canModerate:boolean; canDelete:boolean; canAppeal:boolean; moderationOutcome?:{decision:string;notes:string}; appealReason?:string; canEdit:boolean; canViewRevisions:boolean; reportsCount?:number }
-interface Revision { version:number; title:string; content:string; category:string; reason:string; createdAt:string }
+interface Media { assetId:string; mimeType:string; fileName:string }
+interface Post { media?:Media; id:string; title:string; content:string; category:string; moderationStatus:string; version:number; createdAt:string; likesCount:number; isLiked:boolean; commentsCount:number; canModerate:boolean; canDelete:boolean; canAppeal:boolean; moderationOutcome?:{decision:string;notes:string}; appealReason?:string; canEdit:boolean; canViewRevisions:boolean; reportsCount?:number }
+interface Revision { media?:Media[]; version:number; title:string; content:string; category:string; reason:string; createdAt:string }
 interface Decision { version:number; decision:string; notes:string; createdAt:string; appeal?:{reason:string;status:string;createdAt:string;resolvedAt:string|null} }
 interface DecisionPage { items:Decision[]; nextBeforeVersion:number|null }
 interface Comment { id:string; content:string; parentCommentId?:string }
 export default function CommunityPage(){
  const {accessToken,user,isLoading}=useAuth();
+ const session=useRef(accessToken);session.current=accessToken;
  const [posts,setPosts]=useState<Post[]>([]),[branches,setBranches]=useState<any[]>([]),[queue,setQueue]=useState(false);
  const [title,setTitle]=useState(''),[content,setContent]=useState(''),[category,setCategory]=useState('DISCUSSION'),[branch,setBranch]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -18,6 +20,8 @@ export default function CommunityPage(){
  const [editing,setEditing]=useState<Post|null>(null),[editTitle,setEditTitle]=useState(''),[editContent,setEditContent]=useState(''),[editReason,setEditReason]=useState('');
  const [history,setHistory]=useState<Post|null>(null),[revisions,setRevisions]=useState<Revision[]>([]),[historyPage,setHistoryPage]=useState(1);
  const [decisionPost,setDecisionPost]=useState<Post|null>(null),[decisionPage,setDecisionPage]=useState<DecisionPage>({items:[],nextBeforeVersion:null});
+ const [mediaPost,setMediaPost]=useState<Post|null>(null),[image,setImage]=useState<File|null>(null),[imageReason,setImageReason]=useState(''),[uploadBody,setUploadBody]=useState<any>(null);
+ async function downloadImage(postId:string,m:Media,variant='display'){await action(async()=>{const token=accessToken!;const blob=await ApiClient.communityImage(postId,m.assetId,token,variant);if(session.current!==token)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=variant==='original'?m.fileName:'community-display.webp';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
  const load=useCallback(async()=>{if(!accessToken)return;try{setPosts(await ApiClient.community<Post[]>(`/posts?queue=${queue}`,accessToken));setError('');}catch(e){setError((e as Error).message);}},[accessToken,queue]);
  useEffect(()=>{void load();},[load]);
  useEffect(()=>{ApiClient.listBranches().then(setBranches).catch(()=>setBranches([]));},[]);
@@ -54,10 +58,25 @@ export default function CommunityPage(){
     {p.canEdit&&<button disabled={busy} onClick={()=>{setEditing(p);setEditTitle(p.title);setEditContent(p.content);setEditReason('');}} className="border rounded px-3 py-1">सम्पादन (Edit)</button>}
     {p.canViewRevisions&&<button disabled={busy} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${p.id}/revisions`,accessToken));setHistoryPage(1);setHistory(p);})} className="border rounded px-3 py-1">संस्करण इतिहास (Revision history)</button>}
     {p.canViewRevisions&&<button disabled={busy} onClick={()=>void action(async()=>{setDecisionPage(await ApiClient.community<DecisionPage>(`/posts/${p.id}/moderation-history`,accessToken));setDecisionPost(p);})} className="border rounded px-3 py-1">समीक्षा इतिहास (Moderation history)</button>}
+    {p.media&&<button disabled={busy} onClick={()=>void downloadImage(p.id,p.media!)} className="border rounded px-3 py-1">तस्बिर हेर्नुहोस् (Download image)</button>}
+    {p.media&&p.canViewRevisions&&<button disabled={busy} onClick={()=>void downloadImage(p.id,p.media!,'original')} className="border rounded px-3 py-1">Original image</button>}
+    {p.media&&p.canEdit&&<><button disabled={busy} onClick={()=>void action(async()=>{await ApiClient.community(`/posts/${p.id}/media/${p.media!.assetId}/retry`,accessToken,'POST');setNotice('Image processing scheduled.');})} className="border rounded px-3 py-1">Retry image processing</button><button disabled={busy} onClick={()=>{const reason=window.prompt('Image removal reason (at least 5 characters)');if(reason)void action(async()=>{await ApiClient.community(`/posts/${p.id}/media`,accessToken,'DELETE',{version:p.version,reason});});}} className="border rounded px-3 py-1">Remove image</button></>}
+    {!p.media&&p.canEdit&&<button disabled={busy} onClick={()=>{setMediaPost(p);setImage(null);setImageReason('');setUploadBody(null);}} className="border rounded px-3 py-1">तस्बिर थप्नुहोस् (Add image)</button>}
     {p.canDelete&&<button disabled={busy} onClick={()=>{if(window.confirm('यो पोस्ट हटाउने? (Remove this post?)'))void action(async()=>{await ApiClient.community(`/posts/${p.id}`,accessToken,'DELETE');});}} className="border rounded px-3 py-1">हटाउनुहोस् (Remove)</button>}
    </div>
    {open===p.id&&<div className="border-t pt-3 space-y-2"><ul>{comments.map(c=><li key={c.id} className="border-b py-2 whitespace-pre-wrap">{c.parentCommentId?'↳ ':''}{c.content}</li>)}</ul><form onSubmit={e=>{e.preventDefault();void action(async()=>{await ApiClient.community(`/posts/${p.id}/comments`,accessToken,'POST',{content:comment});setComment('');setComments(await ApiClient.community<Comment[]>(`/posts/${p.id}/comments`,accessToken));});}}><label>टिप्पणी (Your comment)<textarea required maxLength={2000} value={comment} onChange={e=>setComment(e.target.value)} className="block w-full rounded border p-2"/></label><button disabled={busy} className="border rounded px-3 py-2 mt-2">पठाउनुहोस् (Send comment)</button></form></div>}
   </article>)}
+  {mediaPost&&<div role="dialog" aria-modal="true" aria-label="Add community image" className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><form className="bg-white rounded-xl p-6 max-w-lg w-full space-y-3" onSubmit={e=>{e.preventDefault();void action(async()=>{
+    let body=uploadBody;if(!body){if(!image||image.size>5*1024*1024||!['image/png','image/jpeg','image/webp'].includes(image.type))throw new Error('Choose PNG, JPEG or WebP up to 5 MB');
+      const dataBase64=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(new Error('Unable to read image'));reader.readAsDataURL(image);});
+      body={version:mediaPost.version,reason:imageReason,clientUploadId:crypto.randomUUID(),mimeType:image.type,dataBase64};setUploadBody(body);
+    }
+    await ApiClient.community(`/posts/${mediaPost.id}/media`,accessToken,'POST',body);setMediaPost(null);setNotice('Image submitted for independent review.');
+   });}}><h2>Add community image</h2>{error&&<p role="alert">{error}</p>}<p>PNG, JPEG or WebP, up to 5 MB. Image changes require independent review. Feed downloads remove image metadata.</p>
+   <label>Image<input aria-label="Community image file" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy||!!uploadBody} onChange={e=>setImage(e.target.files?.[0]||null)}/></label>
+   <label>Image change reason<textarea aria-label="Image change reason" required minLength={5} maxLength={1000} disabled={busy||!!uploadBody} value={imageReason} onChange={e=>setImageReason(e.target.value)}/></label>
+   <button disabled={busy||(!uploadBody&&(!image||imageReason.trim().length<5))} className="border rounded p-2">{uploadBody?'Retry image upload':'Submit image for review'}</button><button type="button" disabled={busy} onClick={()=>setMediaPost(null)} className="border rounded p-2">Cancel image upload</button>
+  </form></div>}
   {editing&&<div role="dialog" aria-modal="true" aria-label="Edit community post" className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><form className="bg-white rounded-xl p-6 max-w-lg w-full space-y-3" onSubmit={e=>{e.preventDefault();void action(async()=>{await ApiClient.community(`/posts/${editing.id}`,accessToken,'PUT',{title:editTitle,content:editContent,category:editing.category,version:editing.version,reason:editReason});setEditing(null);setNotice('Changes submitted for independent moderation.');});}}>
    <h2 className="font-bold">सम्पादन (Edit post)</h2><p>Changes require independent review before publication.</p>
    <label className="block">Title<input required maxLength={180} value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="block border rounded w-full p-2"/></label>
@@ -67,7 +86,7 @@ export default function CommunityPage(){
   </form></div>}
   {history&&<div role="dialog" aria-modal="true" aria-label="Community revision history" className="fixed inset-0 bg-black/40 flex items-center justify-center p-5 z-50"><div className="bg-white rounded-xl p-6 max-w-lg w-full max-h-[85vh] overflow-auto space-y-3"><h2 className="font-bold">संस्करण इतिहास (Revision history)</h2>
    <p>Content versions are retained for review. Older edits before history was enabled are unavailable.</p>
-   {revisions.map(r=><section key={r.version} className="border rounded p-3"><h3 className="font-bold">Version {r.version} · {r.title}</h3><p className="whitespace-pre-wrap break-words">{r.content}</p><p>{r.category} · {new Date(r.createdAt).toLocaleString()}</p><p>Reason: {r.reason}</p></section>)}
+   {revisions.map(r=><section key={r.version} className="border rounded p-3"><h3 className="font-bold">Version {r.version} · {r.title}</h3><p className="whitespace-pre-wrap break-words">{r.content}</p><p>{r.category} · {new Date(r.createdAt).toLocaleString()}</p><p>Reason: {r.reason}</p>{r.media?.map(m=><button key={m.assetId} disabled={busy} onClick={()=>void downloadImage(history.id,m)} className="border rounded p-2">Revision image</button>)}</section>)}
    <button disabled={busy||historyPage===1} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${history.id}/revisions?page=${historyPage-1}`,accessToken));setHistoryPage(historyPage-1);})} className="border rounded p-2">Newer versions</button>
    <button disabled={busy||revisions.length<50} onClick={()=>void action(async()=>{setRevisions(await ApiClient.community<Revision[]>(`/posts/${history.id}/revisions?page=${historyPage+1}`,accessToken));setHistoryPage(historyPage+1);})} className="border rounded p-2">Older versions</button>
    <button disabled={busy} onClick={()=>setHistory(null)} className="border rounded p-2">Close history</button>

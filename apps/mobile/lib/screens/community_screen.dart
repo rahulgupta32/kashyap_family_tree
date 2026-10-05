@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -51,6 +54,27 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
+  static const _files = MethodChannel('kashyap/chat_attachments');
+  Future<void> _image(Map post,{bool remove=false,bool retry=false,bool original=false}) async {
+    final owner=widget.apiService.chatAccountId;if(owner==null){return;}
+    try {
+      if(remove){
+        final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>_ReviewEditor(title:post['title'] as String,review:false,mediaChange:true)));
+        if(result==null||!mounted){return;}
+        await widget.apiService.communityMedia('/posts/${post['id']}/media',owner,method:'DELETE',data:{'version':post['version'],'reason':result['reason']});await _load();
+      }else if(retry){await widget.apiService.communityMedia('/posts/${post['id']}/media/${post['media']['assetId']}/retry',owner,method:'POST');}
+      else {
+        final response=await widget.apiService.communityMedia('/posts/${post['id']}/media/${post['media']['assetId']}?variant=${original?'original':'display'}',owner);
+        if(!mounted||widget.apiService.chatAccountId!=owner){return;}
+        await _files.invokeMethod('save',{'dataBase64':base64Encode(response.bodyBytes),'mimeType':original?post['media']['mimeType']:'image/webp','fileName':original?post['media']['fileName']:'community-display.webp'});
+      }
+    }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+  }
+  Future<void> _uploadImage(Map post) async {
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>_CommunityImageEditor(api:widget.apiService,post:post)));
+    if(mounted){await _load();}
+  }
+
   Future<void> _reason(Map post, {bool review = false, bool appeal = false}) async {
     final result = await Navigator.push<Map<String, dynamic>>(context,
       MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review, appeal: appeal)));
@@ -101,6 +125,13 @@ class _CommunityScreenState extends State<CommunityScreen> {
               if (p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _edit(p as Map), child: const Text('सम्पादन (Edit)')),
               if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RevisionScreen(api: widget.apiService, post: p as Map))), child: const Text('Revision history')),
               if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ModerationHistoryScreen(api: widget.apiService, post: p as Map))), child: const Text('समीक्षा इतिहास (Moderation history)')),
+              if (p['media'] != null) TextButton(onPressed: _busy ? null : () => _image(p as Map), child: const Text('तस्बिर (Download image)')),
+              if (p['media'] != null && p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => _image(p as Map,original:true), child: const Text('Original image')),
+              if (p['media'] != null && p['canEdit'] == true) ...[
+                TextButton(onPressed: _busy ? null : () => _image(p as Map,remove:true), child: const Text('Remove image')),
+                TextButton(onPressed: _busy ? null : () => _image(p as Map,retry:true), child: const Text('Retry image processing')),
+              ],
+              if (p['media'] == null && p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _uploadImage(p as Map), child: const Text('तस्बिर थप्नुहोस् (Add image)')),
               if (p['canDelete'] == true) TextButton(onPressed: _busy ? null : () async {
                 final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
                   title: const Text('पोस्ट हटाउने? (Remove post?)'), actions: [
@@ -157,7 +188,8 @@ class _ReviewEditor extends StatefulWidget {
   final String title;
   final bool review;
   final bool appeal;
-  const _ReviewEditor({required this.title, required this.review, this.appeal = false});
+  final bool mediaChange;
+  const _ReviewEditor({required this.title, required this.review, this.appeal = false, this.mediaChange = false});
   @override
   State<_ReviewEditor> createState() => _ReviewEditorState();
 }
@@ -166,13 +198,13 @@ class _ReviewEditorState extends State<_ReviewEditor> {
   @override
   void dispose() { _notes.dispose(); super.dispose(); }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.review ? 'समीक्षा (Review)' : widget.appeal ? 'अपिल (Appeal)' : 'रिपोर्ट (Report)')),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.mediaChange ? 'तस्बिर हटाउनुहोस् (Remove image)' : widget.review ? 'समीक्षा (Review)' : widget.appeal ? 'अपिल (Appeal)' : 'रिपोर्ट (Report)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [Text(widget.title),
       TextField(controller: _notes, minLines: 3, maxLines: 6, maxLength: 1000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'कारण (Reason / notes)')),
       if (widget.review) Wrap(spacing: 12, children: ['PUBLISHED', 'REJECTED'].map((decision) => FilledButton(
         onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'decision': decision, 'notes': _notes.text.trim()}),
         child: Text(decision == 'PUBLISHED' ? 'Publish' : 'Reject'))).toList())
-      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: Text(widget.appeal ? 'Submit appeal' : 'Submit report')),
+      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: Text(widget.mediaChange ? 'Remove image' : widget.appeal ? 'Submit appeal' : 'Submit report')),
     ]));
 }
 
@@ -237,6 +269,14 @@ class _RevisionScreenState extends State<_RevisionScreen> {
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _loading = false); } }
   }
+  Future<void> _download(Map media) async {
+    final owner=widget.api.chatAccountId;if(owner==null){return;}
+    try{
+      final response=await widget.api.communityMedia('/posts/${widget.post['id']}/media/${media['assetId']}?variant=display',owner);
+      if(!mounted||widget.api.chatAccountId!=owner){return;}
+      await (const MethodChannel('kashyap/chat_attachments')).invokeMethod('save',{'dataBase64':base64Encode(response.bodyBytes),'mimeType':'image/webp','fileName':'community-revision.webp'});
+    }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+  }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Revision history')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
@@ -245,6 +285,7 @@ class _RevisionScreenState extends State<_RevisionScreen> {
       if (_loading) const Center(child: CircularProgressIndicator())
       else ..._rows.map((r) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Version ${r['version']} · ${r['title']}'), Text(r['content'] as String), Text(r['category'] as String), Text('Reason: ${r['reason']}'), Text(r['createdAt'].toString()),
+        ...((r['media'] as List?) ?? []).map((m)=>TextButton(onPressed:()=>_download(m as Map),child:const Text('Revision image'))),
       ])))),
       Wrap(spacing: 8, children: [
         TextButton(onPressed: _loading || _page == 1 ? null : () => _load(_page - 1), child: const Text('Newer versions')),
@@ -291,4 +332,54 @@ class _ModerationHistoryScreenState extends State<_ModerationHistoryScreen> {
       ],
     ]),
   );
+}
+
+class _CommunityImageEditor extends StatefulWidget {
+ final GenealogyApiService api;
+ final Map post;
+ const _CommunityImageEditor({required this.api,required this.post});
+ @override
+ State<_CommunityImageEditor> createState()=>_CommunityImageEditorState();
+}
+class _CommunityImageEditorState extends State<_CommunityImageEditor> {
+ final _reason=TextEditingController();
+ Map<String,String>? _file;
+ Map<String,dynamic>? _body;
+ String? _error,_owner;
+ bool _busy=false;
+ static const _files=MethodChannel('kashyap/chat_attachments');
+ @override
+ void initState(){super.initState();_owner=widget.api.chatAccountId;}
+ @override
+ void dispose(){_reason.dispose();super.dispose();}
+ Future<void> _pick() async {
+  try{final file=await _files.invokeMapMethod<String,String>('pick');if(file==null){return;}
+   if(!['image/png','image/jpeg','image/webp'].contains(file['mimeType'])||(file['dataBase64']?.length??0)>6990508){throw Exception('Choose PNG, JPEG or WebP up to 5 MB');}
+   if(mounted){setState(()=>_file=Map<String,String>.from(file));}
+  }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+ }
+ Future<void> _submit() async {
+  setState(()=>_busy=true);
+  try{
+   if(_owner==null){throw StateError('Sign in to upload an image');}
+   if(_body==null){
+    final random=Random.secure(),bytes=List<int>.generate(16,(_)=>0);for(var i=0;i<16;i++){bytes[i]=random.nextInt(256);}bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+    final h=bytes.map((b)=>b.toRadixString(16).padLeft(2,'0')).join();
+    final id='${h.substring(0,8)}-${h.substring(8,12)}-${h.substring(12,16)}-${h.substring(16,20)}-${h.substring(20)}';
+    _body={..._file!,'version':widget.post['version'],'reason':_reason.text.trim(),'clientUploadId':id};
+   }
+   await widget.api.communityMedia('/posts/${widget.post['id']}/media',_owner!,method:'POST',data:_body);
+   if(mounted){Navigator.pop(context);}
+  }catch(e){if(mounted){setState(()=>_error=e.toString());}}
+  finally{if(mounted){setState(()=>_busy=false);}}
+ }
+ @override
+ Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('तस्बिर थप्नुहोस् (Add image)')),
+  body:ListView(padding:const EdgeInsets.all(16),children:[
+   const Text('PNG, JPEG or WebP up to 5 MB. Image changes require independent review. Feed downloads remove image metadata.'),
+   if(_error!=null)Text(_error!),
+   TextButton(onPressed:_busy||_body!=null?null:_pick,child:Text(_file==null?'Choose image':'Image selected')),
+   TextField(controller:_reason,enabled:!_busy&&_body==null,maxLength:1000,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Image change reason')),
+   FilledButton(onPressed:_busy||(_body==null&&(_file==null||_reason.text.trim().length<5))?null:_submit,child:Text(_body==null?'Submit image for review':'Retry image upload')),
+  ]));
 }

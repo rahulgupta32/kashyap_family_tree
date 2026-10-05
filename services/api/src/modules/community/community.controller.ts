@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
+import { CommunityMediaService } from './community-media.service';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res, UseGuards } from '@nestjs/common';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -7,7 +9,13 @@ import { allowedFields } from './community-policy';
 @Controller('community')
 @UseGuards(JwtAuthGuard)
 export class CommunityController {
-  constructor(private readonly service: CommunityService) {}
+  constructor(private readonly service: CommunityService,private readonly media:CommunityMediaService) {}
+  @Post('posts/:id/media') upload(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.upload(id,u,b);}
+  @Delete('posts/:id/media') removeMedia(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.remove(id,u,b);}
+  @Post('posts/:id/media/:assetId/retry') retryMedia(@Param('id') id:string,@Param('assetId') asset:string,@CurrentUser() u:AuthenticatedUser){return this.media.retry(id,asset,u);}
+  @Get('posts/:id/media/:assetId') async download(@Param('id') id:string,@Param('assetId') asset:string,@CurrentUser() u:AuthenticatedUser,@Query('variant') variant:string,@Res() res:Response){
+    const file=await this.media.download(id,asset,u,variant);res.setHeader('Content-Type',file.mimeType);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename="${file.fileName}"`);res.send(file.buffer);
+  }
   @Get('posts')
   list(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string, @Query('queue') queue?: string, @Query('page') page?: string) {
     return this.service.listPosts(user,{branchId,queue:queue==='true',page:page===undefined?1:Number(page)});

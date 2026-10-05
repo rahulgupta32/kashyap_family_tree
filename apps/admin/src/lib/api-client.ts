@@ -57,6 +57,12 @@ export class ApiClient {
     return data as T;
   }
 
+  static async communityImage(postId:string,assetId:string,token:string,variant='display'):Promise<Blob>{
+    const response=await fetch(`${API_BASE}/community/posts/${postId}/media/${assetId}?variant=${variant}`,{headers:this.getHeaders(token),credentials:'include',cache:'no-store'});
+    if(!response.ok)throw new Error(response.status===503?'Image is processing. Try again shortly.':'Image unavailable');
+    return response.blob();
+  }
+
   private static getHeaders(token?: string): HeadersInit {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) {

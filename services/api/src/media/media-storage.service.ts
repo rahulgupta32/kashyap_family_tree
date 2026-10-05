@@ -48,19 +48,19 @@ export class MediaStorageService implements OnModuleDestroy {
     }
   }
   private key(bucket: string, fileName: string) {
-    if (!['private-profiles', 'private-chat', 'private-derivatives'].includes(bucket) || !/^(avatar|attachment|derivative)_[a-f0-9-]{36}\.(png|jpg|webp|pdf)$/.test(fileName)) throw new NotFoundException('Invalid media location');
+    if (!['private-profiles', 'private-chat', 'private-derivatives', 'private-community'].includes(bucket) || !/^(avatar|attachment|derivative|community)_[a-f0-9-]{36}\.(png|jpg|webp|pdf)$/.test(fileName)) throw new NotFoundException('Invalid media location');
     return `${bucket}/${fileName}`;
   }
   location(bucket: string, fileName: string) {
     const key = this.key(bucket, fileName);
-    return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : bucket === 'private-derivatives' ? ['derivatives'] : []), fileName);
+    return this.s3 ? `s3://${this.bucket}/${key}?versionId=null` : path.join(this.root, ...(bucket === 'private-chat' ? ['chat'] : bucket === 'private-derivatives' ? ['derivatives'] : bucket === 'private-community' ? ['community'] : []), fileName);
   }
   canMigrateLegacy(){return !!this.s3&&!!this.legacyRoot;}
   private legacyLocation(row:any):string|null {
     if(!this.canMigrateLegacy())return null;
     this.key(row.bucket,row.file_name);
     if(row.storage_key!==row.file_name)return null;
-    const directories=row.bucket==='private-chat'?['chat']:row.bucket==='private-derivatives'?['derivatives']:[];
+    const directories=row.bucket==='private-chat'?['chat']:row.bucket==='private-derivatives'?['derivatives']:row.bucket==='private-community'?['community']:[];
     const join=/^[a-zA-Z]:[\\/]/.test(this.legacyPrefix!)||this.legacyPrefix!.startsWith('\\\\')?path.win32.join:path.join;
     const expected=join(this.legacyPrefix!,...directories,row.file_name);
     return row.storage_path===expected?path.join(this.legacyRoot!,...directories,row.file_name):null;
@@ -86,7 +86,7 @@ export class MediaStorageService implements OnModuleDestroy {
     return createHash('sha256').update(JSON.stringify([this.s3?'s3':'local',this.bucket||this.root,process.env.MEDIA_S3_ENDPOINT||'aws',this.legacyRoot||null,this.legacyPrefix||null])).digest('hex');
   }
   async inventoryPage(cursor:any=null) {
-    const prefixes=['private-profiles','private-chat','private-derivatives'];
+    const prefixes=['private-profiles','private-chat','private-derivatives','private-community'];
     const index=cursor?.index||0;
     if(!Number.isInteger(index)||index<0||index>=prefixes.length)throw new Error('Invalid inventory cursor');
     const bucket=prefixes[index],objects:any[]=[];
@@ -100,13 +100,13 @@ export class MediaStorageService implements OnModuleDestroy {
       }
       if(result.IsTruncated){if(!result.NextKeyMarker)throw new Error('Missing inventory continuation');next={index,key:result.NextKeyMarker,version:result.NextVersionIdMarker};}
     }else{
-      const directory=path.join(this.root,...(index===1?['chat']:index===2?['derivatives']:[]));
+      const directory=path.join(this.root,...(index===1?['chat']:index===2?['derivatives']:index===3?['community']:[]));
       let handle:Awaited<ReturnType<typeof fs.opendir>>|undefined;
       try{
         const root=await fs.realpath(this.root),real=await fs.realpath(directory);
-        if(real!==path.join(root,...(index===1?['chat']:index===2?['derivatives']:[])))throw new Error('Unsafe inventory directory');
+        if(real!==path.join(root,...(index===1?['chat']:index===2?['derivatives']:index===3?['community']:[])))throw new Error('Unsafe inventory directory');
         handle=await fs.opendir(directory);const names:string[]=[];
-        for await(const entry of handle){if(index===0&&['chat','derivatives'].includes(entry.name))continue;if(entry.name<=(cursor?.after||''))continue;names.push(entry.name);names.sort();if(names.length>101)names.pop();}
+        for await(const entry of handle){if(index===0&&['chat','derivatives','community'].includes(entry.name))continue;if(entry.name<=(cursor?.after||''))continue;names.push(entry.name);names.sort();if(names.length>101)names.pop();}
         handle=undefined;
         for(const name of names.slice(0,100)){
           const location=path.join(directory,name),stat=await fs.lstat(location);let managed=stat.isFile()&&!stat.isSymbolicLink();
@@ -116,7 +116,7 @@ export class MediaStorageService implements OnModuleDestroy {
         if(names.length>100)next={index,after:names[99]};
       }catch(error:any){if(error.code!=='ENOENT')throw error;}finally{if(handle)await handle.close().catch(()=>undefined);}
     }
-    if(!next&&index<2)next={index:index+1};
+    if(!next&&index<prefixes.length-1)next={index:index+1};
     return {objects,next};
   }
   async put(bucket: string, fileName: string, buffer: Buffer, mimeType: string, uploaderUserId?:string) {
@@ -136,7 +136,7 @@ export class MediaStorageService implements OnModuleDestroy {
         await fs.mkdir(path.dirname(location), { recursive: true, mode: 0o700 });
         const directory = await fs.realpath(path.dirname(location));
         const root = await fs.realpath(this.root);
-        if (directory !== root && directory !== path.join(root, 'chat') && directory !== path.join(root, 'derivatives')) throw new Error('Unsafe storage directory');
+        if (directory !== root && directory !== path.join(root, 'chat') && directory !== path.join(root, 'derivatives') && directory !== path.join(root, 'community')) throw new Error('Unsafe storage directory');
         await fs.writeFile(location, buffer, { flag: 'wx', mode: 0o600 });
       }
       return await finish(location);
@@ -159,7 +159,7 @@ export class MediaStorageService implements OnModuleDestroy {
       } else {
         const real = await fs.realpath(location);
         const root = await fs.realpath(legacy?this.legacyRoot!:this.root);
-        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : []), row.file_name)) throw new Error('Unsafe storage path');
+        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : row.bucket === 'private-community' ? ['community'] : []), row.file_name)) throw new Error('Unsafe storage path');
         const handle = await fs.open(location, constants.O_RDONLY | constants.O_NOFOLLOW);
         try { const stat = await handle.stat(); if (!stat.isFile() || stat.size !== size) throw new Error('Size mismatch'); const chunks: Buffer[]=[]; let total=0;
           for await (const chunk of handle.createReadStream({autoClose:false,end:size})) { const bytes=Buffer.from(chunk); total+=bytes.length; if(total>size) throw new Error('Size mismatch'); chunks.push(bytes); }
@@ -181,7 +181,7 @@ export class MediaStorageService implements OnModuleDestroy {
     } else {
       try {
         const real = await fs.realpath(location), root = await fs.realpath(this.root);
-        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : []), row.file_name)) throw new Error('Unsafe storage path');
+        if (real !== path.join(root, ...(row.bucket === 'private-chat' ? ['chat'] : row.bucket === 'private-derivatives' ? ['derivatives'] : row.bucket === 'private-community' ? ['community'] : []), row.file_name)) throw new Error('Unsafe storage path');
         const stat = await fs.lstat(location); if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Unsafe storage path');
         await fs.unlink(location);
       } catch (error: any) { if (error.code !== 'ENOENT') throw error; }

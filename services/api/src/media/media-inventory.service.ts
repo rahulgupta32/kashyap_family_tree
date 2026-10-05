@@ -55,7 +55,7 @@ export class MediaInventoryService {
      const queued=(await client.query("SELECT id FROM media_deletion_queue WHERE asset_id=$1 AND status='PENDING' AND storage_path=$2",[asset.id,asset.storage_path])).rows.length;
      await this.record(client,id,queued?'DELETION_PENDING':'DELETION_QUEUE_MISSING',asset);
     }
-    if(present&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status)&&['private-profiles','private-chat'].includes(asset.bucket)&&['image/png','image/jpeg','image/webp'].includes(asset.mime_type)){
+    if(present&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status)&&['private-profiles','private-chat','private-community'].includes(asset.bucket)&&['image/png','image/jpeg','image/webp'].includes(asset.mime_type)){
      if(!(await client.query('SELECT source_asset_id FROM media_image_jobs WHERE source_asset_id=$1',[asset.id])).rows.length)await this.record(client,id,'IMAGE_JOB_MISSING',asset);
     }
    }
@@ -87,7 +87,7 @@ export class MediaInventoryService {
     if((await client.query('SELECT id FROM media_assets WHERE storage_path=$1 AND id<>$2 LIMIT 1',[asset.storage_path,asset.id])).rows.length){skipped++;continue;}
     if(item.finding==='DELETION_QUEUE_MISSING'&&['DELETED','PURGED'].includes(asset.retention_status)){
      const result=await client.query("INSERT INTO media_deletion_queue(asset_id,storage_path,status) SELECT $1,$2,'PENDING' WHERE NOT EXISTS(SELECT 1 FROM media_deletion_queue WHERE asset_id=$1 AND storage_path=$2 AND status='PENDING')",[asset.id,asset.storage_path]);scheduled+=result.rowCount||0;
-    }else if(item.finding==='IMAGE_JOB_MISSING'&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status)&&['private-profiles','private-chat'].includes(asset.bucket)&&['image/png','image/jpeg','image/webp'].includes(asset.mime_type)){
+    }else if(item.finding==='IMAGE_JOB_MISSING'&&asset.quarantine_status==='CLEAN'&&['ACTIVE','LEGAL_HOLD'].includes(asset.retention_status)&&['private-profiles','private-chat','private-community'].includes(asset.bucket)&&['image/png','image/jpeg','image/webp'].includes(asset.mime_type)){
      const result=await client.query('INSERT INTO media_image_jobs(source_asset_id) VALUES($1) ON CONFLICT DO NOTHING',[asset.id]);scheduled+=result.rowCount||0;
     }else{skipped++;}
    }

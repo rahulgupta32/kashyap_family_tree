@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -86,6 +87,28 @@ void main() {
     expect(find.text('Appeal: RESOLVED'),findsOneWidget);
     expect(find.text('Fictional appeal explanation'),findsOneWidget);
     expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Older decisions')).onPressed,isNull);
+  });
+
+  testWidgets('Image upload retry preserves its file, request ID and viewed version', (tester) async {
+    const channel=MethodChannel('kashyap/chat_attachments');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel,(call) async => {'mimeType':'image/png','dataBase64':'aW1hZ2U='});
+    addTearDown(()=>TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel,null));
+    final bodies=<Map>[];
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.method=='POST'){
+        bodies.add(jsonDecode(request.body) as Map);return http.Response(bodies.length==1?'{}':'{"assetId":"fictional"}',bodies.length==1?500:201);
+      }
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional image','content':'Fictional content','moderationStatus':'PENDING','version':4,'canEdit':true}]),200);
+    }));
+    service.setAuthToken('header.${base64Url.encode(utf8.encode('{"sub":"image-owner"}'))}.signature');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('तस्बिर थप्नुहोस् (Add image)'));await tester.pumpAndSettle();
+    await tester.tap(find.text('Choose image'));await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'Fictional image reason');
+    await tester.tap(find.text('Submit image for review'));await tester.pumpAndSettle();
+    expect(find.textContaining('500'),findsOneWidget);
+    await tester.tap(find.text('Retry image upload'));await tester.pumpAndSettle();
+    expect(bodies.length,2);expect(bodies[1],bodies[0]);expect(bodies[0]['version'],4);expect(bodies[0]['dataBase64'],'aW1hZ2U=');
   });
 
 }

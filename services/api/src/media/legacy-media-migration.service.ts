@@ -66,7 +66,7 @@ export class LegacyMediaMigrationService implements OnModuleInit, OnModuleDestro
     }
     let bytes:Buffer;
     try{bytes=await this.storage.read(asset);}catch{await client.query("UPDATE media_legacy_migration_queue SET status='REVIEW_REQUIRED',error_code='SOURCE_BYTES_REVIEW_REQUIRED' WHERE id=$1",[job.id]);return false;}
-    const prefix=asset.bucket==='private-chat'?'attachment':asset.bucket==='private-derivatives'?'derivative':'avatar';
+    const prefix=asset.bucket==='private-chat'?'attachment':asset.bucket==='private-derivatives'?'derivative':asset.bucket==='private-community'?'community':'avatar';
     const fileName=`${prefix}_${randomUUID()}.${asset.file_name.split('.').at(-1)}`;
     const destination=await this.storage.put(asset.bucket,fileName,bytes,asset.mime_type,asset.uploader_user_id);
     await this.storage.read({...asset,file_name:fileName,storage_key:fileName,storage_path:destination});

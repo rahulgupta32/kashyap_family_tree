@@ -15,7 +15,7 @@ export class ImageDerivativesService implements OnModuleInit,OnModuleDestroy {
  async status(sourceId:string){const row=(await this.db.query('SELECT status,attempts,error_code,next_attempt_at FROM media_image_jobs WHERE source_asset_id=$1',[sourceId])).rows[0];return row?{status:row.status,attempts:row.attempts,errorCode:row.error_code,nextAttemptAt:row.next_attempt_at}:{status:'NOT_SCHEDULED'};}
  async retry(sourceId:string){const row=(await this.db.query(`INSERT INTO media_image_jobs(source_asset_id)
   SELECT id FROM media_assets WHERE id=$1 AND quarantine_status='CLEAN' AND retention_status IN ('ACTIVE','LEGAL_HOLD')
-  AND mime_type IN ('image/png','image/jpeg','image/webp') AND bucket IN ('private-profiles','private-chat')
+  AND mime_type IN ('image/png','image/jpeg','image/webp') AND bucket IN ('private-profiles','private-chat','private-community')
   ON CONFLICT(source_asset_id) DO UPDATE SET status='PENDING',attempts=0,error_code=NULL,next_attempt_at=NOW()
   WHERE media_image_jobs.status IN ('FAILED','PENDING') RETURNING source_asset_id`,[sourceId])).rows[0];if(!row)throw new BadRequestException('Image processing is ready or cannot be retried');return {status:'PENDING'};}
 
