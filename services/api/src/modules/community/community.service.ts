@@ -181,7 +181,7 @@ export class CommunityService {
       await client.query('UPDATE community_posts SET status=$2, version=version+1, updated_at=now() WHERE id=$1', [id,body.decision]);
       await client.query("UPDATE community_reports SET status='RESOLVED', reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE post_id=$1 AND status='OPEN'", [id,user.id,notes]);
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_POST_MODERATED', entityType: 'community_post', entityId: id, actorId: user.id,
-        oldValue: {status:post.status}, newValue: {status:body.decision,notes} }, client);
+        oldValue: {status:post.status}, newValue: {status:body.decision,notes,version:post.version+1} }, client);
       return { success: true };
     });
   }

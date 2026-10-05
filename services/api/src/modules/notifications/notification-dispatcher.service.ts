@@ -5,6 +5,7 @@ import { NotificationInboxService } from './notification-inbox.service';
 import { NotificationFollowsService } from './notification-follows.service';
 import { broadcastEligibility } from './broadcast-eligibility';
 import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
+import { communityNoticeEligibility } from '../community/community-notice-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
 export interface NotificationDispatchResult {
@@ -97,7 +98,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
     // Reconcile claim action names: CLAIM_DISPUTED, CLAIM_DISPUTE, DISPUTE_FILED
-    if (action.startsWith('CLAIM_') || action === 'DISPUTE_FILED') {
+    if (action === 'COMMUNITY_POST_MODERATED') {
+      const recipients=await this.db.query(`SELECT u.id FROM audit_outbox o JOIN community_posts p ON p.id::text=o.entity_id
+        JOIN user_accounts u ON u.id=p.author_user_id WHERE o.id=$1 AND ${communityNoticeEligibility()}`,[record.id]);
+      recipientUserIds.push(...recipients.rows.map(r=>r.id));
+    } else if (action.startsWith('CLAIM_') || action === 'DISPUTE_FILED') {
       if (record.entity_type === 'PROFILE_CLAIM' && isUuid(record.entity_id)) {
         const claimRes = await this.db.query('SELECT claimant_user_id FROM profile_claims WHERE id = $1', [record.entity_id]);
         if (claimRes.rows[0]?.claimant_user_id) {
@@ -326,7 +331,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     // Recheck at the last delivery boundary, including retries and stranded jobs.
     // A saved job is not continuing permission to contact a former participant.
     const current = (await this.db.query(`SELECT u.id,p.push_enabled,p.sms_enabled,p.email_enabled,
-      p.workflow_enabled,p.chat_enabled,p.family_events_enabled
+      p.workflow_enabled,p.chat_enabled,p.family_events_enabled,p.community_posts_enabled
       FROM user_accounts u LEFT JOIN notification_preferences p ON p.user_id=u.id
       WHERE u.id=$1 AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL`, [userId])).rows[0];
     if (!current) return { status: 'SKIPPED', reason: 'Account is no longer active' };
@@ -336,6 +341,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       : channel === 'EMAIL' ? current.email_enabled === true : false;
     if (!enabled) return { status: 'SKIPPED', reason: 'Delivery channel disabled' };
 
+    if(payload.action==='COMMUNITY_POST_MODERATED'){
+      const allowed=await this.db.query(`SELECT 1 FROM audit_outbox o JOIN community_posts p ON p.id::text=o.entity_id
+        JOIN user_accounts u ON u.id=$2 WHERE o.id=$1 AND ${communityNoticeEligibility()}`,[payload.outboxId,userId]);
+      if(!allowed.rows.length)return {status:'SKIPPED',reason:'Community decision or access changed'};
+    }
     if (['CALENDAR_EVENT_CREATED','CALENDAR_EVENT_UPDATED','CALENDAR_EVENT_CANCELLED','CALENDAR_EVENT_REMINDER_DUE'].includes(payload.action)) {
       const eligible=await this.db.query(`SELECT 1 FROM calendar_notification_recipients nr
         JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id
@@ -493,6 +503,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private formatNotificationMessage(action: string, record: any): string {
+    if(action==='COMMUNITY_POST_MODERATED') return 'A community post review update is available. Open the app to review it.';
     switch (action) {
       case 'NOTIFICATION_BROADCAST_CREATED':
         return 'प्रशासनिक सूचना उपलब्ध छ। (An official notice is available)';

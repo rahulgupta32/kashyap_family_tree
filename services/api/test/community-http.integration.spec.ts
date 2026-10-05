@@ -9,18 +9,21 @@ import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
 import { AuditOutboxRepository } from '../src/database/repositories/audit-outbox.repository';
 import { CommunityService } from '../src/modules/community/community.service';
+import { NotificationDispatcherService } from '../src/modules/notifications/notification-dispatcher.service';
+import { NotificationInboxService } from '../src/modules/notifications/notification-inbox.service';
 import { Role } from '@kashyap/contracts';
 import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../src/modules/auth/auth.constants';
 import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
 
 describe('Community persistent HTTP workflows and isolation',()=>{
  let iso:DisposableDatabase,app:INestApplication,db:DatabaseService,audit:AuditOutboxRepository;
+ let dispatcher:NotificationDispatcherService,inbox:NotificationInboxService;
  let branch:string,otherBranch:string,author:any,reader:any,moderator:any,secondModerator:any,outsider:any,post:any;
  const token=(user:any)=>`Bearer ${user.token}`;
  beforeAll(async()=>{
   iso=await createDisposableDatabase('community');await assertDatabaseIsolation(iso.client,iso.dbName);
   const module=await Test.createTestingModule({imports:[AppModule]}).compile();app=module.createNestApplication();await app.init();
-  db=module.get(DatabaseService);audit=module.get(AuditOutboxRepository);await assertDatabaseIsolation(db,iso.dbName);
+  dispatcher=module.get(NotificationDispatcherService);inbox=module.get(NotificationInboxService);db=module.get(DatabaseService);audit=module.get(AuditOutboxRepository);await assertDatabaseIsolation(db,iso.dbName);
   branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('COM_A','परीक्षण अ','Fictional A') RETURNING id")).rows[0].id;
   otherBranch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('COM_B','परीक्षण ब','Fictional B') RETURNING id")).rows[0].id;
   async function user(phone:string,role:Role,b:string){
@@ -142,6 +145,21 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   try{await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:before.version,reason:'Appeal must roll back'}).expect(500);}finally{spy.mockRestore();}
   expect((await db.query('SELECT version,status FROM community_posts WHERE id=$1',[created.id])).rows[0]).toEqual(before);
   expect((await db.query('SELECT id FROM community_post_appeals WHERE post_id=$1',[created.id])).rows).toHaveLength(0);
+ });
+ it('delivers one generic author notice and hides it after the decision changes',async()=>{
+  await db.query(`INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled,in_app_enabled,workflow_enabled,community_posts_enabled)
+    VALUES($1,false,false,false,true,true,true) ON CONFLICT(user_id) DO UPDATE SET push_enabled=false,sms_enabled=false,email_enabled=false,in_app_enabled=true,workflow_enabled=true,community_posts_enabled=true`,[author.id]);
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Private notice fixture',content:'Private post content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'REJECTED',version:created.version,notes:'Private rejection reason'}).expect(201);
+  const record=(await db.query("SELECT * FROM audit_outbox WHERE entity_id=$1 AND action='COMMUNITY_POST_MODERATED'",[created.id])).rows[0];
+  await dispatcher.processRecord(record);await dispatcher.processRecord(record);
+  const rows=(await db.query('SELECT * FROM notification_inbox WHERE outbox_id=$1',[record.id])).rows;
+  expect(rows).toHaveLength(1);expect(rows[0].recipient_user_id).toBe(author.id);expect(rows[0].destination).toBe('/community');
+  expect(rows[0].message).not.toContain('Private');
+  expect(JSON.stringify(await inbox.list(author.id))).toContain(rows[0].id);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:created.version+1,reason:'Review this fictional appeal'}).expect(201);
+  expect(JSON.stringify(await inbox.list(author.id))).not.toContain(rows[0].id);
+  await dispatcher.processRecord(record);expect((await db.query('SELECT id FROM notification_inbox WHERE outbox_id=$1',[record.id])).rows).toHaveLength(1);
  });
  it('rolls back content if durable audit intent cannot be written',async()=>{
   const before=(await db.query('SELECT count(*)::int AS count FROM community_posts')).rows[0].count;

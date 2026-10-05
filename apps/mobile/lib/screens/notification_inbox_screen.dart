@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 import 'chat_screen.dart';
+import 'community_screen.dart';
 import 'calendar_events_screen.dart';
 import 'person_search_screen.dart';
 
@@ -37,7 +38,8 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       await widget.apiService.requestJson('/notifications/${notice['id']}/read',method:'POST');
       if(!mounted)return;
       final target=notice['destination'];
-      if(target=='/chat'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));}
+      if(target=='/community'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CommunityScreen(apiService:widget.apiService)));}
+      else if(target=='/chat'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));}
       else if(target=='/calendar'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));}
       else if(target=='/claims'||target=='/change-requests'){
         // Notifications intentionally omit private person IDs. Let the member

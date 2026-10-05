@@ -4,6 +4,8 @@ import { broadcastEligibility } from './broadcast-eligibility';
 import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
+import { communityNoticeEligibility } from '../community/community-notice-eligibility';
+
 type Category = 'WORKFLOW' | 'CHAT' | 'EVENT' | 'BROADCAST';
 type Preference = 'inAppEnabled' | 'workflowEnabled' | 'chatEnabled' | 'familyEventsEnabled';
 const destinations: Record<Category, string> = { WORKFLOW: '/claims', CHAT: '/chat', EVENT: '/calendar', BROADCAST: '/broadcasts' };
@@ -17,6 +19,7 @@ export class NotificationInboxService {
       category: 'BROADCAST', destination: destinations.BROADCAST,
       message: 'प्रशासनिक सूचना उपलब्ध छ। (An official notice is available)',
     };
+    if (action === 'COMMUNITY_POST_MODERATED') return {category:'WORKFLOW',destination:'/community',message:'समुदाय पोस्टको समीक्षा अपडेट उपलब्ध छ। (A community post review update is available)'};
     if (action === 'CHAT_MESSAGE_CREATED') return {
       category: 'CHAT', destination: destinations.CHAT,
       message: 'नयाँ निजी सन्देश आएको छ। (You have a new private message)',
@@ -53,6 +56,9 @@ export class NotificationInboxService {
   // Chat notices are rechecked at read time, so leaving a group, a block,
   // or deleting a message revokes even a previously queued notice.
   private readonly visible = `(
+    (n.action <> 'COMMUNITY_POST_MODERATED' OR EXISTS(SELECT 1 FROM audit_outbox o
+      JOIN community_posts p ON p.id::text=o.entity_id JOIN user_accounts u ON u.id=n.recipient_user_id
+      WHERE o.id=n.outbox_id AND ${communityNoticeEligibility()})) AND
     (n.category <> 'EVENT' OR EXISTS(
       SELECT 1 FROM calendar_notification_recipients nr JOIN audit_outbox o ON o.id=nr.outbox_id
       JOIN calendar_events e ON e.id=nr.event_id JOIN user_accounts u ON u.id=nr.user_id
