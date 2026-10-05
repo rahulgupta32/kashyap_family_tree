@@ -246,6 +246,66 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect((await db.query('SELECT count(*)::int AS n FROM media_assets')).rows[0].n).toBe(before);
   expect((await db.query('SELECT version FROM community_post_revisions WHERE post_id=$1',[created.id])).rows).toHaveLength(1);
  });
+ it('defaults locality/contact to private and enforces current consent and protected-profile restrictions',async()=>{
+  const person=(await db.query(`INSERT INTO persons(gender,living_status,generation,branch_id,birth_year_bs,is_claimed,claimed_user_id)
+    VALUES('MALE','LIVING',3,$1,2040,true,$2) RETURNING id`,[branch,author.id])).rows[0];
+  await db.query(`UPDATE user_accounts SET person_id=$2,privacy_settings=jsonb_build_object('contactVisibility','VERIFIED_COMMUNITY','addressVisibility','VERIFIED_COMMUNITY') WHERE id=$1`,[author.id,person.id]);
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Sharing fixture',content:'Fictional locality fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  expect(created.sharing).toMatchObject({localityVisibility:'PRIVATE',contactVisibility:'PRIVATE',contactConsent:false});
+  const endpoint=`/community/posts/${created.id}/sharing`,locality={district:'Kaski',municipality:'Pokhara'};
+  const body={version:created.version,reason:'Set private approximate locality',locality,localityVisibility:'PRIVATE',contactVisibility:'PRIVATE',contactConsent:false};
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(author)).send(body).expect(200);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({version:body.version+1,decision:'PUBLISHED',notes:'Review private locality'}).expect(201);
+  const read=async(actor:any)=>(await request(app.getHttpServer()).get('/community/posts').set('Authorization',token(actor)).expect(200)).body.find((p:any)=>p.id===created.id);
+  expect((await read(reader)).locality).toBeUndefined();expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(moderator)).locality).toEqual(locality);
+  const shared={...body,version:body.version+2,reason:'Consent to community sharing',localityVisibility:'VERIFIED_COMMUNITY',contactVisibility:'VERIFIED_COMMUNITY',contactConsent:true};
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(reader)).send(shared).expect(403);
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(outsider)).send(shared).expect(403);
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(author)).send({...shared,version:1}).expect(409);
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(author)).send(shared).expect(200);
+  expect(await read(reader)).toBeUndefined();
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({version:shared.version+1,decision:'PUBLISHED',notes:'Review explicitly shared fields'}).expect(201);
+  expect(await read(reader)).toMatchObject({locality,contactPhone:'+9779847200001'});
+  await db.query(`UPDATE user_accounts SET privacy_settings='{"contactVisibility":"PRIVATE","addressVisibility":"PRIVATE"}'::jsonb WHERE id=$1`,[author.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(reader)).locality).toBeUndefined();
+  await db.query(`UPDATE user_accounts SET privacy_settings='{"contactVisibility":"VERIFIED_COMMUNITY","addressVisibility":"VERIFIED_COMMUNITY"}'::jsonb WHERE id=$1`,[author.id]);
+  await db.query('UPDATE user_accounts SET is_suspended=true WHERE id=$1',[author.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(reader)).locality).toBeUndefined();
+  await db.query('UPDATE user_accounts SET is_suspended=false WHERE id=$1',[author.id]);
+  await db.query('UPDATE persons SET is_archived=true WHERE id=$1',[person.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(reader)).locality).toBeUndefined();
+  await db.query('UPDATE persons SET is_archived=false,is_minor_protected=true WHERE id=$1',[person.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(moderator)).contactPhone).toBeUndefined();expect((await read(reader)).locality).toBeUndefined();
+  await db.query('UPDATE persons SET is_minor_protected=false,birth_year_bs=NULL WHERE id=$1',[person.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();
+  await db.query("UPDATE persons SET birth_year_bs=2040,phone_visibility='PRIVATE',address_visibility='PRIVATE' WHERE id=$1",[person.id]);
+  expect((await read(reader)).contactPhone).toBeUndefined();expect((await read(reader)).locality).toBeUndefined();
+  const history=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/revisions`).set('Authorization',token(author)).expect(200)).body;
+  expect(history[0]).toMatchObject({locality,contactConsent:true});expect(JSON.stringify(history)).not.toContain('+9779847200001');
+  const auditRow=(await db.query("SELECT new_value FROM audit_outbox WHERE entity_id=$1 AND action='COMMUNITY_SHARING_CHANGED' ORDER BY created_at DESC LIMIT 1",[created.id])).rows[0];
+  expect(JSON.stringify(auditRow)).not.toContain('Pokhara');expect(JSON.stringify(auditRow)).not.toContain('+977');
+  await request(app.getHttpServer()).put(endpoint).set('Authorization',token(author)).send({...body,version:shared.version+2,reason:'Withdraw post contact consent',locality:null}).expect(200);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  expect(await read(reader)).toBeUndefined();
+ });
+ it('rejects precise coordinates, caller-supplied contacts and missing affirmative consent',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Sharing validation',content:'Fictional validation fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const body={version:created.version,reason:'Validate sharing change',locality:null,localityVisibility:'PRIVATE',contactVisibility:'PRIVATE',contactConsent:false};
+  for(const bad of [{...body,phoneNumber:'+9779800000000'},{...body,locality:{district:'Kaski',municipality:'Pokhara',latitude:28.2}},{...body,locality:{district:'Kaski',municipality:'House 42'}},{...body,contactVisibility:'VERIFIED_COMMUNITY'},{...body,contactConsent:'true'},{...body,localityVisibility:'VERIFIED_COMMUNITY'}]){
+    await request(app.getHttpServer()).put(`/community/posts/${created.id}/sharing`).set('Authorization',token(author)).send(bad).expect(400);
+  }
+  const unchanged=(await request(app.getHttpServer()).put(`/community/posts/${created.id}/sharing`).set('Authorization',token(author)).send(body).expect(200)).body;
+  expect(unchanged).toEqual({version:created.version,unchanged:true});
+ });
+ it('serializes sharing changes and rolls back privacy/revision updates on audit failure',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Sharing rollback',content:'Fictional rollback fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const body={version:created.version,reason:'Private locality review',locality:{district:'Kaski',municipality:'Pokhara'},localityVisibility:'PRIVATE',contactVisibility:'PRIVATE',contactConsent:false};
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected sharing audit failure'));
+  try{await request(app.getHttpServer()).put(`/community/posts/${created.id}/sharing`).set('Authorization',token(author)).send(body).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT version,locality FROM community_posts WHERE id=$1',[created.id])).rows[0]).toEqual({version:created.version,locality:null});
+  const results=await Promise.all(['Pokhara','Lekhnath'].map(municipality=>request(app.getHttpServer()).put(`/community/posts/${created.id}/sharing`).set('Authorization',token(author)).send({...body,locality:{district:'Kaski',municipality}})));
+  expect(results.map(r=>r.status).sort()).toEqual([200,409]);expect((await db.query('SELECT version FROM community_post_revisions WHERE post_id=$1',[created.id])).rows).toHaveLength(2);
+ });
  it('rolls back content if durable audit intent cannot be written',async()=>{
   const before=(await db.query('SELECT count(*)::int AS count FROM community_posts')).rows[0].count;
   const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected outbox failure'));

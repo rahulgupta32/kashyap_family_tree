@@ -1,3 +1,5 @@
+import { communitySharing } from './community-privacy';
+import { PrivacyEngineService } from '../genealogy/privacy/privacy-engine.service';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
@@ -6,6 +8,7 @@ import { allowedFields, branchAccess, canModerate, globalAdmin, member, textFiel
 
 @Injectable()
 export class CommunityService {
+  private readonly privacy=new PrivacyEngineService();
   constructor(private readonly db: DatabaseService, private readonly audit: AuditOutboxRepository) {}
 
   async visiblePost(id: string, user: AuthenticatedUser, client?: any) {
@@ -30,7 +33,10 @@ export class CommunityService {
     const moderatorAll = canModerate(user, undefined);
     if (options.queue && !moderatorAll && !modBranches.length) throw new ForbiddenException('Moderator authority required');
     const result = await this.db.query(
-      `SELECT p.*, (SELECT json_build_object('decision',d.decision,'notes',d.notes,'version',d.version,
+      `SELECT p.*, u.phone_number AS author_phone,u.privacy_settings AS author_privacy,
+         u.is_active AS author_active,u.is_suspended AS author_suspended,u.deleted_at AS author_deleted,
+         person.id AS author_person_id,person.is_minor_protected,person.birth_year_bs,person.birth_date_bs,person.living_status,person.is_archived,person.phone_visibility,person.address_visibility,person.claimed_user_id,person.is_claimed,
+         (SELECT json_build_object('decision',d.decision,'notes',d.notes,'version',d.version,
            'appealed',EXISTS(SELECT 1 FROM community_post_appeals a WHERE a.decision_id=d.id))
            FROM community_moderation_decisions d WHERE d.post_id=p.id ORDER BY d.version DESC LIMIT 1) AS outcome,
          (SELECT a.reason FROM community_post_appeals a WHERE a.post_id=p.id AND a.status='OPEN') AS appeal_reason,
@@ -41,7 +47,7 @@ export class CommunityService {
          EXISTS(SELECT 1 FROM community_reactions r WHERE r.post_id = p.id AND r.user_id = $1) AS is_liked,
          (SELECT count(*)::int FROM community_comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
          (SELECT count(*)::int FROM community_reports r WHERE r.post_id = p.id AND r.status = 'OPEN') AS report_count
-       FROM community_posts p WHERE p.deleted_at IS NULL
+       FROM community_posts p LEFT JOIN user_accounts u ON u.id=p.author_user_id LEFT JOIN persons person ON person.id=u.person_id WHERE p.deleted_at IS NULL
          AND ($2 OR p.branch_id IS NULL OR p.branch_id = ANY($3::uuid[]))
          AND ($4::uuid IS NULL OR p.branch_id = $4)
          AND (CASE WHEN $5 THEN p.status = 'PENDING' AND ($6 OR p.branch_id = ANY($7::uuid[]))
@@ -52,7 +58,19 @@ export class CommunityService {
   }
 
   private dto(row: any, user: AuthenticatedUser) {
-    return { id: row.id, title: row.title, content: row.content, category: row.category, branchId: row.branch_id,
+    const privileged=row.author_user_id===user.id||canModerate(user,row.branch_id);
+    const adultAuthor=row.author_active&&!row.author_suspended&&!row.author_deleted&&row.author_person_id&&row.living_status==='LIVING'&&!row.is_archived&&row.is_claimed&&row.claimed_user_id===row.author_user_id
+      &&!this.privacy.isMinorOrUncertainAge(row);
+    const phoneAllowed=adultAuthor&&row.contact_consent&&row.contact_visibility==='VERIFIED_COMMUNITY'&&row.status==='PUBLISHED'
+      &&['PUBLIC','VERIFIED_COMMUNITY'].includes(row.phone_visibility)
+      &&['PUBLIC','VERIFIED_COMMUNITY'].includes(row.author_privacy?.contactVisibility);
+    const localityAllowed=adultAuthor&&row.locality_visibility==='VERIFIED_COMMUNITY'&&row.status==='PUBLISHED'
+      &&['PUBLIC','VERIFIED_COMMUNITY'].includes(row.address_visibility)
+      &&['PUBLIC','VERIFIED_COMMUNITY'].includes(row.author_privacy?.addressVisibility);
+    return { locality:privileged||localityAllowed?row.locality:undefined,
+      contactPhone:phoneAllowed?row.author_phone:undefined,
+      sharing:privileged?{localityVisibility:row.locality_visibility,contactVisibility:row.contact_visibility,contactConsent:row.contact_consent}:undefined,
+      id: row.id, title: row.title, content: row.content, category: row.category, branchId: row.branch_id,
       authorUserId: row.author_user_id, authorName: 'Community member', moderationStatus: row.status,
       media:row.media, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
@@ -85,8 +103,8 @@ export class CommunityService {
 
   async saveRevision(post: any, editorId: string, reason: string, client: any) {
     await client.query(`INSERT INTO community_post_revisions
-      (post_id,version,editor_user_id,title,content,category,reason) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-      [post.id,post.version,editorId,post.title,post.content,post.category,reason]);
+      (post_id,version,editor_user_id,title,content,category,reason,locality,locality_visibility,contact_visibility,contact_consent) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [post.id,post.version,editorId,post.title,post.content,post.category,reason,post.locality?JSON.stringify(post.locality):null,post.locality_visibility||'PRIVATE',post.contact_visibility||'PRIVATE',post.contact_consent||false]);
     await client.query(`INSERT INTO community_revision_media(post_id,version,asset_id)
       SELECT post_id,$2,asset_id FROM community_post_media WHERE post_id=$1 AND removed_at IS NULL`,[post.id,post.version]);
   }
@@ -114,13 +132,33 @@ export class CommunityService {
     });
   }
 
+  async updateSharing(id:string,user:AuthenticatedUser,body:any){
+    const input=communitySharing(body);
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(post.author_user_id!==user.id)throw new ForbiddenException('Only the author may change sharing');
+      if(post.version!==body.version)throw new ConflictException('Post changed; reload before changing sharing');
+      if(post.category==='ANNOUNCEMENT'&&!canModerate(user,post.branch_id))throw new ForbiddenException('Announcements require moderator authority');
+      if((post.locality?.district??null)===(input.locality?.district??null)&&(post.locality?.municipality??null)===(input.locality?.municipality??null)&&post.locality_visibility===body.localityVisibility&&post.contact_visibility===body.contactVisibility&&post.contact_consent===body.contactConsent)return {version:post.version,unchanged:true};
+      const updated=(await client.query(`UPDATE community_posts SET locality=$2,locality_visibility=$3,contact_visibility=$4,contact_consent=$5,
+        status='PENDING',version=version+1,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,input.locality?JSON.stringify(input.locality):null,body.localityVisibility,body.contactVisibility,body.contactConsent])).rows[0];
+      await client.query("UPDATE community_post_appeals SET status='WITHDRAWN',resolved_at=NOW() WHERE post_id=$1 AND status='OPEN'",[id]);
+      await this.saveRevision(updated,user.id,input.reason,client);
+      // Audit the consent transition, never copy contact numbers or locality labels to delivery payloads.
+      await this.audit.recordAuditIntent({action:'COMMUNITY_SHARING_CHANGED',entityType:'community_post',entityId:id,actorId:user.id,
+        oldValue:{version:post.version,localityVisibility:post.locality_visibility,contactVisibility:post.contact_visibility},
+        newValue:{version:updated.version,localityVisibility:body.localityVisibility,contactVisibility:body.contactVisibility,contactConsent:body.contactConsent}},client);
+      return {version:updated.version};
+    });
+  }
+
   async revisions(id: string, user: AuthenticatedUser, page = 1) {
     if (!Number.isSafeInteger(page) || page < 1 || page > 10000) throw new BadRequestException('Invalid page');
     // Lock the post during authorization and history read so a concurrent deletion cannot expose history.
     return this.db.transaction(async client => {
       const post = await this.visiblePost(id,user,client);
       if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Revision history requires author or moderator authority');
-      return (await client.query(`SELECT r.version,r.title,r.content,r.category,r.reason,r.created_at AS "createdAt",
+      return (await client.query(`SELECT r.version,r.title,r.content,r.category,r.reason,r.locality,r.locality_visibility AS "localityVisibility",r.contact_visibility AS "contactVisibility",r.contact_consent AS "contactConsent",r.created_at AS "createdAt",
           (SELECT json_agg(json_build_object('assetId',a.id,'mimeType',a.mime_type,'fileName',a.file_name))
            FROM community_revision_media l JOIN media_assets a ON a.id=l.asset_id WHERE l.post_id=r.post_id AND l.version=r.version) AS media
         FROM community_post_revisions r WHERE r.post_id=$1 ORDER BY r.version DESC LIMIT 50 OFFSET $2`,[id,(page-1)*50])).rows;

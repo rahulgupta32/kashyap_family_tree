@@ -60,6 +60,16 @@ test('Community publication, likes, comments and reports persist through authent
   await page.reload();await expect(authorCard).toContainText('PUBLISHED');
   const downloading=page.waitForEvent('download');await authorCard.getByRole('button',{name:'Original image',exact:true}).click();
   const downloaded=await downloading;expect(downloaded.suggestedFilename()).toMatch(/^community_.*\.png$/);
+  await authorCard.getByRole('button',{name:/Location\/contact sharing/}).click();
+  const sharing=page.getByRole('dialog',{name:'Community location and contact sharing'});
+  await expect(sharing.getByRole('checkbox',{name:/I consent to share/})).not.toBeChecked();
+  await sharing.getByLabel('Community district',{exact:true}).fill('Kaski');await sharing.getByLabel('Community municipality',{exact:true}).fill('Pokhara');
+  await sharing.getByLabel('Sharing change reason',{exact:true}).fill('Retain approximate private locality for review.');
+  await sharing.getByRole('button',{name:'Save sharing for review'}).click();await expect(sharing).toHaveCount(0);await expect(authorCard).toContainText('PENDING');
+  await expect(authorCard).toContainText('Kaski · Pokhara');
+  await reviewer.getByRole('button',{name:/Refresh/}).click();await reviewCard.getByRole('button',{name:/Review/}).click();
+  await reviewer.getByRole('dialog').getByLabel(/Reason \/ notes/).fill('Review private approximate locality.');await reviewer.getByRole('dialog').getByRole('button',{name:/Publish/}).click();await expect(reviewer.getByRole('dialog')).toHaveCount(0);
+  await page.reload();await expect(authorCard).toContainText('PUBLISHED');
   await authorCard.getByRole('button',{name:/Like/}).click();
   await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   await authorCard.getByRole('button',{name:/Comments/}).click();

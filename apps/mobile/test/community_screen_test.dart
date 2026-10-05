@@ -111,4 +111,22 @@ void main() {
     expect(bodies.length,2);expect(bodies[1],bodies[0]);expect(bodies[0]['version'],4);expect(bodies[0]['dataBase64'],'aW1hZ2U=');
   });
 
+  testWidgets('Locality sharing carries explicit consent and the viewed version without a phone payload', (tester) async {
+    Map? submitted;
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.method=='PUT'){submitted=jsonDecode(request.body) as Map;return http.Response('{"version":6}',200);}
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional sharing','content':'Fictional content','moderationStatus':'PUBLISHED','version':5,'canEdit':true,'sharing':{'localityVisibility':'PRIVATE','contactVisibility':'PRIVATE','contactConsent':false}}]),200);
+    }));
+    service.setAuthToken('header.${base64Url.encode(utf8.encode('{"sub":"sharing-owner"}'))}.signature');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('स्थान / सम्पर्क (Location/contact sharing)'));await tester.pumpAndSettle();
+    expect(tester.widgetList<SwitchListTile>(find.byType(SwitchListTile)).every((tile)=>!tile.value),isTrue);
+    await tester.enterText(find.byType(TextField).at(0),'Kaski');await tester.enterText(find.byType(TextField).at(1),'Pokhara');
+    await tester.tap(find.text('Share approximate locality with verified post readers'));await tester.pump();
+    await tester.enterText(find.byType(TextField).at(2),'Share approximate locality');await tester.pump();
+    await tester.ensureVisible(find.text('Save sharing for review'));await tester.tap(find.text('Save sharing for review'));await tester.pumpAndSettle();
+    expect(submitted,{'version':5,'reason':'Share approximate locality','locality':{'district':'Kaski','municipality':'Pokhara'},'localityVisibility':'VERIFIED_COMMUNITY','contactVisibility':'PRIVATE','contactConsent':false});
+    expect(submitted!.containsKey('phoneNumber'),isFalse);
+  });
+
 }

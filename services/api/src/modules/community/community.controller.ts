@@ -10,6 +10,7 @@ import { allowedFields } from './community-policy';
 @UseGuards(JwtAuthGuard)
 export class CommunityController {
   constructor(private readonly service: CommunityService,private readonly media:CommunityMediaService) {}
+  @Put('posts/:id/sharing') sharing(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.service.updateSharing(id,u,b);}
   @Post('posts/:id/media') upload(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.upload(id,u,b);}
   @Delete('posts/:id/media') removeMedia(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.remove(id,u,b);}
   @Post('posts/:id/media/:assetId/retry') retryMedia(@Param('id') id:string,@Param('assetId') asset:string,@CurrentUser() u:AuthenticatedUser){return this.media.retry(id,asset,u);}

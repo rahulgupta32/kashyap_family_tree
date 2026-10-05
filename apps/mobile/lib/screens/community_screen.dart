@@ -75,6 +75,13 @@ class _CommunityScreenState extends State<CommunityScreen> {
     if(mounted){await _load();}
   }
 
+  Future<void> _sharing(Map post) async {
+    final owner=widget.apiService.chatAccountId;if(owner==null){return;}
+    final result=await Navigator.push<Map<String,dynamic>>(context,MaterialPageRoute(builder:(_)=>_CommunitySharingEditor(post:post)));
+    if(result==null||!mounted){return;}
+    await _action(() async {await widget.apiService.communityMedia('/posts/${post['id']}/sharing',owner,method:'PUT',data:result);});
+  }
+
   Future<void> _reason(Map post, {bool review = false, bool appeal = false}) async {
     final result = await Navigator.push<Map<String, dynamic>>(context,
       MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review, appeal: appeal)));
@@ -107,6 +114,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Text(p['moderationStatus'] as String, style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 8), Text(p['content'] as String),
             if (p['moderationOutcome'] != null) Text('Moderation: ${p['moderationOutcome']['decision']} · ${p['moderationOutcome']['notes']}'),
+            if (p['locality'] != null) Text("स्थान (Approximate locality): ${p['locality']['district']} · ${p['locality']['municipality']}"),
+            if (p['contactPhone'] != null) Text("सम्पर्क (Shared contact): ${p['contactPhone']}"),
             if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
             Wrap(spacing: 8, children: [
               if (p['canAppeal'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map, appeal: true), child: const Text('अपिल (Appeal)')),
@@ -132,6 +141,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 TextButton(onPressed: _busy ? null : () => _image(p as Map,retry:true), child: const Text('Retry image processing')),
               ],
               if (p['media'] == null && p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _uploadImage(p as Map), child: const Text('तस्बिर थप्नुहोस् (Add image)')),
+              if (p['canEdit'] == true) TextButton(onPressed:_busy?null:()=>_sharing(p as Map),child:const Text('स्थान / सम्पर्क (Location/contact sharing)')),
               if (p['canDelete'] == true) TextButton(onPressed: _busy ? null : () async {
                 final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
                   title: const Text('पोस्ट हटाउने? (Remove post?)'), actions: [
@@ -285,6 +295,8 @@ class _RevisionScreenState extends State<_RevisionScreen> {
       if (_loading) const Center(child: CircularProgressIndicator())
       else ..._rows.map((r) => Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Version ${r['version']} · ${r['title']}'), Text(r['content'] as String), Text(r['category'] as String), Text('Reason: ${r['reason']}'), Text(r['createdAt'].toString()),
+        if(r['locality']!=null)Text("Locality: ${r['locality']['district']} · ${r['locality']['municipality']} · ${r['localityVisibility']}"),
+        if(r['contactVisibility']!=null)Text("Contact sharing: ${r['contactVisibility']}"),
         ...((r['media'] as List?) ?? []).map((m)=>TextButton(onPressed:()=>_download(m as Map),child:const Text('Revision image'))),
       ])))),
       Wrap(spacing: 8, children: [
@@ -381,5 +393,32 @@ class _CommunityImageEditorState extends State<_CommunityImageEditor> {
    TextButton(onPressed:_busy||_body!=null?null:_pick,child:Text(_file==null?'Choose image':'Image selected')),
    TextField(controller:_reason,enabled:!_busy&&_body==null,maxLength:1000,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'Image change reason')),
    FilledButton(onPressed:_busy||(_body==null&&(_file==null||_reason.text.trim().length<5))?null:_submit,child:Text(_body==null?'Submit image for review':'Retry image upload')),
+  ]));
+}
+
+class _CommunitySharingEditor extends StatefulWidget {
+ final Map post;
+ const _CommunitySharingEditor({required this.post});
+ @override
+ State<_CommunitySharingEditor> createState()=>_CommunitySharingEditorState();
+}
+class _CommunitySharingEditorState extends State<_CommunitySharingEditor> {
+ final _district=TextEditingController(),_municipality=TextEditingController(),_reason=TextEditingController();
+ bool _shareLocality=false,_shareContact=false;
+ @override
+ void initState(){super.initState();_district.text=widget.post['locality']?['district'] as String? ?? '';_municipality.text=widget.post['locality']?['municipality'] as String? ?? '';_shareLocality=widget.post['sharing']?['localityVisibility']=='VERIFIED_COMMUNITY';_shareContact=widget.post['sharing']?['contactConsent']==true;}
+ @override
+ void dispose(){_district.dispose();_municipality.dispose();_reason.dispose();super.dispose();}
+ @override
+ Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('स्थान / सम्पर्क (Location/contact sharing)')),
+  body:ListView(padding:const EdgeInsets.all(16),children:[
+   const Text('District and municipality names only; no street address, house numbers or coordinates. Private locality is visible to you and scoped moderators.'),
+   TextField(controller:_district,maxLength:80,decoration:const InputDecoration(labelText:'जिल्ला (District)')),
+   TextField(controller:_municipality,maxLength:80,decoration:const InputDecoration(labelText:'नगरपालिका (Municipality)')),
+   SwitchListTile(title:const Text('Share approximate locality with verified post readers'),value:_shareLocality,onChanged:(v)=>setState(()=>_shareLocality=v)),
+   SwitchListTile(title:const Text('I consent to share my verified phone with verified post readers'),value:_shareContact,onChanged:(v)=>setState(()=>_shareContact=v)),
+   const Text('Location/contact sharing follows current profile address/contact privacy and adult-profile protection. Changes require independent review. Phone numbers are not copied into revision history.'),
+   TextField(controller:_reason,maxLength:1000,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'कारण (Sharing change reason)')),
+   FilledButton(onPressed:_reason.text.trim().length<5?null:()=>Navigator.pop(context,{'version':widget.post['version'],'reason':_reason.text.trim(),'locality':_district.text.trim().isEmpty&&_municipality.text.trim().isEmpty?null:{'district':_district.text.trim(),'municipality':_municipality.text.trim()},'localityVisibility':_shareLocality?'VERIFIED_COMMUNITY':'PRIVATE','contactVisibility':_shareContact?'VERIFIED_COMMUNITY':'PRIVATE','contactConsent':_shareContact}),child:const Text('Save sharing for review')),
   ]));
 }
