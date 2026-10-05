@@ -13,6 +13,7 @@ test('Community publication, likes, comments and reports persist through authent
   const branchResponse=await page.request.get(`${API}/genealogy/branches`);expect(branchResponse.ok()).toBeTruthy();
   const branch=(await branchResponse.json()).find((b:any)=>b.code==='KASKI');
   await page.getByLabel('दायरा (Audience)').selectOption(branch.id);
+  await page.getByLabel('प्रकार (Category)').selectOption('ASSISTANCE');
   await page.getByRole('button',{name:/Submit for review/}).click();
   await expect(page.getByRole('status')).toContainText('Submitted for independent moderation');
   const authorCard=page.getByRole('article',{name:title});await expect(authorCard).toContainText('PENDING');
@@ -49,7 +50,7 @@ test('Community publication, likes, comments and reports persist through authent
   await expect(authorCard.getByText('Persist this fictional reply.',{exact:true})).toBeVisible();
   await page.reload();await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   const posts=await page.request.get(`${API}/community/posts`,{headers:await headers(page)});expect(posts.ok()).toBeTruthy();
-  const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(1);
+  const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.category).toBe('ASSISTANCE');expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(1);
   await reviewer.getByRole('button',{name:/Feed/}).click();
   await reviewCard.getByRole('button',{name:/Report/}).click();
   await reviewer.getByRole('dialog').getByLabel(/Reason \/ notes/).fill('Fictional report for a second moderation review.');

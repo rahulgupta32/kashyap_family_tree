@@ -138,6 +138,10 @@ class _PostEditorState extends State<_PostEditor> {
         const DropdownMenuItem(value: 'DISCUSSION', child: Text('छलफल (Discussion)')),
         const DropdownMenuItem(value: 'RITUAL', child: Text('परम्परा (Tradition)')),
         const DropdownMenuItem(value: 'ACHIEVEMENT', child: Text('उपलब्धि (Achievement)')),
+        const DropdownMenuItem(value: 'MISSING_PERSON', child: Text('हराएको व्यक्ति (Missing person)')),
+        const DropdownMenuItem(value: 'PROPERTY_ROOM', child: Text('घर / कोठा उपलब्धता (Property / room)')),
+        const DropdownMenuItem(value: 'ASSISTANCE', child: Text('सहयोग अनुरोध (Assistance)')),
+        const DropdownMenuItem(value: 'COMMUNITY_PROGRAM', child: Text('सामुदायिक कार्यक्रम (Community program'))),
       ], onChanged: (v) => setState(() => _category = v!)),
       const SizedBox(height: 20), FilledButton(onPressed: () {
         if (_form.currentState!.validate()) { Navigator.pop(context, {'title': _title.text.trim(), 'content': _content.text.trim(), 'category': _category, if (widget.post != null) 'version': widget.post!['version'], if (widget.post != null) 'reason': _reason.text.trim()}); }

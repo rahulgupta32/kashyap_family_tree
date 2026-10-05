@@ -37,6 +37,14 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).get('/community/posts').expect(401);
   await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Fiction',content:'Fictional message',category:'DISCUSSION',authorUserId:moderator.id}).expect(400);
  });
+ it.each(['MISSING_PERSON','PROPERTY_ROOM','ASSISTANCE','COMMUNITY_PROGRAM'])('supports required %s category without bypassing moderation or branch privacy',async category=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Category fixture',content:'Fictional category fixture',category,branchId:branch}).expect(201)).body;
+  expect(created.category).toBe(category);expect(created.moderationStatus).toBe('PENDING');
+  expect((await request(app.getHttpServer()).get('/community/posts').set('Authorization',token(reader)).expect(200)).body.some((p:any)=>p.id===created.id)).toBe(false);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/comments`).set('Authorization',token(outsider)).expect(403);
+  const edited=(await request(app.getHttpServer()).put(`/community/posts/${created.id}`).set('Authorization',token(author)).send({title:created.title,content:'Edited category fixture',category,version:created.version,reason:'Correct category fixture'}).expect(200)).body;
+  expect(edited.category).toBe(category);expect(edited.moderationStatus).toBe('PENDING');
+ });
  it('creates pending content using session identity and scopes branch access',async()=>{
   await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Fiction',content:'Fictional message',category:'DISCUSSION',branchId:otherBranch}).expect(403);
   post=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Fictional announcement discussion',content:'Fictional community acceptance message',category:'DISCUSSION',branchId:branch}).expect(201)).body;

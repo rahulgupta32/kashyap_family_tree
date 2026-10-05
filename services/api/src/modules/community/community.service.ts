@@ -62,7 +62,7 @@ export class CommunityService {
     branchAccess(user, branchId);
     const title = textField(body.title, 'Title', 180);
     const content = textField(body.content, 'Content', 10000);
-    if (!['ANNOUNCEMENT', 'DISCUSSION', 'RITUAL', 'ACHIEVEMENT'].includes(body.category)) throw new BadRequestException('Invalid category');
+    if (!['ANNOUNCEMENT', 'DISCUSSION', 'RITUAL', 'ACHIEVEMENT', 'MISSING_PERSON', 'PROPERTY_ROOM', 'ASSISTANCE', 'COMMUNITY_PROGRAM'].includes(body.category)) throw new BadRequestException('Invalid category');
     if (body.category === 'ANNOUNCEMENT' && !canModerate(user, branchId)) throw new ForbiddenException('Announcements require moderator authority');
     return this.db.transaction(async client => {
       const row = (await client.query(`INSERT INTO community_posts (author_user_id, branch_id, title, content, category, status)
@@ -85,7 +85,7 @@ export class CommunityService {
     const content = textField(body.content, 'Content', 10000);
     const reason = textField(body.reason, 'Edit reason', 1000, 5);
     if (!Number.isSafeInteger(body.version) || body.version < 1) throw new BadRequestException('Invalid version');
-    if (!['ANNOUNCEMENT','DISCUSSION','RITUAL','ACHIEVEMENT'].includes(body.category)) throw new BadRequestException('Invalid category');
+    if (!['ANNOUNCEMENT','DISCUSSION','RITUAL','ACHIEVEMENT','MISSING_PERSON','PROPERTY_ROOM','ASSISTANCE','COMMUNITY_PROGRAM'].includes(body.category)) throw new BadRequestException('Invalid category');
     return this.db.transaction(async client => {
       const post = await this.visiblePost(id, user, client);
       if (post.author_user_id !== user.id) throw new ForbiddenException('Only the author may edit this post');
