@@ -104,9 +104,9 @@ void main() {
     await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
     await tester.tap(find.text('तस्बिर थप्नुहोस् (Add image)'));await tester.pumpAndSettle();
     await tester.tap(find.text('Choose image'));await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField),'Fictional image reason');
+    await tester.enterText(find.byType(TextField),'Fictional image reason');await tester.pump();
     await tester.tap(find.text('Submit image for review'));await tester.pumpAndSettle();
-    expect(find.textContaining('500'),findsOneWidget);
+    expect(bodies,hasLength(1));expect(find.textContaining('500'),findsOneWidget);
     await tester.tap(find.text('Retry image upload'));await tester.pumpAndSettle();
     expect(bodies.length,2);expect(bodies[1],bodies[0]);expect(bodies[0]['version'],4);expect(bodies[0]['dataBase64'],'aW1hZ2U=');
   });
