@@ -30,7 +30,11 @@ export class CommunityService {
     const moderatorAll = canModerate(user, undefined);
     if (options.queue && !moderatorAll && !modBranches.length) throw new ForbiddenException('Moderator authority required');
     const result = await this.db.query(
-      `SELECT p.*, (SELECT count(*)::int FROM community_reactions r WHERE r.post_id = p.id) AS reaction_count,
+      `SELECT p.*, (SELECT json_build_object('decision',d.decision,'notes',d.notes,'version',d.version,
+           'appealed',EXISTS(SELECT 1 FROM community_post_appeals a WHERE a.decision_id=d.id))
+           FROM community_moderation_decisions d WHERE d.post_id=p.id ORDER BY d.version DESC LIMIT 1) AS outcome,
+         (SELECT a.reason FROM community_post_appeals a WHERE a.post_id=p.id AND a.status='OPEN') AS appeal_reason,
+         (SELECT count(*)::int FROM community_reactions r WHERE r.post_id = p.id) AS reaction_count,
          EXISTS(SELECT 1 FROM community_reactions r WHERE r.post_id = p.id AND r.user_id = $1) AS is_liked,
          (SELECT count(*)::int FROM community_comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
          (SELECT count(*)::int FROM community_reports r WHERE r.post_id = p.id AND r.status = 'OPEN') AS report_count
@@ -51,6 +55,9 @@ export class CommunityService {
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
       reportsCount: canModerate(user, row.branch_id) ? row.report_count || 0 : undefined,
       canModerate: canModerate(user, row.branch_id) && row.author_user_id !== user.id,
+      moderationOutcome: row.author_user_id === user.id || canModerate(user,row.branch_id) ? row.outcome : undefined,
+      appealReason: row.author_user_id === user.id || canModerate(user,row.branch_id) ? row.appeal_reason : undefined,
+      canAppeal: row.author_user_id === user.id && row.status === 'REJECTED' && !!row.outcome && !row.outcome.appealed,
       canEdit: row.author_user_id === user.id,
       canViewRevisions: row.author_user_id === user.id || canModerate(user, row.branch_id),
       canDelete: row.author_user_id === user.id || canModerate(user, row.branch_id) };
@@ -94,6 +101,7 @@ export class CommunityService {
       if (post.title === title && post.content === content && post.category === body.category) return this.dto(post, user);
       const updated = (await client.query(`UPDATE community_posts SET title=$2,content=$3,category=$4,
         status='PENDING',version=version+1,updated_at=now() WHERE id=$1 RETURNING *`, [id,title,content,body.category])).rows[0];
+      await client.query("UPDATE community_post_appeals SET status='WITHDRAWN',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
       await this.saveRevision(updated,user.id,reason,client);
       await this.audit.recordAuditIntent({action:'COMMUNITY_POST_EDITED',entityType:'community_post',entityId:id,actorId:user.id,
         oldValue:{version:post.version,status:post.status},newValue:{version:updated.version,status:'PENDING',reason}},client);
@@ -164,6 +172,12 @@ export class CommunityService {
       const post = await this.visiblePost(id, user, client);
       if (!canModerate(user, post.branch_id) || post.author_user_id === user.id) throw new ForbiddenException('An independent authorized moderator is required');
       if (post.version !== body.version) throw new ConflictException('Post changed; reload before reviewing');
+      const appeal=(await client.query(`SELECT a.id,d.reviewer_user_id FROM community_post_appeals a
+        JOIN community_moderation_decisions d ON d.id=a.decision_id WHERE a.post_id=$1 AND a.status='OPEN'`,[id])).rows[0];
+      if (appeal?.reviewer_user_id === user.id) throw new ForbiddenException('An appeal requires a different independent moderator');
+      await client.query(`INSERT INTO community_moderation_decisions(post_id,version,reviewer_user_id,decision,notes)
+        VALUES($1,$2,$3,$4,$5)`,[id,post.version+1,user.id,body.decision,notes]);
+      await client.query("UPDATE community_post_appeals SET status='RESOLVED',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
       await client.query('UPDATE community_posts SET status=$2, version=version+1, updated_at=now() WHERE id=$1', [id,body.decision]);
       await client.query("UPDATE community_reports SET status='RESOLVED', reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE post_id=$1 AND status='OPEN'", [id,user.id,notes]);
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_POST_MODERATED', entityType: 'community_post', entityId: id, actorId: user.id,
@@ -172,10 +186,28 @@ export class CommunityService {
     });
   }
 
+  async appealPost(id: string, user: AuthenticatedUser, body: any) {
+    allowedFields(body,['version','reason']);
+    const reason=textField(body.reason,'Appeal reason',1000,5);
+    if (!Number.isSafeInteger(body.version) || body.version<1) throw new BadRequestException('Invalid version');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(post.author_user_id!==user.id) throw new ForbiddenException('Only the author may appeal');
+      if(post.version!==body.version || post.status!=='REJECTED') throw new ConflictException('Reload the current rejected post before appealing');
+      const decision=(await client.query('SELECT * FROM community_moderation_decisions WHERE post_id=$1 AND version=$2',[id,post.version])).rows[0];
+      if(!decision || (await client.query('SELECT id FROM community_post_appeals WHERE decision_id=$1',[decision.id])).rows.length) throw new ConflictException('This decision cannot be appealed again');
+      await client.query('INSERT INTO community_post_appeals(decision_id,post_id,author_user_id,reason) VALUES($1,$2,$3,$4)',[decision.id,id,user.id,reason]);
+      await client.query("UPDATE community_posts SET status='PENDING',version=version+1,updated_at=now() WHERE id=$1",[id]);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_POST_APPEALED',entityType:'community_post',entityId:id,actorId:user.id,newValue:{decisionId:decision.id}},client);
+      return {success:true};
+    });
+  }
+
   async deletePost(id: string, user: AuthenticatedUser) {
     return this.db.transaction(async client => {
       const post = await this.visiblePost(id, user, client);
       if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Only the author or scoped moderator may delete this post');
+      await client.query("UPDATE community_post_appeals SET status='WITHDRAWN',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
       await client.query("UPDATE community_posts SET status='DELETED', deleted_at=now(),version=version+1,updated_at=now() WHERE id=$1", [id]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_POST_DELETED',entityType:'community_post',entityId:id,actorId:user.id},client);
       return {success:true};

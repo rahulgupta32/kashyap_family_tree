@@ -3,7 +3,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 
-interface Post { id:string; title:string; content:string; category:string; moderationStatus:string; version:number; createdAt:string; likesCount:number; isLiked:boolean; commentsCount:number; canModerate:boolean; canDelete:boolean; canEdit:boolean; canViewRevisions:boolean; reportsCount?:number }
+interface Post { id:string; title:string; content:string; category:string; moderationStatus:string; version:number; createdAt:string; likesCount:number; isLiked:boolean; commentsCount:number; canModerate:boolean; canDelete:boolean; canAppeal:boolean; moderationOutcome?:{decision:string;notes:string}; appealReason?:string; canEdit:boolean; canViewRevisions:boolean; reportsCount?:number }
 interface Revision { version:number; title:string; content:string; category:string; reason:string; createdAt:string }
 interface Comment { id:string; content:string; parentCommentId?:string }
 export default function CommunityPage(){
@@ -42,7 +42,10 @@ export default function CommunityPage(){
   {posts.map(p=><article key={p.id} aria-label={p.title} className="rounded-xl border bg-white p-5 space-y-3">
    <div className="flex justify-between gap-3"><h2 className="font-bold text-lg">{p.title}</h2><span className="text-xs">{p.moderationStatus}</span></div>
    <p className="whitespace-pre-wrap break-words">{p.content}</p><p className="text-xs text-slate-500">{new Date(p.createdAt).toLocaleString()} · {p.category}</p>
+   {p.moderationOutcome&&<p>Moderation: {p.moderationOutcome.decision} · {p.moderationOutcome.notes}</p>}
+   {p.appealReason&&<p>Appeal: {p.appealReason}</p>}
    <div className="flex flex-wrap gap-3">
+    {p.canAppeal&&<button disabled={busy} className="border rounded px-3 py-1" onClick={()=>{const reason=window.prompt('अपिलको कारण (Appeal reason, at least 5 characters)');if(reason)void action(async()=>{await ApiClient.community(`/posts/${p.id}/appeal`,accessToken,'POST',{version:p.version,reason});setNotice('Appeal submitted for independent review.');});}}>अपिल (Appeal)</button>}
     {p.moderationStatus==='PUBLISHED'&&<><button disabled={busy} aria-pressed={p.isLiked} onClick={()=>void action(async()=>{await ApiClient.community(`/posts/${p.id}/like`,accessToken,'PUT',{liked:!p.isLiked});})} className="border rounded px-3 py-1">मन पर्‍यो (Like) · {p.likesCount}</button><button disabled={busy} onClick={()=>void showComments(p)} className="border rounded px-3 py-1">टिप्पणी (Comments) · {p.commentsCount}</button><button disabled={busy} onClick={()=>{setReport(p);setNotes('');}} className="border rounded px-3 py-1">रिपोर्ट (Report)</button></>}
     {p.canModerate&&p.moderationStatus==='PENDING'&&<button disabled={busy} onClick={()=>{setReview(p);setNotes('');}} className="border rounded px-3 py-1">समीक्षा गर्नुहोस् (Review)</button>}
     {p.canEdit&&<button disabled={busy} onClick={()=>{setEditing(p);setEditTitle(p.title);setEditContent(p.content);setEditReason('');}} className="border rounded px-3 py-1">सम्पादन (Edit)</button>}

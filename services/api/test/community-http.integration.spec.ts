@@ -15,7 +15,7 @@ import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation }
 
 describe('Community persistent HTTP workflows and isolation',()=>{
  let iso:DisposableDatabase,app:INestApplication,db:DatabaseService,audit:AuditOutboxRepository;
- let branch:string,otherBranch:string,author:any,reader:any,moderator:any,outsider:any,post:any;
+ let branch:string,otherBranch:string,author:any,reader:any,moderator:any,secondModerator:any,outsider:any,post:any;
  const token=(user:any)=>`Bearer ${user.token}`;
  beforeAll(async()=>{
   iso=await createDisposableDatabase('community');await assertDatabaseIsolation(iso.client,iso.dbName);
@@ -30,6 +30,7 @@ describe('Community persistent HTTP workflows and isolation',()=>{
    return {id:u.id,token:jwt,roles:[role],branchIds:[b],roleAssignments:[{role,branchId:b}]};
   }
   author=await user('+9779847200001',Role.VERIFIED_MEMBER,branch);reader=await user('+9779847200002',Role.VERIFIED_MEMBER,branch);
+  secondModerator=await user('+9779847200005',Role.BRANCH_ADMIN,branch);
   moderator=await user('+9779847200003',Role.BRANCH_ADMIN,branch);outsider=await user('+9779847200004',Role.BRANCH_ADMIN,otherBranch);
  });
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
@@ -116,6 +117,31 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect((await db.query('SELECT version,content FROM community_posts WHERE id=$1',[post.id])).rows[0]).toMatchObject({version:current.version,content:current.content});
   expect((await db.query('SELECT count(*)::int AS n FROM community_post_revisions WHERE post_id=$1',[post.id])).rows[0].n).toBe(before);
   await request(app.getHttpServer()).get(`/community/posts/${post.id}/revisions?page=0`).set('Authorization',token(author)).expect(400);
+ });
+ it('retains scoped reasons and independently reviews author appeals',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Appeal fixture',content:'Fictional appeal content',category:'ASSISTANCE',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'REJECTED',version:created.version,notes:'Fictional policy reason'}).expect(201);
+  const rejected=(await request(app.getHttpServer()).get('/community/posts').set('Authorization',token(author)).expect(200)).body.find((p:any)=>p.id===created.id);
+  expect(rejected.moderationOutcome.notes).toBe('Fictional policy reason');expect(rejected.canAppeal).toBe(true);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(reader)).send({version:rejected.version,reason:'Forged author appeal'}).expect(404);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:created.version,reason:'Stale author appeal'}).expect(409);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:rejected.version,reason:'Please reconsider fictional context'}).expect(201);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:rejected.version,reason:'Duplicate appeal fixture'}).expect(409);
+  const pending=(await db.query('SELECT version FROM community_posts WHERE id=$1',[created.id])).rows[0];
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'PUBLISHED',version:pending.version,notes:'Original reviewer cannot resolve'}).expect(403);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(secondModerator)).send({decision:'PUBLISHED',version:pending.version,notes:'Independent appeal review approved'}).expect(201);
+  expect((await db.query('SELECT status FROM community_post_appeals WHERE post_id=$1',[created.id])).rows[0].status).toBe('RESOLVED');
+  const publicPost=(await request(app.getHttpServer()).get('/community/posts').set('Authorization',token(reader)).expect(200)).body.find((p:any)=>p.id===created.id);
+  expect(publicPost.moderationOutcome).toBeUndefined();expect(publicPost.appealReason).toBeUndefined();
+ });
+ it('rolls back an appeal when its durable audit cannot be written',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Appeal rollback fixture',content:'Fictional appeal content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({decision:'REJECTED',version:created.version,notes:'Fictional review rejection'}).expect(201);
+  const before=(await db.query('SELECT version,status FROM community_posts WHERE id=$1',[created.id])).rows[0];
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected appeal audit failure'));
+  try{await request(app.getHttpServer()).post(`/community/posts/${created.id}/appeal`).set('Authorization',token(author)).send({version:before.version,reason:'Appeal must roll back'}).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT version,status FROM community_posts WHERE id=$1',[created.id])).rows[0]).toEqual(before);
+  expect((await db.query('SELECT id FROM community_post_appeals WHERE post_id=$1',[created.id])).rows).toHaveLength(0);
  });
  it('rolls back content if durable audit intent cannot be written',async()=>{
   const before=(await db.query('SELECT count(*)::int AS count FROM community_posts')).rows[0].count;

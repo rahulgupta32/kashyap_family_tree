@@ -51,13 +51,13 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
-  Future<void> _reason(Map post, {bool review = false}) async {
+  Future<void> _reason(Map post, {bool review = false, bool appeal = false}) async {
     final result = await Navigator.push<Map<String, dynamic>>(context,
-      MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review)));
+      MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review, appeal: appeal)));
     if (result == null || !mounted) { return; }
     await _action(() async {
-      await widget.apiService.requestJson('/community/posts/${post['id']}/${review ? 'moderate' : 'flag'}',
-        method: 'POST', data: review ? {...result, 'version': post['version']} : result);
+      await widget.apiService.requestJson('/community/posts/${post['id']}/${review ? 'moderate' : appeal ? 'appeal' : 'flag'}',
+        method: 'POST', data: review || appeal ? {...result, 'version': post['version']} : result);
     });
   }
 
@@ -82,7 +82,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Text(p['title'] as String, style: Theme.of(context).textTheme.titleMedium),
             Text(p['moderationStatus'] as String, style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 8), Text(p['content'] as String),
+            if (p['moderationOutcome'] != null) Text('Moderation: ${p['moderationOutcome']['decision']} · ${p['moderationOutcome']['notes']}'),
+            if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
             Wrap(spacing: 8, children: [
+              if (p['canAppeal'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map, appeal: true), child: const Text('अपिल (Appeal)')),
               if (p['moderationStatus'] == 'PUBLISHED') ...[
                 TextButton(onPressed: _busy ? null : () => _action(() async {
                   await widget.apiService.requestJson('/community/posts/${p['id']}/like', method: 'PUT', data: {'liked': p['isLiked'] != true});
@@ -152,7 +155,8 @@ class _PostEditorState extends State<_PostEditor> {
 class _ReviewEditor extends StatefulWidget {
   final String title;
   final bool review;
-  const _ReviewEditor({required this.title, required this.review});
+  final bool appeal;
+  const _ReviewEditor({required this.title, required this.review, this.appeal = false});
   @override
   State<_ReviewEditor> createState() => _ReviewEditorState();
 }
@@ -161,13 +165,13 @@ class _ReviewEditorState extends State<_ReviewEditor> {
   @override
   void dispose() { _notes.dispose(); super.dispose(); }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.review ? 'समीक्षा (Review)' : 'रिपोर्ट (Report)')),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.review ? 'समीक्षा (Review)' : widget.appeal ? 'अपिल (Appeal)' : 'रिपोर्ट (Report)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [Text(widget.title),
       TextField(controller: _notes, minLines: 3, maxLines: 6, maxLength: 1000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'कारण (Reason / notes)')),
       if (widget.review) Wrap(spacing: 12, children: ['PUBLISHED', 'REJECTED'].map((decision) => FilledButton(
         onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'decision': decision, 'notes': _notes.text.trim()}),
         child: Text(decision == 'PUBLISHED' ? 'Publish' : 'Reject'))).toList())
-      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: const Text('Submit report')),
+      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: Text(widget.appeal ? 'Submit appeal' : 'Submit report')),
     ]));
 }
 

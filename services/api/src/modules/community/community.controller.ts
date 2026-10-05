@@ -32,6 +32,8 @@ export class CommunityController {
   report(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['reason']);return this.service.report(id,user,body.reason);
   }
+  @Post('posts/:id/appeal')
+  appeal(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.appealPost(id,user,body); }
   @Post('posts/:id/moderate')
   moderate(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.moderate(id,user,body); }
   @Delete('posts/:id')
