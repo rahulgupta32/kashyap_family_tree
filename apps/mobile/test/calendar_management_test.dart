@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:kashyap_mobile/localization/calendar_labels.dart';
 import 'package:kashyap_mobile/screens/calendar_events_screen.dart';
+import 'package:kashyap_mobile/screens/calendar_period_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 
@@ -60,6 +61,25 @@ void main() {
     await tester.ensureVisible(find.byType(TextField));await tester.enterText(find.byType(TextField),'2083');await tester.pump();
     await tester.ensureVisible(find.text('Apply calendar filters'));await tester.tap(find.text('Apply calendar filters'));await tester.pumpAndSettle();
     expect(queries.last,{'yearBs':'2083'});expect(find.text('Latest fictional event'),findsOneWidget);
+  });
+
+  testWidgets('month cells open the source day and agenda retains exact composite cursor', (tester) async {
+    final queries=<Map<String,String>>[];
+    final service=GenealogyApiService(client:MockClient((request)async{
+      final q=request.url.queryParameters;queries.add(q);
+      return jsonResponse({'period':{'source':q['source'],'view':q['view'],'date':q['date'],'daysInMonth':31,'previousDate':'2026-09-01','nextDate':'2026-11-01'},'days':[{'date':'2026-10-06','count':2}],'undatedCount':0,'items':[{'id':'period-event','title':'Fictional source period','displayDate':'2026-10-06','startsAt':'2026-10-06T04:00:00Z','eventType':'GENERAL_EVENT','lifecycleState':'ACTIVE'}],'nextBefore':q.containsKey('before')?null:'2026-10-06|9007199254740993'});
+    }))..setAuthToken('mock-access');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CalendarPeriodScreen(api:service)));await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'2026-10-06');
+    await tester.ensureVisible(find.text('Show calendar period'));await tester.tap(find.text('Show calendar period'));await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('06\n2 events'));await tester.tap(find.text('06\n2 events'));await tester.pumpAndSettle();
+    expect(queries.last,{'source':'AD','view':'DAY','date':'2026-10-06'});
+    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>).at(1));await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));await tester.pumpAndSettle();
+    await tester.tap(find.text('कार्यसूची (Agenda for month)').last);await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Show calendar period'));await tester.tap(find.text('Show calendar period'));await tester.pumpAndSettle();
+    expect(queries.last['view'],'AGENDA');
+    await tester.ensureVisible(find.text('More period events'));await tester.tap(find.text('More period events'));await tester.pumpAndSettle();
+    expect(queries.last['before'],'2026-10-06|9007199254740993');
   });
 
 }

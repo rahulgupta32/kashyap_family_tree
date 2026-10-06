@@ -1,3 +1,4 @@
+import { calendarPeriod,periodCursor } from './calendar-period';
 import { isValidBsDate } from '@kashyap/localization';
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
@@ -218,6 +219,27 @@ export class CalendarService {
       ORDER BY e.browse_sequence DESC LIMIT 51`,
       [actor.id,options?.yearBs??null,options?.monthBs??null,options?.branchId??null,options?.audienceScope??null,before??null])).rows;
     return {items:await Promise.all(rows.slice(0,50).map(e=>this.detail(e,actor.id))),nextBefore:rows.length>50?String(rows[49].browse_sequence):null};
+  }
+  async periodEvents(actor:AuthenticatedUser,options:{source?:string;view?:string;date?:string;before?:string}){
+    const period=calendarPeriod(options.source,options.view,options.date),cursor=periodCursor(options.before,period);
+    const dateFilter=period.source==='AD'?"e.starts_at>=(bounds.period_start::date::timestamp AT TIME ZONE 'Asia/Kathmandu') AND e.starts_at<(bounds.period_end::date::timestamp AT TIME ZONE 'Asia/Kathmandu')":
+      period.view==='DAY'?"e.date_bs=bounds.period_start":"left(e.date_bs,7)=bounds.period_start OR (e.date_bs IS NULL AND e.tithi_year_bs=bounds.period_year AND e.tithi_month_bs=bounds.period_month)";
+    const displayDate=period.source==='AD'?"to_char(e.starts_at AT TIME ZONE 'Asia/Kathmandu','YYYY-MM-DD')":"e.date_bs";
+    const eligible=`SELECT e.*,${displayDate} AS display_date FROM calendar_events e JOIN user_accounts u ON u.id=$1
+      CROSS JOIN (SELECT $2::text AS period_start,$3::text AS period_end,$4::int AS period_year,$5::int AS period_month) bounds
+      WHERE (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN')) AND (${dateFilter})`;
+    const params=[actor.id,period.source==='AD'?period.start:period.view==='DAY'?period.date:period.prefix,period.end,period.year,period.month];
+    const counts=(await this.db.query(`WITH eligible AS (${eligible}) SELECT display_date,count(*)::int AS count FROM eligible GROUP BY display_date`,params)).rows;
+    const rows=(await this.db.query(`WITH eligible AS (${eligible}) SELECT * FROM eligible
+      WHERE ($6::text IS NULL OR ($6='UNDATED' AND display_date IS NULL AND browse_sequence<$7::bigint)
+        OR ($6<>'UNDATED' AND (display_date>$6 OR (display_date=$6 AND browse_sequence<$7::bigint) OR display_date IS NULL)))
+      ORDER BY display_date ASC NULLS LAST,browse_sequence DESC LIMIT 51`,[...params,cursor.date,cursor.sequence])).rows;
+    const days=(period.view==='DAY'?[period.day]:Array.from({length:period.daysInMonth},(_,i)=>i+1)).map(day=>{
+      const date=`${period.prefix}-${String(day).padStart(2,'0')}`;return {date,count:counts.find(r=>r.display_date===date)?.count??0};
+    });
+    return {period,days,undatedCount:counts.find(r=>r.display_date===null)?.count??0,
+      items:await Promise.all(rows.slice(0,50).map(async e=>({...await this.detail(e,actor.id),displayDate:e.display_date}))),
+      nextBefore:rows.length>50?`${rows[49].display_date??'UNDATED'}|${rows[49].browse_sequence}`:null};
   }
   async getEventById(id:string,actor:AuthenticatedUser){return this.getEvent(id,actor);}
   async getEvent(id:string,actor:AuthenticatedUser):Promise<CalendarEventDetailDto>{

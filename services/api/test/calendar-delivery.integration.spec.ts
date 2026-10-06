@@ -180,4 +180,38 @@ describe('Versioned events, private invitations and durable reminder scheduling 
     for(const query of ['yearBs=1999','yearBs=2091','monthBs=13','monthBs=1.5','audienceScope=FAKE','branchId=garbage'])await request(app.getHttpServer()).get(`/calendar/browse?${query}`).set(auth(guest)).expect(400);
   });
 
+  it('selects Gregorian days at Nepal midnight and keeps inaccessible events out of day counts',async()=>{
+    async function seed(title:string,instant:string,scope='COMMUNITY'){
+      return (await db.query('INSERT INTO calendar_events(title,event_type,host_user_id,audience_scope,starts_at,provenance) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[title,'GENERAL_EVENT',host.id,scope,instant,JSON.stringify({source:'ORGANIZER_SUPPLIED_AD'})])).rows[0].id;
+    }
+    const start=await seed('Nepal midnight fixture','2026-10-05T18:15:00Z');
+    const previous=await seed('Previous Nepal day','2026-10-05T18:14:59Z');
+    const next=await seed('Next Nepal day','2026-10-06T18:15:00Z');
+    const hidden=await seed('Private Nepal period','2026-10-06T04:00:00Z','INVITED_ONLY');
+    const query='/calendar/period?source=AD&view=DAY&date=2026-10-06';
+    const day=(await request(app.getHttpServer()).get(query).set(auth(guest)).expect(200)).body;
+    expect(day.items.find((e:any)=>e.id===start)).toMatchObject({displayDate:'2026-10-06',startsAt:'2026-10-05T18:15:00.000Z'});
+    expect(day.items.some((e:any)=>[previous,next,hidden].includes(e.id))).toBe(false);
+    expect(day.days[0].count).toBe(day.items.length);
+    await db.query('INSERT INTO event_invitations(event_id,invited_user_id) VALUES($1,$2)',[hidden,guest.id]);
+    const invited=(await request(app.getHttpServer()).get(query).set(auth(guest)).expect(200)).body;
+    expect(invited.days[0].count).toBe(day.days[0].count+1);
+    await db.query('UPDATE event_invitations SET revoked_at=now() WHERE event_id=$1',[hidden]);
+    expect((await request(app.getHttpServer()).get(query).set(auth(guest)).expect(200)).body.days[0].count).toBe(day.days[0].count);
+    await request(app.getHttpServer()).get(query).expect(401);
+  });
+  it('counts the whole BS month and paginates ordered agenda including unconverted Tithi',async()=>{
+    const query='/calendar/period?source=BS&view=AGENDA&date=2083-05-15';
+    const first=(await request(app.getHttpServer()).get(query).set(auth(guest)).expect(200)).body;
+    expect(first.items).toHaveLength(50);expect(first.days.find((d:any)=>d.date==='2083-05-15').count).toBeGreaterThanOrEqual(105);
+    expect(first.undatedCount).toBeGreaterThan(0);
+    const seen=new Set(first.items.map((e:any)=>e.id));let cursor=first.nextBefore,undated=false;
+    while(cursor){const page=(await request(app.getHttpServer()).get(`${query}&before=${encodeURIComponent(cursor)}`).set(auth(guest)).expect(200)).body;
+      for(const item of page.items){expect(seen.has(item.id)).toBe(false);seen.add(item.id);if(item.displayDate===null)undated=true;}cursor=page.nextBefore;}
+    expect(undated).toBe(true);
+    const day=(await request(app.getHttpServer()).get('/calendar/period?source=BS&view=DAY&date=2083-05-15').set(auth(guest)).expect(200)).body;
+    expect(day.undatedCount).toBe(0);expect(day.items.every((e:any)=>e.displayDate==='2083-05-15')).toBe(true);
+    for(const query of ['source=AD&view=DAY&date=2026-02-30','source=BS&view=DAY&date=2091-01-01','source=TITHI&view=DAY&date=2083-05-15','source=BS&view=MONTH&date=2083-05-15&before=2083-06-01%7C1'])await request(app.getHttpServer()).get(`/calendar/period?${query}`).set(auth(guest)).expect(400);
+  });
+
 });

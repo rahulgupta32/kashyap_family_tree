@@ -41,4 +41,17 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   await browse.getByRole('button',{name:'Apply calendar filters'}).click();
   await expect(browse).not.toContainText(`${title} updated`);
 
+  const period=page.getByRole('region',{name:'Calendar day month agenda',exact:true});
+  const nepalDate=new Date(new Date(`${start}:00Z`).getTime()+345*60000).toISOString().slice(0,10);
+  await period.getByLabel('Calendar source date',{exact:true}).fill(nepalDate);
+  await period.getByRole('button',{name:'Show calendar period'}).click();
+  await expect(period).toContainText(`${title} updated`);
+  await period.getByRole('button',{name:new RegExp(`Open calendar day ${nepalDate},`)}).click();
+  await expect(period).toContainText('AD · DAY');
+  await expect(period).toContainText(`${title} updated`);
+  await period.getByLabel('Calendar view mode',{exact:true}).selectOption('AGENDA');
+  await period.getByRole('button',{name:'Show calendar period'}).click();
+  await expect(period).toContainText('AD · AGENDA');
+  await expect(period).toContainText(`${title} updated`);
+
 });

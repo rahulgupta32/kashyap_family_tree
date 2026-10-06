@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'calendar_period_screen.dart';
 import '../services/genealogy_api_service.dart';
 import '../localization/calendar_labels.dart';
 
@@ -83,6 +84,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
           if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ])),
         actions: [
+          IconButton(tooltip:'Calendar day month agenda',onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarPeriodScreen(api:widget.apiService))),icon:const Icon(Icons.calendar_month)),
           IconButton(tooltip: 'Browse all calendar events',onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarBrowseScreen(api:widget.apiService))),icon:const Icon(Icons.list_alt)),
           TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: Text(calendarLabels['close']!)),
           TextButton(onPressed: busy ? null : () async {
