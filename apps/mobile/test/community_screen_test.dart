@@ -73,10 +73,10 @@ void main() {
     var removed=false; Map<String,dynamic>? submitted;
     final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
       if(request.method=='DELETE') {expect(request.url.path.endsWith('/comments/parent-id'),isTrue); submitted=jsonDecode(request.body) as Map<String,dynamic>;removed=true;return http.Response('{}',200);}
-      if(request.url.path.endsWith('/comments/browse'))return http.Response(jsonEncode({'items':[
+      if(request.url.path.endsWith('/comments/browse')) { return http.Response(jsonEncode({'items':[
         if(!removed){'id':'parent-id','content':'Fictional removal parent','canRemove':true},
         {'id':'child-id','content':'Fictional child remains','parentCommentId':'parent-id','parentContent':removed?null:'Fictional removal parent','canRemove':false},
-      ],'nextBefore':null}),200);
+      ],'nextBefore':null}),200); }
       return http.Response(jsonEncode([{'id':'post-id','title':'Removal fixture','content':'Fictional body','moderationStatus':'PUBLISHED','isLiked':false,'likesCount':0,'commentsCount':removed?1:2,'canModerate':false,'canDelete':false}]),200);
     }));
     service.setAuthToken('removal-session');addTearDown(service.dispose);

@@ -130,7 +130,7 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect((await request(app.getHttpServer()).get(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).expect(200)).body).toHaveLength(1);
   await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(author)).send({content:'Reply to removed parent refused',parentCommentId:parent.id}).expect(400);
   await request(app.getHttpServer()).delete(`/community/posts/${created.id}/comments/${child.id}`).set('Authorization',token(moderator)).send({reason:'Scoped moderator removal reason'}).expect(200);
-  const auditRows=(await db.query("SELECT new_value FROM audit_outbox WHERE action='COMMUNITY_COMMENT_REMOVED' AND entity_id=ANY($1::uuid[])",[[parent.id,child.id]])).rows;
+  const auditRows=(await db.query("SELECT new_value FROM audit_outbox WHERE action='COMMUNITY_COMMENT_REMOVED' AND entity_id=ANY($1::text[])",[[parent.id,child.id]])).rows;
   expect(auditRows).toHaveLength(2);expect(auditRows.map((r:any)=>r.new_value.authority).sort()).toEqual(['AUTHOR','MODERATOR']);
   expect(JSON.stringify(auditRows)).not.toContain('Retained fictional parent');
   expect((await db.query('SELECT version FROM community_posts WHERE id=$1',[created.id])).rows[0].version).toBe(created.version);
