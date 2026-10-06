@@ -268,7 +268,7 @@ class _CommentsScreenState extends State<_CommentsScreen> {
     final result=await Navigator.push<Map>(context,MaterialPageRoute(builder:(_)=>const CommentReportEditor()));
     if(!mounted||result==null){return;}
     setState(()=>_busy=true);
-    try{await widget.api.requestJson('/community/posts/${widget.post['id']}/comments/${comment['id']}/flag',method:'POST',data:result);if(mounted){setState(()=>_error=null);ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Comment report submitted for independent review.')));}}
+    try{await widget.api.requestJson('/community/posts/${widget.post['id']}/comments/${comment['id']}/flag',method:'POST',data:Map<String,dynamic>.from(result));if(mounted){setState(()=>_error=null);ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Comment report submitted for independent review.')));}}
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
     finally{if(mounted){setState(()=>_busy=false);}}
   }
