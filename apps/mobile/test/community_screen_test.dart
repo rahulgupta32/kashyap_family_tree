@@ -110,6 +110,25 @@ void main() {
     await tester.tap(find.text('Submit review'));await tester.pumpAndSettle();
     expect(submitted,{'decision':'KEEP','notes':'Independent review notes'});expect(find.text('KEPT · Independent review notes'),findsOneWidget);
   });
+  testWidgets('Restoration submits the viewed comment version and required reason', (tester) async {
+    tester.view.physicalSize=const Size(1200,1800);tester.view.devicePixelRatio=1;
+    addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
+    var restored=false;Map<String,dynamic>? submitted;
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.method=='POST'){
+        expect(request.url.path.endsWith('/comments/comment-id/restore'),isTrue);submitted=jsonDecode(request.body) as Map<String,dynamic>;restored=true;return http.Response('{}',201);
+      }
+      return http.Response(jsonEncode({'items':[{'sequence':'9007199254740993','commentId':'comment-id','content':'Fictional retained comment','category':'OTHER','reason':'Historical concern','status':'REMOVED','removed':!restored,'canRestore':!restored,'moderationVersion':restored?3:2,'removalKind':restored?null:'CASE'}],'nextBefore':null}),200);
+    }));
+    service.setAuthToken('restore-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommentCasesScreen(api:service,postId:'post-id')));await tester.pumpAndSettle();
+    await tester.tap(find.text('Restore comment'));await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirm restoration')).onPressed,isNull);
+    await tester.enterText(find.byType(TextField),'Correct removal after independent review');await tester.pump();
+    await tester.tap(find.text('Confirm restoration'));await tester.pumpAndSettle();
+    expect(submitted,{'version':2,'reason':'Correct removal after independent review'});
+    expect(find.widgetWithText(TextButton,'Restore comment'),findsNothing);expect(find.text('Fictional retained comment'),findsOneWidget);
+  });
   testWidgets('Mocked community HTTP flow submits session-bound content and reloads reaction state', (tester) async {
     var liked = false;
     Map<String, dynamic>? submitted;

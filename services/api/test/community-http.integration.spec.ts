@@ -202,6 +202,49 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect(older.items).toHaveLength(3);expect(older.nextBefore).toBeNull();expect(page.items.map((c:any)=>c.sequence)).not.toContain(older.items[0].sequence);
   for(const cursor of ['0','abc','9223372036854775808'])await request(app.getHttpServer()).get(`${cases}?before=${cursor}`).set('Authorization',token(secondModerator)).expect(400);
  });
+ it('restores a current case removal atomically while preserving source, child links and original decisions',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Restoration fixture',content:'Fictional restoration content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const parent=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Original restoration parent'}).expect(201)).body;
+  const child=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(author)).send({content:'Original retained child',parentCommentId:parent.id}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments/${parent.id}/flag`).set('Authorization',token(author)).send({category:'OTHER',reason:'Fictional review concern'}).expect(201);
+  const cases=`/community/posts/${created.id}/comment-reports`;
+  const sequence=(await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(200)).body.items[0].sequence;
+  await request(app.getHttpServer()).post(`${cases}/${sequence}/review`).set('Authorization',token(moderator)).send({decision:'REMOVE',notes:'Initial independent removal'}).expect(201);
+  const item=(await request(app.getHttpServer()).get(cases).set('Authorization',token(secondModerator)).expect(200)).body.items[0];
+  expect(item).toMatchObject({canRestore:true,moderationVersion:2,removalKind:'CASE',removed:true});
+  const endpoint=`/community/posts/${created.id}/comments/${parent.id}/restore`,body={version:item.moderationVersion,reason:'Correct the reviewed removal'};
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected restoration audit failure'));
+  try{await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(body).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT moderation_version,deleted_at FROM community_comments WHERE id=$1',[parent.id])).rows[0]).toMatchObject({moderation_version:2,deleted_at:expect.any(Date)});
+  const results=await Promise.all([moderator,secondModerator].map(u=>request(app.getHttpServer()).post(endpoint).set('Authorization',token(u)).send(body)));
+  expect(results.map(r=>r.status).sort()).toEqual([201,409]);
+  const page=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/comments/browse`).set('Authorization',token(author)).expect(200)).body;
+  expect(page.items).toHaveLength(2);expect(page.items.find((c:any)=>c.id===child.id).parentContent).toBe(parent.content);
+  expect((await request(app.getHttpServer()).get(cases).set('Authorization',token(secondModerator)).expect(200)).body.items[0]).toMatchObject({status:'REMOVED',removed:false,canRestore:false,moderationVersion:3});
+  expect((await db.query("SELECT count(*)::int AS n FROM audit_outbox WHERE entity_id=$1 AND action='COMMUNITY_COMMENT_RESTORED'",[parent.id])).rows[0].n).toBe(1);
+  expect((await db.query('SELECT content,parent_comment_id FROM community_comments WHERE id=$1',[child.id])).rows[0]).toEqual({content:child.content,parent_comment_id:parent.id});
+ });
+ it('refuses author withdrawals, unknown/direct removals, self/reporting actors and hidden-post restoration',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Restoration protection',content:'Fictional protection content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const c=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Protected withdrawal comment'}).expect(201)).body;
+  const endpoint=`/community/posts/${created.id}/comments/${c.id}/restore`,body={version:2,reason:'Review a retained removal'};
+  await request(app.getHttpServer()).post(endpoint).send(body).expect(401);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}/comments/${c.id}`).set('Authorization',token(reader)).send({reason:'Author withdraws own comment'}).expect(200);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(body).expect(409);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(author)).send(body).expect(403);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(outsider)).send(body).expect(403);
+  for(const kind of ['MODERATOR','LEGACY_UNKNOWN']){await db.query('UPDATE community_comments SET removal_kind=$2 WHERE id=$1',[c.id,kind]);await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(body).expect(409);}
+  await db.query("UPDATE community_comments SET removal_kind='CASE' WHERE id=$1",[c.id]);
+  await db.query("INSERT INTO community_comment_reports(comment_id,reporter_user_id,category,reason,status) VALUES($1,$2,'OTHER','Historical moderator report','REMOVED')",[c.id,moderator.id]);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(moderator)).send(body).expect(403);
+  for(const invalid of [{...body,version:'2'},{...body,version:0},{...body,reason:'bad'},{...body,actorId:moderator.id}])await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(invalid).expect(400);
+  await db.query("UPDATE community_posts SET status='PENDING' WHERE id=$1",[created.id]);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(body).expect(409);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).post(endpoint).set('Authorization',token(secondModerator)).send(body).expect(404);
+ });
  it('hides reported content and requires a current-version moderator decision',async()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/flag`).set('Authorization',token(reader)).send({reason:'Fictional policy review request'}).expect(201);
   const queue=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(moderator)).expect(200)).body;

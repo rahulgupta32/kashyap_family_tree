@@ -92,6 +92,17 @@ test('Community publication, likes, comments and reports persist through authent
   reviewer.once('dialog',d=>d.accept('Keep comment after independent review'));
   await reviewCard.getByRole('button',{name:'Keep comment',exact:true}).click();
   await expect(reviewCard).toContainText('KEPT');
+  page.once('dialog',async dialog=>{page.once('dialog',d=>d.accept('Fictional restoration review request'));await dialog.accept('OTHER');});
+  await authorCard.getByRole('button',{name:'Report comment: A fictional nested reply.',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Comment report submitted');
+  await reviewCard.getByRole('button',{name:'Load latest comment cases'}).click();
+  reviewer.once('dialog',d=>d.accept('Remove before restoration review'));
+  await reviewCard.getByRole('button',{name:'Remove reported comment',exact:true}).click();
+  await expect(reviewCard.getByRole('button',{name:'Restore comment',exact:true})).toHaveCount(2);
+  reviewer.once('dialog',d=>d.accept('Correct removal after renewed review'));
+  await reviewCard.getByRole('button',{name:'Restore comment',exact:true}).first().click();
+  await expect(reviewCard.getByRole('button',{name:'Restore comment',exact:true})).toHaveCount(0);
+
 
 
   await page.reload();await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');

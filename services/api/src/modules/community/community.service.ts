@@ -250,7 +250,7 @@ export class CommunityService {
       const own=comment.author_user_id===user.id;
       if(!own&&!canModerate(user,post.branch_id))throw new ForbiddenException('Comment removal requires its author or a current scoped moderator');
       if(comment.deleted_at)return {success:true,unchanged:true};
-      await client.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[commentId]);
+      await client.query('UPDATE community_comments SET deleted_at=now(),moderation_version=moderation_version+1,removal_kind=$2 WHERE id=$1',[commentId,own?'AUTHOR':'MODERATOR']);
       await client.query("UPDATE community_comment_reports SET status='WITHDRAWN',resolved_at=now() WHERE comment_id=$1 AND status='OPEN'",[commentId]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_REMOVED',entityType:'community_comment',entityId:commentId,actorId:user.id,newValue:{postId:id,reason,authority:own?'AUTHOR':'MODERATOR'}},client);
       return {success:true,unchanged:false};
@@ -282,11 +282,30 @@ export class CommunityService {
     return this.db.transaction(async client=>{
       const post=await this.visiblePost(id,user,client);
       if(!canModerate(user,post.branch_id)||post.author_user_id===user.id)throw new ForbiddenException('Independent scoped moderator required');
-      const rows=(await client.query(`SELECT r.sequence::text, r.comment_id AS "commentId", r.category,r.reason,r.status,r.review_notes AS "reviewNotes",r.created_at AS "createdAt",r.resolved_at AS "resolvedAt",c.content,c.deleted_at IS NOT NULL AS removed
+      const rows=(await client.query(`SELECT r.sequence::text, r.comment_id AS "commentId", r.category,r.reason,r.status,r.review_notes AS "reviewNotes",r.created_at AS "createdAt",r.resolved_at AS "resolvedAt",c.content,c.deleted_at IS NOT NULL AS removed,c.moderation_version AS "moderationVersion",c.removal_kind AS "removalKind",
+        (c.deleted_at IS NOT NULL AND c.removal_kind='CASE' AND NOT EXISTS(SELECT 1 FROM community_comment_reports other WHERE other.comment_id=c.id AND other.reporter_user_id=$2)) AS "canRestore"
         FROM community_comment_reports r JOIN community_comments c ON c.id=r.comment_id
         WHERE c.post_id=$1 AND c.author_user_id<>$2 AND r.reporter_user_id<>$2 AND ($3::bigint IS NULL OR r.sequence<$3)
         ORDER BY r.sequence DESC LIMIT 51`,[id,user.id,cursor])).rows;
       return {items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].sequence:null};
+    });
+  }
+
+  async restoreComment(id:string,commentId:string,user:AuthenticatedUser,body:any) {
+    allowedFields(body,['version','reason']); uuid(commentId,'comment ID');
+    const reason=textField(body.reason,'Restoration reason',1000,5);
+    if(!Number.isSafeInteger(body.version)||body.version<1)throw new BadRequestException('Current comment version required');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(!canModerate(user,post.branch_id)||post.author_user_id===user.id)throw new ForbiddenException('Independent scoped moderator required');
+      if(post.status!=='PUBLISHED')throw new ConflictException('Only published conversations allow restoration');
+      const c=(await client.query('SELECT * FROM community_comments WHERE id=$1 AND post_id=$2 FOR UPDATE',[commentId,id])).rows[0];
+      if(!c)throw new NotFoundException('Comment not found');
+      if(c.author_user_id===user.id||(await client.query('SELECT sequence FROM community_comment_reports WHERE comment_id=$1 AND reporter_user_id=$2 LIMIT 1',[commentId,user.id])).rows.length)throw new ForbiddenException('Authors and reporters cannot restore their case');
+      if(c.moderation_version!==body.version||!c.deleted_at||c.removal_kind!=='CASE')throw new ConflictException('Reload a current case removal before restoration; author withdrawals and unknown removals cannot be restored');
+      await client.query('UPDATE community_comments SET deleted_at=NULL,removal_kind=NULL,moderation_version=moderation_version+1 WHERE id=$1',[commentId]);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_RESTORED',entityType:'community_comment',entityId:commentId,actorId:user.id,newValue:{postId:id,version:body.version+1,reason}},client);
+      return {success:true,version:body.version+1};
     });
   }
 
@@ -303,7 +322,7 @@ export class CommunityService {
       if(row.status!=='OPEN'||row.deleted_at)throw new ConflictException('Case changed; reload before reviewing');
       if(body.decision==='REMOVE'){
         if((await client.query("SELECT sequence FROM community_comment_reports WHERE comment_id=$1 AND status='OPEN' AND reporter_user_id=$2",[row.comment_id,user.id])).rows.length)throw new ForbiddenException('Removal requires a moderator independent of all open reports');
-        await client.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[row.comment_id]);
+        await client.query("UPDATE community_comments SET deleted_at=now(),moderation_version=moderation_version+1,removal_kind='CASE' WHERE id=$1",[row.comment_id]);
         await client.query("UPDATE community_comment_reports SET status='REMOVED',reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE comment_id=$1 AND status='OPEN'",[row.comment_id,user.id,notes]);
       }else await client.query("UPDATE community_comment_reports SET status='KEPT',reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE sequence=$1",[sequence,user.id,notes]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_CASE_REVIEWED',entityType:'community_comment',entityId:row.comment_id,actorId:user.id,newValue:{postId:id,sequence,decision:body.decision,notes}},client);
