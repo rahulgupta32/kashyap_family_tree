@@ -1,5 +1,6 @@
 'use client';
 
+import { CalendarBrowse } from './browse';
 import { calendarManagement } from '@kashyap/localization';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/auth-context';
@@ -167,6 +168,8 @@ export default function CalendarAdminPage() {
         </div>
       )}
 
+      {accessToken&&<details><summary className="cursor-pointer">सबै कार्यक्रम हेर्नुहोस् (Browse all calendar events)</summary><CalendarBrowse token={accessToken}/></details>}
+      <p className="text-sm">The management list shows up to 100 events. Use Browse all calendar events to reach earlier records.</p>
       {/* Events Grid */}
       {loading ? (
         <div className="text-center py-12 text-slate-400 text-sm">कार्यक्रमहरू लोड हुँदैछन्...</div>

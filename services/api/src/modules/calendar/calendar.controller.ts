@@ -69,6 +69,11 @@ export class CalendarController {
     return this.calendarService.listEvents(user, { branchId, audienceScope, yearBs: yearBs === undefined ? undefined : Number(yearBs), monthBs: monthBs === undefined ? undefined : Number(monthBs) });
   }
 
+  @Get('browse')
+  browse(@CurrentUser() user:AuthenticatedUser,@Query('yearBs') year?:string,@Query('monthBs') month?:string,@Query('before') before?:string,@Query('branchId') branchId?:string,@Query('audienceScope') audienceScope?:EventAudienceScope){
+    return this.calendarService.browseEvents(user,{yearBs:year===undefined?undefined:Number(year),monthBs:month===undefined?undefined:Number(month),before,branchId,audienceScope});
+  }
+
   @Get('events/:id')
   async getEvent(
     @Param('id') id: string,

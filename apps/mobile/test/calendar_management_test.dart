@@ -46,4 +46,20 @@ void main() {
     expect(find.text(calendarLabels['cancel']!), findsNothing);
     expect(tester.widget<ChoiceChip>(find.byKey(const ValueKey('rsvp-event-2-GOING'))).onSelected, isNotNull);
   });
+  testWidgets('calendar browser carries exact older-page cursor and resets on source filters', (tester) async {
+    final queries=<Map<String,String>>[];
+    final service=GenealogyApiService(client:MockClient((request)async{
+      queries.add(request.url.queryParameters);
+      final older=request.url.queryParameters.containsKey('before');
+      return jsonResponse({'items':[{'title':older?'Earlier fictional event':'Latest fictional event','eventType':'GENERAL_EVENT','audienceScope':'COMMUNITY','lifecycleState':'ACTIVE','solarDate':'2083-05-15'}],'nextBefore':older?null:'9007199254740993'});
+    }))..setAuthToken('mock-access');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CalendarBrowseScreen(api:service)));await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Older calendar events'));await tester.tap(find.text('Older calendar events'));await tester.pumpAndSettle();
+    expect(queries.last['before'],'9007199254740993');expect(find.text('Earlier fictional event'),findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Older calendar events')).onPressed,isNull);
+    await tester.ensureVisible(find.byType(TextField));await tester.enterText(find.byType(TextField),'2083');await tester.pump();
+    await tester.ensureVisible(find.text('Apply calendar filters'));await tester.tap(find.text('Apply calendar filters'));await tester.pumpAndSettle();
+    expect(queries.last,{'yearBs':'2083'});expect(find.text('Latest fictional event'),findsOneWidget);
+  });
+
 }

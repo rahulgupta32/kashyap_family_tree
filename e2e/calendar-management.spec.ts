@@ -32,4 +32,13 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   await edit.getByRole('button', { name: /Cancel event/ }).click();
   await expect(card.getByRole('status')).toContainText('Cancelled');
   await expect(card.getByRole('button', { name: /Going/ })).toBeDisabled();
+  await page.getByText('सबै कार्यक्रम हेर्नुहोस् (Browse all calendar events)',{exact:true}).click();
+  const browse=page.getByRole('region',{name:'Browse all calendar events',exact:true});
+  await browse.getByRole('button',{name:'Latest calendar events'}).click();
+  await expect(browse).toContainText(`${title} updated`);
+  await expect(browse).toContainText('CANCELLED');
+  await browse.getByLabel('Browse BS year',{exact:true}).fill('2000');
+  await browse.getByRole('button',{name:'Apply calendar filters'}).click();
+  await expect(browse).not.toContainText(`${title} updated`);
+
 });

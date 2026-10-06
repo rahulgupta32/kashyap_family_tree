@@ -83,6 +83,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
           if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ])),
         actions: [
+          IconButton(tooltip: 'Browse all calendar events',onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarBrowseScreen(api:widget.apiService))),icon:const Icon(Icons.list_alt)),
           TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: Text(calendarLabels['close']!)),
           TextButton(onPressed: busy ? null : () async {
             if(title.text.trim().isEmpty || selected == null) {update(() => error = calendarLabels['required']); return;}
@@ -201,4 +202,41 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                     ),
     );
   }
+}
+
+class CalendarBrowseScreen extends StatefulWidget {
+ final GenealogyApiService api;
+ const CalendarBrowseScreen({super.key,required this.api});
+ @override
+ State<CalendarBrowseScreen> createState()=>_CalendarBrowseScreenState();
+}
+class _CalendarBrowseScreenState extends State<CalendarBrowseScreen>{
+ final _year=TextEditingController();
+ String? _month,_next,_cursor,_error;
+ List<dynamic> _items=[];
+ bool _busy=true;
+ @override
+ void initState(){super.initState();_load();}
+ @override
+ void dispose(){_year.dispose();super.dispose();}
+ Future<void> _load([String? before])async{
+  setState((){_busy=true;_error=null;_items=[];_next=null;_cursor=before;});
+  final query=Uri(queryParameters:{if(before!=null)'before':before,if(_year.text.trim().isNotEmpty)'yearBs':_year.text.trim(),if(_month!=null)'monthBs':_month!}).query;
+  try{final result=await widget.api.requestJson('/calendar/browse?$query') as Map;
+   if(mounted){setState((){_items=result['items'] as List;_next=result['nextBefore'] as String?;});}
+  }catch(e){if(mounted){setState(()=>_error=e.toString());}}finally{if(mounted){setState(()=>_busy=false);}}
+ }
+ @override
+ Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('सबै कार्यक्रम (Browse all events)')),body:ListView(padding:const EdgeInsets.all(16),children:[
+  const Text('Newest submissions first. BS filters use stored BS/Tithi metadata; AD events are not converted.'),
+  TextField(controller:_year,enabled:!_busy,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'BS year (2000–2090)'),onChanged:(_)=>setState((){_next=null;_items=[];})),
+  DropdownButtonFormField<String>(initialValue:_month,decoration:const InputDecoration(labelText:'BS month'),items:[const DropdownMenuItem(value:'',child:Text('All months')),...List.generate(12,(i)=>DropdownMenuItem(value:'${i+1}',child:Text('${i+1}')))],onChanged:_busy?null:(v)=>setState((){_month=v==''?null:v;_next=null;_items=[];})),
+  TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Apply calendar filters')),
+  if(_error!=null)...[Text(_error!),TextButton(onPressed:_busy?null:()=>_load(_cursor),child:const Text('Retry calendar page'))],
+  if(_busy)const Center(child:CircularProgressIndicator())else if(_items.isEmpty)const Text('No accessible events in this page.')else ..._items.map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+   Text(e['title'] as String),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?"AD: ${e['startsAt']}":"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
+  ])))),
+  TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Latest calendar events')),
+  TextButton(onPressed:_busy||_next==null?null:()=>_load(_next),child:const Text('Older calendar events')),
+ ]));
 }

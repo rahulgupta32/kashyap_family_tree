@@ -201,6 +201,24 @@ export class CalendarService {
       [actor.id,options?.yearBs??null,options?.monthBs??null,options?.branchId??null,options?.audienceScope??null])).rows;
     return Promise.all(rows.map(e=>this.detail(e,actor.id)));
   }
+  async browseEvents(actor:AuthenticatedUser,options?:{yearBs?:number;monthBs?:number;branchId?:string;audienceScope?:EventAudienceScope;before?:string}){
+    const before=options?.before;
+    if(before!==undefined&&(!/^[1-9][0-9]{0,18}$/.test(before)||BigInt(before)>9223372036854775807n))throw new BadRequestException('Invalid calendar cursor');
+    this.validateBsYear(options?.yearBs);
+    if(options?.monthBs!==undefined&&(!Number.isInteger(options.monthBs)||options.monthBs<1||options.monthBs>12))throw new BadRequestException('monthBs must be 1..12');
+    if(options?.branchId)uuid(options.branchId,'branch');
+    if(options?.audienceScope&&!Object.values(EventAudienceScope).includes(options.audienceScope))throw new BadRequestException('Invalid event audience');
+    const rows=(await this.db.query(`SELECT e.* FROM calendar_events e JOIN user_accounts u ON u.id=$1
+      WHERE (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN'))
+      AND ($2::int IS NULL OR left(e.date_bs,4)=$2::text OR e.tithi_year_bs=$2)
+      AND ($3::int IS NULL OR substring(e.date_bs,6,2)=$3::text OR substring(e.date_bs,6,2)=LPAD($3::text,2,'0') OR e.tithi_month_bs=$3)
+      AND ($4::uuid IS NULL OR e.branch_id=$4)
+      AND ($5::text IS NULL OR e.audience_scope=$5)
+      AND ($6::bigint IS NULL OR e.browse_sequence<$6)
+      ORDER BY e.browse_sequence DESC LIMIT 51`,
+      [actor.id,options?.yearBs??null,options?.monthBs??null,options?.branchId??null,options?.audienceScope??null,before??null])).rows;
+    return {items:await Promise.all(rows.slice(0,50).map(e=>this.detail(e,actor.id))),nextBefore:rows.length>50?String(rows[49].browse_sequence):null};
+  }
   async getEventById(id:string,actor:AuthenticatedUser){return this.getEvent(id,actor);}
   async getEvent(id:string,actor:AuthenticatedUser):Promise<CalendarEventDetailDto>{
     const e=(await this.db.query('SELECT * FROM calendar_events WHERE id=$1',[uuid(id)])).rows[0];

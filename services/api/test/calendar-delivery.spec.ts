@@ -1,4 +1,4 @@
-import { validateGregorianInstant } from '../src/modules/calendar/calendar.service';
+import { CalendarService, validateGregorianInstant } from '../src/modules/calendar/calendar.service';
 import { notificationCategoryEnabled } from '../src/modules/notifications/notification-policy';
 
 describe('Explicit Gregorian event scheduling',()=>{
@@ -12,4 +12,12 @@ describe('Explicit Gregorian event scheduling',()=>{
     expect(notificationCategoryEnabled(action,{family_events_enabled:false})).toBe(false);
     expect(notificationCategoryEnabled(action,{})).toBe(true);
   });
+  it('validates exact calendar cursors and source filters before persistence',async()=>{
+    const db={query:jest.fn()};const service=new CalendarService(db as any,{} as any);
+    for(const before of ['0','-1','1.1','9223372036854775808',''])await expect(service.browseEvents({id:'user'} as any,{before})).rejects.toThrow('Invalid calendar cursor');
+    await expect(service.browseEvents({id:'user'} as any,{monthBs:13})).rejects.toThrow('monthBs');
+    await expect(service.browseEvents({id:'user'} as any,{yearBs:1999})).rejects.toThrow('outside supported range');
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
 });

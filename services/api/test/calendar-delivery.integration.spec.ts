@@ -151,4 +151,33 @@ describe('Versioned events, private invitations and durable reminder scheduling 
     try{await expect(calendar.createEvent(host.id,scheduled())).rejects.toThrow('Injected');}finally{failure.mockRestore();}
     expect((await db.query('SELECT count(*) FROM calendar_events')).rows[0].count).toBe(before);
   });
+  it('browses beyond 100 events with nonoverlapping exact cursors and current private invitation checks',async()=>{
+    const seeded=(await db.query(`INSERT INTO calendar_events(title,event_type,date_bs,host_user_id,audience_scope)
+      SELECT 'Paged fictional calendar '||n,'GENERAL_EVENT','2083-05-15',$1,'COMMUNITY' FROM generate_series(1,105) n RETURNING id`,[host.id])).rows.map((r:any)=>r.id);
+    const hidden=(await db.query("INSERT INTO calendar_events(title,event_type,date_bs,host_user_id,audience_scope) VALUES('Hidden pagination fixture','GENERAL_EVENT','2083-05-15',$1,'INVITED_ONLY') RETURNING id",[host.id])).rows[0].id;
+    const first=(await request(app.getHttpServer()).get('/calendar/browse?yearBs=2083&monthBs=5').set(auth(guest)).expect(200)).body;
+    expect(first.items).toHaveLength(50);expect(typeof first.nextBefore).toBe('string');
+    const seen=new Set(first.items.map((e:any)=>e.id));let cursor=first.nextBefore;
+    await db.query("INSERT INTO calendar_events(title,event_type,date_bs,host_user_id,audience_scope) VALUES('Concurrent new calendar event','GENERAL_EVENT','2083-05-15',$1,'COMMUNITY')",[host.id]);
+    while(cursor){const page=(await request(app.getHttpServer()).get(`/calendar/browse?yearBs=2083&monthBs=5&before=${cursor}`).set(auth(guest)).expect(200)).body;
+      expect(page.items.length).toBeLessThanOrEqual(50);for(const item of page.items){expect(seen.has(item.id)).toBe(false);seen.add(item.id);}cursor=page.nextBefore;}
+    expect(seeded.every((id:string)=>seen.has(id))).toBe(true);expect(seen.has(hidden)).toBe(false);
+    await db.query('INSERT INTO event_invitations(event_id,invited_user_id) VALUES($1,$2)',[hidden,guest.id]);
+    expect((await request(app.getHttpServer()).get('/calendar/browse').set(auth(guest)).expect(200)).body.items.some((e:any)=>e.id===hidden)).toBe(true);
+    await db.query('UPDATE event_invitations SET revoked_at=now() WHERE event_id=$1',[hidden]);
+    expect((await request(app.getHttpServer()).get('/calendar/browse').set(auth(guest)).expect(200)).body.items.some((e:any)=>e.id===hidden)).toBe(false);
+    expect((await request(app.getHttpServer()).get('/calendar/browse').set(auth(host)).expect(200)).body.items.some((e:any)=>e.id===hidden)).toBe(true);
+    await request(app.getHttpServer()).get('/calendar/browse').expect(401);
+    for(const cursor of ['0','-1','1.5','9223372036854775808',''])await request(app.getHttpServer()).get(`/calendar/browse?before=${cursor}`).set(auth(guest)).expect(400);
+  });
+  it('filters source BS metadata without changing event dates or inventing AD/Tithi conversions',async()=>{
+    const ad=await calendar.createEvent(host.id,{...scheduled(),audienceScope:EventAudienceScope.COMMUNITY,invitedUserIds:[]});
+    const tithi=await calendar.createEvent(host.id,{title:'Unconverted Tithi browse fixture',eventType:'GENERAL_EVENT',audienceScope:EventAudienceScope.COMMUNITY,tithiYearBs:2083,tithiMonthBs:5,tithiPaksha:'SHUKLA',tithiNumber:4} as any);
+    const before=(await db.query('SELECT version,provenance,starts_at FROM calendar_events WHERE id=$1',[ad.id])).rows[0];
+    const filtered=(await request(app.getHttpServer()).get('/calendar/browse?yearBs=2083&monthBs=5').set(auth(guest)).expect(200)).body.items;
+    expect(filtered.some((e:any)=>e.id===ad.id)).toBe(false);expect(filtered.find((e:any)=>e.id===tithi.id)).toMatchObject({startsAt:null,solarDate:null,tithiYearBs:2083,tithiMonthBs:5});
+    expect((await db.query('SELECT version,provenance,starts_at FROM calendar_events WHERE id=$1',[ad.id])).rows[0]).toEqual(before);
+    for(const query of ['yearBs=1999','yearBs=2091','monthBs=13','monthBs=1.5','audienceScope=FAKE','branchId=garbage'])await request(app.getHttpServer()).get(`/calendar/browse?${query}`).set(auth(guest)).expect(400);
+  });
+
 });
