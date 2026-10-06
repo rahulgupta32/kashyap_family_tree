@@ -83,6 +83,32 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).send({content:'Invalid parent',parentCommentId:randomUUID()}).expect(400);
   expect((await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(author)).expect(200)).body[0].id).toBe(comment.id);
  });
+ it('browses more than 200 comments with tied timestamps, live parent context and post-bound cursors',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Comment page fixture',content:'Fictional page content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({version:1,decision:'PUBLISHED',notes:'Publish comment page fixture'}).expect(201);
+  const parent=(await db.query("INSERT INTO community_comments(post_id,author_user_id,content,created_at) VALUES($1,$2,'Old parent','2026-01-01T00:00:00Z') RETURNING id",[created.id,reader.id])).rows[0].id;
+  await db.query("INSERT INTO community_comments(post_id,author_user_id,parent_comment_id,content,created_at) SELECT $1,$2,$3,'Fictional tied reply '||n,'2026-02-01T00:00:00.123456Z' FROM generate_series(1,205) n",[created.id,reader.id,parent]);
+  const endpoint=`/community/posts/${created.id}/comments/browse`;
+  await request(app.getHttpServer()).get(endpoint).expect(401);
+  await request(app.getHttpServer()).get(endpoint).set('Authorization',token(outsider)).expect(403);
+  let page=(await request(app.getHttpServer()).get(endpoint).set('Authorization',token(reader)).expect(200)).body;
+  expect(page.items).toHaveLength(50);expect(page.items[0].parentContent).toBe('Old parent');
+  const boundary=page.nextBefore,seen=page.items.map((c:any)=>c.id);
+  await db.query("INSERT INTO community_comments(post_id,author_user_id,content,created_at) VALUES($1,$2,'Concurrent newer comment','2026-03-01T00:00:00Z')",[created.id,reader.id]);
+  while(page.nextBefore){page=(await request(app.getHttpServer()).get(`${endpoint}?before=${page.nextBefore}`).set('Authorization',token(reader)).expect(200)).body;seen.push(...page.items.map((c:any)=>c.id));}
+  expect(seen).toHaveLength(206);expect(new Set(seen).size).toBe(206);expect(seen.at(-1)).toBe(parent);
+  await db.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[boundary]);
+  const older=(await request(app.getHttpServer()).get(`${endpoint}?before=${boundary}`).set('Authorization',token(reader)).expect(200)).body;expect(older.items).toHaveLength(50);
+  await db.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[parent]);
+  expect((await request(app.getHttpServer()).get(`${endpoint}?before=${boundary}`).set('Authorization',token(reader)).expect(200)).body.items[0].parentContent).toBeNull();
+  for(const cursor of ['bad',randomUUID()])await request(app.getHttpServer()).get(`${endpoint}?before=${cursor}`).set('Authorization',token(reader)).expect(400);
+  const foreign=(await db.query('SELECT id FROM community_comments WHERE post_id=$1 LIMIT 1',[post.id])).rows[0].id;
+  await request(app.getHttpServer()).get(`${endpoint}?before=${foreign}`).set('Authorization',token(reader)).expect(400);
+  await db.query("UPDATE community_posts SET status='PENDING' WHERE id=$1",[created.id]);
+  await request(app.getHttpServer()).get(`${endpoint}?before=${boundary}`).set('Authorization',token(reader)).expect(404);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).get(endpoint).set('Authorization',token(moderator)).expect(404);
+ });
  it('hides reported content and requires a current-version moderator decision',async()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/flag`).set('Authorization',token(reader)).send({reason:'Fictional policy review request'}).expect(201);
   const queue=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(moderator)).expect(200)).body;

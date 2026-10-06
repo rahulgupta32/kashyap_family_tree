@@ -234,15 +234,25 @@ class _CommentsScreenState extends State<_CommentsScreen> {
   List<dynamic> _comments = [];
   String? _error;
   Map? _replyTo;
+  String? _before;
+  bool _loading = false;
   bool _busy = false;
   @override
   void initState() { super.initState(); _load(); }
   @override
   void dispose() { _text.dispose(); super.dispose(); }
-  Future<void> _load() async {
-    try { final rows = await widget.api.requestJson('/community/posts/${widget.post['id']}/comments');
-      if (mounted) { setState(() { _comments = rows as List; _error = null; }); }
-    } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
+  Future<void> _load({bool older = false}) async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final page = await widget.api.requestJson('/community/posts/${widget.post['id']}/comments/browse${older ? '?before=${Uri.encodeComponent(_before!)}' : ''}') as Map;
+      if (mounted) { setState(() {
+        final items = page['items'] as List;
+        _comments = older ? [..._comments, ...items.where((c) => !_comments.any((old) => old['id'] == c['id']))] : items;
+        _before = page['nextBefore'] as String?; _error = null;
+      }); }
+    } catch (e) { if (mounted) { setState(() { _error = e.toString(); _comments = []; _before = null; _replyTo = null; }); } }
+    finally { if (mounted) { setState(() => _loading = false); } }
   }
   Future<void> _send() async {
     setState(() => _busy = true);
@@ -253,27 +263,25 @@ class _CommentsScreenState extends State<_CommentsScreen> {
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
-  String _parentContent(dynamic id) {
-    for (final c in _comments) {
-      if (c['id'] == id) return c['content'] as String;
-    }
-    return 'Parent comment unavailable in this page';
-  }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('टिप्पणी (Comments)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
       if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
       ..._comments.map((c) => ListTile(
         title: Text(c['content'] as String),
-        subtitle: c['parentCommentId'] == null ? null : Text('Reply to: ${_parentContent(c['parentCommentId'])}'),
-        trailing: TextButton(onPressed: _busy ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
+        subtitle: c['parentCommentId'] == null ? null : Text('Reply to: ${c['parentContent'] ?? 'Parent comment unavailable'}'),
+        trailing: TextButton(onPressed: _busy || _loading ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
       )),
+      Text('Newest comments first · ${_comments.length} loaded'),
+      TextButton(onPressed: _busy || _loading || _before == null ? null : () => _load(older:true), child: const Text('Older comments')),
+      TextButton(onPressed: _busy || _loading ? null : () => _load(), child: const Text('Latest comments')),
+      if (_loading) const LinearProgressIndicator(),
       if (_replyTo != null) ...[
         Text('Replying to: ${_replyTo!['content']}'),
-        TextButton(onPressed: _busy ? null : () => setState(() => _replyTo = null), child: const Text('Cancel reply')),
+        TextButton(onPressed: _busy || _loading ? null : () => setState(() => _replyTo = null), child: const Text('Cancel reply')),
       ],
       TextField(controller: _text, maxLength: 2000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Your comment')),
-      FilledButton(onPressed: _busy || _text.text.trim().isEmpty ? null : _send, child: const Text('पठाउनुहोस् (Send comment)')),
+      FilledButton(onPressed: _busy || _loading || _text.text.trim().isEmpty ? null : _send, child: const Text('पठाउनुहोस् (Send comment)')),
     ]));
 }
 

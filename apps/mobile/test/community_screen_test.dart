@@ -10,9 +10,14 @@ import 'native_session_test.dart' show MemorySessionStore;
 
 void main() {
   testWidgets('Replies carry the selected parent and cancellation restores a top-level comment', (tester) async {
+    tester.view.physicalSize = const Size(1200,1800); tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
     Map<String,dynamic>? submitted;
     final rows = <Map<String,dynamic>>[{'id':'parent-id','content':'Fictional parent'}];
     final service = GenealogyApiService(sessionStore: MemorySessionStore(), client: MockClient((request) async {
+      if (request.url.path.endsWith('/comments/browse')) {
+        return http.Response(jsonEncode({'items':rows.map((c)=>{...c,if(c['parentCommentId']!=null)'parentContent':'Fictional parent'}).toList(),'nextBefore':null}),200);
+      }
       if (request.url.path.endsWith('/comments')) {
         if (request.method == 'POST') {
           submitted = jsonDecode(request.body) as Map<String,dynamic>;
@@ -39,6 +44,28 @@ void main() {
     await tester.enterText(find.byType(TextField),'Top-level comment'); await tester.pump();
     await tester.tap(find.text('पठाउनुहोस् (Send comment)')); await tester.pumpAndSettle();
     expect(submitted,{'content':'Top-level comment'});
+  });
+  testWidgets('Comment pages append older records and reset to latest with parent context', (tester) async {
+    tester.view.physicalSize = const Size(1200,1800); tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <String>[];
+    final service = GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.url.path.endsWith('/comments/browse')) {
+        requests.add(request.url.query);
+        final older=request.url.queryParameters['before']=='cursor-id';
+        return http.Response(jsonEncode({'items':older?[{'id':'old-id','content':'Older parent'}]:[{'id':'new-id','content':'New reply','parentCommentId':'old-id','parentContent':'Older parent'}],'nextBefore':older?null:'cursor-id'}),200);
+      }
+      return http.Response(jsonEncode([{'id':'post-id','title':'Page fixture','content':'Fictional body','moderationStatus':'PUBLISHED','isLiked':false,'likesCount':0,'commentsCount':2,'canModerate':false,'canDelete':false}]),200);
+    }));
+    service.setAuthToken('page-session'); addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service))); await tester.pumpAndSettle();
+    await tester.tap(find.text('टिप्पणी (2)')); await tester.pumpAndSettle();
+    expect(find.text('Reply to: Older parent'),findsOneWidget);
+    await tester.tap(find.text('Older comments')); await tester.pumpAndSettle();
+    expect(requests.last,'before=cursor-id'); expect(find.text('Older parent'),findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Older comments')).onPressed,isNull);
+    await tester.tap(find.text('Latest comments')); await tester.pumpAndSettle();
+    expect(requests.last,''); expect(find.text('Older parent'),findsNothing);
   });
   testWidgets('Mocked community HTTP flow submits session-bound content and reloads reaction state', (tester) async {
     var liked = false;

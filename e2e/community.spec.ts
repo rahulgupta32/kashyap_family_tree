@@ -86,6 +86,16 @@ test('Community publication, likes, comments and reports persist through authent
   await page.reload();await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   const posts=await page.request.get(`${API}/community/posts`,{headers:await headers(page)});expect(posts.ok()).toBeTruthy();
   const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.category).toBe('ASSISTANCE');expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(2);
+  for(let n=0;n<51;n++)expect((await page.request.post(`${API}/community/posts/${post.id}/comments`,{headers:await headers(page),data:{content:`Fictional pagination comment ${n}`}})).ok()).toBeTruthy();
+  await authorCard.getByRole('button',{name:/Comments/}).click();
+  await expect(authorCard).toContainText('50 loaded');
+  await authorCard.getByRole('button',{name:'Older comments',exact:true}).click();
+  await expect(authorCard).toContainText('53 loaded');
+  await expect(authorCard.getByText('A fictional nested reply.',{exact:true})).toBeVisible();
+  await expect(authorCard.getByRole('button',{name:'Older comments',exact:true})).toBeDisabled();
+  await authorCard.getByRole('button',{name:'Latest comments',exact:true}).click();
+  await expect(authorCard).toContainText('50 loaded');
+
   await reviewer.getByRole('button',{name:/Feed/}).click();
   await reviewCard.getByRole('button',{name:'रिपोर्ट (Report)',exact:true}).click();
   await reviewer.getByRole('dialog').getByLabel(/Reason \/ notes/).fill('Fictional report for a second moderation review.');

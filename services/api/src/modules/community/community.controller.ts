@@ -37,6 +37,8 @@ export class CommunityController {
   like(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['liked']); return this.service.react(id,user,body.liked);
   }
+  @Get('posts/:id/comments/browse')
+  browseComments(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Query('before') before?:string) { return this.service.browseComments(id,user,before); }
   @Get('posts/:id/comments')
   comments(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser) { return this.service.comments(id,user); }
   @Post('posts/:id/comments')

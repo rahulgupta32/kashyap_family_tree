@@ -207,6 +207,24 @@ export class CommunityService {
       content, created_at AS "createdAt" FROM community_comments WHERE post_id=$1 AND deleted_at IS NULL ORDER BY created_at, id LIMIT 200`, [id])).rows;
   }
 
+  async browseComments(id: string, user: AuthenticatedUser, before?: string) {
+    const cursor = before === undefined ? null : uuid(before, 'comment cursor');
+    return this.db.transaction(async client => {
+      await this.visiblePost(id, user, client);
+      if (cursor && !(await client.query('SELECT id FROM community_comments WHERE id=$1 AND post_id=$2', [cursor,id])).rows.length) {
+        throw new BadRequestException('Comment cursor does not belong to this post');
+      }
+      const rows = (await client.query(`SELECT c.id, c.post_id AS "postId", c.author_user_id AS "authorUserId",
+        c.parent_comment_id AS "parentCommentId", parent.content AS "parentContent", c.content, c.created_at AS "createdAt"
+        FROM community_comments c LEFT JOIN community_comments parent
+          ON parent.id=c.parent_comment_id AND parent.post_id=c.post_id AND parent.deleted_at IS NULL
+        WHERE c.post_id=$1 AND c.deleted_at IS NULL AND ($2::uuid IS NULL OR
+          (c.created_at,c.id) < (SELECT boundary.created_at,boundary.id FROM community_comments boundary WHERE boundary.id=$2 AND boundary.post_id=$1))
+        ORDER BY c.created_at DESC,c.id DESC LIMIT 51`,[id,cursor])).rows;
+      return {items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].id:null};
+    });
+  }
+
   async addComment(id: string, user: AuthenticatedUser, body: any) {
     allowedFields(body, ['content', 'parentCommentId']);
     const content = textField(body.content, 'Comment', 2000);
