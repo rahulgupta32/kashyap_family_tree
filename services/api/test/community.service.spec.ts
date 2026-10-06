@@ -41,4 +41,12 @@ describe('Community authorization and request integrity',()=>{
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
+  it('rejects forged escalation identities and inexact evidence cursors before persistence',async()=>{
+    for(const cursor of ['0','-1','1.5','NaN','9223372036854775808','']) await expect(service.reportEvidence('post',member,cursor)).rejects.toThrow('Invalid evidence cursor');
+    await expect(service.reportEvidence('post',member,undefined,'bad')).rejects.toThrow('Invalid evidence cursor');
+    await expect(service.escalate('post',member,{version:1,reason:'Valid reason',submittedBy:'victim'})).rejects.toThrow('Unexpected request fields');
+    for(const version of [0,1.5,'1']) await expect(service.escalate('post',member,{version,reason:'Valid reason'})).rejects.toThrow('Invalid version');
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
 });

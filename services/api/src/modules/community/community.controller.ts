@@ -45,6 +45,10 @@ export class CommunityController {
   report(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['reason']);return this.service.report(id,user,body.reason);
   }
+  @Get('posts/:id/reports')
+  evidence(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Query('before') before?:string,@Query('beforeEscalation') beforeEscalation?:string){return this.service.reportEvidence(id,u,before,beforeEscalation);}
+  @Post('posts/:id/escalate')
+  escalate(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.service.escalate(id,u,b);}
   @Post('posts/:id/appeal')
   appeal(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.appealPost(id,user,body); }
   @Post('posts/:id/moderate')

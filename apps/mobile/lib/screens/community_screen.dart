@@ -82,13 +82,13 @@ class _CommunityScreenState extends State<CommunityScreen> {
     await _action(() async {await widget.apiService.communityMedia('/posts/${post['id']}/sharing',owner,method:'PUT',data:result);});
   }
 
-  Future<void> _reason(Map post, {bool review = false, bool appeal = false}) async {
+  Future<void> _reason(Map post, {bool review = false, bool appeal = false, bool escalate = false}) async {
     final result = await Navigator.push<Map<String, dynamic>>(context,
-      MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review, appeal: appeal)));
+      MaterialPageRoute(builder: (_) => _ReviewEditor(title: post['title'] as String, review: review, appeal: appeal, escalate: escalate)));
     if (result == null || !mounted) { return; }
     await _action(() async {
-      await widget.apiService.requestJson('/community/posts/${post['id']}/${review ? 'moderate' : appeal ? 'appeal' : 'flag'}',
-        method: 'POST', data: review || appeal ? {...result, 'version': post['version']} : result);
+      await widget.apiService.requestJson('/community/posts/${post['id']}/${review ? 'moderate' : escalate ? 'escalate' : appeal ? 'appeal' : 'flag'}',
+        method: 'POST', data: review || appeal || escalate ? {...result, 'version': post['version']} : result);
     });
   }
 
@@ -116,6 +116,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             if (p['moderationOutcome'] != null) Text('Moderation: ${p['moderationOutcome']['decision']} · ${p['moderationOutcome']['notes']}'),
             if (p['locality'] != null) Text("स्थान (Approximate locality): ${p['locality']['district']} · ${p['locality']['municipality']}"),
             if (p['contactPhone'] != null) Text("सम्पर्क (Shared contact): ${p['contactPhone']}"),
+            if (p['escalated'] == true) const Text('Escalated: awaiting independent central review.'),
             if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
             Wrap(spacing: 8, children: [
               if (p['canAppeal'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map, appeal: true), child: const Text('अपिल (Appeal)')),
@@ -131,6 +132,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ],
               if (p['canModerate'] == true && p['moderationStatus'] == 'PENDING')
                 TextButton(onPressed: _busy ? null : () => _reason(p as Map, review: true), child: const Text('Review')),
+              if (p['canViewReports'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context,MaterialPageRoute(builder: (_) => _ReportEvidenceScreen(api:widget.apiService,post:p as Map))),child:const Text('रिपोर्ट प्रमाण (Report evidence)')),
+              if (p['canEscalate'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map,escalate:true),child:const Text('केन्द्रीय समीक्षा (Escalate to central)')),
               if (p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _edit(p as Map), child: const Text('सम्पादन (Edit)')),
               if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RevisionScreen(api: widget.apiService, post: p as Map))), child: const Text('Revision history')),
               if (p['canViewRevisions'] == true) TextButton(onPressed: _busy ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ModerationHistoryScreen(api: widget.apiService, post: p as Map))), child: const Text('समीक्षा इतिहास (Moderation history)')),
@@ -199,7 +202,8 @@ class _ReviewEditor extends StatefulWidget {
   final bool review;
   final bool appeal;
   final bool mediaChange;
-  const _ReviewEditor({required this.title, required this.review, this.appeal = false, this.mediaChange = false});
+  final bool escalate;
+  const _ReviewEditor({required this.title, required this.review, this.appeal = false, this.mediaChange = false, this.escalate = false});
   @override
   State<_ReviewEditor> createState() => _ReviewEditorState();
 }
@@ -208,13 +212,13 @@ class _ReviewEditorState extends State<_ReviewEditor> {
   @override
   void dispose() { _notes.dispose(); super.dispose(); }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.mediaChange ? 'तस्बिर हटाउनुहोस् (Remove image)' : widget.review ? 'समीक्षा (Review)' : widget.appeal ? 'अपिल (Appeal)' : 'रिपोर्ट (Report)')),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(widget.escalate ? 'केन्द्रीय समीक्षा (Escalate to central)' : widget.mediaChange ? 'तस्बिर हटाउनुहोस् (Remove image)' : widget.review ? 'समीक्षा (Review)' : widget.appeal ? 'अपिल (Appeal)' : 'रिपोर्ट (Report)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [Text(widget.title),
       TextField(controller: _notes, minLines: 3, maxLines: 6, maxLength: 1000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'कारण (Reason / notes)')),
       if (widget.review) Wrap(spacing: 12, children: ['PUBLISHED', 'REJECTED'].map((decision) => FilledButton(
         onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'decision': decision, 'notes': _notes.text.trim()}),
         child: Text(decision == 'PUBLISHED' ? 'Publish' : 'Reject'))).toList())
-      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: Text(widget.mediaChange ? 'Remove image' : widget.appeal ? 'Submit appeal' : 'Submit report')),
+      else FilledButton(onPressed: _notes.text.trim().length < 5 ? null : () => Navigator.pop(context, {'reason': _notes.text.trim()}), child: Text(widget.escalate ? 'Submit escalation' : widget.mediaChange ? 'Remove image' : widget.appeal ? 'Submit appeal' : 'Submit report')),
     ]));
 }
 
@@ -420,5 +424,47 @@ class _CommunitySharingEditorState extends State<_CommunitySharingEditor> {
    const Text('Location/contact sharing follows current profile address/contact privacy and adult-profile protection. Changes require independent review. Phone numbers are not copied into revision history.'),
    TextField(controller:_reason,maxLength:1000,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'कारण (Sharing change reason)')),
    FilledButton(onPressed:_reason.text.trim().length<5?null:()=>Navigator.pop(context,{'version':widget.post['version'],'reason':_reason.text.trim(),'locality':_district.text.trim().isEmpty&&_municipality.text.trim().isEmpty?null:{'district':_district.text.trim(),'municipality':_municipality.text.trim()},'localityVisibility':_shareLocality?'VERIFIED_COMMUNITY':'PRIVATE','contactVisibility':_shareContact?'VERIFIED_COMMUNITY':'PRIVATE','contactConsent':_shareContact}),child:const Text('Save sharing for review')),
+  ]));
+}
+
+class _ReportEvidenceScreen extends StatefulWidget {
+  final GenealogyApiService api;
+  final Map post;
+  const _ReportEvidenceScreen({required this.api,required this.post});
+  @override
+  State<_ReportEvidenceScreen> createState()=>_ReportEvidenceScreenState();
+}
+class _ReportEvidenceScreenState extends State<_ReportEvidenceScreen> {
+  Map? _page;
+  String? _error,_before,_beforeEscalation;
+  bool _loading=true;
+  @override
+  void initState(){super.initState();_load();}
+  Future<void> _load({String? before,String? beforeEscalation}) async {
+    setState((){_loading=true;_error=null;_before=before;_beforeEscalation=beforeEscalation;});
+    final query=Uri(queryParameters:{if(before!=null)'before':before,if(beforeEscalation!=null)'beforeEscalation':beforeEscalation}).query;
+    try{
+      final result=await widget.api.requestJson('/community/posts/${widget.post['id']}/reports?$query') as Map;
+      if(mounted){setState((){_page=result;});}
+    }catch(e){if(mounted){setState((){_error=e.toString();_page=null;});}}
+    finally{if(mounted){setState(()=>_loading=false);}}
+  }
+  @override
+  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('रिपोर्ट प्रमाण (Report evidence)')),body:_loading?const Center(child:CircularProgressIndicator()):ListView(padding:const EdgeInsets.all(16),children:[
+    if(_error!=null)...[Text(_error!),TextButton(onPressed:()=>_load(before:_before,beforeEscalation:_beforeEscalation),child:const Text('Retry'))],
+    if(_page!=null)...[
+      Text("Current post version: ${_page!['version']}. Reporter identities are private. Inspect revision and moderation history before deciding."),
+      const Text('Reports'),
+      if((_page!['reports']['items'] as List).isEmpty)const Text('No recorded reports.'),
+      ...(_page!['reports']['items'] as List).map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text("${r['status']} · Reported version: ${r['reportedVersion']??'Unavailable for historical report'}"),Text(r['reason'] as String),Text(r['createdAt'] as String),if(r['reviewNotes']!=null)Text("Resolution: ${r['reviewNotes']}"),
+      ])))),
+      TextButton(onPressed:_page!['reports']['nextBefore']==null?null:()=>_load(before:_page!['reports']['nextBefore'] as String,beforeEscalation:_beforeEscalation),child:const Text('Older reports')),
+      const Text('Central escalations'),
+      if((_page!['escalations']['items'] as List).isEmpty)const Text('No recorded escalations.'),
+      ...(_page!['escalations']['items'] as List).map((r)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text("${r['status']} · Submitted version: ${r['submittedVersion']}"),Text(r['reason'] as String),Text(r['createdAt'] as String)])))),
+      TextButton(onPressed:_page!['escalations']['nextBefore']==null?null:()=>_load(before:_before,beforeEscalation:_page!['escalations']['nextBefore'] as String),child:const Text('Older escalations')),
+      TextButton(onPressed:()=>_load(),child:const Text('Latest evidence')),
+    ],
   ]));
 }

@@ -46,6 +46,7 @@ export class CommunityService {
          (SELECT count(*)::int FROM community_reactions r WHERE r.post_id = p.id) AS reaction_count,
          EXISTS(SELECT 1 FROM community_reactions r WHERE r.post_id = p.id AND r.user_id = $1) AS is_liked,
          (SELECT count(*)::int FROM community_comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
+         EXISTS(SELECT 1 FROM community_escalations e WHERE e.post_id=p.id AND e.status='OPEN') AS escalated,
          (SELECT count(*)::int FROM community_reports r WHERE r.post_id = p.id AND r.status = 'OPEN') AS report_count
        FROM community_posts p LEFT JOIN user_accounts u ON u.id=p.author_user_id LEFT JOIN persons person ON person.id=u.person_id WHERE p.deleted_at IS NULL
          AND ($2 OR p.branch_id IS NULL OR p.branch_id = ANY($3::uuid[]))
@@ -75,7 +76,10 @@ export class CommunityService {
       media:row.media, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
       reportsCount: canModerate(user, row.branch_id) ? row.report_count || 0 : undefined,
-      canModerate: canModerate(user, row.branch_id) && row.author_user_id !== user.id,
+      canViewReports: canModerate(user,row.branch_id) && row.author_user_id!==user.id,
+      escalated: privileged ? !!row.escalated : undefined,
+      canEscalate: canModerate(user,row.branch_id) && row.author_user_id!==user.id && row.status==='PENDING' && !row.escalated,
+      canModerate: canModerate(user, row.branch_id) && row.author_user_id !== user.id && (!row.escalated || globalAdmin(user)),
       moderationOutcome: row.author_user_id === user.id || canModerate(user,row.branch_id) ? row.outcome : undefined,
       appealReason: row.author_user_id === user.id || canModerate(user,row.branch_id) ? row.appeal_reason : undefined,
       canAppeal: row.author_user_id === user.id && row.status === 'REJECTED' && !!row.outcome && !row.outcome.appealed,
@@ -220,12 +224,44 @@ export class CommunityService {
   async report(id: string, user: AuthenticatedUser, reason: string) {
     reason = textField(reason, 'Reason', 1000, 5);
     return this.db.transaction(async client => {
-      await this.visiblePost(id, user, client);
-      await client.query(`INSERT INTO community_reports(post_id,reporter_user_id,reason) VALUES($1,$2,$3)
-        ON CONFLICT(post_id,reporter_user_id) WHERE status='OPEN' DO UPDATE SET reason=EXCLUDED.reason`, [id,user.id,reason]);
+      const post=await this.visiblePost(id, user, client);
+      const inserted=await client.query(`INSERT INTO community_reports(post_id,reporter_user_id,reason,reported_version) VALUES($1,$2,$3,$4)
+        ON CONFLICT(post_id,reporter_user_id) WHERE status='OPEN' DO NOTHING`, [id,user.id,reason,post.version]);
+      if(!inserted.rowCount) return {success:true};
       await client.query("UPDATE community_posts SET status='PENDING', version=version+1, updated_at=now() WHERE id=$1", [id]);
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_POST_REPORTED', entityType: 'community_post', entityId: id, actorId: user.id }, client);
       return { success: true };
+    });
+  }
+
+  async reportEvidence(id:string,user:AuthenticatedUser,before?:string,beforeEscalation?:string) {
+    for(const cursor of [before,beforeEscalation]) if(cursor!==undefined&&!/^[1-9][0-9]{0,18}$/.test(cursor)) throw new BadRequestException('Invalid evidence cursor');
+    for(const cursor of [before,beforeEscalation]) if(cursor!==undefined&&BigInt(cursor)>9223372036854775807n) throw new BadRequestException('Invalid evidence cursor');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(!canModerate(user,post.branch_id)||post.author_user_id===user.id) throw new ForbiddenException('Independent scoped moderator authority required');
+      const reports=(await client.query(`SELECT evidence_sequence::text AS sequence,reason,status,reported_version AS "reportedVersion",review_notes AS "reviewNotes",created_at AS "createdAt",resolved_at AS "resolvedAt"
+        FROM community_reports WHERE post_id=$1 AND ($2::bigint IS NULL OR evidence_sequence<$2) ORDER BY evidence_sequence DESC LIMIT 51`,[id,before||null])).rows;
+      const escalations=(await client.query(`SELECT sequence::text,submitted_version AS "submittedVersion",reason,status,created_at AS "createdAt",resolved_at AS "resolvedAt"
+        FROM community_escalations WHERE post_id=$1 AND ($2::bigint IS NULL OR sequence<$2) ORDER BY sequence DESC LIMIT 51`,[id,beforeEscalation||null])).rows;
+      const page=(rows:any[])=>({items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].sequence:null});
+      return {version:post.version,reports:page(reports),escalations:page(escalations)};
+    });
+  }
+
+  async escalate(id:string,user:AuthenticatedUser,body:any) {
+    allowedFields(body,['version','reason']);
+    const reason=textField(body.reason,'Escalation reason',1000,5);
+    if(!Number.isSafeInteger(body.version)||body.version<1) throw new BadRequestException('Invalid version');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(!canModerate(user,post.branch_id)||post.author_user_id===user.id) throw new ForbiddenException('Independent scoped moderator authority required');
+      if(post.version!==body.version||post.status!=='PENDING') throw new ConflictException('Reload the pending post before escalating');
+      if((await client.query("SELECT sequence FROM community_escalations WHERE post_id=$1 AND status='OPEN'",[id])).rows.length) throw new ConflictException('Case already escalated');
+      await client.query('INSERT INTO community_escalations(post_id,submitted_by,submitted_version,reason) VALUES($1,$2,$3,$4)',[id,user.id,post.version,reason]);
+      await client.query('UPDATE community_posts SET version=version+1,updated_at=now() WHERE id=$1',[id]);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_POST_ESCALATED',entityType:'community_post',entityId:id,actorId:user.id,newValue:{version:post.version+1}},client);
+      return {success:true};
     });
   }
 
@@ -237,6 +273,8 @@ export class CommunityService {
       const post = await this.visiblePost(id, user, client);
       if (!canModerate(user, post.branch_id) || post.author_user_id === user.id) throw new ForbiddenException('An independent authorized moderator is required');
       if (post.version !== body.version) throw new ConflictException('Post changed; reload before reviewing');
+      const escalated=(await client.query("SELECT sequence FROM community_escalations WHERE post_id=$1 AND status='OPEN'",[id])).rows.length>0;
+      if(escalated&&!globalAdmin(user)) throw new ForbiddenException('An escalated case requires independent central review');
       const appeal=(await client.query(`SELECT a.id,d.reviewer_user_id FROM community_post_appeals a
         JOIN community_moderation_decisions d ON d.id=a.decision_id WHERE a.post_id=$1 AND a.status='OPEN'`,[id])).rows[0];
       if (appeal?.reviewer_user_id === user.id) throw new ForbiddenException('An appeal requires a different independent moderator');
@@ -244,6 +282,7 @@ export class CommunityService {
         VALUES($1,$2,$3,$4,$5)`,[id,post.version+1,user.id,body.decision,notes]);
       await client.query("UPDATE community_post_appeals SET status='RESOLVED',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
       await client.query('UPDATE community_posts SET status=$2, version=version+1, updated_at=now() WHERE id=$1', [id,body.decision]);
+      await client.query("UPDATE community_escalations SET status='RESOLVED',resolved_by=$2,resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id,user.id]);
       await client.query("UPDATE community_reports SET status='RESOLVED', reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE post_id=$1 AND status='OPEN'", [id,user.id,notes]);
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_POST_MODERATED', entityType: 'community_post', entityId: id, actorId: user.id,
         oldValue: {status:post.status}, newValue: {status:body.decision,notes,version:post.version+1} }, client);
@@ -273,6 +312,7 @@ export class CommunityService {
       const post = await this.visiblePost(id, user, client);
       if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Only the author or scoped moderator may delete this post');
       await client.query("UPDATE community_post_appeals SET status='WITHDRAWN',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
+      await client.query("UPDATE community_escalations SET status='WITHDRAWN',resolved_by=$2,resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id,user.id]);
       await client.query("UPDATE community_posts SET status='DELETED', deleted_at=now(),version=version+1,updated_at=now() WHERE id=$1", [id]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_POST_DELETED',entityType:'community_post',entityId:id,actorId:user.id},client);
       return {success:true};

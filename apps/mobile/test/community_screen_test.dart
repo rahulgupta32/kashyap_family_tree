@@ -129,4 +129,26 @@ void main() {
     expect(submitted!.containsKey('phoneNumber'),isFalse);
   });
 
+  testWidgets('Moderator sees private report evidence and escalation sends viewed version', (tester) async {
+    Map<String,dynamic>? submitted;
+    var escalated=false;
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request)async{
+      if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;escalated=true;return http.Response('{}',201);}
+      if(request.url.path.endsWith('/reports')){return http.Response(jsonEncode({'version':7,'reports':{'items':[{'sequence':'9007199254740993','reason':'Fictional private report concern','status':'OPEN','reportedVersion':5,'createdAt':'2026-10-06T00:00:00Z'}],'nextBefore':null},'escalations':{'items':[],'nextBefore':null}}),200);}
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional case','content':'Fictional content','moderationStatus':'PENDING','version':7,'canViewReports':true,'canEscalate':!escalated,'canModerate':!escalated,'escalated':escalated}]),200);
+    }));
+    service.setAuthToken('case-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('रिपोर्ट प्रमाण (Report evidence)'));await tester.pumpAndSettle();
+    expect(find.text('Fictional private report concern'),findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Older reports')).onPressed,isNull);
+    await tester.pageBack();await tester.pumpAndSettle();
+    await tester.tap(find.text('केन्द्रीय समीक्षा (Escalate to central)'));await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'Fictional central review request');await tester.pump();
+    await tester.tap(find.text('Submit escalation'));await tester.pumpAndSettle();
+    expect(submitted,{'version':7,'reason':'Fictional central review request'});
+    expect(find.text('Escalated: awaiting independent central review.'),findsOneWidget);
+    expect(find.text('Review'),findsNothing);
+  });
+
 }

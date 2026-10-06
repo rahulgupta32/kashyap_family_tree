@@ -325,4 +325,61 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   expect((await db.query('SELECT deleted_at FROM community_posts WHERE id=$1',[post.id])).rows[0].deleted_at).not.toBeNull();
   expect((await db.query('SELECT count(*)::int AS count FROM persons')).rows[0].count).toBe(people);
  });
+ it('keeps report evidence private and routes escalated revisions to independent central review',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Case evidence fixture',content:'Fictional case evidence content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({version:1,decision:'PUBLISHED',notes:'Publish fictional case fixture'}).expect(201);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/flag`).set('Authorization',token(reader)).send({reason:'Fictional private reporter concern'}).expect(201);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(author)).expect(403);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(reader)).expect(404);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(outsider)).expect(403);
+  const evidence=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(moderator)).expect(200)).body;
+  expect(evidence.version).toBe(3);expect(evidence.reports.items[0]).toMatchObject({reason:'Fictional private reporter concern',reportedVersion:2,status:'OPEN'});
+  expect(JSON.stringify(evidence)).not.toContain(reader.id);expect(JSON.stringify(evidence)).not.toContain(moderator.id);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(author)).send({version:3,reason:'Author cannot escalate own case'}).expect(403);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(outsider)).send({version:3,reason:'Foreign branch escalation'}).expect(403);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(moderator)).send({version:2,reason:'Stale case escalation'}).expect(409);
+  const concurrent=await Promise.all([moderator,secondModerator].map(u=>request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(u)).send({version:3,reason:'Requires central review of fictional concern'})));
+  expect(concurrent.map(r=>r.status).sort()).toEqual([201,409]);
+  let queued=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(moderator)).expect(200)).body.find((p:any)=>p.id===created.id);
+  expect(queued).toMatchObject({version:4,escalated:true,canModerate:false,canEscalate:false,canViewReports:true});
+  const edited=(await request(app.getHttpServer()).put(`/community/posts/${created.id}`).set('Authorization',token(author)).send({version:4,title:created.title,content:'Author revised fictional case evidence',category:'DISCUSSION',reason:'Correct content during central review'}).expect(200)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(moderator)).send({version:edited.version,decision:'PUBLISHED',notes:'Branch review cannot bypass escalation'}).expect(403);
+  await db.query("INSERT INTO user_roles(user_id,role,branch_id) VALUES($1,'CENTRAL_ADMIN',NULL)",[outsider.id]);
+  try{
+   queued=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(outsider)).expect(200)).body.find((p:any)=>p.id===created.id);
+   expect(queued.canModerate).toBe(true);
+   await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',token(outsider)).send({version:edited.version,decision:'PUBLISHED',notes:'Independent central case resolution'}).expect(201);
+   const resolved=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(moderator)).expect(200)).body;
+   expect(resolved.reports.items[0]).toMatchObject({status:'RESOLVED',reviewNotes:'Independent central case resolution',reportedVersion:2});
+   expect(resolved.escalations.items[0]).toMatchObject({status:'RESOLVED',submittedVersion:3});expect(resolved.escalations.items[0].resolvedAt).not.toBeNull();
+   await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(reader)).expect(403);
+  }finally{await db.query("DELETE FROM user_roles WHERE user_id=$1 AND role='CENTRAL_ADMIN'",[outsider.id]);}
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(moderator)).expect(404);
+  expect((await db.query('SELECT count(*)::int AS n FROM community_reports WHERE post_id=$1',[created.id])).rows[0].n).toBe(1);
+ });
+ it('rolls escalation back with its audit intent and retains withdrawn case history',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Escalation rollback fixture',content:'Fictional rollback case',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected escalation audit failure'));
+  try{await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(moderator)).send({version:1,reason:'Fictional audit rollback escalation'}).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT version FROM community_posts WHERE id=$1',[created.id])).rows[0].version).toBe(1);
+  expect((await db.query('SELECT * FROM community_escalations WHERE post_id=$1',[created.id])).rows).toHaveLength(0);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(moderator)).send({version:1,reason:'Fictional withdrawal case escalation'}).expect(201);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  expect((await db.query('SELECT status,resolved_at FROM community_escalations WHERE post_id=$1',[created.id])).rows[0]).toMatchObject({status:'WITHDRAWN',resolved_at:expect.any(Date)});
+ });
+ it('paginates report and escalation evidence with exact bigint cursors and unknown historical versions',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Evidence pagination fixture',content:'Fictional pagination case',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query(`INSERT INTO community_reports(post_id,reporter_user_id,reason,status) SELECT $1,$2,'Historical fictional report '||n,'RESOLVED' FROM generate_series(1,51) n`,[created.id,reader.id]);
+  await db.query(`INSERT INTO community_escalations(post_id,submitted_by,submitted_version,reason,status) SELECT $1,$2,1,'Historical escalation '||n,'RESOLVED' FROM generate_series(1,51) n`,[created.id,moderator.id]);
+  const page=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports`).set('Authorization',token(moderator)).expect(200)).body;
+  expect(page.reports.items).toHaveLength(50);expect(page.escalations.items).toHaveLength(50);expect(page.reports.items[0].reportedVersion).toBeNull();
+  const older=(await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports?before=${page.reports.nextBefore}&beforeEscalation=${page.escalations.nextBefore}`).set('Authorization',token(moderator)).expect(200)).body;
+  expect(older.reports.items).toHaveLength(1);expect(older.escalations.items).toHaveLength(1);expect(older.reports.nextBefore).toBeNull();
+  expect(page.reports.items.map((r:any)=>r.sequence)).not.toContain(older.reports.items[0].sequence);
+  for(const cursor of ['0','-1','1.2','9223372036854775808','abc']) await request(app.getHttpServer()).get(`/community/posts/${created.id}/reports?before=${cursor}`).set('Authorization',token(moderator)).expect(400);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(moderator)).send({version:'1',reason:'Invalid viewed version'}).expect(400);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/escalate`).set('Authorization',token(moderator)).send({version:1,reason:'Valid reason',submittedBy:author.id}).expect(400);
+ });
+
 });

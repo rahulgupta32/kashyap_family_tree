@@ -86,5 +86,20 @@ test('Community publication, likes, comments and reports persist through authent
   await expect(reviewer.getByRole('dialog')).toHaveCount(0);
   await page.reload();await expect(authorCard).toContainText('PENDING');
   await expect(authorCard.getByRole('button',{name:/Like/})).toHaveCount(0);
+  await expect(authorCard.getByRole('button',{name:/Report evidence/})).toHaveCount(0);
+  await reviewer.getByRole('button',{name:/Moderation queue/}).click();
+  await reviewCard.getByRole('button',{name:/Report evidence/}).click();
+  const evidence=reviewer.getByRole('dialog',{name:'Community report evidence'});
+  await expect(evidence).toContainText('Fictional report for a second moderation review.');
+  await expect(evidence.getByRole('button',{name:'Older reports'})).toBeDisabled();
+  await evidence.getByRole('button',{name:'Close report evidence'}).click();
+  reviewer.once('dialog',dialog=>dialog.accept('Escalate fictional case for central review.'));
+  await reviewCard.getByRole('button',{name:/Escalate to central/}).click();
+  await expect(reviewCard).toContainText('Escalated: awaiting independent central review.');
+  await reviewCard.getByRole('button',{name:/Report evidence/}).click();
+  await expect(evidence).toContainText('Escalate fictional case for central review.');
+  await expect(evidence).toContainText('OPEN');
+  await evidence.getByRole('button',{name:'Close report evidence'}).click();
+
  } finally {await reviewerContext.close();}
 });
