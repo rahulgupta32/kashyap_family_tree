@@ -1,6 +1,7 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { cookieOriginMiddleware } from './security/cookie-origin.middleware';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
@@ -46,26 +47,7 @@ async function bootstrap() {
   });
 
   // CSRF Defense-in-depth: For cookie-authenticated mutating requests, validate Origin header against allowlist
-  app.use((req: any, res: any, next: any) => {
-    const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
-    if (mutatingMethods.includes(req.method)) {
-      const cookieHeader = req.headers.cookie;
-      const hasCookieAuth = cookieHeader && cookieHeader.includes('refreshToken=');
-      if (hasCookieAuth) {
-        const origin = req.headers.origin;
-        if (!isOriginAllowed(origin)) {
-          return res.status(403).json({
-            success: false,
-            errorCode: 'AUTH_1010',
-            message: 'Forbidden: Request origin is untrusted or missing for cookie-authenticated mutation.',
-            timestamp: new Date().toISOString(),
-            path: req.originalUrl,
-          });
-        }
-      }
-    }
-    next();
-  });
+  app.use(cookieOriginMiddleware(isOriginAllowed));
 
   app.useGlobalPipes(
     new ValidationPipe({
