@@ -80,7 +80,7 @@ test('Community publication, likes, comments and reports persist through authent
   const posts=await page.request.get(`${API}/community/posts`,{headers:await headers(page)});expect(posts.ok()).toBeTruthy();
   const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.category).toBe('ASSISTANCE');expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(1);
   await reviewer.getByRole('button',{name:/Feed/}).click();
-  await reviewCard.getByRole('button',{name:/Report/}).click();
+  await reviewCard.getByRole('button',{name:'रिपोर्ट (Report)',exact:true}).click();
   await reviewer.getByRole('dialog').getByLabel(/Reason \/ notes/).fill('Fictional report for a second moderation review.');
   await reviewer.getByRole('dialog').getByRole('button',{name:/Submit report/}).click();
   await expect(reviewer.getByRole('dialog')).toHaveCount(0);
