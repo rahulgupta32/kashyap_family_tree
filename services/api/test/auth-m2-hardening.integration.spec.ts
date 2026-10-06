@@ -186,7 +186,7 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       const original = (await sessionRepo.findById(user.sessionId))!.authenticated_at;
       expect((await me(user.accessToken)).status).toBe(200);
       const rotated = await refresh(user.refreshToken);
-      expect(rotated.status).toBe(201);
+      expect(rotated.status).toBe(200);
       const data = await rotated.json() as any;
       const sid = (jwtService.decode(data.accessToken) as any).sid;
       expect((await sessionRepo.findById(sid))!.authenticated_at).toEqual(original);
@@ -212,7 +212,7 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       await dbService.query('UPDATE user_sessions SET authenticated_at = NULL WHERE id = $1', [member.sessionId]);
       expect((await me(member.accessToken)).status).toBe(200);
       const rotated = await refresh(member.refreshToken);
-      expect(rotated.status).toBe(201);
+      expect(rotated.status).toBe(200);
       const data = await rotated.json() as any;
       const sid = (jwtService.decode(data.accessToken) as any).sid;
       expect((await sessionRepo.findById(sid))!.authenticated_at).toBeNull();
