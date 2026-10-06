@@ -82,6 +82,17 @@ test('Community publication, likes, comments and reports persist through authent
   await authorCard.getByRole('button',{name:/Send comment/}).click();
   await expect(authorCard.getByText('A fictional nested reply.',{exact:true})).toBeVisible();
   await expect(authorCard.getByText('Reply to: Persist this fictional reply.',{exact:true})).toBeVisible();
+  page.once('dialog',async dialog=>{page.once('dialog',d=>d.accept('Fictional comment case review request'));await dialog.accept('SPAM');});
+  await authorCard.getByRole('button',{name:'Report comment: A fictional nested reply.',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Comment report submitted');
+  await reviewer.getByRole('button',{name:/Feed/}).click();
+  await reviewCard.getByText('Comment report cases',{exact:true}).click();
+  await reviewCard.getByRole('button',{name:'Load latest comment cases'}).click();
+  await expect(reviewCard).toContainText('Fictional comment case review request');
+  reviewer.once('dialog',d=>d.accept('Keep comment after independent review'));
+  await reviewCard.getByRole('button',{name:'Keep comment',exact:true}).click();
+  await expect(reviewCard).toContainText('KEPT');
+
 
   await page.reload();await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   const posts=await page.request.get(`${API}/community/posts`,{headers:await headers(page)});expect(posts.ok()).toBeTruthy();

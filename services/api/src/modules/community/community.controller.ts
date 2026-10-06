@@ -45,6 +45,12 @@ export class CommunityController {
   comment(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.addComment(id,user,body); }
   @Delete('posts/:id/comments/:commentId')
   removeComment(@Param('id') id:string,@Param('commentId') commentId:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.removeComment(id,commentId,user,body); }
+  @Post('posts/:id/comments/:commentId/flag')
+  reportComment(@Param('id') id:string,@Param('commentId') c:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.service.reportComment(id,c,u,b);}
+  @Get('posts/:id/comment-reports')
+  commentReports(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Query('before') before?:string){return this.service.commentReports(id,u,before);}
+  @Post('posts/:id/comment-reports/:sequence/review')
+  reviewCommentReport(@Param('id') id:string,@Param('sequence') seq:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.service.reviewCommentReport(id,seq,u,b);}
   @Post('posts/:id/flag')
   report(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['reason']);return this.service.report(id,user,body.reason);

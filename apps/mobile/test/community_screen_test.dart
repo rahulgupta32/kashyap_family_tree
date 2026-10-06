@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kashyap_mobile/screens/community_screen.dart';
+import 'package:kashyap_mobile/screens/comment_cases_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show MemorySessionStore;
 
@@ -90,6 +91,24 @@ void main() {
     expect(submitted,{'reason':'Remove incorrect fictional comment'});
     expect(find.text('Fictional removal parent'),findsNothing);expect(find.text('Fictional child remains'),findsOneWidget);
     expect(find.text('Reply to: Parent comment unavailable'),findsOneWidget);
+  });
+  testWidgets('Independent comment case review carries exact sequence and required notes', (tester) async {
+    tester.view.physicalSize=const Size(1200,1800);tester.view.devicePixelRatio=1;
+    addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
+    Map<String,dynamic>? submitted;var status='OPEN';
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.method=='POST'){
+        expect(request.url.path.endsWith('/9007199254740993/review'),isTrue);submitted=jsonDecode(request.body) as Map<String,dynamic>;status='KEPT';return http.Response('{}',201);
+      }
+      return http.Response(jsonEncode({'items':[{'sequence':'9007199254740993','commentId':'comment-id','content':'Fictional reported comment','category':'OTHER','reason':'Fictional report reason','status':status,'removed':false,'reviewNotes':status=='KEPT'?'Independent review notes':null}],'nextBefore':null}),200);
+    }));
+    service.setAuthToken('case-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommentCasesScreen(api:service,postId:'post-id')));await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep comment'));await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Submit review')).onPressed,isNull);
+    await tester.enterText(find.byType(TextField),'Independent review notes');await tester.pump();
+    await tester.tap(find.text('Submit review'));await tester.pumpAndSettle();
+    expect(submitted,{'decision':'KEEP','notes':'Independent review notes'});expect(find.text('KEPT · Independent review notes'),findsOneWidget);
   });
   testWidgets('Mocked community HTTP flow submits session-bound content and reloads reaction state', (tester) async {
     var liked = false;

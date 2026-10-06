@@ -251,8 +251,63 @@ export class CommunityService {
       if(!own&&!canModerate(user,post.branch_id))throw new ForbiddenException('Comment removal requires its author or a current scoped moderator');
       if(comment.deleted_at)return {success:true,unchanged:true};
       await client.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[commentId]);
+      await client.query("UPDATE community_comment_reports SET status='WITHDRAWN',resolved_at=now() WHERE comment_id=$1 AND status='OPEN'",[commentId]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_REMOVED',entityType:'community_comment',entityId:commentId,actorId:user.id,newValue:{postId:id,reason,authority:own?'AUTHOR':'MODERATOR'}},client);
       return {success:true,unchanged:false};
+    });
+  }
+
+  async reportComment(id:string,commentId:string,user:AuthenticatedUser,body:any) {
+    allowedFields(body,['category','reason']);
+    const reason=textField(body.reason,'Report reason',1000,5); uuid(commentId,'comment ID');
+    if(!['ABUSE','PRIVACY','SPAM','OTHER'].includes(body.category))throw new BadRequestException('Invalid report category');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(post.status!=='PUBLISHED')throw new ConflictException('Only published conversations accept reports');
+      if(!(await client.query('SELECT id FROM community_comments WHERE id=$1 AND post_id=$2 AND deleted_at IS NULL',[commentId,id])).rows.length)throw new NotFoundException('Comment not found');
+      const result=await client.query(`INSERT INTO community_comment_reports(comment_id,reporter_user_id,category,reason) VALUES($1,$2,$3,$4)
+        ON CONFLICT(comment_id,reporter_user_id) WHERE status='OPEN' DO NOTHING`,[commentId,user.id,body.category,reason]);
+      if(result.rowCount)await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_REPORTED',entityType:'community_comment',entityId:commentId,actorId:user.id,newValue:{postId:id,category:body.category}},client);
+      return {success:true};
+    });
+  }
+
+  private commentCaseCursor(value:string|undefined) {
+    if(value!==undefined&&(!/^[1-9][0-9]{0,18}$/.test(value)||BigInt(value)>9223372036854775807n))throw new BadRequestException('Invalid case cursor');
+    return value||null;
+  }
+
+  async commentReports(id:string,user:AuthenticatedUser,before?:string) {
+    const cursor=this.commentCaseCursor(before);
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(!canModerate(user,post.branch_id)||post.author_user_id===user.id)throw new ForbiddenException('Independent scoped moderator required');
+      const rows=(await client.query(`SELECT r.sequence::text, r.comment_id AS "commentId", r.category,r.reason,r.status,r.review_notes AS "reviewNotes",r.created_at AS "createdAt",r.resolved_at AS "resolvedAt",c.content,c.deleted_at IS NOT NULL AS removed
+        FROM community_comment_reports r JOIN community_comments c ON c.id=r.comment_id
+        WHERE c.post_id=$1 AND c.author_user_id<>$2 AND r.reporter_user_id<>$2 AND ($3::bigint IS NULL OR r.sequence<$3)
+        ORDER BY r.sequence DESC LIMIT 51`,[id,user.id,cursor])).rows;
+      return {items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].sequence:null};
+    });
+  }
+
+  async reviewCommentReport(id:string,sequence:string,user:AuthenticatedUser,body:any) {
+    this.commentCaseCursor(sequence); allowedFields(body,['decision','notes']);
+    const notes=textField(body.notes,'Review notes',1000,5);
+    if(!['KEEP','REMOVE'].includes(body.decision))throw new BadRequestException('Invalid decision');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      if(!canModerate(user,post.branch_id)||post.author_user_id===user.id)throw new ForbiddenException('Independent scoped moderator required');
+      const row=(await client.query(`SELECT r.*,c.author_user_id,c.deleted_at FROM community_comment_reports r JOIN community_comments c ON c.id=r.comment_id WHERE r.sequence=$1 AND c.post_id=$2 FOR UPDATE OF r,c`,[sequence,id])).rows[0];
+      if(!row)throw new NotFoundException('Case not found');
+      if(row.author_user_id===user.id||row.reporter_user_id===user.id)throw new ForbiddenException('Authors and reporters cannot review their case');
+      if(row.status!=='OPEN'||row.deleted_at)throw new ConflictException('Case changed; reload before reviewing');
+      if(body.decision==='REMOVE'){
+        if((await client.query("SELECT sequence FROM community_comment_reports WHERE comment_id=$1 AND status='OPEN' AND reporter_user_id=$2",[row.comment_id,user.id])).rows.length)throw new ForbiddenException('Removal requires a moderator independent of all open reports');
+        await client.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[row.comment_id]);
+        await client.query("UPDATE community_comment_reports SET status='REMOVED',reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE comment_id=$1 AND status='OPEN'",[row.comment_id,user.id,notes]);
+      }else await client.query("UPDATE community_comment_reports SET status='KEPT',reviewed_by=$2,review_notes=$3,resolved_at=now() WHERE sequence=$1",[sequence,user.id,notes]);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_CASE_REVIEWED',entityType:'community_comment',entityId:row.comment_id,actorId:user.id,newValue:{postId:id,sequence,decision:body.decision,notes}},client);
+      return {success:true};
     });
   }
 
@@ -347,6 +402,7 @@ export class CommunityService {
       const post = await this.visiblePost(id, user, client);
       if (post.author_user_id !== user.id && !canModerate(user,post.branch_id)) throw new ForbiddenException('Only the author or scoped moderator may delete this post');
       await client.query("UPDATE community_post_appeals SET status='WITHDRAWN',resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id]);
+      await client.query("UPDATE community_comment_reports SET status='WITHDRAWN',resolved_at=now() WHERE status='OPEN' AND comment_id IN (SELECT id FROM community_comments WHERE post_id=$1)",[id]);
       await client.query("UPDATE community_escalations SET status='WITHDRAWN',resolved_by=$2,resolved_at=now() WHERE post_id=$1 AND status='OPEN'",[id,user.id]);
       await client.query("UPDATE community_posts SET status='DELETED', deleted_at=now(),version=version+1,updated_at=now() WHERE id=$1", [id]);
       await this.audit.recordAuditIntent({action:'COMMUNITY_POST_DELETED',entityType:'community_post',entityId:id,actorId:user.id},client);

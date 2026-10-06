@@ -1,3 +1,4 @@
+import 'comment_cases_screen.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/services.dart';
@@ -263,6 +264,14 @@ class _CommentsScreenState extends State<_CommentsScreen> {
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
+  Future<void> _report(Map comment) async {
+    final result=await Navigator.push<Map>(context,MaterialPageRoute(builder:(_)=>const CommentReportEditor()));
+    if(!mounted||result==null){return;}
+    setState(()=>_busy=true);
+    try{await widget.api.requestJson('/community/posts/${widget.post['id']}/comments/${comment['id']}/flag',method:'POST',data:result);if(mounted){setState(()=>_error=null);ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Comment report submitted for independent review.')));}}
+    catch(e){if(mounted){setState(()=>_error=e.toString());}}
+    finally{if(mounted){setState(()=>_busy=false);}}
+  }
   Future<void> _remove(Map comment) async {
     final reason = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const _CommentRemovalReasonScreen()));
     if (!mounted || reason == null) return;
@@ -275,7 +284,7 @@ class _CommentsScreenState extends State<_CommentsScreen> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('टिप्पणी (Comments)')),
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('टिप्पणी (Comments)'),actions:[if(widget.post['canViewReports']==true)IconButton(tooltip:'Comment report cases',onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CommentCasesScreen(api:widget.api,postId:widget.post['id'] as String))),icon:const Icon(Icons.fact_check_outlined))]),
     body: ListView(padding: const EdgeInsets.all(16), children: [
       if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
       ..._comments.map((c) => ListTile(
@@ -283,6 +292,7 @@ class _CommentsScreenState extends State<_CommentsScreen> {
         subtitle: c['parentCommentId'] == null ? null : Text('Reply to: ${c['parentContent'] ?? 'Parent comment unavailable'}'),
         trailing: Row(mainAxisSize:MainAxisSize.min, children:[
           TextButton(onPressed: _busy || _loading ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
+          IconButton(tooltip:'Report comment',onPressed:_busy || _loading ? null : () => _report(c as Map),icon:const Icon(Icons.flag_outlined)),
           if(c['canRemove']==true) IconButton(tooltip:'Remove comment',onPressed:_busy || _loading ? null : () => _remove(c as Map),icon:const Icon(Icons.delete_outline)),
         ]),
       )),

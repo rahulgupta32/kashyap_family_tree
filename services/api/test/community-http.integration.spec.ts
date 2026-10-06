@@ -151,6 +151,57 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
   await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(moderator)).send(body).expect(404);
  });
+ it('records categorized comment reports once and permits independent keep/remove review without exposing identities',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Comment report fixture',content:'Fictional report content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const comment=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Fictional reported comment'}).expect(201)).body;
+  const report=`/community/posts/${created.id}/comments/${comment.id}/flag`,cases=`/community/posts/${created.id}/comment-reports`,body={category:'PRIVACY',reason:'Fictional privacy concern'};
+  await request(app.getHttpServer()).post(report).send(body).expect(401);
+  await request(app.getHttpServer()).post(report).set('Authorization',token(outsider)).send(body).expect(403);
+  await request(app.getHttpServer()).post(report).set('Authorization',token(author)).send({...body,category:'UNKNOWN'}).expect(400);
+  await Promise.all([1,2].map(()=>request(app.getHttpServer()).post(report).set('Authorization',token(author)).send(body).expect(201)));
+  expect((await db.query('SELECT sequence FROM community_comment_reports WHERE comment_id=$1',[comment.id])).rows).toHaveLength(1);
+  await request(app.getHttpServer()).get(cases).set('Authorization',token(author)).expect(403);
+  await request(app.getHttpServer()).get(cases).set('Authorization',token(outsider)).expect(403);
+  let page=(await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(200)).body;
+  expect(page.items[0]).toMatchObject({category:'PRIVACY',reason:body.reason,content:comment.content,status:'OPEN'});
+  expect(JSON.stringify(page)).not.toContain(author.id);expect(JSON.stringify(page)).not.toContain(reader.id);
+  let review=`${cases}/${page.items[0].sequence}/review`;
+  await request(app.getHttpServer()).post(review).set('Authorization',token(moderator)).send({decision:'KEEP',notes:'Keep after independent review'}).expect(201);
+  await request(app.getHttpServer()).post(review).set('Authorization',token(moderator)).send({decision:'REMOVE',notes:'Reject stale case decision'}).expect(409);
+  await request(app.getHttpServer()).post(report).set('Authorization',token(author)).send(body).expect(201);
+  page=(await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(200)).body;review=`${cases}/${page.items[0].sequence}/review`;
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected comment case audit failure'));
+  try{await request(app.getHttpServer()).post(review).set('Authorization',token(moderator)).send({decision:'REMOVE',notes:'Audit rollback case decision'}).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT deleted_at FROM community_comments WHERE id=$1',[comment.id])).rows[0].deleted_at).toBeNull();
+  const results=await Promise.all([moderator,secondModerator].map(u=>request(app.getHttpServer()).post(review).set('Authorization',token(u)).send({decision:'REMOVE',notes:'Independent removal of reported comment'})));
+  expect(results.map(r=>r.status).sort()).toEqual([201,409]);
+  expect((await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(200)).body.items.map((c:any)=>c.status)).toEqual(['REMOVED','KEPT']);
+  await request(app.getHttpServer()).post(report).set('Authorization',token(author)).send(body).expect(404);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(404);
+ });
+ it('paginates private comment cases and excludes self-review, reporter-review and withdrawn comments',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Comment case privacy fixture',content:'Fictional case content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const own=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(moderator)).send({content:'Moderator authored comment'}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments/${own.id}/flag`).set('Authorization',token(author)).send({category:'OTHER',reason:'Fictional independent concern'}).expect(201);
+  const sequence=(await db.query('SELECT sequence::text FROM community_comment_reports WHERE comment_id=$1',[own.id])).rows[0].sequence;
+  const cases=`/community/posts/${created.id}/comment-reports`;
+  expect((await request(app.getHttpServer()).get(cases).set('Authorization',token(moderator)).expect(200)).body.items).toHaveLength(0);
+  await request(app.getHttpServer()).post(`${cases}/${sequence}/review`).set('Authorization',token(moderator)).send({decision:'KEEP',notes:'Self review refused'}).expect(403);
+  const other=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Other retained comment'}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments/${other.id}/flag`).set('Authorization',token(moderator)).send({category:'SPAM',reason:'Fictional reporter conflict'}).expect(201);
+  const reported=(await db.query('SELECT sequence::text FROM community_comment_reports WHERE comment_id=$1',[other.id])).rows[0].sequence;
+  await request(app.getHttpServer()).post(`${cases}/${reported}/review`).set('Authorization',token(moderator)).send({decision:'REMOVE',notes:'Reporter review refused'}).expect(403);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}/comments/${other.id}`).set('Authorization',token(reader)).send({reason:'Author withdraws reported comment'}).expect(200);
+  expect((await db.query('SELECT status FROM community_comment_reports WHERE comment_id=$1',[other.id])).rows[0].status).toBe('WITHDRAWN');
+  await db.query("INSERT INTO community_comment_reports(comment_id,reporter_user_id,category,reason,status) SELECT $1,$2,'OTHER','Historical concern '||n,'KEPT' FROM generate_series(1,51)n",[other.id,author.id]);
+  const page=(await request(app.getHttpServer()).get(cases).set('Authorization',token(secondModerator)).expect(200)).body;
+  expect(page.items).toHaveLength(50);const older=(await request(app.getHttpServer()).get(`${cases}?before=${page.nextBefore}`).set('Authorization',token(secondModerator)).expect(200)).body;
+  expect(older.items).toHaveLength(3);expect(older.nextBefore).toBeNull();expect(page.items.map((c:any)=>c.sequence)).not.toContain(older.items[0].sequence);
+  for(const cursor of ['0','abc','9223372036854775808'])await request(app.getHttpServer()).get(`${cases}?before=${cursor}`).set('Authorization',token(secondModerator)).expect(400);
+ });
  it('hides reported content and requires a current-version moderator decision',async()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/flag`).set('Authorization',token(reader)).send({reason:'Fictional policy review request'}).expect(201);
   const queue=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(moderator)).expect(200)).body;
