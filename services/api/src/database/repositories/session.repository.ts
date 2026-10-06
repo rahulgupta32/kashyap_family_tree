@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
+import { Role } from '@kashyap/contracts';
+import { privilegedSessionExpired } from '../../modules/auth/privileged-session.policy';
 
 export interface UserSessionRecord {
   id: string;
@@ -13,6 +15,7 @@ export interface UserSessionRecord {
   expires_at: Date;
   revoked_at: Date | null;
   created_at: Date;
+  authenticated_at: Date | null;
 }
 
 @Injectable()
@@ -112,8 +115,10 @@ export class SessionRepository {
         return { status: 'REUSED', oldSession: session };
       }
 
-      // 3. Expiry check
-      if (new Date() > session.expires_at) {
+      // Current authority and original OTP time survive every refresh successor.
+      const roleResult = await client.query<{ role: Role }>('SELECT role FROM user_roles WHERE user_id = $1', [session.user_id]);
+      // 3. Expiry check (including privileged absolute age).
+      if (new Date() >= session.expires_at || privilegedSessionExpired(roleResult.rows.map(r => r.role), session.authenticated_at)) {
         await client.query(
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1;`,
           [session.id],
@@ -131,9 +136,9 @@ export class SessionRepository {
       const insertRes = await client.query<UserSessionRecord>(
         `INSERT INTO user_sessions (
           user_id, refresh_token_hash, device_platform, device_id, device_name,
-          ip_address, user_agent, expires_at
+          ip_address, user_agent, expires_at, authenticated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *;`,
         [
           session.user_id,
@@ -144,6 +149,7 @@ export class SessionRepository {
           newSessionData.ipAddress !== undefined ? newSessionData.ipAddress : session.ip_address,
           newSessionData.userAgent !== undefined ? newSessionData.userAgent : session.user_agent,
           newSessionData.expiresAt,
+          session.authenticated_at,
         ],
       );
 

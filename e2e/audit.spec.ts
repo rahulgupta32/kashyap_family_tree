@@ -11,7 +11,7 @@ test('Central audit integrity is available in the console and denied to branch r
  expect(response.ok(),await response.text()).toBeTruthy();
  const result=await response.json();expect(result.status).toBe('VERIFIED');expect(result.verifiedRecords).toBeGreaterThan(0);
  expect(result.legacyRecords).toBe(0);expect(result.failure).toBeNull();
- const context=await browser.newContext();
+ const context=await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
  try{
   const reviewer=await context.newPage();await login(reviewer,'9800000002');
   const denied=await reviewer.request.get(`${API}/audit/integrity`,{headers:await headers(reviewer)});expect(denied.status()).toBe(403);

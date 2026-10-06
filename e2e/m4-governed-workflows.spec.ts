@@ -62,8 +62,8 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   test.beforeEach(async ({ page }) => { await loginAdmin(page); });
 
   test('1. Claim submission, evidence download, two distinct reviewers and persisted ownership', async ({ page, browser }) => {
-    const api = await requestFactory.newContext();
-    const tier1Context = await browser.newContext();
+    const api = await requestFactory.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
+    const tier1Context = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
@@ -113,7 +113,7 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   });
 
   test('2. Change approval applies the submitted fields and advances the person version', async ({ page }) => {
-    const api = await requestFactory.newContext();
+    const api = await requestFactory.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
@@ -143,7 +143,7 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   });
 
   test('3. Calendar creation and non-host RSVP persist after reload', async ({ page, browser }) => {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const title = `Fictional gathering ${randomUUID()}`;
       await page.goto('/calendar');
@@ -212,7 +212,7 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   });
 
   test('6. Defined notice audience reaches only the explicitly selected member', async ({ page, browser }) => {
-    const memberContext = await browser.newContext();
+    const memberContext = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const recipient = await memberContext.newPage();
       await loginAdmin(recipient, '9800000002');

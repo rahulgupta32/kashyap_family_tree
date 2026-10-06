@@ -4,7 +4,7 @@ import { API, login, headers } from './helpers/auth';
 
 test('Community publication, likes, comments and reports persist through authenticated browser workflows',async({page,browser})=>{
  test.setTimeout(120000);
- const reviewerContext=await browser.newContext();
+ const reviewerContext=await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
  try {
   await login(page,'9800000002');await page.goto('/community');
   const title=`Fictional community ${randomUUID()}`;

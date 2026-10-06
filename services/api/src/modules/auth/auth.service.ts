@@ -1,3 +1,4 @@
+import { privilegedSessionExpired } from './privileged-session.policy';
 import {
   Injectable,
   BadRequestException,
@@ -636,6 +637,13 @@ export class AuthService {
     // Fetch up-to-date roles from database
     const roleRecords = await this.userRepo.getUserRoles(user.id);
     const roles = roleRecords.map((r) => r.role);
+    if (privilegedSessionExpired(roles, newSession.authenticated_at)) {
+      await this.sessionRepo.revokeSession(newSession.id);
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.SESSION_EXPIRED,
+        message: 'Privileged session requires fresh authentication. Please log in again.',
+      });
+    }
     const branchIds = roleRecords.map((r) => r.branch_id).filter((b): b is string => b !== null);
 
     const payload: JwtPayload = {

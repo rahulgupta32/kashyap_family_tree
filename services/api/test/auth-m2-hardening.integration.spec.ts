@@ -173,6 +173,59 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
     };
   }
 
+  describe('Privileged absolute session age', () => {
+    const me = (token: string) => fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    const refresh = (token: string) => fetch(`${baseUrl}/auth/native/refresh`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: token }),
+    });
+
+    it('preserves original authentication across rotations and expires privileged bearer and refresh sessions', async () => {
+      const user = await loginUser(`+9779851${Math.floor(100000 + Math.random() * 900000)}`);
+      await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      await dbService.query("UPDATE user_sessions SET authenticated_at = CURRENT_TIMESTAMP - INTERVAL '30 minutes' WHERE id = $1", [user.sessionId]);
+      const original = (await sessionRepo.findById(user.sessionId))!.authenticated_at;
+      expect((await me(user.accessToken)).status).toBe(200);
+      const rotated = await refresh(user.refreshToken);
+      expect(rotated.status).toBe(201);
+      const data = await rotated.json() as any;
+      const sid = (jwtService.decode(data.accessToken) as any).sid;
+      expect((await sessionRepo.findById(sid))!.authenticated_at).toEqual(original);
+      expect((await me(user.accessToken)).status).toBe(401);
+      await dbService.query("UPDATE user_sessions SET authenticated_at = CURRENT_TIMESTAMP - INTERVAL '61 minutes' WHERE id = $1", [sid]);
+      const countBefore = await dbService.query('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = $1', [user.userId]);
+      expect((await refresh(data.refreshToken)).status).toBe(401);
+      const countAfter = await dbService.query('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = $1', [user.userId]);
+      expect(countAfter.rows[0].n).toBe(countBefore.rows[0].n);
+      expect((await sessionRepo.findById(sid))!.revoked_at).not.toBeNull();
+      expect((await me(data.accessToken)).status).toBe(401);
+
+      const fresh = await loginUser(`+9779852${Math.floor(100000 + Math.random() * 900000)}`);
+      await userRepo.assignRole(fresh.userId, Role.BRANCH_ADMIN, branchAId);
+      await dbService.query("UPDATE user_sessions SET authenticated_at = CURRENT_TIMESTAMP - INTERVAL '61 minutes' WHERE id = $1", [fresh.sessionId]);
+      expect((await me(fresh.accessToken)).status).toBe(401);
+      expect((await sessionRepo.findById(fresh.sessionId))!.revoked_at).not.toBeNull();
+    });
+
+    it('requires fresh login for unknown legacy age or later elevation while ordinary refresh remains usable', async () => {
+      const phone = `+9779853${Math.floor(100000 + Math.random() * 900000)}`;
+      const member = await loginUser(phone);
+      await dbService.query('UPDATE user_sessions SET authenticated_at = NULL WHERE id = $1', [member.sessionId]);
+      expect((await me(member.accessToken)).status).toBe(200);
+      const rotated = await refresh(member.refreshToken);
+      expect(rotated.status).toBe(201);
+      const data = await rotated.json() as any;
+      const sid = (jwtService.decode(data.accessToken) as any).sid;
+      expect((await sessionRepo.findById(sid))!.authenticated_at).toBeNull();
+      await userRepo.assignRole(member.userId, Role.COMMUNITY_MODERATOR, branchAId);
+      expect((await refresh(data.refreshToken)).status).toBe(401);
+      const fresh = await loginUser(phone);
+      expect((await sessionRepo.findById(fresh.sessionId))!.authenticated_at).not.toBeNull();
+      expect((await me(fresh.accessToken)).status).toBe(200);
+      await dbService.query('UPDATE user_sessions SET authenticated_at = NULL WHERE id = $1', [fresh.sessionId]);
+      expect((await me(fresh.accessToken)).status).toBe(401);
+    });
+  });
+
   // ==========================================================================
   // Item 1: Authenticate logout and bind sessions to their owners
   // ==========================================================================

@@ -4,7 +4,7 @@ import { API, login, headers } from './helpers/auth';
 
 test('Branch messaging authenticates both browsers and persists messages, separate delivery/read receipts and deletion',async({page,browser})=>{
  test.setTimeout(120000);
- const otherContext=await browser.newContext();
+ const otherContext=await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
  try{
   await login(page,'9800000002');await page.goto('/chat');
   const branches=await page.request.get(`${API}/genealogy/branches`);expect(branches.ok()).toBeTruthy();

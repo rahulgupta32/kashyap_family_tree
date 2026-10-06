@@ -5,6 +5,7 @@ import { UserRepository } from '../../../database/repositories/user.repository';
 import { SessionRepository } from '../../../database/repositories/session.repository';
 import { ErrorCode, Role } from '@kashyap/contracts';
 import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../auth.constants';
+import { privilegedSessionExpired } from '../privileged-session.policy';
 import { UserRoleAssignment } from '../decorators/current-user.decorator';
 
 export interface JwtPayload {
@@ -101,6 +102,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     // An empty role result must NEVER fall back to old JWT claims!
     const roleRecords = await this.userRepo.getUserRoles(user.id);
     const roles: Role[] = roleRecords.map((r) => r.role);
+    if (privilegedSessionExpired(roles, session.authenticated_at)) {
+      await this.sessionRepo.revokeSession(session.id);
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.SESSION_EXPIRED,
+        message: 'Privileged session requires fresh authentication. Please log in again.',
+      });
+    }
     const branchIds = roleRecords.map((r) => r.branch_id).filter((b): b is string => b !== null);
     const roleAssignments: UserRoleAssignment[] = roleRecords.map((r) => ({
       role: r.role,

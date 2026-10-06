@@ -12,7 +12,7 @@ test('private group creation, admin promotion, settings, removal and transfer pe
  expect(database).toMatch(/^kashyap_(test|iso)_[a-z0-9_]+$/);
  const db=new Client({host:process.env.DB_HOST||'127.0.0.1',port:Number(process.env.DB_PORT||5434),user:process.env.DB_USER||'kashyap_user',password:process.env.DB_PASSWORD,database});
  await db.connect();expect((await db.query('SELECT current_database() AS name')).rows[0].name).toBe(database);
- const otherContext=await browser.newContext();
+ const otherContext=await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
  try{
   async function fixture(suffix:string){
    const phone=`984${randomInt(1000000,9999999)}`;

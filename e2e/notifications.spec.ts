@@ -12,7 +12,7 @@ test('Notification preferences persist across browser reload and inbox remains s
     await page.reload();await expect(toggle).toHaveJSProperty('checked',!initial);
     const own=await page.request.get(`${API}/notifications`,{headers:await headers(page)});
     expect(own.ok()).toBeTruthy();expect((await own.json()).items).toBeInstanceOf(Array);
-    const anonymous=await browser.newContext();
+    const anonymous=await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try{
       const denied=await anonymous.request.get(`${API}/notifications`);expect(denied.status()).toBe(401);
     }finally{await anonymous.close();}

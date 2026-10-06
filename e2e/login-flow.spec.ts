@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as requestFactory } from '@playwright/test';
 import { ErrorCode } from '@kashyap/contracts';
 
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
@@ -284,3 +284,21 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
   });
 });
 
+
+// Independent request contexts deliberately do not inherit trusted fixture headers.
+test('Cookie mutations reject absent and opaque origins before refresh processing', async () => {
+  const api = await requestFactory.newContext();
+  try {
+    for (const origin of [undefined, 'null', 'https://attacker.example']) {
+      const response = await api.post(`${API_BASE}/auth/refresh`, {
+        headers: { Cookie: 'refreshToken=invalid', ...(origin ? { Origin: origin } : {}) }, data: {},
+      });
+      expect(response.status()).toBe(403);
+      expect((await response.json()).errorCode).toBe('AUTH_1010');
+    }
+    const trusted = await api.post(`${API_BASE}/auth/refresh`, {
+      headers: { Cookie: 'refreshToken=invalid', Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` }, data: {},
+    });
+    expect(trusted.status()).toBe(401);
+  } finally { await api.dispose(); }
+});
