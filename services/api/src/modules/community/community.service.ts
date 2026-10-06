@@ -210,7 +210,7 @@ export class CommunityService {
   async browseComments(id: string, user: AuthenticatedUser, before?: string) {
     const cursor = before === undefined ? null : uuid(before, 'comment cursor');
     return this.db.transaction(async client => {
-      await this.visiblePost(id, user, client);
+      const post = await this.visiblePost(id, user, client);
       if (cursor && !(await client.query('SELECT id FROM community_comments WHERE id=$1 AND post_id=$2', [cursor,id])).rows.length) {
         throw new BadRequestException('Comment cursor does not belong to this post');
       }
@@ -221,7 +221,7 @@ export class CommunityService {
         WHERE c.post_id=$1 AND c.deleted_at IS NULL AND ($2::uuid IS NULL OR
           (c.created_at,c.id) < (SELECT boundary.created_at,boundary.id FROM community_comments boundary WHERE boundary.id=$2 AND boundary.post_id=$1))
         ORDER BY c.created_at DESC,c.id DESC LIMIT 51`,[id,cursor])).rows;
-      return {items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].id:null};
+      return {items:rows.slice(0,50).map(c=>({...c,canRemove:c.authorUserId===user.id||canModerate(user,post.branch_id)})),nextBefore:rows.length>50?rows[49].id:null};
     });
   }
 
@@ -236,6 +236,23 @@ export class CommunityService {
       const row = (await client.query('INSERT INTO community_comments(post_id,author_user_id,parent_comment_id,content) VALUES($1,$2,$3,$4) RETURNING id', [id, user.id, parent, content])).rows[0];
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_COMMENT_CREATED', entityType: 'community_comment', entityId: row.id, actorId: user.id, newValue: { postId: id } }, client);
       return { ...row, postId: id, authorUserId: user.id, content };
+    });
+  }
+
+  async removeComment(id:string, commentId:string, user:AuthenticatedUser, body:any) {
+    allowedFields(body,['reason']);
+    const reason=textField(body.reason,'Removal reason',1000,5);
+    uuid(commentId,'comment ID');
+    return this.db.transaction(async client=>{
+      const post=await this.visiblePost(id,user,client);
+      const comment=(await client.query('SELECT * FROM community_comments WHERE id=$1 AND post_id=$2 FOR UPDATE',[commentId,id])).rows[0];
+      if(!comment)throw new NotFoundException('Comment not found');
+      const own=comment.author_user_id===user.id;
+      if(!own&&!canModerate(user,post.branch_id))throw new ForbiddenException('Comment removal requires its author or a current scoped moderator');
+      if(comment.deleted_at)return {success:true,unchanged:true};
+      await client.query('UPDATE community_comments SET deleted_at=now() WHERE id=$1',[commentId]);
+      await this.audit.recordAuditIntent({action:'COMMUNITY_COMMENT_REMOVED',entityType:'community_comment',entityId:commentId,actorId:user.id,newValue:{postId:id,reason,authority:own?'AUTHOR':'MODERATOR'}},client);
+      return {success:true,unchanged:false};
     });
   }
 

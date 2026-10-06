@@ -67,6 +67,30 @@ void main() {
     await tester.tap(find.text('Latest comments')); await tester.pumpAndSettle();
     expect(requests.last,''); expect(find.text('Older parent'),findsNothing);
   });
+  testWidgets('Comment removal requires a reason and reloads retained child with unavailable parent', (tester) async {
+    tester.view.physicalSize = const Size(1200,1800); tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+    var removed=false; Map<String,dynamic>? submitted;
+    final service=GenealogyApiService(sessionStore:MemorySessionStore(),client:MockClient((request) async {
+      if(request.method=='DELETE') {expect(request.url.path.endsWith('/comments/parent-id'),isTrue); submitted=jsonDecode(request.body) as Map<String,dynamic>;removed=true;return http.Response('{}',200);}
+      if(request.url.path.endsWith('/comments/browse'))return http.Response(jsonEncode({'items':[
+        if(!removed){'id':'parent-id','content':'Fictional removal parent','canRemove':true},
+        {'id':'child-id','content':'Fictional child remains','parentCommentId':'parent-id','parentContent':removed?null:'Fictional removal parent','canRemove':false},
+      ],'nextBefore':null}),200);
+      return http.Response(jsonEncode([{'id':'post-id','title':'Removal fixture','content':'Fictional body','moderationStatus':'PUBLISHED','isLiked':false,'likesCount':0,'commentsCount':removed?1:2,'canModerate':false,'canDelete':false}]),200);
+    }));
+    service.setAuthToken('removal-session');addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CommunityScreen(apiService:service)));await tester.pumpAndSettle();
+    await tester.tap(find.text('टिप्पणी (2)'));await tester.pumpAndSettle();
+    expect(find.byTooltip('Remove comment'),findsOneWidget);
+    await tester.tap(find.byTooltip('Remove comment'));await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Confirm comment removal')).onPressed,isNull);
+    await tester.enterText(find.byType(TextField),'Remove incorrect fictional comment');await tester.pump();
+    await tester.tap(find.text('Confirm comment removal'));await tester.pumpAndSettle();
+    expect(submitted,{'reason':'Remove incorrect fictional comment'});
+    expect(find.text('Fictional removal parent'),findsNothing);expect(find.text('Fictional child remains'),findsOneWidget);
+    expect(find.text('Reply to: Parent comment unavailable'),findsOneWidget);
+  });
   testWidgets('Mocked community HTTP flow submits session-bound content and reloads reaction state', (tester) async {
     var liked = false;
     Map<String, dynamic>? submitted;

@@ -263,6 +263,17 @@ class _CommentsScreenState extends State<_CommentsScreen> {
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
+  Future<void> _remove(Map comment) async {
+    final reason = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const _CommentRemovalReasonScreen()));
+    if (!mounted || reason == null) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.requestJson('/community/posts/${widget.post['id']}/comments/${comment['id']}',method:'DELETE',data:{'reason':reason});
+      if (!mounted) return;
+      setState(() => _replyTo = null); await _load();
+    } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
+    finally { if (mounted) { setState(() => _busy = false); } }
+  }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('टिप्पणी (Comments)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
@@ -270,7 +281,10 @@ class _CommentsScreenState extends State<_CommentsScreen> {
       ..._comments.map((c) => ListTile(
         title: Text(c['content'] as String),
         subtitle: c['parentCommentId'] == null ? null : Text('Reply to: ${c['parentContent'] ?? 'Parent comment unavailable'}'),
-        trailing: TextButton(onPressed: _busy || _loading ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
+        trailing: Row(mainAxisSize:MainAxisSize.min, children:[
+          TextButton(onPressed: _busy || _loading ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
+          if(c['canRemove']==true) IconButton(tooltip:'Remove comment',onPressed:_busy || _loading ? null : () => _remove(c as Map),icon:const Icon(Icons.delete_outline)),
+        ]),
       )),
       Text('Newest comments first · ${_comments.length} loaded'),
       TextButton(onPressed: _busy || _loading || _before == null ? null : () => _load(older:true), child: const Text('Older comments')),
@@ -283,6 +297,23 @@ class _CommentsScreenState extends State<_CommentsScreen> {
       TextField(controller: _text, maxLength: 2000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Your comment')),
       FilledButton(onPressed: _busy || _loading || _text.text.trim().isEmpty ? null : _send, child: const Text('पठाउनुहोस् (Send comment)')),
     ]));
+}
+
+class _CommentRemovalReasonScreen extends StatefulWidget {
+  const _CommentRemovalReasonScreen();
+  @override
+  State<_CommentRemovalReasonScreen> createState() => _CommentRemovalReasonScreenState();
+}
+class _CommentRemovalReasonScreenState extends State<_CommentRemovalReasonScreen> {
+  final _reason = TextEditingController();
+  @override
+  void dispose() { _reason.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar:AppBar(title:const Text('Remove comment')),body:ListView(padding:const EdgeInsets.all(16),children:[
+    const Text('Remove this comment from the conversation. Replies remain; the original is retained for governed records.'),
+    TextField(controller:_reason,maxLength:1000,onChanged:(_)=>setState(() {}),decoration:const InputDecoration(labelText:'Comment removal reason')),
+    FilledButton(onPressed:_reason.text.trim().length<5 ? null : () => Navigator.pop(context,_reason.text.trim()),child:const Text('Confirm comment removal')),
+  ]));
 }
 
 class _RevisionScreen extends StatefulWidget {

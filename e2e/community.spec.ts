@@ -91,6 +91,13 @@ test('Community publication, likes, comments and reports persist through authent
   await expect(authorCard).toContainText('50 loaded');
   await authorCard.getByRole('button',{name:'Older comments',exact:true}).click();
   await expect(authorCard).toContainText('53 loaded');
+  page.once('dialog',dialog=>dialog.accept('Remove the original fictional parent'));
+  await authorCard.getByRole('button',{name:'Remove comment: Persist this fictional reply.',exact:true}).click();
+  await expect(page.getByRole('status')).toContainText('Comment removed.');
+  await authorCard.getByRole('button',{name:'Older comments',exact:true}).click();
+  await expect(authorCard).toContainText('52 loaded');
+  await expect(authorCard.getByText('Reply to: Parent comment unavailable',{exact:true})).toBeVisible();
+
   await expect(authorCard.getByText('A fictional nested reply.',{exact:true})).toBeVisible();
   await expect(authorCard.getByRole('button',{name:'Older comments',exact:true})).toBeDisabled();
   await authorCard.getByRole('button',{name:'Latest comments',exact:true}).click();

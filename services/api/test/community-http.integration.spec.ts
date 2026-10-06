@@ -109,6 +109,48 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
   await request(app.getHttpServer()).get(endpoint).set('Authorization',token(moderator)).expect(404);
  });
+ it('removes comments only for their author or current scoped moderators while retaining replies and source',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Comment removal fixture',content:'Fictional removal content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const parent=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Retained fictional parent'}).expect(201)).body;
+  const child=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(author)).send({content:'Retained fictional child',parentCommentId:parent.id}).expect(201)).body;
+  const endpoint=`/community/posts/${created.id}/comments/${parent.id}`,body={reason:'Remove own fictional comment'};
+  const browse=async(u:any)=>(await request(app.getHttpServer()).get(`/community/posts/${created.id}/comments/browse`).set('Authorization',token(u)).expect(200)).body;
+  expect((await browse(author)).items.find((c:any)=>c.id===parent.id).canRemove).toBe(false);
+  expect((await browse(reader)).items.find((c:any)=>c.id===parent.id).canRemove).toBe(true);
+  expect((await browse(moderator)).items.every((c:any)=>c.canRemove)).toBe(true);
+  await request(app.getHttpServer()).delete(endpoint).send(body).expect(401);
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(author)).send(body).expect(403);
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(outsider)).send(body).expect(403);
+  for(const invalid of [{reason:'bad'},{...body,authorUserId:reader.id},{}])await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(reader)).send(invalid).expect(400);
+  const removed=await Promise.all([1,2].map(()=>request(app.getHttpServer()).delete(endpoint).set('Authorization',token(reader)).send(body).expect(200)));
+  expect(removed.map(r=>r.body.unchanged).sort()).toEqual([false,true]);
+  const page=await browse(author);expect(page.items).toHaveLength(1);expect(page.items[0]).toMatchObject({id:child.id,parentContent:null,parentCommentId:parent.id});
+  expect((await db.query('SELECT content,deleted_at FROM community_comments WHERE id=$1',[parent.id])).rows[0]).toMatchObject({content:'Retained fictional parent',deleted_at:expect.any(Date)});
+  expect((await request(app.getHttpServer()).get(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).expect(200)).body).toHaveLength(1);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(author)).send({content:'Reply to removed parent refused',parentCommentId:parent.id}).expect(400);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}/comments/${child.id}`).set('Authorization',token(moderator)).send({reason:'Scoped moderator removal reason'}).expect(200);
+  const auditRows=(await db.query("SELECT new_value FROM audit_outbox WHERE action='COMMUNITY_COMMENT_REMOVED' AND entity_id=ANY($1::uuid[])",[[parent.id,child.id]])).rows;
+  expect(auditRows).toHaveLength(2);expect(auditRows.map((r:any)=>r.new_value.authority).sort()).toEqual(['AUTHOR','MODERATOR']);
+  expect(JSON.stringify(auditRows)).not.toContain('Retained fictional parent');
+  expect((await db.query('SELECT version FROM community_posts WHERE id=$1',[created.id])).rows[0].version).toBe(created.version);
+ });
+ it('rolls comment removal back with audit failure and rejects foreign IDs or newly lost authority',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Comment removal rollback',content:'Fictional rollback content',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  await db.query("UPDATE community_posts SET status='PUBLISHED' WHERE id=$1",[created.id]);
+  const comment=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/comments`).set('Authorization',token(reader)).send({content:'Rollback retained source'}).expect(201)).body;
+  const endpoint=`/community/posts/${created.id}/comments/${comment.id}`,body={reason:'Audit rollback removal fixture'};
+  const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Injected comment audit failure'));
+  try{await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(moderator)).send(body).expect(500);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT deleted_at FROM community_comments WHERE id=$1',[comment.id])).rows[0].deleted_at).toBeNull();
+  await request(app.getHttpServer()).delete(`/community/posts/${post.id}/comments/${comment.id}`).set('Authorization',token(moderator)).send(body).expect(404);
+  await db.query("DELETE FROM user_roles WHERE user_id=$1 AND role='BRANCH_ADMIN'",[secondModerator.id]);
+  try{await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(secondModerator)).send(body).expect(403);}finally{await db.query("INSERT INTO user_roles(user_id,role,branch_id) VALUES($1,'BRANCH_ADMIN',$2)",[secondModerator.id,branch]);}
+  await db.query("UPDATE community_posts SET status='PENDING' WHERE id=$1",[created.id]);
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(reader)).send(body).expect(404);
+  await request(app.getHttpServer()).delete(`/community/posts/${created.id}`).set('Authorization',token(author)).expect(200);
+  await request(app.getHttpServer()).delete(endpoint).set('Authorization',token(moderator)).send(body).expect(404);
+ });
  it('hides reported content and requires a current-version moderator decision',async()=>{
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/flag`).set('Authorization',token(reader)).send({reason:'Fictional policy review request'}).expect(201);
   const queue=(await request(app.getHttpServer()).get('/community/posts?queue=true').set('Authorization',token(moderator)).expect(200)).body;

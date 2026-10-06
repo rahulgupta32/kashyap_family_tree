@@ -43,6 +43,8 @@ export class CommunityController {
   comments(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser) { return this.service.comments(id,user); }
   @Post('posts/:id/comments')
   comment(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.addComment(id,user,body); }
+  @Delete('posts/:id/comments/:commentId')
+  removeComment(@Param('id') id:string,@Param('commentId') commentId:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) { return this.service.removeComment(id,commentId,user,body); }
   @Post('posts/:id/flag')
   report(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:any) {
     allowedFields(body,['reason']);return this.service.report(id,user,body.reason);
