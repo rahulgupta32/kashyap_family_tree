@@ -243,7 +243,7 @@ export class CommunityService {
       const reports=(await client.query(`SELECT evidence_sequence::text AS sequence,reason,status,reported_version AS "reportedVersion",review_notes AS "reviewNotes",created_at AS "createdAt",resolved_at AS "resolvedAt"
         FROM community_reports WHERE post_id=$1 AND ($2::bigint IS NULL OR evidence_sequence<$2) ORDER BY evidence_sequence DESC LIMIT 51`,[id,before||null])).rows;
       const escalations=(await client.query(`SELECT sequence::text,submitted_version AS "submittedVersion",reason,status,created_at AS "createdAt",resolved_at AS "resolvedAt"
-        FROM community_escalations WHERE post_id=$1 AND ($2::bigint IS NULL OR sequence<$2) ORDER BY sequence DESC LIMIT 51`,[id,beforeEscalation||null])).rows;
+        FROM community_escalations WHERE post_id=$1 AND ($2::bigint IS NULL OR sequence<$2) ORDER BY community_escalations.sequence DESC LIMIT 51`,[id,beforeEscalation||null])).rows;
       const page=(rows:any[])=>({items:rows.slice(0,50),nextBefore:rows.length>50?rows[49].sequence:null});
       return {version:post.version,reports:page(reports),escalations:page(escalations)};
     });
