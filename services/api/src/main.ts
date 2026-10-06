@@ -35,6 +35,9 @@ async function bootstrap() {
     return false;
   };
 
+  // Reject cookie mutations before CORS can turn an untrusted origin into a generic error.
+  app.use(cookieOriginMiddleware(isOriginAllowed));
+
   app.enableCors({
     origin: (origin, callback) => {
       if (isOriginAllowed(origin)) {
@@ -45,9 +48,6 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
-
-  // CSRF Defense-in-depth: For cookie-authenticated mutating requests, validate Origin header against allowlist
-  app.use(cookieOriginMiddleware(isOriginAllowed));
 
   app.useGlobalPipes(
     new ValidationPipe({
