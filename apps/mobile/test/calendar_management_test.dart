@@ -78,7 +78,7 @@ void main() {
     await tester.tap(find.text('कार्यसूची (Agenda for month)').last);await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Show calendar period'));await tester.tap(find.text('Show calendar period'));await tester.pumpAndSettle();
     expect(queries.last['view'],'AGENDA');
-    await tester.ensureVisible(find.text('More period events'));await tester.tap(find.text('More period events'));await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('More period events'),250,scrollable:find.byType(Scrollable).last);await tester.tap(find.text('More period events'));await tester.pumpAndSettle();
     expect(queries.last['before'],'2026-10-06|9007199254740993');
   });
 
