@@ -18,7 +18,7 @@ test('private group creation, admin promotion, settings, removal and transfer pe
    const phone=`984${randomInt(1000000,9999999)}`;
    const challenge=await page.request.post(`${API}/auth/otp/request`,{data:{phoneNumber:phone}});expect(challenge.ok()).toBeTruthy();
    const otp=await (await page.request.get(`${API}/auth/test-otp`,{params:{phoneNumber:phone}})).json();
-   const session=await page.request.post(`${API}/auth/native/verify`,{data:{otpSessionId:(await challenge.json()).otpSessionId,code:otp.otp,deviceInfo:{deviceId:randomUUID(),platform:'android',appVersion:'group-acceptance'}}});expect(session.ok()).toBeTruthy();
+   const session=await page.request.post(`${API}/auth/native/verify`,{headers:{Origin:'',Cookie:''},data:{otpSessionId:(await challenge.json()).otpSessionId,code:otp.otp,deviceInfo:{deviceId:randomUUID(),platform:'android',appVersion:'group-acceptance'}}});expect(session.ok()).toBeTruthy();
    const member=await session.json();
    const role=await page.request.post(`${API}/auth/roles/assign`,{headers:adminHeaders,data:{userId:member.user.id,role:'BRANCH_ADMIN',branchId:branch.id}});expect(role.ok()).toBeTruthy();
    const response=await page.request.post(`${API}/genealogy/people`,{headers:adminHeaders,data:{

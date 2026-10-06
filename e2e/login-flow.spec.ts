@@ -291,7 +291,7 @@ test('Cookie mutations reject absent and opaque origins before refresh processin
   try {
     for (const origin of [undefined, 'null', 'https://attacker.example']) {
       const response = await api.post(`${API_BASE}/auth/refresh`, {
-        headers: { Cookie: 'refreshToken=invalid', ...(origin ? { Origin: origin } : {}) }, data: {},
+        headers: { Cookie: 'refreshToken=invalid', Origin: origin || '' }, data: {},
       });
       expect(response.status()).toBe(403);
       expect((await response.json()).errorCode).toBe('AUTH_1010');

@@ -35,6 +35,7 @@ async function memberSession(api: APIRequestContext) {
   const challenge = await checkedJson(await api.post(`${API_BASE}/auth/otp/request`, { data: { phoneNumber } }));
   const { otp } = await checkedJson(await api.get(`${API_BASE}/auth/test-otp`, { params: { phoneNumber } }));
   const session = await checkedJson(await api.post(`${API_BASE}/auth/native/verify`, {
+    headers: { Origin: '', Cookie: '' },
     data: { otpSessionId: challenge.otpSessionId, code: otp,
       deviceInfo: { deviceId: randomUUID(), platform: 'android', appVersion: 'acceptance' } },
   }));
