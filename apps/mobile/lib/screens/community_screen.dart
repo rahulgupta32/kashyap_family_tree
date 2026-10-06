@@ -233,6 +233,7 @@ class _CommentsScreenState extends State<_CommentsScreen> {
   final _text = TextEditingController();
   List<dynamic> _comments = [];
   String? _error;
+  Map? _replyTo;
   bool _busy = false;
   @override
   void initState() { super.initState(); _load(); }
@@ -246,16 +247,31 @@ class _CommentsScreenState extends State<_CommentsScreen> {
   Future<void> _send() async {
     setState(() => _busy = true);
     try {
-      await widget.api.requestJson('/community/posts/${widget.post['id']}/comments', method: 'POST', data: {'content': _text.text.trim()});
-      _text.clear(); await _load();
+      await widget.api.requestJson('/community/posts/${widget.post['id']}/comments', method: 'POST', data: {'content': _text.text.trim(), if (_replyTo != null) 'parentCommentId': _replyTo!['id']});
+      if (!mounted) return;
+      _text.clear(); setState(() => _replyTo = null); await _load();
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _busy = false); } }
+  }
+  String _parentContent(dynamic id) {
+    for (final c in _comments) {
+      if (c['id'] == id) return c['content'] as String;
+    }
+    return 'Parent comment unavailable in this page';
   }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('टिप्पणी (Comments)')),
     body: ListView(padding: const EdgeInsets.all(16), children: [
       if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-      ..._comments.map((c) => ListTile(title: Text(c['content'] as String))),
+      ..._comments.map((c) => ListTile(
+        title: Text(c['content'] as String),
+        subtitle: c['parentCommentId'] == null ? null : Text('Reply to: ${_parentContent(c['parentCommentId'])}'),
+        trailing: TextButton(onPressed: _busy ? null : () => setState(() => _replyTo = c as Map), child: const Text('जवाफ (Reply)')),
+      )),
+      if (_replyTo != null) ...[
+        Text('Replying to: ${_replyTo!['content']}'),
+        TextButton(onPressed: _busy ? null : () => setState(() => _replyTo = null), child: const Text('Cancel reply')),
+      ],
       TextField(controller: _text, maxLength: 2000, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Your comment')),
       FilledButton(onPressed: _busy || _text.text.trim().isEmpty ? null : _send, child: const Text('पठाउनुहोस् (Send comment)')),
     ]));

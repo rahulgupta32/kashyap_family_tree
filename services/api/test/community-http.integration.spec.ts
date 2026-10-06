@@ -75,6 +75,10 @@ describe('Community persistent HTTP workflows and isolation',()=>{
  it('persists comments with authenticated author and rejects invalid reply targets',async()=>{
   const comment=(await request(app.getHttpServer()).post(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).send({content:'Fictional participant reply'}).expect(201)).body;
   expect(comment.authorUserId).toBe(reader.id);
+  const reply=(await request(app.getHttpServer()).post(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).send({content:'Fictional nested reply',parentCommentId:comment.id}).expect(201)).body;
+  const rows=(await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(author)).expect(200)).body;
+  expect(rows.find((c:any)=>c.id===reply.id).parentCommentId).toBe(comment.id);
+
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).send({content:'Forged sender',authorUserId:author.id}).expect(400);
   await request(app.getHttpServer()).post(`/community/posts/${post.id}/comments`).set('Authorization',token(reader)).send({content:'Invalid parent',parentCommentId:randomUUID()}).expect(400);
   expect((await request(app.getHttpServer()).get(`/community/posts/${post.id}/comments`).set('Authorization',token(author)).expect(200)).body[0].id).toBe(comment.id);

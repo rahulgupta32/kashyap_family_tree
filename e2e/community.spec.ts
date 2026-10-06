@@ -76,9 +76,16 @@ test('Community publication, likes, comments and reports persist through authent
   await authorCard.getByLabel(/Your comment/).fill('Persist this fictional reply.');
   await authorCard.getByRole('button',{name:/Send comment/}).click();
   await expect(authorCard.getByText('Persist this fictional reply.',{exact:true})).toBeVisible();
+  await authorCard.getByRole('button',{name:'Reply to comment: Persist this fictional reply.',exact:true}).click();
+  await expect(authorCard.getByText('Replying to: Persist this fictional reply.',{exact:true})).toBeVisible();
+  await authorCard.getByLabel(/Your comment/).fill('A fictional nested reply.');
+  await authorCard.getByRole('button',{name:/Send comment/}).click();
+  await expect(authorCard.getByText('A fictional nested reply.',{exact:true})).toBeVisible();
+  await expect(authorCard.getByText('Reply to: Persist this fictional reply.',{exact:true})).toBeVisible();
+
   await page.reload();await expect(authorCard.getByRole('button',{name:/Like/})).toHaveAttribute('aria-pressed','true');
   const posts=await page.request.get(`${API}/community/posts`,{headers:await headers(page)});expect(posts.ok()).toBeTruthy();
-  const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.category).toBe('ASSISTANCE');expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(1);
+  const post=(await posts.json()).find((p:any)=>p.title===title);expect(post.category).toBe('ASSISTANCE');expect(post.likesCount).toBe(1);expect(post.commentsCount).toBe(2);
   await reviewer.getByRole('button',{name:/Feed/}).click();
   await reviewCard.getByRole('button',{name:'रिपोर्ट (Report)',exact:true}).click();
   await reviewer.getByRole('dialog').getByLabel(/Reason \/ notes/).fill('Fictional report for a second moderation review.');

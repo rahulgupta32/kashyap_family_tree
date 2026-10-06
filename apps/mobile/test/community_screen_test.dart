@@ -9,6 +9,37 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show MemorySessionStore;
 
 void main() {
+  testWidgets('Replies carry the selected parent and cancellation restores a top-level comment', (tester) async {
+    Map<String,dynamic>? submitted;
+    final rows = <Map<String,dynamic>>[{'id':'parent-id','content':'Fictional parent'}];
+    final service = GenealogyApiService(sessionStore: MemorySessionStore(), client: MockClient((request) async {
+      if (request.url.path.endsWith('/comments')) {
+        if (request.method == 'POST') {
+          submitted = jsonDecode(request.body) as Map<String,dynamic>;
+          rows.add({'id':'reply-id',...submitted!});
+          return http.Response('{}',201);
+        }
+        return http.Response(jsonEncode(rows),200);
+      }
+      return http.Response(jsonEncode([{'id':'post-id','title':'Fictional discussion','content':'Fictional body',
+        'moderationStatus':'PUBLISHED','isLiked':false,'likesCount':0,'commentsCount':1,'canModerate':false,'canDelete':false}]),200);
+    }));
+    service.setAuthToken('reply-session'); addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: CommunityScreen(apiService:service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('टिप्पणी (1)')); await tester.pumpAndSettle();
+    await tester.tap(find.text('जवाफ (Reply)')); await tester.pumpAndSettle();
+    expect(find.text('Replying to: Fictional parent'),findsOneWidget);
+    await tester.enterText(find.byType(TextField),'Fictional child'); await tester.pump();
+    await tester.tap(find.text('पठाउनुहोस् (Send comment)')); await tester.pumpAndSettle();
+    expect(submitted,{'content':'Fictional child','parentCommentId':'parent-id'});
+    expect(find.text('Reply to: Fictional parent'),findsOneWidget);
+    await tester.tap(find.text('जवाफ (Reply)').first); await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel reply')); await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'Top-level comment'); await tester.pump();
+    await tester.tap(find.text('पठाउनुहोस् (Send comment)')); await tester.pumpAndSettle();
+    expect(submitted,{'content':'Top-level comment'});
+  });
   testWidgets('Mocked community HTTP flow submits session-bound content and reloads reaction state', (tester) async {
     var liked = false;
     Map<String, dynamic>? submitted;
