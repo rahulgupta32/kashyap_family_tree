@@ -20,10 +20,9 @@ test('Authenticator setup, one-time recovery display and new-session enforcement
     const verified = await api.post(`${API}/auth/native/verify`, { headers: { Origin: '', Cookie: '' }, data: { otpSessionId: challenge.otpSessionId, code: otp, deviceInfo: { platform: 'android', deviceId: phoneNumber, appVersion: 'authenticator-fixture' } } });
     expect(verified.ok()).toBeTruthy(); const subject = await verified.json();
     const assigned = await page.request.post(`${API}/auth/roles/assign`, { headers: adminHeaders, data: { userId: subject.user.id, role: 'SUPER_ADMIN' } }); expect(assigned.ok()).toBeTruthy();
-    subject.user.roles = ['SUPER_ADMIN'];
     const view = await subjectContext.newPage();
-    await view.goto(`http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}/login`);
-    await view.evaluate(session => { localStorage.setItem('kashyap_admin_access_token', session.accessToken); localStorage.setItem('kashyap_admin_user', JSON.stringify(session.user)); }, subject);
+    await login(view, phoneNumber.slice(4));
+    await expect(view.getByText('ड्यासवोर्ड सारांश (Executive Dashboard)', { exact: true })).toBeVisible();
     await view.goto(`http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}/mfa?setup=1`);
     await expect(view.getByRole('button', { name: 'Set up authenticator', exact: true })).toBeVisible();
     const enrollment = view.waitForResponse(response => response.url() === `${API}/auth/mfa/enroll` && response.request().method() === 'POST');
