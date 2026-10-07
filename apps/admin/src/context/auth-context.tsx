@@ -30,6 +30,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  useEffect(() => {
+    if (!accessToken) return;
+    const controller = new AbortController();
+    const api = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+    fetch(`${api}/auth/mfa/status`, { headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(status => { if (!controller.signal.aborted && status?.required && !status.verified && window.location.pathname !== '/mfa') window.location.href = '/mfa'; })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [accessToken]);
+
   // In-flight refresh promise ref to coordinate concurrent refresh attempts within the same tab
   const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);

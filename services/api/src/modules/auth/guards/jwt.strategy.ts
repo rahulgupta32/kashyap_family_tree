@@ -1,3 +1,4 @@
+import { MfaService } from '../mfa.service';
 import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -26,8 +27,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private readonly userRepo: UserRepository,
     private readonly sessionRepo: SessionRepository,
+    private readonly mfa: MfaService,
   ) {
     super({
+      passReqToCallback: true,
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: getJwtSecret(),
@@ -37,7 +40,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(requestOrPayload: any, suppliedPayload?: JwtPayload) {
+    const payload: JwtPayload = suppliedPayload || requestOrPayload;
+    const request = suppliedPayload ? requestOrPayload : undefined;
     if (!payload.sub) {
       throw new UnauthorizedException({
         errorCode: ErrorCode.UNAUTHORIZED,
@@ -109,6 +114,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         message: 'Privileged session requires fresh authentication. Please log in again.',
       });
     }
+    await this.mfa.enforce(user.id, session, roles, request?.method, request?.originalUrl || request?.url);
     const branchIds = roleRecords.map((r) => r.branch_id).filter((b): b is string => b !== null);
     const roleAssignments: UserRoleAssignment[] = roleRecords.map((r) => ({
       role: r.role,

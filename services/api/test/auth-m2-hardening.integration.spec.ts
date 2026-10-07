@@ -1,3 +1,4 @@
+import { decryptSecret, totp } from '../src/modules/auth/mfa.crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
@@ -172,6 +173,89 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       sessionId: decoded?.sid || '',
     };
   }
+
+  describe('Authenticator session enforcement', () => {
+    const call = (token: string, path: string, body?: any) => fetch(`${baseUrl}${path}`, {
+      method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    async function pendingSecret(userId: string) {
+      const row = (await dbService.query('SELECT pending_ciphertext FROM account_authenticators WHERE user_id=$1', [userId])).rows[0];
+      return decryptSecret(row.pending_ciphertext, userId);
+    }
+
+    it('confirms encrypted enrollment, revokes other sessions, consumes recovery codes once and preserves verified refresh', async () => {
+      const phone = `+9779861${Math.floor(100000 + Math.random() * 900000)}`;
+      const user = await loginUser(phone); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      const other = await loginUser(phone);
+      const enrollment = await call(user.accessToken, '/auth/mfa/enroll', {});
+      expect(enrollment.status).toBe(201); expect(enrollment.headers.get('cache-control')).toBe('no-store');
+      const setup = await enrollment.json() as any; expect(setup.secret).toMatch(/^[A-Z2-7]{32}$/);
+      const secret = await pendingSecret(user.userId); const code = totp(secret, Math.floor(Date.now() / 30000));
+      const confirmed = await call(user.accessToken, '/auth/mfa/confirm', { code }); expect(confirmed.status).toBe(201);
+      const result = await confirmed.json() as any; expect(result.recoveryCodes).toHaveLength(10);
+      expect((await sessionRepo.findById(other.sessionId))!.revoked_at).not.toBeNull();
+      expect((await call(user.accessToken, '/audit/dashboard')).status).toBe(200);
+      const evidence = (await dbService.query('SELECT new_value FROM audit_logs WHERE entity_type=$1 AND entity_id=$2', ['account_authenticator', user.userId])).rows;
+      expect(JSON.stringify(evidence)).not.toContain(setup.secret); expect(JSON.stringify(evidence)).not.toContain(result.recoveryCodes[0]);
+      const factor = (await dbService.query('SELECT * FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0];
+      expect(factor.pending_ciphertext).toBeNull(); expect(factor.recovery_hashes).not.toContain(result.recoveryCodes[0]);
+      const next = await loginUser(phone);
+      expect((await call(next.accessToken, '/audit/dashboard')).status).toBe(403);
+      expect((await call(next.accessToken, '/auth/mfa/verify', { code })).status).toBe(403);
+      expect((await call(next.accessToken, '/auth/mfa/recover', { code: result.recoveryCodes[0] })).status).toBe(201);
+      expect((await call(next.accessToken, '/audit/dashboard')).status).toBe(200);
+      const a = await loginUser(phone), b = await loginUser(phone);
+      const outcomes = await Promise.all([a, b].map(item => call(item.accessToken, '/auth/mfa/recover', { code: result.recoveryCodes[1] })));
+      expect(outcomes.map(response => response.status).sort()).toEqual([201, 403]);
+      const winner = outcomes[0].status === 201 ? a : b;
+      const before = (await sessionRepo.findById(winner.sessionId))!;
+      const refresh = await fetch(`${baseUrl}/auth/native/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: winner.refreshToken }) });
+      expect(refresh.status).toBe(200); const refreshed = await refresh.json() as any;
+      const sid = (jwtService.decode(refreshed.accessToken) as any).sid;
+      const after = (await sessionRepo.findById(sid))!; expect(after.mfa_verified_at).toEqual(before.mfa_verified_at); expect(after.mfa_generation).toBe(before.mfa_generation);
+      expect((await call(refreshed.accessToken, '/audit/dashboard')).status).toBe(200);
+      await dbService.query('UPDATE account_authenticators SET generation=generation+1 WHERE user_id=$1', [user.userId]);
+      expect((await call(refreshed.accessToken, '/audit/dashboard')).status).toBe(403);
+    });
+
+    it('commits account-wide failed attempts, binds pending enrollment to its session and rolls back audit failure', async () => {
+      const phone = `+9779862${Math.floor(100000 + Math.random() * 900000)}`;
+      const user = await loginUser(phone); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      expect((await call(user.accessToken, '/auth/mfa/enroll', { userId: user.userId })).status).toBe(400);
+      expect((await call(user.accessToken, '/auth/mfa/enroll', {})).status).toBe(201);
+      const secret = await pendingSecret(user.userId); const counter = Math.floor(Date.now() / 30000);
+      const valid = totp(secret, counter); const window = [counter - 1, counter, counter + 1].map(c => totp(secret, c));
+      let bad = '000000'; while (window.includes(bad)) bad = (Number(bad) + 1).toString().padStart(6, '0');
+      const other = await loginUser(phone);
+      expect((await call(other.accessToken, '/auth/mfa/confirm', { code: valid })).status).toBe(409);
+      for (let n = 0; n < 5; n++) expect((await call(user.accessToken, '/auth/mfa/confirm', { code: bad })).status).toBe(403);
+      expect((await call(user.accessToken, '/auth/mfa/confirm', { code: valid })).status).toBe(403);
+      const locked = (await dbService.query('SELECT failed_attempts,locked_until FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0]; expect(locked.failed_attempts).toBe(5); expect(locked.locked_until).not.toBeNull();
+      await dbService.query("UPDATE account_authenticators SET locked_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE user_id=$1", [user.userId]);
+      const auditFailure = jest.spyOn(auditRepo, 'appendAuditLog').mockRejectedValueOnce(new Error('Injected authenticator audit failure'));
+      try { expect((await call(user.accessToken, '/auth/mfa/confirm', { code: totp(secret, Math.floor(Date.now() / 30000)) })).status).toBe(500); } finally { auditFailure.mockRestore(); }
+      const row = (await dbService.query('SELECT enabled_at FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0]; expect(row.enabled_at).toBeNull();
+      expect((await sessionRepo.findById(user.sessionId))!.mfa_verified_at).toBeNull();
+      expect((await call(user.accessToken, '/auth/mfa/confirm', { code: totp(secret, Math.floor(Date.now() / 30000)) })).status).toBe(201);
+      expect((await call(user.accessToken, '/auth/mfa/enroll', {})).status).toBe(409);
+    });
+
+    it('requires enrollment in production and refuses token-claim forgery or alternate paths', async () => {
+      const user = await loginUser(`+9779863${Math.floor(100000 + Math.random() * 900000)}`); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      const member = await loginUser(`+9779864${Math.floor(100000 + Math.random() * 900000)}`);
+      expect((await call(member.accessToken, '/auth/mfa/enroll', {})).status).toBe(403);
+      const previous = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        expect((await call(user.accessToken, '/audit/dashboard')).status).toBe(403);
+        expect((await call(user.accessToken, '/auth/me')).status).toBe(200);
+        const status = await (await call(user.accessToken, '/auth/mfa/status')).json() as any; expect(status.required).toBe(true); expect(status.verified).toBe(false);
+        const forged = jwtService.sign({ sub: user.userId, sid: user.sessionId, tokenType: 'access', roles: [Role.SUPER_ADMIN], branchIds: [], mfaVerified: true }, { secret: getJwtSecret(), algorithm: JWT_ALGORITHM });
+        expect((await call(forged, '/audit/dashboard')).status).toBe(403);
+        expect((await call(user.accessToken, '/auth/roles/assign', { userId: member.userId, role: Role.SUPER_ADMIN })).status).toBe(403);
+      } finally { process.env.NODE_ENV = previous; }
+    });
+  });
 
   describe('Privileged absolute session age', () => {
     const me = (token: string) => fetch(`${baseUrl}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });

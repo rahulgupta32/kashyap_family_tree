@@ -16,6 +16,8 @@ export interface UserSessionRecord {
   revoked_at: Date | null;
   created_at: Date;
   authenticated_at: Date | null;
+  mfa_verified_at: Date | null;
+  mfa_generation: number | null;
 }
 
 @Injectable()
@@ -136,9 +138,9 @@ export class SessionRepository {
       const insertRes = await client.query<UserSessionRecord>(
         `INSERT INTO user_sessions (
           user_id, refresh_token_hash, device_platform, device_id, device_name,
-          ip_address, user_agent, expires_at, authenticated_at
+          ip_address, user_agent, expires_at, authenticated_at, mfa_verified_at, mfa_generation
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING *;`,
         [
           session.user_id,
@@ -150,6 +152,8 @@ export class SessionRepository {
           newSessionData.userAgent !== undefined ? newSessionData.userAgent : session.user_agent,
           newSessionData.expiresAt,
           session.authenticated_at,
+          session.mfa_verified_at,
+          session.mfa_generation,
         ],
       );
 

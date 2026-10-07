@@ -1,3 +1,5 @@
+import { MfaService } from './mfa.service';
+import { MfaController } from './mfa.controller';
 import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -41,9 +43,10 @@ const isProd = process.env.NODE_ENV === 'production';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, MfaController],
   providers: [
     AuthService,
+    MfaService,
     JwtStrategy,
     JwtAuthGuard,
     RolesGuard,
@@ -57,6 +60,7 @@ const isProd = process.env.NODE_ENV === 'production';
   ],
   exports: [
     AuthService,
+    MfaService,
     JwtStrategy,
     JwtModule,
     PassportModule,

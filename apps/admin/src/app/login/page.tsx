@@ -22,7 +22,7 @@ export default function LoginPage() {
   // If already logged in as admin, redirect to dashboard
   useEffect(() => {
     if (user && isAdmin) {
-      router.push('/');
+      router.push('/mfa');
     }
   }, [user, isAdmin, router]);
 
@@ -79,7 +79,7 @@ export default function LoginPage() {
       }
 
       login(session);
-      router.push('/');
+      router.push('/mfa');
     } catch (err: any) {
       setError(err.message || 'ओटिपी प्रमाणीकरण असफल भयो (Verification failed)');
     } finally {
