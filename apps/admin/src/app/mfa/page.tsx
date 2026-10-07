@@ -19,7 +19,8 @@ export default function VerificationPage() {
   useEffect(() => {
     epoch.current++; setBusy(false);
     setStatus(null); setSecret(null); setCodes([]); setCode(''); setError('');
-    if (!accessToken) { if (!isLoading) router.replace('/login'); return; }
+    if (isLoading) return;
+    if (!accessToken) { router.replace('/login'); return; }
     const controller = new AbortController();
     fetch(`${API}/auth/mfa/status`, { headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Unable to load verification'); return data; })
