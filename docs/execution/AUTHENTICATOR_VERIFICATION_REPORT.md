@@ -41,6 +41,8 @@ The web portal routes a pending account to security verification on login and
 session restoration. A security link supports voluntary non-production setup.
 The manual setup key and one-time recovery codes stay in component memory;
 session changes/unmount invalidate pending responses and clear those values.
+Logout keeps route guards in a loading state through cleanup and final navigation,
+preventing a transient sign-in form from being reset by a late logout redirect.
 API factor responses have Cache-Control: no-store. The setup URI does not use
 an external QR service. No dedicated native verification UI/device acceptance
 has been implemented, so enrolled native authority accounts cannot complete

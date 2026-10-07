@@ -227,6 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const token = accessToken || undefined;
+    // Keep route guards from offering a login form until cleanup/navigation finishes.
+    setIsLoading(true);
     setAccessToken(null);
     setUser(null);
     try {
@@ -240,9 +242,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       broadcastChannelRef.current.postMessage({ type: 'SESSION_EXPIRED' });
     }
 
-    await purgeBrowserChatOutbox().catch(()=>{});
-    await ApiClient.logout(undefined, token);
-    window.location.href = '/login';
+    try {
+      await purgeBrowserChatOutbox().catch(()=>{});
+      await ApiClient.logout(undefined, token);
+    } finally { window.location.href = '/login'; }
   }, [accessToken]);
 
   const hasRole = useCallback(
