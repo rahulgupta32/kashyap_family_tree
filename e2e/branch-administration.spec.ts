@@ -1,0 +1,13 @@
+import { test, expect } from '@playwright/test';
+import { login } from './helpers/auth';
+test('Super Admin creates and revises a branch and generation with retained reasons',async({page})=>{
+ await login(page);await page.goto('/branches');await page.getByRole('button',{name:/New branch/}).click();
+ const code=`BROWSER_${Date.now()}`;
+ await page.getByLabel('शाखा कोड (Branch code)').fill(code);await page.getByLabel('नेपाली नाम (Nepali name)').fill('काल्पनिक शाखा');await page.getByLabel('अङ्ग्रेजी नाम (English name)').fill('Fictional browser branch');await page.getByLabel('परिवर्तनको कारण (Change reason)').fill('Fictional browser branch creation');
+ await page.getByRole('button',{name:/Save metadata/}).click();const history=page.getByRole('region',{name:'Branch administration history'});await expect(history).toContainText('Fictional browser branch creation');
+ await page.getByLabel('अङ्ग्रेजी नाम (English name)').fill('Fictional revised browser branch');await page.getByLabel('परिवर्तनको कारण (Change reason)').fill('Fictional browser branch revision');await page.getByRole('button',{name:/Save metadata/}).click();await expect(history).toContainText('Fictional browser branch revision');await expect(history).toContainText('Fictional browser branch creation');
+ await page.getByRole('button',{name:/Add generation label/}).click();await page.getByLabel('पुस्ता नम्बर (Generation number)').fill('3');await page.getByLabel('नेपाली नाम (Nepali name)').fill('तेस्रो पुस्ता');await page.getByLabel('अङ्ग्रेजी नाम (English name)').fill('Third fictional generation');await page.getByLabel('परिवर्तनको कारण (Change reason)').fill('Fictional browser generation creation');await page.getByRole('button',{name:/Save metadata/}).click();await expect(history).toContainText('Fictional browser generation creation');
+ await page.getByLabel('अङ्ग्रेजी नाम (English name)').fill('Third revised fictional generation');await page.getByLabel('परिवर्तनको कारण (Change reason)').fill('Fictional browser generation revision');await page.getByRole('button',{name:/Save metadata/}).click();await expect(history).toContainText('Fictional browser generation revision');await expect(history).toContainText('Fictional browser generation creation');
+ await page.reload();await page.getByRole('button',{name:new RegExp(code)}).click();await page.getByRole('button',{name:/Third revised fictional generation/}).click();await expect(history).toContainText('Fictional browser generation revision');
+ await expect(page.getByRole('link',{name:/Review genealogy change requests/})).toHaveAttribute('href','/change-requests');
+});

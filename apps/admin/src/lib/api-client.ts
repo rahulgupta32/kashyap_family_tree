@@ -39,6 +39,10 @@ export class SessionRefreshError extends Error {
 }
 
 export class ApiClient {
+  static async branchAdministration<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/admin/branches${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Branch administration request failed');return data;
+  }
   static async applicationSettings<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
     const response=await fetch(`${API_BASE}/admin/settings${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
     const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Settings request failed');return data;

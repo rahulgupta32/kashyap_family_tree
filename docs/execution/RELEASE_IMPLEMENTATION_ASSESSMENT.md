@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 130 | 50.0% |
-| MISSING | 16 | 6.2% |
+| PARTIALLY_COMPLETED | 131 | 50.4% |
+| MISSING | 15 | 5.8% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -41,7 +41,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | COM | 2 | 12 | 0 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 12 | 0 | 0 |
-| ADM | 4 | 10 | 2 | 0 |
+| ADM | 4 | 11 | 1 | 0 |
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
 | I18N | 1 | 4 | 0 | 0 |
@@ -114,3 +114,8 @@ INV-FR-004 and INV-FR-010 gain partial implementation evidence for branch/genera
 ## Typed calendar application settings — 2026-10-08
 
 ADM-FR-015 gains partial implementation evidence for four bounded integer calendar policies with current Super Admin authority, optimistic versions, transactional audit and immutable prior-value history. Both explicit and genealogy invitation selection consume the stored policy. See TYPED_APPLICATION_SETTINGS_REPORT.md. Current totals: 102 completed /130 partial /16 missing (3 functional +13 NFR evidence) /12 external. All 260 original acceptance rows remain open. Exact-head CI results are recorded in PR #5 when complete.
+
+
+## Branch and generation metadata console — 2026-10-09 Nepal time
+
+ADM-FR-007 moves from missing to partial based on versioned branch metadata and branch-scoped generation labels with current verified Super Admin authority, immutable history and atomic audit. Existing genealogy change-request review remains the path for transfers and links; the console does not supply all required cross-branch or Person generation correction interfaces. See BRANCH_ADMINISTRATION_REPORT.md. Current totals: 102 completed /131 partial /15 missing (2 functional +13 dedicated NFR evidence) /12 external. All 260 acceptance rows remain open; exact-head CI is recorded in PR #5 when complete.

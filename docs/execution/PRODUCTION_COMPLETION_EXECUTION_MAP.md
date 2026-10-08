@@ -2,12 +2,11 @@
 
 Owner: Jyphra Technology Pvt. Ltd.
 
-The reconciled assessment records 102 bounded implementations completed, 130 partial, 16 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
+The reconciled assessment records 102 bounded implementations completed, 131 partial, 15 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
 
 ## Missing functional implementations
 
 - **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
-- **ADM-FR-007**: Super Admin shall manage branches, generations and cross-branch connections.
 - **ADM-FR-013**: Admin portal shall provide import/dry-run/reconciliation tooling for genealogy migration.
 
 ## Missing dedicated nonfunctional evidence
@@ -61,7 +60,7 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **COM (12)**: COM-FR-001, COM-FR-002, COM-FR-003, COM-FR-005, COM-FR-006, COM-FR-007, COM-FR-008, COM-FR-009, COM-FR-010, COM-FR-012, COM-FR-013, COM-FR-014
 - **MAP (4)**: MAP-FR-001, MAP-FR-004, MAP-FR-006, MAP-FR-007
 - **CHAT (12)**: CHAT-FR-001, CHAT-FR-002, CHAT-FR-003, CHAT-FR-004, CHAT-FR-005, CHAT-FR-006, CHAT-FR-007, CHAT-FR-009, CHAT-FR-010, CHAT-FR-012, CHAT-FR-013, CHAT-FR-014
-- **ADM (10)**: ADM-FR-001, ADM-FR-002, ADM-FR-008, ADM-FR-009, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-014, ADM-FR-015, ADM-FR-016
+- **ADM (11)**: ADM-FR-001, ADM-FR-002, ADM-FR-007, ADM-FR-008, ADM-FR-009, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-014, ADM-FR-015, ADM-FR-016
 - **AUD (3)**: AUD-FR-001, AUD-FR-002, AUD-FR-005
 - **PRIV (2)**: PRIV-FR-006, PRIV-FR-008
 - **I18N (4)**: I18N-FR-001, I18N-FR-002, I18N-FR-004, I18N-FR-005
@@ -88,3 +87,6 @@ Source-preserving name/alias normalization now supplies partial evidence for SRC
 Genealogy audience selection and immutable recipient evidence now supply partial evidence for INV-FR-004/010; see GENEALOGY_INVITATION_AUDIENCE_REPORT.md. Current missing functional count is 4: CAL-FR-005 and ADM-FR-007/013/015. Thirteen dedicated NFR evidence requirements remain missing, alongside every recorded partial/external requirement. Earlier milestone counts above are historical snapshots; approved relationship-group rules are still gated.
 
 Typed calendar settings now supply partial evidence for ADM-FR-015; see TYPED_APPLICATION_SETTINGS_REPORT.md. Current missing functional count is 3: CAL-FR-005 and ADM-FR-007/013. Thirteen dedicated NFR evidence requirements remain missing. Broader approved settings, every partial/external requirement, emergency recovery and all 260 signed acceptance rows remain open. Earlier milestone counts are historical snapshots.
+
+
+Branch/generation metadata console now supplies partial evidence for ADM-FR-007; see BRANCH_ADMINISTRATION_REPORT.md. Two functional workflows remain wholly missing: CAL-FR-005 and ADM-FR-013. Thirteen dedicated NFR evidence requirements remain missing, with every partial/external prerequisite and all 260 acceptance rows still open. Catalogue labels do not renumber Persons or alter branch/link governance.

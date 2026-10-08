@@ -1,4 +1,5 @@
 import { ApplicationSettingsModule } from './modules/application-settings/application-settings.module';
+import { BranchAdministrationModule } from './modules/branch-administration/branch-administration.module';
 import { AdminLookupModule } from './modules/admin-lookup/admin-lookup.module';
 import { MediaStorageModule } from './media/media-storage.module';
 import { Module } from '@nestjs/common';
@@ -50,6 +51,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     NotificationsModule,
     AdminLookupModule,
     ApplicationSettingsModule,
+    BranchAdministrationModule,
   ],
 })
 export class AppModule {}

@@ -9,3 +9,4 @@ export * from './profile.js';
 export * from './calendar.js';
 
 export * from './application-settings.js';
+export * from './branch-administration.js';

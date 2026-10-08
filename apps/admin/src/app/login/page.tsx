@@ -23,7 +23,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (user && isAdmin) {
       const next=new URLSearchParams(window.location.search).get('next');
-      router.push(next==='/cultural'||next==='/lookup'?`/mfa?next=${next}`:'/mfa');
+      router.push(next==='/cultural'||next==='/lookup'||next==='/branches'?`/mfa?next=${next}`:'/mfa');
     }
   }, [user, isAdmin, router]);
 
@@ -83,7 +83,7 @@ export default function LoginPage() {
 
       login(session);
       const next=new URLSearchParams(window.location.search).get('next');
-      router.push(next==='/cultural'||next==='/lookup'?`/mfa?next=${next}`:'/mfa');
+      router.push(next==='/cultural'||next==='/lookup'||next==='/branches'?`/mfa?next=${next}`:'/mfa');
     } catch (err: any) {
       setError(err.message || 'ओटिपी प्रमाणीकरण असफल भयो (Verification failed)');
     } finally {
