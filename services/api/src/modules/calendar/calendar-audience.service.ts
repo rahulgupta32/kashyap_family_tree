@@ -101,8 +101,8 @@ export class CalendarAudienceService {
  }
  async confirm(userId:string,body:any,tx:any){
   const id=uuid(body.audiencePreviewId,'audience preview'),selection=this.selection(body.audienceSelection);
-  const row=(await tx.query('SELECT * FROM calendar_audience_previews WHERE id=$1 AND actor_id=$2 FOR UPDATE',[id,userId])).rows[0];
-  if(!row||row.consumed_at||new Date(row.expires_at).getTime()<=Date.now())throw new ConflictException('Audience preview unavailable or expired; preview again');
+  const row=(await tx.query('SELECT *,expires_at>clock_timestamp() AS unexpired FROM calendar_audience_previews WHERE id=$1 AND actor_id=$2 FOR UPDATE',[id,userId])).rows[0];
+  if(!row||row.consumed_at||!row.unexpired)throw new ConflictException('Audience preview unavailable or expired; preview again');
   const scope=body.audienceScope??'INVITED_ONLY',branch=body.branchId===undefined||body.branchId===null?null:uuid(body.branchId,'branch').toLowerCase();
   if(JSON.stringify(this.selection(row.selection))!==JSON.stringify(selection))throw new ConflictException('Audience selection changed; preview again');
   const resolved=await this.resolve(userId,selection,scope,branch,tx);
@@ -119,7 +119,9 @@ export class CalendarAudienceService {
   await this.scope(userId,branch??null,tx);
  }
  async consume(confirmed:any,event:any,userId:string,tx:any){
-  await tx.query(`UPDATE calendar_audience_previews SET event_id=$2,event_version=$3,consumed_at=NOW(),send_context=$4 WHERE id=$1 AND consumed_at IS NULL`,[confirmed.id,event.id,event.version,JSON.stringify(confirmed.context)]);
+  const consumed=await tx.query(`UPDATE calendar_audience_previews SET event_id=$2,event_version=$3,consumed_at=clock_timestamp(),send_context=$4
+   WHERE id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING id`,[confirmed.id,event.id,event.version,JSON.stringify(confirmed.context)]);
+  if(!consumed.rows.length)throw new ConflictException('Audience preview expired; preview again');
   await this.audit.recordAuditIntent({action:'CALENDAR_AUDIENCE_CONFIRMED',entityType:'CALENDAR_EVENT',entityId:event.id,actorId:userId,newValue:{eventVersion:event.version,previewId:confirmed.id,recipientCount:confirmed.recipients.length}},tx);
  }
 }

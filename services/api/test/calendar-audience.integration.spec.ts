@@ -69,7 +69,9 @@ describe('Verified genealogy audience previews and atomic send snapshots (Postgr
   await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(event(p2)).expect(409);await users.assignRole(grand.id,Role.VERIFIED_MEMBER,branch);
   const expired=(await db.query(`INSERT INTO calendar_audience_previews(actor_id,selection,audience_scope,branch_id,basis,fingerprint,preview_context,expires_at)
    SELECT actor_id,selection,audience_scope,branch_id,basis,fingerprint,preview_context,NOW()-INTERVAL '1 minute' FROM calendar_audience_previews WHERE id=$1 RETURNING id`,[p2.previewId])).rows[0].id;
-  await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(event({previewId:expired})).expect(409);
+  const clock=jest.spyOn(Date,'now').mockReturnValue(Date.now()-3600000);
+  try{await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(event({previewId:expired})).expect(409);}
+  finally{clock.mockRestore();}
  });
  it('consumes a preview exactly once under concurrent sends and retains reconstructible immutable evidence after restart',async()=>{
   const p=await preview(),body=event(p);const sent=await Promise.all([1,2].map(()=>request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(body)));
