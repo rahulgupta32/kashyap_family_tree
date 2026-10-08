@@ -22,7 +22,7 @@ export default function LoginPage() {
   // If already logged in as admin, redirect to dashboard
   useEffect(() => {
     if (user && isAdmin) {
-      router.push('/mfa');
+      router.push(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/mfa?next=/cultural':'/mfa');
     }
   }, [user, isAdmin, router]);
 
@@ -72,14 +72,15 @@ export default function LoginPage() {
         session.user.roles.includes(Role.SUPER_ADMIN) ||
         session.user.roles.includes(Role.BRANCH_ADMIN);
 
-      if (!hasAdminPrivilege) {
+      const culturalEntry=new URLSearchParams(window.location.search).get('next')==='/cultural'&&session.user.roles.some(r=>r!==Role.GUEST&&r!==Role.REGISTERED_USER);
+      if (!hasAdminPrivilege && !culturalEntry) {
         setPendingUserPhone(session.user.phoneNumber);
         setStep('ACCESS_DENIED');
         return;
       }
 
       login(session);
-      router.push('/mfa');
+      router.push(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/mfa?next=/cultural':'/mfa');
     } catch (err: any) {
       setError(err.message || 'ओटिपी प्रमाणीकरण असफल भयो (Verification failed)');
     } finally {

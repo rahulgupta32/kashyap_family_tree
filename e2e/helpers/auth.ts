@@ -1,8 +1,8 @@
 import { Page, expect } from '@playwright/test';
 export const API = process.env.API_BASE || 'http://127.0.0.1:3000';
-export async function login(page:Page, phone='9800000001') {
+export async function login(page:Page, phone='9800000001',next?:string) {
   const clear=await page.request.post(`${API}/auth/test-clear-cooldown`,{data:{phoneNumber:phone}});expect(clear.ok()).toBeTruthy();
-  await page.goto('/login');await page.locator('input[type="tel"]').fill(phone);
+  await page.goto(next==='/cultural'?'/login?next=/cultural':'/login');await page.locator('input[type="tel"]').fill(phone);
   await page.getByRole('button',{name:/Send OTP/}).click();
   await expect(page.getByText('प्रमाणीकरण कोड (Verification OTP)',{exact:true})).toBeVisible();
   const response=await page.request.get(`${API}/auth/test-otp`,{params:{phoneNumber:`+977${phone}`}});expect(response.ok()).toBeTruthy();

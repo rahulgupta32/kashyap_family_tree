@@ -2,24 +2,16 @@
 
 Owner: Jyphra Technology Pvt. Ltd.
 
-The reconciled assessment records 102 bounded implementations completed, 117 partial, 29 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
+The reconciled assessment records 102 bounded implementations completed, 125 partial, 21 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
 
 ## Missing functional implementations
 
-- **SRCH-FR-005**: Search shall support cultural content, events and community content in their respective modules.
 - **SRCH-FR-006**: Search shall support transliteration/alias normalization without altering source names.
 - **SRCH-FR-008**: Admin search shall support exact Person/User/Request ID lookup.
-- **CUL-FR-002**: Cultural content shall be managed from the administration portal and shall not require a mobile-app release for normal content updates.
-- **CUL-FR-003**: Content shall support draft, review, approved, published, archived and superseded lifecycle states.
-- **CUL-FR-004**: Authoritative religious/cultural content shall require approval by an assigned Community/Religious Representative before publication.
-- **CUL-FR-006**: Every published revision shall retain version, author, reviewer, approval, publish date and provenance.
-- **CUL-FR-008**: Superseding a cultural rule/article shall not silently overwrite historical revisions.
-- **CUL-FR-009**: Content search shall index title, approved keywords and body text subject to publication state.
 - **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
 - **INV-FR-004**: Creator shall select genealogy-derived audiences including approved relationship groups, descendants of an ancestor, branch and generation.
 - **INV-FR-010**: Genealogy-based recipient resolution shall be reproducible using the verified graph snapshot/query context used at send time.
 - **ADM-FR-007**: Super Admin shall manage branches, generations and cross-branch connections.
-- **ADM-FR-009**: Content managers and designated approvers shall manage cultural/historical content lifecycle.
 - **ADM-FR-013**: Admin portal shall provide import/dry-run/reconciliation tooling for genealogy migration.
 - **ADM-FR-015**: System configuration shall be managed through typed, permissioned settings with change history.
 
@@ -61,12 +53,12 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **AUTH (4)**: AUTH-FR-001, AUTH-FR-009, AUTH-FR-011, AUTH-FR-012
 - **PROF (4)**: PROF-FR-003, PROF-FR-006, PROF-FR-008, PROF-FR-009
 - **GEN (3)**: GEN-FR-009, GEN-FR-010, GEN-FR-015
-- **SRCH (1)**: SRCH-FR-001
+- **SRCH (2)**: SRCH-FR-001, SRCH-FR-005
 - **CLAIM (2)**: CLAIM-FR-003, CLAIM-FR-011
 - **CHG (3)**: CHG-FR-004, CHG-FR-007, CHG-FR-008
 - **DUP (2)**: DUP-FR-001, DUP-FR-002
 - **REL (9)**: REL-FR-002, REL-FR-003, REL-FR-004, REL-FR-005, REL-FR-007, REL-FR-008, REL-FR-009, REL-FR-011, REL-FR-013
-- **CUL (2)**: CUL-FR-005, CUL-FR-007
+- **CUL (8)**: CUL-FR-002, CUL-FR-003, CUL-FR-004, CUL-FR-005, CUL-FR-006, CUL-FR-007, CUL-FR-008, CUL-FR-009
 - **CAL (8)**: CAL-FR-001, CAL-FR-002, CAL-FR-003, CAL-FR-004, CAL-FR-009, CAL-FR-010, CAL-FR-011, CAL-FR-012
 - **JUT (4)**: JUT-FR-005, JUT-FR-006, JUT-FR-008, JUT-FR-009
 - **NOT (5)**: NOT-FR-003, NOT-FR-004, NOT-FR-005, NOT-FR-007, NOT-FR-011
@@ -74,7 +66,7 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **COM (12)**: COM-FR-001, COM-FR-002, COM-FR-003, COM-FR-005, COM-FR-006, COM-FR-007, COM-FR-008, COM-FR-009, COM-FR-010, COM-FR-012, COM-FR-013, COM-FR-014
 - **MAP (4)**: MAP-FR-001, MAP-FR-004, MAP-FR-006, MAP-FR-007
 - **CHAT (12)**: CHAT-FR-001, CHAT-FR-002, CHAT-FR-003, CHAT-FR-004, CHAT-FR-005, CHAT-FR-006, CHAT-FR-007, CHAT-FR-009, CHAT-FR-010, CHAT-FR-012, CHAT-FR-013, CHAT-FR-014
-- **ADM (8)**: ADM-FR-001, ADM-FR-002, ADM-FR-008, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-014, ADM-FR-016
+- **ADM (9)**: ADM-FR-001, ADM-FR-002, ADM-FR-008, ADM-FR-009, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-014, ADM-FR-016
 - **AUD (3)**: AUD-FR-001, AUD-FR-002, AUD-FR-005
 - **PRIV (2)**: PRIV-FR-006, PRIV-FR-008
 - **I18N (4)**: I18N-FR-001, I18N-FR-002, I18N-FR-004, I18N-FR-005
@@ -91,3 +83,5 @@ Each row below still requires its full recorded behavior and acceptance; these a
 6. Resolve stacked PR #4/#5 review and migration order, run realistic staging acceptance and obtain signed release approval before production launch.
 
 Authentication lifecycle completion is documented separately in AUTHENTICATOR_LIFECYCLE_REPORT.md. Governed emergency recovery and distinct-factor administrative login remain blockers. Engineering can continue independently on much of this map, but it cannot invent production credentials, cultural approvals or signed acceptance. No completion percentage or launch date is inferred from CI counts.
+
+Cultural document CMS implementation now supplies partial evidence for eight former missing rows; authority content and full acceptance remain open. See CULTURAL_REVISION_CMS_REPORT.md. The remaining missing functional count is 8; missing dedicated NFR evidence remains 13.

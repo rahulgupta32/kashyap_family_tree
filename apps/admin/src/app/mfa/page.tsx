@@ -21,11 +21,11 @@ export default function VerificationPage() {
     epoch.current++; setBusy(false);
     setRecovery(false); setReplacement(false); setStatus(null); setSecret(null); setCodes([]); setCode(''); setError('');
     if (isLoading) return;
-    if (!accessToken) { router.replace('/login'); return; }
+    if (!accessToken) { router.replace(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/login?next=/cultural':'/login'); return; }
     const controller = new AbortController();
     fetch(`${API}/auth/mfa/status`, { headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Unable to load verification'); return data; })
-      .then(data => { if (controller.signal.aborted) return; setStatus(data); if ((!data.required || data.verified) && !(window.location.search === '?setup=1' && data.eligible)) router.replace('/'); })
+      .then(data => { if (controller.signal.aborted) return; setStatus(data); if ((!data.required || data.verified) && !(window.location.search === '?setup=1' && data.eligible)) router.replace(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/cultural':'/'); })
       .catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => { epoch.current++; controller.abort(); };
   }, [accessToken, isLoading, router]);
@@ -38,7 +38,7 @@ export default function VerificationPage() {
       if (generation !== epoch.current || tokenRef.current !== token) return;
       if (operation === 'enroll' || operation === 'replace/start') { setSecret(data.secret); setReplacement(operation === 'replace/start'); setCode(''); }
       else if (data.recoveryCodes) { setCodes(data.recoveryCodes); setSecret(null); setReplacement(false); setCode(''); }
-      else router.replace('/');
+      else router.replace(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/cultural':'/');
     } catch (e: any) { if (generation === epoch.current && tokenRef.current === token) setError(e.message || 'Verification failed'); }
     finally { if (generation === epoch.current && tokenRef.current === token) setBusy(false); }
   }
@@ -51,7 +51,7 @@ export default function VerificationPage() {
       <h2 className="font-semibold">Save your recovery codes</h2>
       <p>These codes are shown once. Keep them offline in a safe place. Each code can be used once after phone login. If you lose the authenticator and all codes, access cannot be recovered through phone login alone.</p>
       <ul>{codes.map(value => <li key={value}><code>{value}</code></li>)}</ul>
-      <button onClick={() => { setCodes([]); router.replace('/'); }}>I saved the codes — continue</button>
+      <button onClick={() => { setCodes([]); router.replace(new URLSearchParams(window.location.search).get('next')==='/cultural'?'/cultural':'/'); }}>I saved the codes — continue</button>
     </section> : status && <section className="space-y-3">
       {!status.enrolled && !secret && <button disabled={busy} onClick={() => submit('enroll')}>Set up authenticator</button>}
       {secret && <div><p>In your authenticator app, add a time-based account named Kashyap. Enter this setup key:</p><code className="break-all">{secret}</code><p>Setup expires after 10 minutes. Keep this key private.</p><button disabled={busy} onClick={() => { setSecret(null); setCode(''); if (replacement) setReplacement(false); else void submit('enroll'); }}>Restart expired setup</button></div>}

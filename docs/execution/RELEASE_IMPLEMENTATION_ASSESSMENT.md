@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 117 | 45.0% |
-| MISSING | 29 | 11.2% |
+| PARTIALLY_COMPLETED | 125 | 48.1% |
+| MISSING | 21 | 8.1% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -28,12 +28,12 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | AUTH | 7 | 4 | 0 | 1 |
 | PROF | 8 | 4 | 0 | 0 |
 | GEN | 15 | 3 | 0 | 0 |
-| SRCH | 4 | 1 | 3 | 0 |
+| SRCH | 4 | 2 | 2 | 0 |
 | CLAIM | 10 | 2 | 0 | 0 |
 | CHG | 12 | 3 | 0 | 0 |
 | DUP | 7 | 2 | 0 | 0 |
 | REL | 3 | 9 | 0 | 1 |
-| CUL | 1 | 2 | 6 | 1 |
+| CUL | 1 | 8 | 0 | 1 |
 | CAL | 1 | 8 | 1 | 3 |
 | JUT | 3 | 4 | 0 | 2 |
 | NOT | 6 | 5 | 0 | 0 |
@@ -41,7 +41,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | COM | 2 | 12 | 0 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 12 | 0 | 0 |
-| ADM | 4 | 8 | 4 | 0 |
+| ADM | 4 | 9 | 3 | 0 |
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
 | I18N | 1 | 4 | 0 | 0 |
@@ -92,3 +92,8 @@ Verified opt-in legacy reads and reviewed migration to private S3 advance MEDIA-
 ## Targeted reconciliation — 2026-10-08
 
 CAL-FR-012, INV-FR-005/008/009/012, COM-FR-009 and CHAT-FR-004/009/010 move from MISSING to PARTIALLY_COMPLETED based on implemented workflows and dedicated tests. Their remaining work is recorded per row. Counts are 102 completed / 117 partial / 29 missing / 12 external; no partial credit percentage is assigned. This is a classification correction, not nine newly implemented features and not signed acceptance. The remaining 29 missing rows include 13 dedicated nonfunctional-evidence gaps.
+
+
+## Cultural document CMS implementation update — 2026-10-08
+
+Eight formerly missing rows now have partial implementation evidence (CUL-FR-002/003/004/006/008/009, ADM-FR-009, SRCH-FR-005). This adds durable document revisions, explicit independent approval, publication history/search and web/native read surfaces; it is distinct from the earlier nine-row classification correction. See [CULTURAL_REVISION_CMS_REPORT.md](CULTURAL_REVISION_CMS_REPORT.md). Current totals are 102 completed, 125 partial, 21 missing (8 functional + 13 NFR evidence), 12 external. All 260 original acceptance rows remain open. Exact-head CI is pending until recorded in PR #5.
