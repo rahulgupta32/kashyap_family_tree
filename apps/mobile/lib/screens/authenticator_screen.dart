@@ -25,7 +25,7 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
   void dispose() { _code.clear(); _code.dispose(); _secret = null; _recoveryCodes = null; super.dispose(); }
 
   Future<void> _load() async {
-    setState(() { _busy = true; _error = null; });
+    setState(() { _busy = true; _error = null; _status = null; _complete = false; });
     try {
       final value = await widget.apiService.requestJson('/auth/mfa/status');
       if (value is! Map<String, dynamic> || value['required'] is! bool || value['verified'] is! bool || value['enrolled'] is! bool) {

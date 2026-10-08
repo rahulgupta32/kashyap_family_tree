@@ -8,6 +8,7 @@ class SecurityApi extends GenealogyApiService {
   bool enrolled = true;
   bool verified = false;
   bool failStatus = false;
+  bool failProofCheck = false;
   final List<String> operations = [];
   @override
   Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data}) async {
@@ -18,6 +19,7 @@ class SecurityApi extends GenealogyApiService {
     }
     if (path.endsWith('/enroll')) { return {'secret': 'SYNTHETICKEY'}; }
     verified = true;
+    if (failProofCheck) { failStatus = true; }
     if (path.endsWith('/confirm')) {
       enrolled = true;
       return {'recoveryCodes': List.generate(10, (i) => i.toString().padLeft(32, '0'))};
@@ -76,4 +78,31 @@ void main() {
     expect(find.text('0' * 32), findsNothing);
     expect(find.text('Protected home'), findsOneWidget);
   });
+  testWidgets('failed proof recheck shows retry instead of stale setup controls', (tester) async {
+    final api = SecurityApi()..failProofCheck = true;
+    await open(tester, api);
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.tap(find.text('Verify'));
+    await tester.pumpAndSettle();
+    expect(find.text('Protected home'), findsNothing);
+    expect(find.text('Retry security check'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    api.failStatus = false;
+    await tester.tap(find.text('Retry security check'));
+    await tester.pumpAndSettle();
+    expect(find.text('Protected home'), findsOneWidget);
+  });
+  testWidgets('expired setup can obtain a fresh key without submitting an old code', (tester) async {
+    final api = SecurityApi()..enrolled = false;
+    await open(tester, api);
+    await tester.tap(find.text('Set up authenticator'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Restart expired setup'));
+    await tester.pumpAndSettle();
+    expect(api.operations.where((path) => path == '/auth/mfa/enroll').length, 2);
+    expect(api.operations, isNot(contains('/auth/mfa/confirm')));
+    expect(find.text('SYNTHETICKEY'), findsOneWidget);
+  });
+
 }
