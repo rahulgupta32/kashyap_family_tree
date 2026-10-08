@@ -2,13 +2,11 @@
 
 Owner: Jyphra Technology Pvt. Ltd.
 
-The reconciled assessment records 102 bounded implementations completed, 127 partial, 19 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
+The reconciled assessment records 102 bounded implementations completed, 129 partial, 17 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
 
 ## Missing functional implementations
 
 - **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
-- **INV-FR-004**: Creator shall select genealogy-derived audiences including approved relationship groups, descendants of an ancestor, branch and generation.
-- **INV-FR-010**: Genealogy-based recipient resolution shall be reproducible using the verified graph snapshot/query context used at send time.
 - **ADM-FR-007**: Super Admin shall manage branches, generations and cross-branch connections.
 - **ADM-FR-013**: Admin portal shall provide import/dry-run/reconciliation tooling for genealogy migration.
 - **ADM-FR-015**: System configuration shall be managed through typed, permissioned settings with change history.
@@ -60,7 +58,7 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **CAL (8)**: CAL-FR-001, CAL-FR-002, CAL-FR-003, CAL-FR-004, CAL-FR-009, CAL-FR-010, CAL-FR-011, CAL-FR-012
 - **JUT (4)**: JUT-FR-005, JUT-FR-006, JUT-FR-008, JUT-FR-009
 - **NOT (5)**: NOT-FR-003, NOT-FR-004, NOT-FR-005, NOT-FR-007, NOT-FR-011
-- **INV (8)**: INV-FR-001, INV-FR-002, INV-FR-003, INV-FR-005, INV-FR-006, INV-FR-008, INV-FR-009, INV-FR-012
+- **INV (10)**: INV-FR-001, INV-FR-002, INV-FR-003, INV-FR-004, INV-FR-005, INV-FR-006, INV-FR-008, INV-FR-009, INV-FR-010, INV-FR-012
 - **COM (12)**: COM-FR-001, COM-FR-002, COM-FR-003, COM-FR-005, COM-FR-006, COM-FR-007, COM-FR-008, COM-FR-009, COM-FR-010, COM-FR-012, COM-FR-013, COM-FR-014
 - **MAP (4)**: MAP-FR-001, MAP-FR-004, MAP-FR-006, MAP-FR-007
 - **CHAT (12)**: CHAT-FR-001, CHAT-FR-002, CHAT-FR-003, CHAT-FR-004, CHAT-FR-005, CHAT-FR-006, CHAT-FR-007, CHAT-FR-009, CHAT-FR-010, CHAT-FR-012, CHAT-FR-013, CHAT-FR-014
@@ -87,3 +85,5 @@ Cultural document CMS implementation now supplies partial evidence for eight for
 Exact administrative ID lookup now supplies partial evidence for SRCH-FR-008; see ADMIN_EXACT_LOOKUP_REPORT.md. Seven functional implementations and 13 dedicated NFR evidence requirements remain missing, alongside all recorded partial and external requirements.
 
 Source-preserving name/alias normalization now supplies partial evidence for SRCH-FR-006; see SEARCH_NORMALIZATION_REPORT.md. Current remaining missing functional count is 6, with 13 missing dedicated NFR evidence requirements. Earlier milestone counts above are historical snapshots. Approved transliteration configuration and full locale/performance acceptance remain open.
+
+Genealogy audience selection and immutable recipient evidence now supply partial evidence for INV-FR-004/010; see GENEALOGY_INVITATION_AUDIENCE_REPORT.md. Current missing functional count is 4: CAL-FR-005 and ADM-FR-007/013/015. Thirteen dedicated NFR evidence requirements remain missing, alongside every recorded partial/external requirement. Earlier milestone counts above are historical snapshots; approved relationship-group rules are still gated.

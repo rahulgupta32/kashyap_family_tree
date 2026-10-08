@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Post,
   Patch,
   BadRequestException,
@@ -38,6 +39,7 @@ export class CalendarController {
   }
 
   @Post('events/preview')
+  @Header('Cache-Control','private, no-store')
   preview(@CurrentUser() user: AuthenticatedUser, @Body() body: any) {
     return this.calendarService.previewInvitations(user.id, body);
   }
@@ -54,6 +56,7 @@ export class CalendarController {
   }
 
   @Get('events/:id/history')
+  @Header('Cache-Control','private, no-store')
   history(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.calendarService.history(id, user);
   }

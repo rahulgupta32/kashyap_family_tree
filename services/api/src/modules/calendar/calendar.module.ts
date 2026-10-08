@@ -1,3 +1,4 @@
+import { CalendarAudienceService } from './calendar-audience.service';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { CalendarService } from './calendar.service';
@@ -7,7 +8,7 @@ import { CalendarController } from './calendar.controller';
 @Module({
   imports: [DatabaseModule],
   controllers: [CalendarController],
-  providers: [CalendarService, CalendarDeliveryService],
+  providers: [CalendarService, CalendarDeliveryService, CalendarAudienceService],
   exports: [CalendarService],
 })
 export class CalendarModule {}

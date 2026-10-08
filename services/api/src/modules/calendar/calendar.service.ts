@@ -1,3 +1,4 @@
+import { CalendarAudienceService } from './calendar-audience.service';
 import { calendarPeriod,periodCursor } from './calendar-period';
 import { isValidBsDate } from '@kashyap/localization';
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
@@ -8,11 +9,11 @@ import { CalendarDeliveryService } from './calendar-delivery.service';
 import { eventVisibility } from './calendar-eligibility';
 import { allowedFields, textField, uuid } from '../community/community-policy';
 
-const keys=['title','description','eventType','audienceScope','branchId','location','solarDate','tithiYearBs','tithiMonthBs','tithiPaksha','tithiNumber','invitedUserIds','startsAt','reminderOffsets','version'];
+const keys=['title','description','eventType','audienceScope','branchId','location','solarDate','tithiYearBs','tithiMonthBs','tithiPaksha','tithiNumber','invitedUserIds','startsAt','reminderOffsets','version','audienceSelection','audiencePreviewId'];
 
 @Injectable()
 export class CalendarService {
-  constructor(private readonly db:DatabaseService,private readonly delivery:CalendarDeliveryService){}
+  constructor(private readonly db:DatabaseService,private readonly delivery:CalendarDeliveryService,private readonly audiences:CalendarAudienceService){}
   private validateBsYear(year?:number|null){
     if(year!==undefined&&year!==null&&(!Number.isInteger(year)||year<2000||year>2090))
       throw new BadRequestException(`Bikram Sambat year ${year} is outside supported range (BS 2000 - BS 2090)`);
@@ -39,6 +40,10 @@ export class CalendarService {
   }
   private validate(dto:any){
     allowedFields(dto,keys);
+    if(dto.audienceSelection!==undefined){
+      this.audiences.selection(dto.audienceSelection);
+      if(dto.invitedUserIds!==undefined)throw new BadRequestException('Use genealogy selection or explicit invitees, not both');
+    }else if(dto.audiencePreviewId!==undefined)throw new BadRequestException('Audience selection required with its preview');
     textField(dto.title,'Title',255);if(dto.description!==undefined&&dto.description!==null&&dto.description!=='')textField(dto.description,'Description',10000);
     if(!Object.values(EventType).includes(dto.eventType))throw new BadRequestException('Unsupported event type');
     if(!Object.values(EventAudienceScope).includes(dto.audienceScope))throw new BadRequestException('Invalid event audience');
@@ -67,6 +72,7 @@ export class CalendarService {
     return u;
   }
   async previewInvitations(userId:string,body:any,client?:any){
+    if(body?.audienceSelection!==undefined)return this.audiences.preview(userId,body);
     allowedFields(body,['invitedUserIds','audienceScope','branchId']);
     const ids=body.invitedUserIds??[];
     if(!Array.isArray(ids)||ids.length>100||new Set(ids).size!==ids.length)throw new BadRequestException('Select up to 100 distinct invitees');
@@ -124,17 +130,28 @@ export class CalendarService {
     await this.delivery.recordNotice(event,action,actorId,client);
     await this.delivery.reschedule(event,client);
   }
+  private async selectionTransaction<T>(run:(client:any)=>Promise<T>):Promise<T>{
+    try{return await this.db.transaction(async client=>{
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      await client.query("SET LOCAL statement_timeout='5s'");return run(client);
+    });}catch(error:any){if(error.code==='40001'||error.code==='40P01')throw new ConflictException('Concurrent change; reload and preview again');throw error;}
+  }
   async createEvent(userId:string,dto:CreateCalendarEventDto):Promise<CalendarEventDetailDto>{
     const date=this.validate(dto);
-    return this.db.transaction(async client=>{
+    return this.selectionTransaction(async client=>{
       await this.authorizeScope(userId,dto,client);
-      const preview=await this.previewInvitations(userId,{invitedUserIds:dto.invitedUserIds??[],audienceScope:dto.audienceScope,branchId:dto.branchId},client);
+      const confirmed=dto.audienceSelection!==undefined?await this.audiences.confirm(userId,dto,client):null;
+      const preview=confirmed??await this.previewInvitations(userId,{invitedUserIds:dto.invitedUserIds??[],audienceScope:dto.audienceScope,branchId:dto.branchId},client);
       const e=(await client.query(`INSERT INTO calendar_events(host_user_id,title,description,event_type,audience_scope,branch_id,location,
         date_bs,tithi_year_bs,tithi_month_bs,tithi_paksha,tithi_number,is_public,provenance,starts_at,reminder_offsets)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [userId,dto.title.trim(),dto.description??null,dto.eventType,dto.audienceScope,dto.branchId??null,dto.location??null,date.dateBs,
           dto.tithiYearBs??null,dto.tithiMonthBs??null,dto.tithiPaksha?.toUpperCase()??null,dto.tithiNumber??null,dto.audienceScope==='PUBLIC',JSON.stringify(date.provenance),date.startsAt,date.offsets])).rows[0];
       await this.saveInvitations(e.id,preview.recipients.map((r:any)=>r.userId),client);
+      if(confirmed){
+        await client.query('UPDATE calendar_events SET audience_preview_id=$2 WHERE id=$1',[e.id,confirmed.id]);e.audience_preview_id=confirmed.id;
+        await this.audiences.consume(confirmed,e,userId,client);
+      }
       await this.revision(e,'CALENDAR_EVENT_CREATED',userId,client);
       return this.detail(e,userId,client);
     });
@@ -154,13 +171,17 @@ export class CalendarService {
   }
   async updateEvent(eventId:string,actor:AuthenticatedUser,dto:Partial<CreateCalendarEventDto>):Promise<CalendarEventDetailDto>{
     allowedFields(dto,keys);
-    return this.db.transaction(async client=>{
+    return this.selectionTransaction(async client=>{
       const e=await this.locked(eventId,actor,client,dto.version);
       const current={title:e.title,description:e.description,eventType:e.event_type,audienceScope:e.audience_scope,branchId:e.branch_id,
         location:e.location,solarDate:e.date_bs,tithiYearBs:e.tithi_year_bs,tithiMonthBs:e.tithi_month_bs,tithiPaksha:e.tithi_paksha,tithiNumber:e.tithi_number,
         startsAt:e.starts_at?new Date(e.starts_at).toISOString():undefined,reminderOffsets:e.reminder_offsets};
       const next={...current,...dto};
       const date=this.validate(next);await this.authorizeScope(actor.id,next,client);
+      if(e.audience_preview_id&&(dto.audienceScope!==undefined||dto.branchId!==undefined)&&dto.audienceSelection===undefined&&dto.invitedUserIds===undefined)
+        throw new BadRequestException('Visibility changed; preview the genealogy audience again');
+      const confirmed=dto.audienceSelection!==undefined?await this.audiences.confirm(actor.id,next,client):null;
+      if(confirmed)await this.saveInvitations(e.id,confirmed.recipients.map((r:any)=>r.userId),client);
       if(dto.invitedUserIds!==undefined){
         const preview=await this.previewInvitations(actor.id,{invitedUserIds:dto.invitedUserIds,audienceScope:next.audienceScope,branchId:next.branchId},client);
         await this.saveInvitations(e.id,preview.recipients.map((r:any)=>r.userId),client);
@@ -170,6 +191,11 @@ export class CalendarService {
         version=version+1,updated_at=NOW() WHERE id=$1 RETURNING *`,
         [e.id,next.title.trim(),next.description??null,next.eventType,next.audienceScope,next.branchId??null,next.location??null,date.dateBs,
           next.tithiYearBs??null,next.tithiMonthBs??null,next.tithiPaksha?.toUpperCase()??null,next.tithiNumber??null,next.audienceScope==='PUBLIC',JSON.stringify(date.provenance),date.startsAt,date.offsets])).rows[0];
+      if(confirmed||dto.invitedUserIds!==undefined){
+        updated.audience_preview_id=confirmed?.id??null;
+        await client.query('UPDATE calendar_events SET audience_preview_id=$2 WHERE id=$1',[e.id,updated.audience_preview_id]);
+        if(confirmed)await this.audiences.consume(confirmed,updated,actor.id,client);
+      }
       await this.revision(updated,'CALENDAR_EVENT_UPDATED',actor.id,client);return this.detail(updated,actor.id,client);
     });
   }
@@ -183,9 +209,18 @@ export class CalendarService {
     });
   }
   async history(id:string,actor:AuthenticatedUser){
-    const e=(await this.db.query('SELECT * FROM calendar_events WHERE id=$1',[uuid(id)])).rows[0];
-    if(!e||!await this.manageable(e,actor.id))throw new NotFoundException('Event history unavailable');
-    return (await this.db.query('SELECT version,action,actor_id AS "actorId",snapshot,created_at AS "createdAt" FROM calendar_event_revisions WHERE event_id=$1 ORDER BY version DESC LIMIT 100',[id])).rows;
+    return this.db.transaction(async client=>{
+      const e=(await client.query('SELECT * FROM calendar_events WHERE id=$1',[uuid(id)])).rows[0];
+      if(!e||!await this.manageable(e,actor.id,client))throw new NotFoundException('Event history unavailable');
+      await this.actor(actor.id,client);
+      const rows=(await client.query(`SELECT r.version,r.action,r.actor_id AS "actorId",r.snapshot,r.created_at AS "createdAt",
+        CASE WHEN p.id IS NOT NULL THEN jsonb_build_object('previewId',p.id,'basis',p.basis,'previewContext',p.preview_context,'sendContext',p.send_context,'eventVersion',p.event_version) END AS "audienceEvidence"
+        FROM calendar_event_revisions r LEFT JOIN calendar_audience_previews p ON p.id::text=r.snapshot->>'audience_preview_id'
+        WHERE r.event_id=$1 ORDER BY r.version DESC LIMIT 100`,[id])).rows;
+      for(const row of rows)if(row.audienceEvidence)await this.audiences.historyAccess(actor.id,row.audienceEvidence.basis,client);
+      if(rows.some(r=>r.audienceEvidence))await this.audiences.recordHistoryRead(actor.id,e,client);
+      return rows;
+    });
   }
   async listEvents(actor:AuthenticatedUser,options?:{yearBs?:number;monthBs?:number;branchId?:string;audienceScope?:EventAudienceScope}):Promise<CalendarEventDetailDto[]>{
     this.validateBsYear(options?.yearBs);
@@ -278,10 +313,11 @@ export class CalendarService {
     const invitation=(await this.db.query('SELECT rsvp_status FROM event_invitations WHERE event_id=$1 AND invited_user_id=$2 AND revoked_at IS NULL',[e.id,userId],client)).rows[0];
     const canManage=await this.manageable(e,userId,client);
     let counts:any;
+    const selection=canManage&&e.audience_preview_id?(await this.db.query('SELECT selection FROM calendar_audience_previews WHERE id=$1',[e.audience_preview_id],client)).rows[0]?.selection:undefined;
     if(canManage)counts=(await this.db.query(`SELECT count(*) FILTER(WHERE rsvp_status='GOING')::int AS going,
       count(*) FILTER(WHERE rsvp_status='MAYBE')::int AS maybe,count(*) FILTER(WHERE rsvp_status='DECLINED')::int AS declined
       FROM event_invitations WHERE event_id=$1 AND revoked_at IS NULL`,[e.id],client)).rows[0];
-    return {id:e.id,createdByUserId:e.host_user_id,title:e.title,description:e.description??undefined,eventType:e.event_type,
+    return {audienceSelection:selection,id:e.id,createdByUserId:e.host_user_id,title:e.title,description:e.description??undefined,eventType:e.event_type,
       audienceScope:e.audience_scope,branchId:e.branch_id,location:e.location,isAllDay:!e.starts_at,solarDate:e.date_bs,
       tithiYearBs:e.tithi_year_bs,tithiMonthBs:e.tithi_month_bs,tithiPaksha:e.tithi_paksha,tithiNumber:e.tithi_number,
       startsAt:e.starts_at?new Date(e.starts_at).toISOString():null,reminderOffsets:e.reminder_offsets,version:e.version,lifecycleState:e.lifecycle_state,

@@ -1,3 +1,4 @@
+import 'calendar_audience_picker.dart';
 import 'package:flutter/material.dart';
 import 'calendar_period_screen.dart';
 import '../services/genealogy_api_service.dart';
@@ -67,6 +68,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
     var reminder = false;
     var busy = false;
     String? error;
+    Map<String,dynamic>? audience;
     try {
       final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
         title: Text(calendarLabels['create']!),
@@ -81,6 +83,15 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
           }, child: Text(selected?.toString() ?? calendarLabels['time']!)),
           CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy ? null : (value) => update(() => reminder = value ?? false)),
           Text(calendarLabels['dateNote']!),
+          TextButton(onPressed: busy ? null : () async {
+            final picked=await Navigator.of(dialogContext).push<Map<String,dynamic>>(MaterialPageRoute(builder:(_)=>CalendarAudiencePicker(api:widget.apiService)));
+            if(dialogContext.mounted)update(()=>audience=picked);
+          },child:const Text('आमन्त्रित समूह छान्नुहोस् (Choose invitation audience)')),
+          if(audience!=null)...[
+            Text('आमन्त्रित खाताहरू (Recipient accounts): ${audience!['recipientCount']}'),
+            const Text('छानिएको समूहका खाताहरू मात्र कार्यक्रम हेर्न सक्छन्। (Only invited accounts can view this event.)'),
+            TextButton(onPressed:busy?null:()=>update(()=>audience=null),child:const Text('समूह हटाउनुहोस् (Clear audience)')),
+          ],
           if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ])),
         actions: [
@@ -89,15 +100,21 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
           TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: Text(calendarLabels['close']!)),
           TextButton(onPressed: busy ? null : () async {
             if(title.text.trim().isEmpty || selected == null) {update(() => error = calendarLabels['required']); return;}
+            if(audience!=null){
+              final expiry=DateTime.tryParse(audience!['expiresAt'] as String);
+              if(expiry==null||!expiry.isAfter(DateTime.now())){update((){audience=null;error='म्याद सकियो, समूह फेरि छान्नुहोस् (Preview expired; choose the audience again)';});return;}
+            }
             update(() {busy = true; error = null;});
             try {
               await widget.apiService.requestJson('/calendar/events', method: 'POST', data: {
-                'title': title.text.trim(), 'eventType': 'GENERAL_EVENT', 'audienceScope': 'COMMUNITY',
+                'title': title.text.trim(), 'eventType': 'GENERAL_EVENT', 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
+                if(audience!=null)'audienceSelection':audience!['audienceSelection'],
+                if(audience!=null)'audiencePreviewId':audience!['audiencePreviewId'],
                 'startsAt': selected!.toUtc().toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
               });
               if(dialogContext.mounted) Navigator.pop(dialogContext);
               await _loadEvents();
-            } catch(e) {if(dialogContext.mounted) update(() {busy = false; error = e.toString();});}
+            } catch(e) {if(dialogContext.mounted) update(() {busy = false; error = e.toString(); audience=null;});}
           }, child: Text(calendarLabels['save']!)),
         ],
       )));

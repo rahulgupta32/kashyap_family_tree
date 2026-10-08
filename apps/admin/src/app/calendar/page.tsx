@@ -1,12 +1,13 @@
 'use client';
 
+import { GenealogyAudience } from './genealogy-audience';
 import { CalendarPeriod } from './period';
 import { CalendarBrowse } from './browse';
 import { calendarManagement } from '@kashyap/localization';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
-import { CalendarEventDetailDto, EventAudienceScope } from '@kashyap/contracts';
+import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection } from '@kashyap/contracts';
 
 const label=(key: keyof typeof calendarManagement.en)=>`${calendarManagement.ne[key]} (${calendarManagement.en[key]})`;
 
@@ -35,6 +36,12 @@ export default function CalendarAdminPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [invitees, setInvitees] = useState<string[]>([]);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [derivedEnabled,setDerivedEnabled]=useState(false);
+  const [selection,setSelection]=useState<GenealogyAudienceSelection|undefined>();
+  const [derivedPreview,setDerivedPreview]=useState<any>(null);
+  const tokenRef=useRef(accessToken);tokenRef.current=accessToken;
+  useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[selection,formData.audienceScope,formData.branchId]);
+  useEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[accessToken]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [cancelReason, setCancelReason] = useState('');
@@ -83,16 +90,27 @@ export default function CalendarAdminPage() {
         payload.reminderOffsets = reminder ? [60] : [];
         delete payload.tithiYearBs; delete payload.tithiMonthBs; delete payload.tithiPaksha; delete payload.tithiNumber;
       }
-      payload.invitedUserIds = invitees;
+      if(derivedEnabled){
+        if(!selection)throw new Error('आमन्त्रित समूह छान्नुहोस् (Choose an invitation audience)');
+        payload.audienceSelection=selection;
+        const key=JSON.stringify({selection,scope:formData.audienceScope,branch:payload.branchId??null});
+        if(!derivedPreview||derivedPreview.key!==key||new Date(derivedPreview.expiresAt).getTime()<=Date.now()){
+          const result=await ApiClient.calendarRequest(accessToken,'events/preview','POST',{audienceSelection:selection,audienceScope:formData.audienceScope,...(payload.branchId?{branchId:payload.branchId}:{})});
+          if(tokenRef.current!==accessToken)return;setDerivedPreview({...result,key});return;
+        }
+        payload.audiencePreviewId=derivedPreview.previewId;
+      }else payload.invitedUserIds = invitees;
       const key = JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId});
-      if (invitees.length && previewKey !== key) {
+      if (!derivedEnabled && invitees.length && previewKey !== key) {
         await ApiClient.calendarRequest(accessToken,'events/preview','POST',{invitedUserIds:invitees,audienceScope:formData.audienceScope,...(formData.audienceScope===EventAudienceScope.BRANCH?{branchId:formData.branchId}:{})});
-        setPreviewKey(key); return;
+        if(tokenRef.current!==accessToken)return;setPreviewKey(key); return;
       }
       if (dateMode === 'BS' && formData.solarDate) {
         payload.solarDate = formData.solarDate;
       }
       await ApiClient.createCalendarEvent(accessToken, payload);
+      if(tokenRef.current!==accessToken)return;
+      setDerivedPreview(null);setDerivedEnabled(false);setSelection(undefined);
       setMessage({ type: 'success', text: 'वार्षिक कार्यक्रम सफलतापूर्वक सिर्जना भयो ।' });
       setShowCreateModal(false);setInvitees([]);setCandidates([]);setPreviewKey(null);setStartsAt('');setReminder(false);setDateMode('BS');
       setFormData({
@@ -109,6 +127,7 @@ export default function CalendarAdminPage() {
       });
       await loadEvents();
     } catch (err: any) {
+      if(tokenRef.current!==accessToken)return;setDerivedPreview(null);setPreviewKey(null);
       setMessage({ type: 'error', text: err.message });
     } finally {
       setActionLoading(false);
@@ -241,6 +260,7 @@ export default function CalendarAdminPage() {
           <label>{label('reason')}<input aria-label={label('reason')} value={cancelReason} onChange={e=>setCancelReason(e.target.value)} className="block border p-2 w-full" /></label>
           <button disabled={actionLoading||cancelReason.trim().length<5} onClick={()=>manage(true)}>{label('cancel')}</button>
           <p>Revisions: {history.map(r=>r.version).join(', ')}</p>
+          {history.filter(r=>r.audienceEvidence).map(r=><p key={r.version}>संस्करण (Revision) {r.version}: {r.audienceEvidence.basis.selection.type} · {r.audienceEvidence.basis.recipients.length} आमन्त्रित खाताहरू (recipient accounts)</p>)}
           <button onClick={()=>setEditing(null)}>{label('close')}</button>
         </div>
       </div>}
@@ -248,6 +268,7 @@ export default function CalendarAdminPage() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <form onSubmit={handleCreate} aria-label="Create event" role="dialog" aria-modal="true" className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-slate-100">
+            <fieldset disabled={actionLoading} className="space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">नयाँ क्यालेन्डर कार्यक्रम</h3>
               <button type="button" onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
@@ -366,14 +387,16 @@ export default function CalendarAdminPage() {
               </div>
             </div>
 
-            <fieldset className="space-y-2 border p-3 rounded"><legend>{label('invitees')}</legend>
+            {accessToken&&<GenealogyAudience token={accessToken} branches={branches} onChange={(value,enabled)=>{setSelection(value);setDerivedEnabled(enabled);setDerivedPreview(null);}}/>}
+            {!derivedEnabled&&<fieldset className="space-y-2 border p-3 rounded"><legend>{label('invitees')}</legend>
               <label>{label('search')}<input aria-label={label('search')} value={search} onChange={e=>setSearch(e.target.value)} className="block border p-2 w-full" /></label>
               <button type="button" disabled={actionLoading||search.trim().length<2} onClick={searchMembers}>{label('search')}</button>
               {candidates.map(member=><label key={member.userId} className="block text-sm"><input type="checkbox" checked={invitees.includes(member.userId)} onChange={e=>{
                 setInvitees(ids=>e.target.checked?[...ids,member.userId]:ids.filter(id=>id!==member.userId));setPreviewKey(null);
               }} /> {member.name}</label>)}
               <p role="status">{label('count')}: {invitees.length}</p>
-            </fieldset>
+            </fieldset>}
+            {derivedPreview&&<section aria-label="Genealogy recipient preview" className="border p-3 space-y-2"><p role="status">आमन्त्रित खाताहरू (Recipient accounts): {derivedPreview.recipientCount}</p><p>म्याद (Expires): {new Date(derivedPreview.expiresAt).toLocaleString()}</p><button type="button" onClick={()=>setDerivedPreview(null)}>फेरि पूर्वावलोकन (Preview again)</button>{derivedPreview.recipients.map((r:any)=><p key={r.userId}>{r.name}</p>)}</section>}
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
               <button
                 type="button"
@@ -384,12 +407,13 @@ export default function CalendarAdminPage() {
               </button>
               <button
                 type="submit"
-                disabled={actionLoading}
+                disabled={actionLoading||(derivedEnabled&&(!selection||derivedPreview?.recipientCount===0))}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
               >
-                {invitees.length ? (previewKey === JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId}) ? label('confirm') : label('preview')) : 'सिर्जना गर्नुहोस् (Save)'}
+                {derivedEnabled?(derivedPreview?label('confirm'):label('preview')):invitees.length ? (previewKey === JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId}) ? label('confirm') : label('preview')) : 'सिर्जना गर्नुहोस् (Save)'}
               </button>
             </div>
+            </fieldset>
           </form>
         </div>
       )}

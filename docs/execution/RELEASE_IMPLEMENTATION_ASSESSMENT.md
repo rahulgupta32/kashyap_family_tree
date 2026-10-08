@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 127 | 48.8% |
-| MISSING | 19 | 7.3% |
+| PARTIALLY_COMPLETED | 129 | 49.6% |
+| MISSING | 17 | 6.5% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -37,7 +37,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | CAL | 1 | 8 | 1 | 3 |
 | JUT | 3 | 4 | 0 | 2 |
 | NOT | 6 | 5 | 0 | 0 |
-| INV | 2 | 8 | 2 | 0 |
+| INV | 2 | 10 | 0 | 0 |
 | COM | 2 | 12 | 0 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 12 | 0 | 0 |
@@ -106,3 +106,7 @@ SRCH-FR-008 gains partial code evidence for a unified exact-ID lookup with curre
 ## Source-preserving search normalization — 2026-10-08
 
 SRCH-FR-006 gains partial implementation evidence for Unicode, case and whitespace normalization across recorded names and aliases. See SEARCH_NORMALIZATION_REPORT.md. No inferred transliteration or source-name rewrite occurs. Current totals: 102 completed /127 partial /19 missing (6 functional +13 NFR evidence) /12 external. This supersedes earlier count snapshots; all 260 signed acceptance rows remain open. Exact-head CI results are recorded in PR #5 when complete.
+
+## Genealogy invitation audiences and recipient evidence — 2026-10-08
+
+INV-FR-004 and INV-FR-010 gain partial implementation evidence for branch/generation/verified-descendant selection, actor-bound previews and immutable recipient/graph/query-context evidence tied to event revisions. See GENEALOGY_INVITATION_AUDIENCE_REPORT.md. Approved relationship groups and complete acceptance remain open. Current totals: 102 completed /129 partial /17 missing (4 functional +13 NFR evidence) /12 external. This supersedes earlier milestone count snapshots; all 260 signed acceptance rows remain open. Exact-head CI results are recorded in PR #5 when complete.
