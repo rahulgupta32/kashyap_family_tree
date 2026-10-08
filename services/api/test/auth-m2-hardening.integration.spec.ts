@@ -37,6 +37,7 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
   let branchBId: string;
 
   beforeAll(async () => {
+    if (!process.env.DB_PASSWORD) throw new Error('DB_PASSWORD must be supplied by the isolated integration-test environment');
     isoDb = await createDisposableDatabase('auth_m2_hard');
     await assertDatabaseIsolation(isoDb.client, isoDb.dbName);
     process.env.NODE_ENV = 'test';
@@ -45,7 +46,6 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
     process.env.DB_HOST = process.env.DB_HOST || '127.0.0.1';
     process.env.DB_PORT = process.env.DB_PORT || '5434';
     process.env.DB_USER = process.env.DB_USER || 'kashyap_user';
-    process.env.DB_PASSWORD = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     process.env.DB_NAME = isoDb.dbName;
     process.env.REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
     process.env.REDIS_PORT = process.env.REDIS_PORT || '6379';
@@ -238,6 +238,71 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect((await sessionRepo.findById(user.sessionId))!.mfa_verified_at).toBeNull();
       expect((await call(user.accessToken, '/auth/mfa/confirm', { code: totp(secret, Math.floor(Date.now() / 30000)) })).status).toBe(201);
       expect((await call(user.accessToken, '/auth/mfa/enroll', {})).status).toBe(409);
+    });
+
+    it('renews recovery codes only with fresh authenticator proof and invalidates prior codes/sessions', async () => {
+      const phone = `+9779871${Math.floor(100000 + Math.random() * 900000)}`;
+      const user = await loginUser(phone); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      await call(user.accessToken, '/auth/mfa/enroll', {});
+      const secret = await pendingSecret(user.userId);
+      const firstCode = totp(secret, Math.floor(Date.now() / 30000));
+      const enrolled = await (await call(user.accessToken, '/auth/mfa/confirm', { code: firstCode })).json() as any;
+      const pending = await loginUser(phone);
+      expect((await call(pending.accessToken, '/auth/mfa/recovery-codes/renew', { code: firstCode })).status).toBe(403);
+      expect((await call(user.accessToken, '/auth/mfa/recovery-codes/renew', { code: firstCode })).status).toBe(403);
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 30000);
+      try {
+        const code = totp(secret, Math.floor(Date.now() / 30000));
+        expect((await call(user.accessToken, '/auth/mfa/recovery-codes/renew', { code, userId: pending.userId })).status).toBe(400);
+        const renewed = await call(user.accessToken, '/auth/mfa/recovery-codes/renew', { code });
+        expect(renewed.status).toBe(201); expect(renewed.headers.get('cache-control')).toBe('no-store');
+        const codes = (await renewed.json() as any).recoveryCodes;
+        expect(codes).toHaveLength(10); expect(codes).not.toContain(enrolled.recoveryCodes[0]);
+        expect((await sessionRepo.findById(pending.sessionId))!.revoked_at).not.toBeNull();
+        expect((await call(user.accessToken, '/audit/dashboard')).status).toBe(200);
+        const next = await loginUser(phone);
+        expect((await call(next.accessToken, '/auth/mfa/recover', { code: enrolled.recoveryCodes[0] })).status).toBe(403);
+        expect((await call(next.accessToken, '/auth/mfa/recover', { code: codes[0] })).status).toBe(201);
+        const evidence = (await dbService.query('SELECT new_value FROM audit_logs WHERE entity_type=$1 AND entity_id=$2', ['account_authenticator', user.userId])).rows;
+        expect(JSON.stringify(evidence)).not.toContain(codes[0]);
+      } finally { clock.mockRestore(); }
+    });
+
+    it('replaces an authenticator atomically with session-bound setup and audit rollback', async () => {
+      const phone = `+9779872${Math.floor(100000 + Math.random() * 900000)}`;
+      const user = await loginUser(phone); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
+      await call(user.accessToken, '/auth/mfa/enroll', {});
+      const oldSecret = await pendingSecret(user.userId);
+      const enrolled = await (await call(user.accessToken, '/auth/mfa/confirm', { code: totp(oldSecret, Math.floor(Date.now() / 30000)) })).json() as any;
+      const other = await loginUser(phone);
+      await call(other.accessToken, '/auth/mfa/recover', { code: enrolled.recoveryCodes[0] });
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 30000);
+      try {
+        const oldCode = totp(oldSecret, Math.floor(Date.now() / 30000));
+        const failing = jest.spyOn(auditRepo, 'appendAuditLog').mockRejectedValueOnce(new Error('Fictional lifecycle audit outage'));
+        try { expect((await call(user.accessToken, '/auth/mfa/replace/start', { code: oldCode })).status).toBe(500); } finally { failing.mockRestore(); }
+        const started = await call(user.accessToken, '/auth/mfa/replace/start', { code: oldCode }); expect(started.status).toBe(201);
+        const setup = await started.json() as any;
+        const nextSecret = await pendingSecret(user.userId);
+        const newCode = totp(nextSecret, Math.floor(Date.now() / 30000));
+        expect((await call(other.accessToken, '/auth/mfa/replace/confirm', { code: newCode })).status).toBe(409);
+        const before = (await dbService.query('SELECT * FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0];
+        const failure = jest.spyOn(auditRepo, 'appendAuditLog').mockRejectedValueOnce(new Error('Fictional replacement audit outage'));
+        try { expect((await call(user.accessToken, '/auth/mfa/replace/confirm', { code: newCode })).status).toBe(500); } finally { failure.mockRestore(); }
+        const rolledBack = (await dbService.query('SELECT * FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0];
+        expect(rolledBack.secret_ciphertext).toBe(before.secret_ciphertext); expect(rolledBack.generation).toBe(before.generation);
+        const contenders = await Promise.all([call(user.accessToken, '/auth/mfa/replace/confirm', { code: newCode }), call(user.accessToken, '/auth/mfa/replace/confirm', { code: newCode })]);
+        expect(contenders.map(response => response.status).sort()).toEqual([201, 409]);
+        const replaced = contenders.find(response => response.status === 201)!;
+        const codes = (await replaced.json() as any).recoveryCodes; expect(codes).toHaveLength(10);
+        expect((await sessionRepo.findById(other.sessionId))!.revoked_at).not.toBeNull();
+        expect((await call(user.accessToken, '/audit/dashboard')).status).toBe(200);
+        const factor = (await dbService.query('SELECT * FROM account_authenticators WHERE user_id=$1', [user.userId])).rows[0];
+        expect(decryptSecret(factor.secret_ciphertext, user.userId).equals(nextSecret)).toBe(true); expect(factor.pending_ciphertext).toBeNull();
+        expect(factor.generation).toBe(before.generation + 1);
+        const evidence = (await dbService.query('SELECT new_value FROM audit_logs WHERE entity_type=$1 AND entity_id=$2', ['account_authenticator', user.userId])).rows;
+        expect(JSON.stringify(evidence)).not.toContain(setup.secret); expect(JSON.stringify(evidence)).not.toContain(codes[0]);
+      } finally { clock.mockRestore(); }
     });
 
     it('requires enrollment in production and refuses token-claim forgery or alternate paths', async () => {

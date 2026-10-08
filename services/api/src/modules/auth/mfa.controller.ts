@@ -23,4 +23,14 @@ export class MfaController {
   @Post('recover')
   @Header('Cache-Control', 'no-store')
   recover(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) { return this.mfa.execute(user, 'recover', body); }
+  @Post('replace/start')
+  @Header('Cache-Control', 'no-store')
+  replaceStart(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) { return this.mfa.execute(user, 'replace-start', body); }
+  @Post('replace/confirm')
+  @Header('Cache-Control', 'no-store')
+  replaceConfirm(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) { return this.mfa.execute(user, 'replace-confirm', body); }
+  @Post('recovery-codes/renew')
+  @Header('Cache-Control', 'no-store')
+  renewCodes(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) { return this.mfa.execute(user, 'renew-codes', body); }
+
 }

@@ -78,7 +78,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
           if (widget.apiService.authToken != null)
             IconButton(tooltip: 'Security verification', icon: const Icon(Icons.security), onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => AuthenticatorScreen(
-                apiService: widget.apiService, enrollmentRequested: true,
+                apiService: widget.apiService, enrollmentRequested: true, manageCredentials: true,
                 child: () => Scaffold(appBar: AppBar(title: const Text('Security verification')),
                   body: const Padding(padding: EdgeInsets.all(20), child: Text(
                     'Security verification is complete or is not required for your current account.'))))));

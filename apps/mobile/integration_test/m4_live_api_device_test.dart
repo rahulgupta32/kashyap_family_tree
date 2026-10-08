@@ -347,7 +347,7 @@ void main() {
     expect(saved.contains(secret), isFalse);
     expect(codes.any(saved.contains), isFalse);
     await press(tester, find.text('I saved the codes — continue'));
-    await until(tester, find.text('Security verification is complete or is not required for your current account.'));
+    await until(tester, find.text('Manage authenticator'));
     await back(tester);
     await protectedStatus(200);
     debugPrint('[MFA DEVICE] Real native setup, confirmation and transient recovery-code display passed');

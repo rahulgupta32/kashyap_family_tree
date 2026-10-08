@@ -6,7 +6,8 @@ class AuthenticatorScreen extends StatefulWidget {
   final GenealogyApiService apiService;
   final Widget Function() child;
   final bool enrollmentRequested;
-  const AuthenticatorScreen({super.key, required this.apiService, required this.child, this.enrollmentRequested = false});
+  final bool manageCredentials;
+  const AuthenticatorScreen({super.key, required this.apiService, required this.child, this.enrollmentRequested = false, this.manageCredentials = false});
   @override
   State<AuthenticatorScreen> createState() => _AuthenticatorScreenState();
 }
@@ -20,6 +21,7 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
   bool _busy = false;
   bool _recovery = false;
   bool _complete = false;
+  bool _replacement = false;
   @override
   void initState() { super.initState(); _load(); }
   @override
@@ -32,30 +34,31 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
       if (value is! Map<String, dynamic> || value['required'] is! bool || value['verified'] is! bool || value['enrolled'] is! bool) {
         throw const FormatException('Invalid security status');
       }
-      if (mounted) { setState(() { _status = value; _complete = (value['required'] == false || value['verified'] == true) &&
-          !(widget.enrollmentRequested && value['eligible'] == true && value['enrolled'] == false); }); }
+      if (mounted) { setState(() { _status = value; if (value['verified'] == true) { _recovery = false; } _complete = (value['required'] == false || value['verified'] == true) &&
+          !(value['eligible'] == true && (widget.manageCredentials || (widget.enrollmentRequested && value['enrolled'] == false))); }); }
     } catch (_) {
       if (mounted) { setState(() => _error = 'Security status could not be checked. Please retry.'); }
     } finally { if (mounted) { setState(() => _busy = false); } }
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({String? requestedOperation}) async {
     final owner = widget.apiService.chatAccountId;
     setState(() { _busy = true; _error = null; });
     try {
       final enrolling = _status?['enrolled'] == false;
-      final operation = enrolling ? (_secret == null ? 'enroll' : 'confirm') : (_recovery ? 'recover' : 'verify');
+      final operation = requestedOperation ?? (_replacement && _secret != null ? 'replace/confirm' : enrolling ? (_secret == null ? 'enroll' : 'confirm') : (_recovery ? 'recover' : 'verify'));
       final value = await widget.apiService.requestJson('/auth/mfa/$operation', method: 'POST',
         data: operation == 'enroll' ? {} : {'code': _code.text.trim()});
       if (!mounted || owner != widget.apiService.chatAccountId) { return; }
-      if (operation == 'enroll') {
+      if (operation == 'enroll' || operation == 'replace/start') {
         if (value is! Map || value['secret'] is! String) { throw const FormatException('Invalid setup response'); }
-        setState(() => _secret = value['secret'] as String);
-      } else if (operation == 'confirm') {
+        _code.clear();
+        setState(() { _secret = value['secret'] as String; _replacement = operation == 'replace/start'; });
+      } else if (operation == 'confirm' || operation == 'replace/confirm' || operation == 'recovery-codes/renew') {
         if (value is! Map || value['recoveryCodes'] is! List) { throw const FormatException('Invalid recovery response'); }
         final codes = List<String>.from(value['recoveryCodes'] as List);
         _code.clear();
-        setState(() { _secret = null; _recoveryCodes = codes; });
+        setState(() { _secret = null; _replacement = false; _recoveryCodes = codes; });
       } else {
         _code.clear();
         await _load();
@@ -69,6 +72,7 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
   Widget build(BuildContext context) {
     if (_complete) { return widget.child(); }
     final setup = _status?['enrolled'] == false;
+    final management = widget.manageCredentials && _status?['verified'] == true && _status?['enrolled'] == true && _secret == null;
     final valid = RegExp(_recovery ? r'^[a-f0-9]{32}$' : r'^\d{6}$').hasMatch(_code.text.trim());
     return Scaffold(
       appBar: AppBar(title: const Text('Security verification / सुरक्षा प्रमाणीकरण'), actions: [
@@ -84,6 +88,13 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
           const Text('Save these recovery codes offline in a safe place. Each works once after phone sign-in. If all credentials are lost, phone sign-in alone cannot restore access.'),
           ..._recoveryCodes!.map((code) => Text(code)),
           ElevatedButton(onPressed: () { setState(() { _recoveryCodes = null; }); _load(); }, child: const Text('I saved the codes — continue')),
+        ] else if (management) ...[
+          const Text('Manage authenticator'),
+          const Text('Enter a fresh code from your current authenticator. Renewing codes or replacing the authenticator invalidates old recovery codes and signs out other sessions.'),
+          TextField(controller: _code, autocorrect: false, enableSuggestions: false, keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Current authenticator code'), onChanged: (_) => setState(() {})),
+          ElevatedButton(onPressed: _busy || !valid ? null : () => _submit(requestedOperation: 'recovery-codes/renew'), child: const Text('Renew recovery codes')),
+          ElevatedButton(onPressed: _busy || !valid ? null : () => _submit(requestedOperation: 'replace/start'), child: const Text('Replace authenticator')),
         ] else if (_status != null) ...[
           Text(setup ? 'Set up a time-based authenticator for Kashyap.' : 'Enter your authenticator code to continue.'),
           if (_secret != null) ...[
@@ -92,14 +103,14 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
             TextButton(onPressed: _busy ? null : () {
               _code.clear();
               setState(() => _secret = null);
-              _submit();
+              if (_replacement) { _replacement = false; _load(); } else { _submit(); }
             }, child: const Text('Restart expired setup')),
           ],
           if (!setup || _secret != null) TextField(controller: _code, autocorrect: false, enableSuggestions: false,
             keyboardType: _recovery ? TextInputType.text : TextInputType.number,
             decoration: InputDecoration(labelText: _recovery ? 'Recovery code' : '6-digit authenticator code'),
             onChanged: (_) => setState(() {})),
-          if (!setup) TextButton(onPressed: _busy ? null : () { _code.clear(); setState(() => _recovery = !_recovery); },
+          if (!setup && _secret == null) TextButton(onPressed: _busy ? null : () { _code.clear(); setState(() => _recovery = !_recovery); },
             child: Text(_recovery ? 'Use authenticator' : 'Use recovery code')),
           ElevatedButton(onPressed: _busy || ((!setup || _secret != null) && !valid) ? null : _submit,
             child: Text(setup && _secret == null ? 'Set up authenticator' : 'Verify')),

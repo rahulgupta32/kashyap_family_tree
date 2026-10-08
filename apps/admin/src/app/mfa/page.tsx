@@ -9,22 +9,23 @@ export default function VerificationPage() {
   const router = useRouter();
   const epoch = useRef(0);
   const tokenRef = useRef(accessToken); tokenRef.current = accessToken;
-  const [status, setStatus] = useState<{ enrolled: boolean; required: boolean; verified: boolean } | null>(null);
+  const [status, setStatus] = useState<{ enrolled: boolean; required: boolean; verified: boolean; eligible: boolean } | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState(false);
+  const [replacement, setReplacement] = useState(false);
   const [codes, setCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     epoch.current++; setBusy(false);
-    setStatus(null); setSecret(null); setCodes([]); setCode(''); setError('');
+    setRecovery(false); setReplacement(false); setStatus(null); setSecret(null); setCodes([]); setCode(''); setError('');
     if (isLoading) return;
     if (!accessToken) { router.replace('/login'); return; }
     const controller = new AbortController();
     fetch(`${API}/auth/mfa/status`, { headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'include', cache: 'no-store', signal: controller.signal })
       .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Unable to load verification'); return data; })
-      .then(data => { if (controller.signal.aborted) return; setStatus(data); if ((!data.required || data.verified) && !(window.location.search === '?setup=1' && !data.enrolled)) router.replace('/'); })
+      .then(data => { if (controller.signal.aborted) return; setStatus(data); if ((!data.required || data.verified) && !(window.location.search === '?setup=1' && data.eligible)) router.replace('/'); })
       .catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => { epoch.current++; controller.abort(); };
   }, [accessToken, isLoading, router]);
@@ -35,8 +36,8 @@ export default function VerificationPage() {
       const response = await fetch(`${API}/auth/mfa/${operation}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store', body: JSON.stringify(operation === 'enroll' ? {} : { code }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Verification failed');
       if (generation !== epoch.current || tokenRef.current !== token) return;
-      if (operation === 'enroll') { setSecret(data.secret); setCode(''); }
-      else if (data.recoveryCodes) { setCodes(data.recoveryCodes); setSecret(null); setCode(''); }
+      if (operation === 'enroll' || operation === 'replace/start') { setSecret(data.secret); setReplacement(operation === 'replace/start'); setCode(''); }
+      else if (data.recoveryCodes) { setCodes(data.recoveryCodes); setSecret(null); setReplacement(false); setCode(''); }
       else router.replace('/');
     } catch (e: any) { if (generation === epoch.current && tokenRef.current === token) setError(e.message || 'Verification failed'); }
     finally { if (generation === epoch.current && tokenRef.current === token) setBusy(false); }
@@ -53,13 +54,15 @@ export default function VerificationPage() {
       <button onClick={() => { setCodes([]); router.replace('/'); }}>I saved the codes — continue</button>
     </section> : status && <section className="space-y-3">
       {!status.enrolled && !secret && <button disabled={busy} onClick={() => submit('enroll')}>Set up authenticator</button>}
-      {secret && <div><p>In your authenticator app, add a time-based account named Kashyap. Enter this setup key:</p><code className="break-all">{secret}</code><p>Setup expires after 10 minutes. Keep this key private.</p></div>}
-      {(status.enrolled || secret) && <form onSubmit={event => { event.preventDefault(); void submit(secret ? 'confirm' : recovery ? 'recover' : 'verify'); }}>
+      {secret && <div><p>In your authenticator app, add a time-based account named Kashyap. Enter this setup key:</p><code className="break-all">{secret}</code><p>Setup expires after 10 minutes. Keep this key private.</p><button disabled={busy} onClick={() => { setSecret(null); setCode(''); if (replacement) setReplacement(false); else void submit('enroll'); }}>Restart expired setup</button></div>}
+      {(status.enrolled || secret) && <form onSubmit={event => { event.preventDefault(); void submit(secret ? replacement ? 'replace/confirm' : 'confirm' : status.verified ? 'recovery-codes/renew' : recovery ? 'recover' : 'verify'); }}>
+        {status.verified && !secret && <p>Enter a fresh code from your current authenticator. Renewal or replacement invalidates old recovery codes and signs out other sessions.</p>}
         <label htmlFor="verification-code">{recovery ? 'Recovery code' : 'Authenticator code'}</label>
         <input id="verification-code" className="block border p-2 w-full" value={code} onChange={event => setCode(event.target.value)} autoComplete="off" inputMode={recovery ? 'text' : 'numeric'} maxLength={recovery ? 32 : 6} />
-        <button className="mt-3" disabled={busy || !(recovery ? /^[a-f0-9]{32}$/ : /^\d{6}$/).test(code)} type="submit">{busy ? 'Verifying…' : 'Verify'}</button>
+        <button className="mt-3" disabled={busy || !(recovery ? /^[a-f0-9]{32}$/ : /^\d{6}$/).test(code)} type="submit">{busy ? 'Verifying…' : status.verified && !secret ? 'Renew recovery codes' : 'Verify'}</button>
+        {status.verified && !secret && <button type="button" disabled={busy || !/^\d{6}$/.test(code)} onClick={() => submit('replace/start')}>Replace authenticator</button>}
       </form>}
-      {status.enrolled && <button disabled={busy} onClick={() => { setRecovery(!recovery); setCode(''); }}>{recovery ? 'Use authenticator' : 'Use a recovery code'}</button>}
+      {status.enrolled && !status.verified && !secret && <button disabled={busy} onClick={() => { setRecovery(!recovery); setCode(''); }}>{recovery ? 'Use authenticator' : 'Use a recovery code'}</button>}
     </section>}
   </main>;
 }

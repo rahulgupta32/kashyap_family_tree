@@ -10,6 +10,7 @@ function decodeBase32(value: string) {
 }
 
 test('Authenticator setup, one-time recovery display and new-session enforcement use the live API', async ({ page, browser }) => {
+  test.setTimeout(100000);
   await login(page); const adminHeaders = await headers(page);
   const phoneNumber = `+977987${randomInt(1000000, 9999999)}`;
   const api = await requestFactory.newContext({ extraHTTPHeaders: {} });
@@ -29,7 +30,8 @@ test('Authenticator setup, one-time recovery display and new-session enforcement
     await view.getByRole('button', { name: 'Set up authenticator', exact: true }).click();
     const setup = await (await enrollment).json();
     const secret = decodeBase32(setup.secret);
-    await view.getByLabel('Authenticator code', { exact: true }).fill(totp(secret, Math.floor(Date.now() / 30000)));
+    const initialCounter = Math.floor(Date.now() / 30000);
+    await view.getByLabel('Authenticator code', { exact: true }).fill(totp(secret, initialCounter));
     const confirmation = view.waitForResponse(response => response.url() === `${API}/auth/mfa/confirm`);
     await view.getByRole('button', { name: 'Verify', exact: true }).click();
     const confirmed = await confirmation; expect(confirmed.ok()).toBeTruthy(); const result = await confirmed.json();
@@ -52,5 +54,32 @@ test('Authenticator setup, one-time recovery display and new-session enforcement
     await view.getByRole('button', { name: 'Verify', exact: true }).click();
     await expect(view.getByText('ड्यासवोर्ड सारांश (Executive Dashboard)', { exact: true })).toBeVisible();
     expect((await view.request.get(`${API}/audit/dashboard`, { headers: await headers(view) })).ok()).toBeTruthy();
+    await view.goto(`http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}/mfa?setup=1`);
+    await expect(view.getByRole('button', { name: 'Renew recovery codes', exact: true })).toBeVisible();
+    const renewedCounter = Math.max(Math.floor(Date.now() / 30000), initialCounter + 1);
+    await view.getByLabel('Authenticator code', { exact: true }).fill(totp(secret, renewedCounter));
+    const renewal = view.waitForResponse(response => response.url() === `${API}/auth/mfa/recovery-codes/renew`);
+    await view.getByRole('button', { name: 'Renew recovery codes', exact: true }).click();
+    expect((await renewal).ok()).toBeTruthy();
+    await expect(view.locator('li code')).toHaveCount(10);
+    await view.getByRole('button', { name: 'I saved the codes — continue', exact: true }).click();
+    await expect(view.getByText('ड्यासवोर्ड सारांश (Executive Dashboard)', { exact: true })).toBeVisible();
+    // A fresh old-authenticator counter is required for another lifecycle action.
+    while (Math.floor(Date.now() / 30000) < renewedCounter) await view.waitForTimeout(500);
+    await view.goto(`http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}/mfa?setup=1`);
+    await expect(view.getByRole('button', { name: 'Replace authenticator', exact: true })).toBeVisible();
+    await view.getByLabel('Authenticator code', { exact: true }).fill(totp(secret, Math.max(Math.floor(Date.now() / 30000), renewedCounter + 1)));
+    const replacement = view.waitForResponse(response => response.url() === `${API}/auth/mfa/replace/start`);
+    await view.getByRole('button', { name: 'Replace authenticator', exact: true }).click();
+    const replacedSetupResponse = await replacement; expect(replacedSetupResponse.ok()).toBeTruthy();
+    const replacedSetup = await replacedSetupResponse.json();
+    await view.getByLabel('Authenticator code', { exact: true }).fill(totp(decodeBase32(replacedSetup.secret), Math.floor(Date.now() / 30000)));
+    const replacementConfirmation = view.waitForResponse(response => response.url() === `${API}/auth/mfa/replace/confirm`);
+    await view.getByRole('button', { name: 'Verify', exact: true }).click();
+    expect((await replacementConfirmation).ok()).toBeTruthy();
+    await expect(view.locator('li code')).toHaveCount(10);
+    await view.getByRole('button', { name: 'I saved the codes — continue', exact: true }).click();
+    await expect(view.getByText('ड्यासवोर्ड सारांश (Executive Dashboard)', { exact: true })).toBeVisible();
+
   } finally { await subjectContext.close(); await api.dispose(); }
 });

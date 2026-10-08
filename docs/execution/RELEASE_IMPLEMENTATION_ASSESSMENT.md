@@ -1,6 +1,8 @@
-# Release implementation assessment — 2026-10-01
+# Release implementation assessment — reconciled 2026-10-08
 
 Owner: Jyphra Technology Pvt. Ltd.
+
+The original full static review was on 2026-10-01. A targeted reconciliation on 2026-10-08 corrects nine stale missing classifications using current source and dedicated suites at `adf28dd`. It does not claim a fresh independent acceptance execution of all 260 rows. All original acceptance fields remain unchanged.
 
 Reviewed source: `0d93525ffa473617bd9cc43cbb36a00a0aa31814` on `feat/application-completion`. [PR #5](https://github.com/rahulgupta32/kashyap_family_tree/pull/5) remains draft, stacked on M4 PR #4. [CI run 36748729434](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/36748729434) completed successfully.
 
@@ -15,15 +17,15 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 108 | 41.5% |
-| MISSING | 38 | 14.6% |
+| PARTIALLY_COMPLETED | 117 | 45.0% |
+| MISSING | 29 | 11.2% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
 
 | Area | Completed | Partial | Missing | External gate |
 |---|---:|---:|---:|---:|
-| AUTH | 7 | 3 | 1 | 1 |
+| AUTH | 7 | 4 | 0 | 1 |
 | PROF | 8 | 4 | 0 | 0 |
 | GEN | 15 | 3 | 0 | 0 |
 | SRCH | 4 | 1 | 3 | 0 |
@@ -32,13 +34,13 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | DUP | 7 | 2 | 0 | 0 |
 | REL | 3 | 9 | 0 | 1 |
 | CUL | 1 | 2 | 6 | 1 |
-| CAL | 1 | 7 | 2 | 3 |
+| CAL | 1 | 8 | 1 | 3 |
 | JUT | 3 | 4 | 0 | 2 |
 | NOT | 6 | 5 | 0 | 0 |
-| INV | 2 | 4 | 6 | 0 |
-| COM | 2 | 11 | 1 | 0 |
+| INV | 2 | 8 | 2 | 0 |
+| COM | 2 | 12 | 0 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
-| CHAT | 2 | 9 | 3 | 0 |
+| CHAT | 2 | 12 | 0 | 0 |
 | ADM | 4 | 8 | 4 | 0 |
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
@@ -46,7 +48,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | MEDIA | 3 | 3 | 0 | 0 |
 | NFR | 0 | 14 | 13 | 4 |
 
-## Concrete source findings
+## Historical source findings at the original review
 
 - Category switches suppress inbox notifications but external delivery at the reviewed base ignores them. Retry/recovery only rechecks broadcast membership, allowing a queued chat alert after blocks or departures. The accompanying delivery-policy change addresses this boundary.
 - Calendar invitations persist, but the dispatcher falls back to the actor for calendar-created events. Recipient fanout and update/cancellation notices are incomplete. Month filtering is accepted by the API but ignored in the calendar service.
@@ -56,14 +58,14 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 - Updated 2026-10-04: private S3 storage, safe image derivatives and web/native profile crop controls are implemented. Community/gallery integration, bulk inventory/orphan reconciliation and production lifecycle acceptance remain open. See `IMAGE_DERIVATIVES_REPORT.md`; original ledger fields and signed acceptance status remain unchanged.
 - The original ledger abbreviates NFRs to area/verification labels. The assessment restores the exact frozen targets, including p95 latency, scale, RPO/RTO and accessibility targets.
 
-## Next engineering order
+## Remaining engineering and release order
 
-1. Close notification delivery preference/privacy regressions (this change), then recipient authorization/fanout for calendar invitations and versioned event updates.
-2. Implement durable reminder scheduling against approved date semantics, with cancellation, deduplication, failure/restart tests and no invented Tithi.
-3. Complete group chat roles/reports/media and persistent offline delivery; finish community media/revisions/appeals.
-4. Build durable cultural CMS/rule governance, import dry-run/commit/reconciliation and administrative account/settings/operations consoles.
-5. Complete object storage/derivatives, household consensus/map rendering, bilingual/accessibility/device/performance/security evidence.
-6. Obtain signed authority content/reference cases and real provider credentials; rehearse backups/restores and production rollout before closing the acceptance ledger.
+1. Complete secure credential lifecycle and governed emergency recovery, strong administrative authentication and production key operations.
+2. Complete durable cultural CMS/rule governance, import dry-run/reconciliation and administrative configuration/operations.
+3. Finish genealogy-derived invitation audiences, follower notices, approved family recurrence and remaining search/moderation/appeal workflows.
+4. Complete bilingual/accessibility/iOS and production-scale performance/security evidence for every frozen target.
+5. Obtain authority-approved cultural/calendar references, named owners, real provider credentials and genealogy data. Configure production infrastructure, monitoring, backups/PITR and secrets.
+6. Rehearse restore/rollback and staging acceptance; review stacked PRs and obtain release sign-off before production deployment.
 
 ## Verification of this assessment
 
@@ -86,3 +88,7 @@ Independent write provenance, late-link fencing and reviewed exact-version orpha
 Verified opt-in legacy reads and reviewed migration to private S3 advance MEDIA-FR-006 and ADM-FR-016 without changing classifications or original acceptance fields. See `LEGACY_MEDIA_MIGRATION_REPORT.md`. Asset IDs/references/holds and original local files are preserved. Real migration/provider/backup acceptance and broader integrations remain mandatory; exact-head CI evidence is recorded in PR #5.
 
 - Updated 2026-10-04: author-only community edits, retained text/category revision snapshots and web/native history controls are implemented; changed content returns to independent review. COM-FR-010 advances from missing to partial pending media revision integration and configurable policy. See `COMMUNITY_REVISIONS_REPORT.md`. Original acceptance fields and all frozen NFR targets remain unchanged.
+
+## Targeted reconciliation — 2026-10-08
+
+CAL-FR-012, INV-FR-005/008/009/012, COM-FR-009 and CHAT-FR-004/009/010 move from MISSING to PARTIALLY_COMPLETED based on implemented workflows and dedicated tests. Their remaining work is recorded per row. Counts are 102 completed / 117 partial / 29 missing / 12 external; no partial credit percentage is assigned. This is a classification correction, not nine newly implemented features and not signed acceptance. The remaining 29 missing rows include 13 dedicated nonfunctional-evidence gaps.

@@ -36,7 +36,7 @@ export class MfaService {
     }
   }
 
-  async execute(user: AuthenticatedUser, operation: 'enroll' | 'confirm' | 'verify' | 'recover', body: unknown) {
+  async execute(user: AuthenticatedUser, operation: 'enroll' | 'confirm' | 'verify' | 'recover' | 'replace-start' | 'replace-confirm' | 'renew-codes', body: unknown) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new BadRequestException('Invalid verification request');
     const input = body as Record<string, unknown>;
     const allowed = operation === 'enroll' ? [] : ['code'];
@@ -55,6 +55,8 @@ export class MfaService {
       const factor = (await tx.query('SELECT * FROM account_authenticators WHERE user_id=$1 FOR UPDATE', [user.id])).rows[0];
       if (factor.locked_until && new Date(factor.locked_until).getTime() > Date.now()) return { denied: true };
       if (factor.locked_until) { factor.failed_attempts = 0; await tx.query('UPDATE account_authenticators SET failed_attempts=0,locked_until=NULL WHERE user_id=$1', [user.id]); }
+      const lifecycle = operation === 'replace-start' || operation === 'replace-confirm' || operation === 'renew-codes';
+      if (lifecycle && (!factor.enabled_at || !session.mfa_verified_at || session.mfa_generation !== factor.generation)) throw new ForbiddenException('Current authenticator verification is required');
       if (operation === 'enroll') {
         if (factor.enabled_at) throw new ConflictException('Authenticator is already enrolled');
         const secret = crypto.randomBytes(20);
@@ -66,8 +68,8 @@ export class MfaService {
       let counter: number | null = null;
       let recoveryIndex = -1;
       let hashes: string[] = factor.recovery_hashes;
-      if (operation === 'confirm') {
-        if (factor.enabled_at || !factor.pending_ciphertext || factor.pending_session_id !== session.id || new Date(factor.pending_expires_at).getTime() <= Date.now()) throw new ConflictException('Enrollment expired or superseded; start again');
+      if (operation === 'confirm' || operation === 'replace-confirm') {
+        if ((operation === 'confirm' ? !!factor.enabled_at : !factor.enabled_at) || !factor.pending_ciphertext || factor.pending_session_id !== session.id || new Date(factor.pending_expires_at).getTime() <= Date.now()) throw new ConflictException('Enrollment expired or superseded; start again');
         counter = matchingCounter(decryptSecret(factor.pending_ciphertext, user.id, this.key), input.code as string, -1);
       } else {
         if (!factor.enabled_at || !factor.secret_ciphertext) throw new ConflictException('Enroll an authenticator first');
@@ -80,12 +82,20 @@ export class MfaService {
         await tx.query("UPDATE account_authenticators SET failed_attempts=failed_attempts+1,locked_until=CASE WHEN failed_attempts+1>=5 THEN CURRENT_TIMESTAMP+INTERVAL '15 minutes' ELSE NULL END WHERE user_id=$1", [user.id]);
         return { denied: true };
       }
+      if (operation === 'replace-start') {
+        const secret = crypto.randomBytes(20);
+        await tx.query("UPDATE account_authenticators SET pending_ciphertext=$2,pending_session_id=$3,pending_expires_at=CURRENT_TIMESTAMP+INTERVAL '10 minutes',last_counter=$4,failed_attempts=0,locked_until=NULL WHERE user_id=$1", [user.id, encryptSecret(secret, user.id, this.key), session.id, counter]);
+        await this.audit.appendAuditLog(AuditAction.UPDATE, 'account_authenticator', user.id, user.id, 'AUTHENTICATOR', null, { event: 'REPLACEMENT_STARTED', generation: factor.generation }, undefined, undefined, tx);
+        return { secret: base32(secret), expiresIn: 600 };
+      }
       let recoveryCodes: string[] | undefined;
       let generation = factor.generation;
-      if (operation === 'confirm') {
+      if (operation === 'confirm' || operation === 'replace-confirm' || operation === 'renew-codes') {
         recoveryCodes = Array.from({ length: 10 }, () => crypto.randomBytes(16).toString('hex'));
         hashes = recoveryCodes.map(recoveryHash); generation++;
-        await tx.query('UPDATE account_authenticators SET secret_ciphertext=pending_ciphertext,pending_ciphertext=NULL,pending_session_id=NULL,pending_expires_at=NULL,enabled_at=CURRENT_TIMESTAMP,generation=$2,last_counter=$3,recovery_hashes=$4::jsonb,failed_attempts=0,locked_until=NULL WHERE user_id=$1', [user.id, generation, counter, JSON.stringify(hashes)]);
+        if (operation === 'renew-codes') {
+          await tx.query('UPDATE account_authenticators SET generation=$2,last_counter=$3,recovery_hashes=$4::jsonb,pending_ciphertext=NULL,pending_session_id=NULL,pending_expires_at=NULL,failed_attempts=0,locked_until=NULL WHERE user_id=$1', [user.id, generation, counter, JSON.stringify(hashes)]);
+        } else await tx.query('UPDATE account_authenticators SET secret_ciphertext=pending_ciphertext,pending_ciphertext=NULL,pending_session_id=NULL,pending_expires_at=NULL,enabled_at=CURRENT_TIMESTAMP,generation=$2,last_counter=$3,recovery_hashes=$4::jsonb,failed_attempts=0,locked_until=NULL WHERE user_id=$1', [user.id, generation, counter, JSON.stringify(hashes)]);
         // Re-enrollment/reset is intentionally not exposed through an OTP-only path.
         await tx.query('UPDATE user_sessions SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND id<>$2 AND revoked_at IS NULL', [user.id, session.id]);
       } else {
@@ -93,7 +103,7 @@ export class MfaService {
         await tx.query('UPDATE account_authenticators SET last_counter=COALESCE($2,last_counter),recovery_hashes=$3::jsonb,failed_attempts=0,locked_until=NULL WHERE user_id=$1', [user.id, counter, JSON.stringify(hashes)]);
       }
       await tx.query('UPDATE user_sessions SET mfa_verified_at=CURRENT_TIMESTAMP,mfa_generation=$2 WHERE id=$1', [session.id, generation]);
-      await this.audit.appendAuditLog(AuditAction.UPDATE, 'account_authenticator', user.id, user.id, 'AUTHENTICATOR', null, { event: operation === 'confirm' ? 'ENROLLMENT_CONFIRMED' : operation === 'recover' ? 'RECOVERY_CODE_USED' : 'AUTHENTICATOR_VERIFIED', generation }, undefined, undefined, tx);
+      await this.audit.appendAuditLog(AuditAction.UPDATE, 'account_authenticator', user.id, user.id, 'AUTHENTICATOR', null, { event: operation === 'confirm' ? 'ENROLLMENT_CONFIRMED' : operation === 'replace-confirm' ? 'AUTHENTICATOR_REPLACED' : operation === 'renew-codes' ? 'RECOVERY_CODES_RENEWED' : operation === 'recover' ? 'RECOVERY_CODE_USED' : 'AUTHENTICATOR_VERIFIED', generation }, undefined, undefined, tx);
       return { success: true, ...(recoveryCodes ? { recoveryCodes } : {}) };
     });
     if ('denied' in result) throw new ForbiddenException('Verification failed or temporarily locked. Try again later.');
