@@ -7,3 +7,5 @@ export * from './change-requests.js';
 export * from './cultural-rules.js';
 export * from './profile.js';
 export * from './calendar.js';
+
+export * from './application-settings.js';

@@ -1,3 +1,4 @@
+import { ApplicationSettingsService } from '../application-settings/application-settings.service';
 import { Injectable, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
@@ -9,7 +10,7 @@ const visible="p.is_archived=FALSE AND p.is_minor_protected=FALSE AND p.profile_
 
 @Injectable()
 export class CalendarAudienceService {
- constructor(private readonly db:DatabaseService,private readonly audit:AuditOutboxRepository){}
+ constructor(private readonly db:DatabaseService,private readonly audit:AuditOutboxRepository,private readonly settings:ApplicationSettingsService){}
  selection(input:any):GenealogyAudienceSelection {
   allowedFields(input,['type','branchId','generation','ancestorPersonId']);
   if(input.type==='BRANCH'){
@@ -40,6 +41,7 @@ export class CalendarAudienceService {
  private async context(tx:any){return (await tx.query("SELECT txid_current_snapshot()::text AS snapshot,clock_timestamp() AS captured_at")).rows[0];}
  async resolve(userId:string,selection:GenealogyAudienceSelection,audienceScope:string,branchId:string|null,tx:any){
   const actor=await this.member(userId,tx);
+  const policy=await this.settings.calendarPolicy(tx);
   if(!Object.values(EventAudienceScope).includes(audienceScope as EventAudienceScope))throw new BadRequestException('Invalid event audience');
   if(branchId)uuid(branchId,'branch');
   if(audienceScope==='BRANCH'){
@@ -54,17 +56,17 @@ export class CalendarAudienceService {
     SELECT p.id FROM persons p WHERE p.id=$1 AND ${visible}
     UNION SELECT p.id FROM walk w JOIN parent_links l ON l.parent_id=w.id AND l.confidence='VERIFIED' AND l.parent_type IN ('BIOLOGICAL','ADOPTIVE')
      JOIN persons p ON p.id=l.child_id WHERE ${visible})
-    SELECT p.id,p.version,p.branch_id,p.generation,p.profile_visibility,p.is_minor_protected,p.is_archived FROM walk w JOIN persons p ON p.id=w.id LIMIT 1001`,[root.id])).rows;
-   if(nodes.length>1000)throw new BadRequestException('Selection exceeds 1000 visible Persons; select a narrower audience');
+    SELECT p.id,p.version,p.branch_id,p.generation,p.profile_visibility,p.is_minor_protected,p.is_archived FROM walk w JOIN persons p ON p.id=w.id LIMIT $2`,[root.id,policy.maxPersons+1])).rows;
+   if(nodes.length>policy.maxPersons)throw new BadRequestException(`Selection exceeds ${policy.maxPersons} visible Persons; select a narrower audience`);
    const ids=nodes.map(p=>p.id);
    edges=(await tx.query(`SELECT id,parent_id,child_id,parent_type,confidence FROM parent_links
-    WHERE confidence='VERIFIED' AND parent_type IN ('BIOLOGICAL','ADOPTIVE') AND parent_id=ANY($1::uuid[]) AND child_id=ANY($1::uuid[]) ORDER BY id LIMIT 10001`,[ids])).rows;
-   if(edges.length>10000)throw new BadRequestException('Selection graph is too large; select a narrower audience');
+    WHERE confidence='VERIFIED' AND parent_type IN ('BIOLOGICAL','ADOPTIVE') AND parent_id=ANY($1::uuid[]) AND child_id=ANY($1::uuid[]) ORDER BY id LIMIT $2`,[ids,policy.maxEdges+1])).rows;
+   if(edges.length>policy.maxEdges)throw new BadRequestException('Selection graph is too large; select a narrower audience');
   }else{
    await this.scope(userId,selection.branchId,tx);
    nodes=(await tx.query(`SELECT p.id,p.version,p.branch_id,p.generation,p.profile_visibility,p.is_minor_protected,p.is_archived FROM persons p WHERE ${visible}
-    AND p.branch_id=$1 AND ($2::int IS NULL OR p.generation=$2) ORDER BY p.id LIMIT 1001`,[selection.branchId,selection.type==='GENERATION'?selection.generation:null])).rows;
-   if(nodes.length>1000)throw new BadRequestException('Selection exceeds 1000 visible Persons; select a narrower audience');
+    AND p.branch_id=$1 AND ($2::int IS NULL OR p.generation=$2) ORDER BY p.id LIMIT $3`,[selection.branchId,selection.type==='GENERATION'?selection.generation:null,policy.maxPersons+1])).rows;
+   if(nodes.length>policy.maxPersons)throw new BadRequestException(`Selection exceeds ${policy.maxPersons} visible Persons; select a narrower audience`);
   }
   nodes.sort((a,b)=>a.id.localeCompare(b.id));
   const recipientNodes=nodes.filter(p=>selection.type!=='DESCENDANTS'||p.id!==selection.ancestorPersonId).map(p=>p.id);
@@ -77,11 +79,11 @@ export class CalendarAudienceService {
     AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role NOT IN ('GUEST','REGISTERED_USER'))
     AND ($2::text<>'BRANCH' OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.branch_id=$3 AND r.role NOT IN ('GUEST','REGISTERED_USER')))
     AND ($4::uuid IS NULL OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND (r.branch_id=$4 OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')) AND r.role NOT IN ('GUEST','REGISTERED_USER')))
-   ORDER BY u.id LIMIT 101`,[recipientNodes,audienceScope,branchId,selection.type==='DESCENDANTS'?null:selection.branchId])).rows;
-  if(recipients.length>100)throw new BadRequestException('Audience exceeds 100 eligible accounts; select a narrower audience');
-  const basis={policyVersion:1,actorAuthority:{userId,roles:actor.role_assignments},selection,audienceScope,branchId,nodes,edges,recipients:recipients.map(({userId,personId,roles})=>({userId,personId,roles}))};
+   ORDER BY u.id LIMIT $5`,[recipientNodes,audienceScope,branchId,selection.type==='DESCENDANTS'?null:selection.branchId,policy.maxInvitees+1])).rows;
+  if(recipients.length>policy.maxInvitees)throw new BadRequestException(`Audience exceeds ${policy.maxInvitees} eligible accounts; select a narrower audience`);
+  const basis={policyVersion:1,settings:policy,actorAuthority:{userId,roles:actor.role_assignments},selection,audienceScope,branchId,nodes,edges,recipients:recipients.map(({userId,personId,roles})=>({userId,personId,roles}))};
   const fingerprint=createHash('sha256').update(JSON.stringify(basis)).digest('hex');
-  return {basis,fingerprint,recipients:recipients.map(({roles,...rest})=>rest)};
+  return {basis,fingerprint,policy,recipients:recipients.map(({roles,...rest})=>rest)};
  }
  async preview(userId:string,body:any){
   allowedFields(body,['audienceSelection','audienceScope','branchId']);
@@ -93,8 +95,8 @@ export class CalendarAudienceService {
    if(Number((await tx.query('SELECT count(*) FROM calendar_audience_previews WHERE actor_id=$1 AND consumed_at IS NULL AND expires_at>NOW()',[userId])).rows[0].count)>=20)
     throw new BadRequestException('Too many active previews; wait for an earlier preview to expire');
    const resolved=await this.resolve(userId,selection,scope,branch,tx);
-   const row=(await tx.query(`INSERT INTO calendar_audience_previews(actor_id,selection,audience_scope,branch_id,basis,fingerprint,preview_context)
-    VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,expires_at`,[userId,JSON.stringify(selection),scope,branch,JSON.stringify(resolved.basis),resolved.fingerprint,JSON.stringify(await this.context(tx))])).rows[0];
+   const row=(await tx.query(`INSERT INTO calendar_audience_previews(actor_id,selection,audience_scope,branch_id,basis,fingerprint,preview_context,expires_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp()+($8::int*INTERVAL '1 minute')) RETURNING id,expires_at`,[userId,JSON.stringify(selection),scope,branch,JSON.stringify(resolved.basis),resolved.fingerprint,JSON.stringify(await this.context(tx)),resolved.policy.previewTtlMinutes])).rows[0];
    await this.audit.recordAuditIntent({action:'CALENDAR_AUDIENCE_PREVIEWED',entityType:'CALENDAR_AUDIENCE',entityId:row.id,actorId:userId,newValue:{type:selection.type,recipientCount:resolved.recipients.length}},tx);
    return {previewId:row.id,expiresAt:row.expires_at,selection,recipientCount:resolved.recipients.length,recipients:resolved.recipients};
   }).catch((error:any)=>{if(error.code==='40001'||error.code==='40P01')throw new ConflictException('Concurrent selection change; preview again');throw error;});

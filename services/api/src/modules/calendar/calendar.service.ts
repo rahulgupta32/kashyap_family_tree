@@ -1,3 +1,4 @@
+import { ApplicationSettingsService } from '../application-settings/application-settings.service';
 import { CalendarAudienceService } from './calendar-audience.service';
 import { calendarPeriod,periodCursor } from './calendar-period';
 import { isValidBsDate } from '@kashyap/localization';
@@ -13,7 +14,7 @@ const keys=['title','description','eventType','audienceScope','branchId','locati
 
 @Injectable()
 export class CalendarService {
-  constructor(private readonly db:DatabaseService,private readonly delivery:CalendarDeliveryService,private readonly audiences:CalendarAudienceService){}
+  constructor(private readonly db:DatabaseService,private readonly delivery:CalendarDeliveryService,private readonly audiences:CalendarAudienceService,private readonly settings:ApplicationSettingsService){}
   private validateBsYear(year?:number|null){
     if(year!==undefined&&year!==null&&(!Number.isInteger(year)||year<2000||year>2090))
       throw new BadRequestException(`Bikram Sambat year ${year} is outside supported range (BS 2000 - BS 2090)`);
@@ -81,6 +82,8 @@ export class CalendarService {
     if(body.branchId)uuid(body.branchId,'branch');
     const run=async(tx:any)=>{
       const actor=await this.authorizeScope(userId,body,tx);
+      const policy=await this.settings.calendarPolicy(tx);
+      if(ids.length>policy.maxInvitees)throw new BadRequestException(`Select up to ${policy.maxInvitees} distinct invitees`);
       if(!ids.length)return {recipientCount:0,recipients:[]};
       if(!actor.roles.some((r:string)=>!['GUEST','REGISTERED_USER'].includes(r)))throw new ForbiddenException('Verified membership required to send invitations');
       const rows=(await tx.query(`SELECT u.id AS "userId",p.id AS "personId",COALESCE(n.full_name,'Member') AS name
@@ -107,13 +110,14 @@ export class CalendarService {
     if(body.branchId)uuid(body.branchId,'branch');
     return this.db.transaction(async client=>{
       await this.authorizeScope(userId,body,client);
+      const policy=await this.settings.calendarPolicy(client);
       const candidates=(await client.query(`SELECT DISTINCT u.id FROM user_accounts u JOIN persons p ON p.id=u.person_id
         JOIN person_names n ON n.person_id=p.id WHERE n.full_name ILIKE $1
         AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL AND p.is_archived=FALSE AND p.is_minor_protected=FALSE
         AND p.profile_visibility IN ('PUBLIC','VERIFIED_COMMUNITY')
         AND EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role NOT IN ('GUEST','REGISTERED_USER'))
         AND ($2::text<>'BRANCH' OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.branch_id=$3 AND r.role NOT IN ('GUEST','REGISTERED_USER')))
-        ORDER BY u.id LIMIT 20`,['%'+q.replace(/[\\%_]/g,'\\$&')+'%',body.audienceScope,body.branchId??null])).rows;
+        ORDER BY u.id LIMIT $4`,['%'+q.replace(/[\\%_]/g,'\\$&')+'%',body.audienceScope,body.branchId??null,Math.min(20,policy.maxInvitees)])).rows;
       return (await this.previewInvitations(userId,{...body,invitedUserIds:candidates.map((r:any)=>r.id)},client)).recipients;
     });
   }

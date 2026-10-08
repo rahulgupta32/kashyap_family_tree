@@ -1,3 +1,4 @@
+import { ApplicationSettingsService } from '../src/modules/application-settings/application-settings.service';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -85,7 +86,7 @@ describe('Verified genealogy audience previews and atomic send snapshots (Postgr
   expect((await request(app.getHttpServer()).get(`/calendar/events/${e.id}`).set(auth(child)).expect(200)).body.audienceSelection).toBeUndefined();
   await expect(db.query("UPDATE calendar_audience_previews SET basis='{}' WHERE id=$1",[p.previewId])).rejects.toThrow('immutable');
   await expect(db.query('DELETE FROM calendar_audience_previews WHERE id=$1',[p.previewId])).rejects.toThrow('cannot be deleted');
-  const restarted=new CalendarAudienceService(db,audit);await expect(db.transaction(tx=>restarted.confirm(host.id,body,tx))).rejects.toThrow('unavailable');
+  const restarted=new CalendarAudienceService(db,audit,app.get(ApplicationSettingsService));await expect(db.transaction(tx=>restarted.confirm(host.id,body,tx))).rejects.toThrow('unavailable');
   const fresh=await preview({type:'GENERATION',branchId:branch,generation:2});
   await request(app.getHttpServer()).patch(`/calendar/events/${e.id}`).set(auth(host)).send({version:1,audienceScope:'COMMUNITY'}).expect(400);
   const replaced=(await request(app.getHttpServer()).patch(`/calendar/events/${e.id}`).set(auth(host)).send({version:1,audienceSelection:fresh.selection,audiencePreviewId:fresh.previewId}).expect(200)).body;

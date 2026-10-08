@@ -39,6 +39,7 @@ export default function RootLayout({
                     सुरक्षा प्रमाणीकरण (Security verification)
                   </Link>
                   <Link href="/lookup" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">ठ्याक्कै ID खोज (Exact ID lookup)</Link>
+              <Link href="/settings" className="block p-2 rounded hover:bg-gray-100">सेटिङ (Settings)</Link>
                   <Link href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     वंशावली सूची (People Directory)
                   </Link>
