@@ -2,11 +2,10 @@
 
 Owner: Jyphra Technology Pvt. Ltd.
 
-The reconciled assessment records 102 bounded implementations completed, 126 partial, 20 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
+The reconciled assessment records 102 bounded implementations completed, 127 partial, 19 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
 
 ## Missing functional implementations
 
-- **SRCH-FR-006**: Search shall support transliteration/alias normalization without altering source names.
 - **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
 - **INV-FR-004**: Creator shall select genealogy-derived audiences including approved relationship groups, descendants of an ancestor, branch and generation.
 - **INV-FR-010**: Genealogy-based recipient resolution shall be reproducible using the verified graph snapshot/query context used at send time.
@@ -52,7 +51,7 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **AUTH (4)**: AUTH-FR-001, AUTH-FR-009, AUTH-FR-011, AUTH-FR-012
 - **PROF (4)**: PROF-FR-003, PROF-FR-006, PROF-FR-008, PROF-FR-009
 - **GEN (3)**: GEN-FR-009, GEN-FR-010, GEN-FR-015
-- **SRCH (3)**: SRCH-FR-001, SRCH-FR-005, SRCH-FR-008
+- **SRCH (4)**: SRCH-FR-001, SRCH-FR-005, SRCH-FR-006, SRCH-FR-008
 - **CLAIM (2)**: CLAIM-FR-003, CLAIM-FR-011
 - **CHG (3)**: CHG-FR-004, CHG-FR-007, CHG-FR-008
 - **DUP (2)**: DUP-FR-001, DUP-FR-002
@@ -86,3 +85,5 @@ Authentication lifecycle completion is documented separately in AUTHENTICATOR_LI
 Cultural document CMS implementation now supplies partial evidence for eight former missing rows; authority content and full acceptance remain open. See CULTURAL_REVISION_CMS_REPORT.md. The remaining missing functional count is 7; missing dedicated NFR evidence remains 13.
 
 Exact administrative ID lookup now supplies partial evidence for SRCH-FR-008; see ADMIN_EXACT_LOOKUP_REPORT.md. Seven functional implementations and 13 dedicated NFR evidence requirements remain missing, alongside all recorded partial and external requirements.
+
+Source-preserving name/alias normalization now supplies partial evidence for SRCH-FR-006; see SEARCH_NORMALIZATION_REPORT.md. Current remaining missing functional count is 6, with 13 missing dedicated NFR evidence requirements. Earlier milestone counts above are historical snapshots. Approved transliteration configuration and full locale/performance acceptance remain open.

@@ -1,3 +1,4 @@
+import { normalizeSearchQuery, literalSearchPattern } from '../../modules/genealogy/search-normalization';
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
 import { Gender, LivingStatus, PrivacyVisibility, PersonSearchQueryDto, PersonSearchResponseDto, PersonSearchItemDto } from '@kashyap/contracts';
@@ -372,9 +373,9 @@ export class PersonRepository {
 
     let searchScoreSql = '0.0 as similarity_score';
 
-    if (filter.query && filter.query.trim()) {
-      const q = filter.query.trim();
-      const wild = `%${q}%`;
+    const q = filter.query === undefined || filter.query === null ? '' : normalizeSearchQuery(filter.query);
+    if (q) {
+      const wild = literalSearchPattern(q);
       params.push(wild);
       const wildParam = paramIdx++;
       params.push(q);
@@ -384,13 +385,13 @@ export class PersonRepository {
         EXISTS (
           SELECT 1 FROM person_names pn 
           WHERE pn.person_id = p.id 
-            AND (pn.full_name ILIKE $${wildParam} OR similarity(pn.full_name, $${rawParam}) >= 0.3)
+            AND (lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))) LIKE $${wildParam} OR similarity(lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))), $${rawParam}) >= 0.3)
         )
         OR p.mool_ghar ILIKE $${wildParam}
         OR p.birth_place ILIKE $${wildParam}
       )`);
 
-      searchScoreSql = `COALESCE((SELECT MAX(similarity(pn.full_name, $${rawParam})) FROM person_names pn WHERE pn.person_id = p.id), 0.0) as similarity_score`;
+      searchScoreSql = `COALESCE((SELECT MAX(similarity(lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))), $${rawParam})) FROM person_names pn WHERE pn.person_id = p.id), 0.0) as similarity_score`;
     }
 
     if (filter.branchId) {

@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 126 | 48.5% |
-| MISSING | 20 | 7.7% |
+| PARTIALLY_COMPLETED | 127 | 48.8% |
+| MISSING | 19 | 7.3% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -28,7 +28,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | AUTH | 7 | 4 | 0 | 1 |
 | PROF | 8 | 4 | 0 | 0 |
 | GEN | 15 | 3 | 0 | 0 |
-| SRCH | 4 | 3 | 1 | 0 |
+| SRCH | 4 | 4 | 0 | 0 |
 | CLAIM | 10 | 2 | 0 | 0 |
 | CHG | 12 | 3 | 0 | 0 |
 | DUP | 7 | 2 | 0 | 0 |
@@ -102,3 +102,7 @@ Eight formerly missing rows now have partial implementation evidence (CUL-FR-002
 ## Exact administrative lookup implementation — 2026-10-08
 
 SRCH-FR-008 gains partial code evidence for a unified exact-ID lookup with current authority/privacy checks and durable read auditing. See ADMIN_EXACT_LOOKUP_REPORT.md. Current totals: 102 completed /126 partial /20 missing (7 functional +13 NFR evidence) /12 external. This supersedes earlier count snapshots; all 260 signed acceptance rows remain open. Exact-head CI is pending until recorded in PR #5.
+
+## Source-preserving search normalization — 2026-10-08
+
+SRCH-FR-006 gains partial implementation evidence for Unicode, case and whitespace normalization across recorded names and aliases. See SEARCH_NORMALIZATION_REPORT.md. No inferred transliteration or source-name rewrite occurs. Current totals: 102 completed /127 partial /19 missing (6 functional +13 NFR evidence) /12 external. This supersedes earlier count snapshots; all 260 signed acceptance rows remain open. Exact-head CI results are recorded in PR #5 when complete.
