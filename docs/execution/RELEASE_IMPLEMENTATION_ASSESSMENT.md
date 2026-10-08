@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 131 | 50.4% |
-| MISSING | 15 | 5.8% |
+| PARTIALLY_COMPLETED | 132 | 50.8% |
+| MISSING | 14 | 5.4% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -41,7 +41,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | COM | 2 | 12 | 0 | 0 |
 | MAP | 3 | 4 | 0 | 0 |
 | CHAT | 2 | 12 | 0 | 0 |
-| ADM | 4 | 11 | 1 | 0 |
+| ADM | 4 | 12 | 0 | 0 |
 | AUD | 2 | 3 | 0 | 0 |
 | PRIV | 6 | 2 | 0 | 0 |
 | I18N | 1 | 4 | 0 | 0 |
@@ -119,3 +119,8 @@ ADM-FR-015 gains partial implementation evidence for four bounded integer calend
 ## Branch and generation metadata console — 2026-10-09 Nepal time
 
 ADM-FR-007 moves from missing to partial based on versioned branch metadata and branch-scoped generation labels with current verified Super Admin authority, immutable history and atomic audit. Existing genealogy change-request review remains the path for transfers and links; the console does not supply all required cross-branch or Person generation correction interfaces. See BRANCH_ADMINISTRATION_REPORT.md. Current totals: 102 completed /131 partial /15 missing (2 functional +13 dedicated NFR evidence) /12 external. All 260 acceptance rows remain open; exact-head CI is recorded in PR #5 when complete.
+
+
+## Genealogy staging and reconciliation — 2026-10-09 Nepal time
+
+ADM-FR-013 advances from missing to partial with durable source-preserving staging, idempotent validation runs, target mapping/name candidate reports, bilingual review and audited source payload erasure. See GENEALOGY_IMPORT_STAGING_REPORT.md for the bounded schema and remaining full mapping, authority, promotion and rehearsal scope. Current totals are 102 completed / 132 partial / 14 missing (one functional + thirteen NFR evidence) / 12 external. All 260 original acceptance records remain open. Exact-head CI is recorded in PR #5 when verified.

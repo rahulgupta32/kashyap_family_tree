@@ -7,7 +7,7 @@ The reconciled assessment records 102 bounded implementations completed, 131 par
 ## Missing functional implementations
 
 - **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
-- **ADM-FR-013**: Admin portal shall provide import/dry-run/reconciliation tooling for genealogy migration.
+- ADM-FR-013 now has partial staging/dry-run/reconciliation evidence; controlled promotion and full workbook/approval/rehearsal scope remain mandatory. See GENEALOGY_IMPORT_STAGING_REPORT.md.
 
 ## Missing dedicated nonfunctional evidence
 
@@ -90,3 +90,6 @@ Typed calendar settings now supply partial evidence for ADM-FR-015; see TYPED_AP
 
 
 Branch/generation metadata console now supplies partial evidence for ADM-FR-007; see BRANCH_ADMINISTRATION_REPORT.md. Two functional workflows remain wholly missing: CAL-FR-005 and ADM-FR-013. Thirteen dedicated NFR evidence requirements remain missing, with every partial/external prerequisite and all 260 acceptance rows still open. Catalogue labels do not renumber Persons or alter branch/link governance.
+
+
+Genealogy staging checkpoint — 2026-10-09 Nepal time: ADM-FR-013 gains partial implementation evidence. CAL-FR-005 is the remaining wholly missing functional workflow. Thirteen dedicated NFR evidence gaps, all recorded partial/external requirements and all 260 signed acceptance rows remain open. Staging validation does not authorize promotion or substitute for two isolated import rehearsals.

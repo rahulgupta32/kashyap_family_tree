@@ -10,3 +10,4 @@ export * from './calendar.js';
 
 export * from './application-settings.js';
 export * from './branch-administration.js';
+export * from './genealogy-import.js';

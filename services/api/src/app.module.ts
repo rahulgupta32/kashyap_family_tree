@@ -1,3 +1,4 @@
+import { GenealogyImportModule } from './modules/genealogy-import/genealogy-import.module';
 import { ApplicationSettingsModule } from './modules/application-settings/application-settings.module';
 import { BranchAdministrationModule } from './modules/branch-administration/branch-administration.module';
 import { AdminLookupModule } from './modules/admin-lookup/admin-lookup.module';
@@ -52,6 +53,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     AdminLookupModule,
     ApplicationSettingsModule,
     BranchAdministrationModule,
+    GenealogyImportModule,
   ],
 })
 export class AppModule {}

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/auth-context';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
-function destination(){const next=new URLSearchParams(window.location.search).get('next');return next==='/cultural'||next==='/lookup'||next==='/branches'?next:'/';}
+function destination(){const next=new URLSearchParams(window.location.search).get('next');return next==='/cultural'||next==='/lookup'||next==='/branches'||next==='/imports'?next:'/';}
 
 export default function VerificationPage() {
   const { accessToken, isLoading } = useAuth();
