@@ -16,6 +16,7 @@ class GenealogyApiService {
   ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   void Function()? onSessionExpired;
+  void Function()? onMfaRequired;
 
   GenealogyApiService({
     this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000'),
@@ -129,6 +130,12 @@ class GenealogyApiService {
       if (_authToken != tokenUsed || await _refreshSession()) { response = await send(); }
     }
     if (authenticated && response.statusCode == 401 && _authToken != null) { await _clearSession(); }
+    if (authenticated && response.statusCode == 403) {
+      try {
+        final value = json.decode(response.body);
+        if (value is Map && value['errorCode'] == 'MFA_REQUIRED') { onMfaRequired?.call(); }
+      } on FormatException { /* Non-JSON denials remain ordinary errors. */ }
+    }
     return response;
   }
 
