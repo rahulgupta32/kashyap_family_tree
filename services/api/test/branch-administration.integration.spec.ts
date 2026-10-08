@@ -101,7 +101,8 @@ describe('Versioned branch and generation catalogue (real PostgreSQL/HTTP)',()=>
   const first=await service.history(admin.id,branch.id,0,{}),second=await service.history(admin.id,branch.id,0,{before:String(first.nextBefore)});
   expect(first.items).toHaveLength(50);expect(second.items).toHaveLength(4);expect(second.nextBefore).toBeNull();expect(new Set([...first.items,...second.items].map(r=>r.version)).size).toBe(54);
   await db.query(`INSERT INTO branches(code,name_nepali,name_english) SELECT 'PAGEADM'||n,'परीक्षण','Fictional pagination' FROM generate_series(1,55) n`);
-  const page=await service.list(admin.id,{}),next=await service.list(admin.id,{after:page.nextAfter});expect(page.items).toHaveLength(50);expect(next.nextAfter).toBeNull();expect(new Set([...page.items,...next.items].map(r=>r.id)).size).toBe(57);
+  const total=Number((await db.query('SELECT count(*) FROM branches')).rows[0].count);
+  const page=await service.list(admin.id,{}),next=await service.list(admin.id,{after:page.nextAfter});expect(page.items).toHaveLength(50);expect(next.nextAfter).toBeNull();expect(new Set([...page.items,...next.items].map(r=>r.id)).size).toBe(total);
   for(const before of ['0','-1','1.5','2147483648'])await request(app.getHttpServer()).get(`/admin/branches/${branch.id}/history?before=${before}`).set(auth()).expect(400);
  });
  it('refuses migration rollback that would discard governed metadata',async()=>{
