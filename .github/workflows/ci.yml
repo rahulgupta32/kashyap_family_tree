@@ -50,10 +50,13 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Install dependencies (Strict Frozen Lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm run audit:production
 
       - name: Build shared packages
         run: pnpm run build:packages
@@ -165,7 +168,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
       - name: Verify real daemon scanning
@@ -230,7 +233,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -322,7 +325,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:packages
       - name: Checkout pinned object storage fixture source
