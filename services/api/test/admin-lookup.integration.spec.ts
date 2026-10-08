@@ -24,7 +24,8 @@ describe('Permissioned exact administrative ID lookup',()=>{
    return {id:u.id,token:jwt.sign({sub:u.id,sid:s.id,tokenType:'access'},{secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM,expiresIn:'15m'})};}
   admin=await actor(Role.SUPER_ADMIN,1);branch=await actor(Role.BRANCH_ADMIN,2,b[0]);member=await actor(Role.VERIFIED_MEMBER,3);
   const people=[];for(const id of b)people.push((await db.query('INSERT INTO persons(branch_id,generation,birth_year_bs) VALUES($1,3,2040) RETURNING id',[id])).rows[0].id);[personA,personB]=people;
-  const claims=[],changes=[];for(const p of people){claims.push((await db.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description) VALUES($1,$2,'Fictional lookup claim') RETURNING id",[p,member.id])).rows[0].id);
+  const secondClaimant=await actor(Role.VERIFIED_MEMBER,4);
+  const claims=[],changes=[];for(const [i,p] of people.entries()){const claimant=i===0?member:secondClaimant;claims.push((await db.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description) VALUES($1,$2,'Fictional lookup claim') RETURNING id",[p,claimant.id])).rows[0].id);
    changes.push((await db.query("INSERT INTO genealogy_change_requests(target_person_id,requester_user_id,request_type,proposed_changes,reason) VALUES($1,$2,'UPDATE_PERSON','{}','Fictional lookup correction') RETURNING id",[p,member.id])).rows[0].id);}[claimA,claimB]=claims;[changeA,changeB]=changes;
  },45000);
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
