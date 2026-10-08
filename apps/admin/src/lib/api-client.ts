@@ -39,6 +39,11 @@ export class SessionRefreshError extends Error {
 }
 
 export class ApiClient {
+  static async exactLookup(type:string,id:string,token:string):Promise<{type:string;id:string;result:Record<string,unknown>}>{
+    const response=await fetch(`${API_BASE}/admin/lookup?${new URLSearchParams({type,id})}`,{headers:this.getHeaders(token),credentials:'include',cache:'no-store'});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'Lookup failed');return data;
+  }
+
   static async cultural<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
     const response=await fetch(`${API_BASE}/cultural/content${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
     const data=await response.json();if(!response.ok)throw new Error(data.message||'Cultural content request failed');return data;

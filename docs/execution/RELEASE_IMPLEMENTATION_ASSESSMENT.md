@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 125 | 48.1% |
-| MISSING | 21 | 8.1% |
+| PARTIALLY_COMPLETED | 126 | 48.5% |
+| MISSING | 20 | 7.7% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -28,7 +28,7 @@ Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed
 | AUTH | 7 | 4 | 0 | 1 |
 | PROF | 8 | 4 | 0 | 0 |
 | GEN | 15 | 3 | 0 | 0 |
-| SRCH | 4 | 2 | 2 | 0 |
+| SRCH | 4 | 3 | 1 | 0 |
 | CLAIM | 10 | 2 | 0 | 0 |
 | CHG | 12 | 3 | 0 | 0 |
 | DUP | 7 | 2 | 0 | 0 |
@@ -97,3 +97,8 @@ CAL-FR-012, INV-FR-005/008/009/012, COM-FR-009 and CHAT-FR-004/009/010 move from
 ## Cultural document CMS implementation update — 2026-10-08
 
 Eight formerly missing rows now have partial implementation evidence (CUL-FR-002/003/004/006/008/009, ADM-FR-009, SRCH-FR-005). This adds durable document revisions, explicit independent approval, publication history/search and web/native read surfaces; it is distinct from the earlier nine-row classification correction. See [CULTURAL_REVISION_CMS_REPORT.md](CULTURAL_REVISION_CMS_REPORT.md). Current totals are 102 completed, 125 partial, 21 missing (8 functional + 13 NFR evidence), 12 external. All 260 original acceptance rows remain open. Exact-head CI is pending until recorded in PR #5.
+
+
+## Exact administrative lookup implementation — 2026-10-08
+
+SRCH-FR-008 gains partial code evidence for a unified exact-ID lookup with current authority/privacy checks and durable read auditing. See ADMIN_EXACT_LOOKUP_REPORT.md. Current totals: 102 completed /126 partial /20 missing (7 functional +13 NFR evidence) /12 external. This supersedes earlier count snapshots; all 260 signed acceptance rows remain open. Exact-head CI is pending until recorded in PR #5.
