@@ -5,6 +5,7 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 
 class SecurityApi extends GenealogyApiService {
   bool required = true;
+  bool eligible = true;
   bool enrolled = true;
   bool verified = false;
   bool failStatus = false;
@@ -15,7 +16,7 @@ class SecurityApi extends GenealogyApiService {
     operations.add(path);
     if (path.endsWith('/status')) {
       if (failStatus) { throw Exception('offline'); }
-      return <String, dynamic>{'required': required, 'enrolled': enrolled, 'verified': verified};
+      return <String, dynamic>{'required': required, 'eligible': eligible, 'enrolled': enrolled, 'verified': verified};
     }
     if (path.endsWith('/enroll')) { return {'secret': 'SYNTHETICKEY'}; }
     verified = true;
@@ -103,6 +104,23 @@ void main() {
     expect(api.operations.where((path) => path == '/auth/mfa/enroll').length, 2);
     expect(api.operations, isNot(contains('/auth/mfa/confirm')));
     expect(find.text('SYNTHETICKEY'), findsOneWidget);
+  });
+
+  testWidgets('explicit security entry permits eligible unenrolled authority setup', (tester) async {
+    final api = SecurityApi()..required = false..enrolled = false;
+    await tester.pumpWidget(MaterialApp(home: AuthenticatorScreen(apiService: api,
+      enrollmentRequested: true, child: () => const Text('Security complete'))));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up authenticator'), findsOneWidget);
+    expect(find.text('Security complete'), findsNothing);
+  });
+  testWidgets('explicit security entry offers no enrollment to ordinary members', (tester) async {
+    final api = SecurityApi()..required = false..eligible = false..enrolled = false;
+    await tester.pumpWidget(MaterialApp(home: AuthenticatorScreen(apiService: api,
+      enrollmentRequested: true, child: () => const Text('Security complete'))));
+    await tester.pumpAndSettle();
+    expect(find.text('Set up authenticator'), findsNothing);
+    expect(find.text('Security complete'), findsOneWidget);
   });
 
 }

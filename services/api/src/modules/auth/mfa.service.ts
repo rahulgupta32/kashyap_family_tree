@@ -26,7 +26,7 @@ export class MfaService {
     // always requires enrollment for authority roles. There is no production bypass.
     const required = privileged && (process.env.NODE_ENV === 'production' || !!factor?.enabled_at);
     const verified = !!factor?.enabled_at && !!session.mfa_verified_at && session.mfa_generation === factor.generation;
-    return { required, enrolled: !!factor?.enabled_at, verified, generation: factor?.generation || 0 };
+    return { required, eligible: privileged, enrolled: !!factor?.enabled_at, verified, generation: factor?.generation || 0 };
   }
 
   async enforce(userId: string, session: any, roles: Role[], method?: string, path?: string) {

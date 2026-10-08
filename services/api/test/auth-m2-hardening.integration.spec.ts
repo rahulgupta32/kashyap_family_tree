@@ -243,6 +243,8 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
     it('requires enrollment in production and refuses token-claim forgery or alternate paths', async () => {
       const user = await loginUser(`+9779863${Math.floor(100000 + Math.random() * 900000)}`); await userRepo.assignRole(user.userId, Role.SUPER_ADMIN);
       const member = await loginUser(`+9779864${Math.floor(100000 + Math.random() * 900000)}`);
+      expect(await (await call(member.accessToken, '/auth/mfa/status')).json()).toMatchObject({ eligible: false, required: false });
+      expect(await (await call(user.accessToken, '/auth/mfa/status')).json()).toMatchObject({ eligible: true, enrolled: false });
       expect((await call(member.accessToken, '/auth/mfa/enroll', {})).status).toBe(403);
       const previous = process.env.NODE_ENV;
       try {

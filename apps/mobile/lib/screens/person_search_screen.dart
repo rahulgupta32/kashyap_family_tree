@@ -13,6 +13,7 @@ import 'chat_screen.dart';
 import 'household_map_screen.dart';
 import 'notification_inbox_screen.dart';
 import 'follow_manager_screen.dart';
+import 'authenticator_screen.dart';
 
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -74,6 +75,14 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if (widget.apiService.authToken != null)
+            IconButton(tooltip: 'Security verification', icon: const Icon(Icons.security), onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => AuthenticatorScreen(
+                apiService: widget.apiService, enrollmentRequested: true,
+                child: () => Scaffold(appBar: AppBar(title: const Text('Security verification')),
+                  body: const Padding(padding: EdgeInsets.all(20), child: Text(
+                    'Security verification is complete or is not required for your current account.'))))));
+            }),
           if (widget.apiService.authToken == null && widget.onSignIn != null)
             IconButton(tooltip: 'Sign in', onPressed: widget.onSignIn, icon: const Icon(Icons.login)),
           if (widget.apiService.authToken != null && widget.onSignOut != null)

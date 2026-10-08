@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,6 +94,23 @@ Future<void> drawer(WidgetTester tester, String label) async {
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
   await press(tester, find.text(label));
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+}
+
+// Test-only RFC 6238 computation; keys/codes are never printed or persisted.
+String authenticatorCode(String secret, int counter) {
+  var bits = 0, number = 0;
+  final bytes = <int>[];
+  for (final char in secret.split('')) {
+    number = (number << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(char);
+    bits += 5;
+    if (bits >= 8) { bits -= 8; bytes.add((number >> bits) & 255); }
+  }
+  final message = ByteData(8)..setUint64(0, counter);
+  final hash = Hmac(sha1, bytes).convert(message.buffer.asUint8List()).bytes;
+  final offset = hash.last & 15;
+  final binary = ((hash[offset] & 127) << 24) | (hash[offset + 1] << 16) |
+    (hash[offset + 2] << 8) | hash[offset + 3];
+  return (binary % 1000000).toString().padLeft(6, '0');
 }
 
 void main() {
@@ -281,4 +300,104 @@ void main() {
     debugPrint('[M4 DEVICE] Persisted RSVP, native refresh and logout passed. Live acceptance complete.');
     await tester.pumpWidget(const SizedBox.shrink());
   }, timeout: const Timeout(Duration(minutes: 8)));
+  testWidgets('Native authenticator enrollment, fresh-login verification and one-use recovery on Android', (tester) async {
+    const authorityPhone = '+9779847100088';
+    await SecureSessionStore().clear();
+    final bootstrapToken = await reviewerLogin(authorityPhone);
+    final account = await api('/auth/me', token: bootstrapToken);
+    final admin = await reviewerLogin('+9779800000001');
+    await api('/auth/roles/assign', token: admin,
+      data: {'userId': account['id'], 'role': 'SUPER_ADMIN'});
+    final service = GenealogyApiService();
+    addTearDown(service.dispose);
+    Future<void> phoneLogin() async {
+      await api('/auth/test-clear-cooldown', data: {'phoneNumber': authorityPhone});
+      await until(tester, find.byKey(const Key('sign-in-phone')));
+      await tester.enterText(find.byKey(const Key('sign-in-phone')), authorityPhone);
+      await press(tester, find.byKey(const Key('sign-in-submit')));
+      await until(tester, find.byKey(const Key('sign-in-code')));
+      final challenge = await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(authorityPhone)}');
+      await tester.enterText(find.byKey(const Key('sign-in-code')), challenge['otp'] as String);
+      await press(tester, find.byKey(const Key('sign-in-submit')));
+    }
+    Future<void> protectedStatus(int expected) async {
+      final response = await http.get(Uri.parse('$base/audit/dashboard'),
+        headers: {'Authorization': 'Bearer ${service.authToken}'});
+      expect(response.statusCode, expected);
+    }
+    await tester.pumpWidget(KashyapApp(apiService: service));
+    await phoneLogin();
+    await until(tester, find.byType(PersonSearchScreen));
+    await press(tester, find.byTooltip('Security verification'));
+    await until(tester, find.text('Set up authenticator'));
+    await press(tester, find.text('Set up authenticator'));
+    await until(tester, find.text('Restart expired setup'));
+    final texts = tester.widgetList<Text>(find.byType(Text));
+    final secret = texts.map((t) => t.data ?? '').singleWhere((s) => RegExp(r'^[A-Z2-7]{32}$').hasMatch(s));
+    final counter = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+    await tester.enterText(find.byType(TextField), authenticatorCode(secret, counter));
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('I saved the codes — continue'));
+    // Scrolling constructs lazily rendered recovery rows on the actual device.
+    await tester.drag(find.byType(ListView), const Offset(0, -250));
+    await tester.pumpAndSettle();
+    final codes = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data ?? '')
+      .where((s) => RegExp(r'^[a-f0-9]{32}$').hasMatch(s)).toList();
+    expect(codes.length, greaterThanOrEqualTo(2));
+    final saved = (await SecureSessionStore().read())!;
+    expect(saved.contains(secret), isFalse);
+    expect(codes.any(saved.contains), isFalse);
+    await press(tester, find.text('I saved the codes — continue'));
+    await until(tester, find.text('Security verification is complete or is not required for your current account.'));
+    await back(tester);
+    await protectedStatus(200);
+    debugPrint('[MFA DEVICE] Real native setup, confirmation and transient recovery-code display passed');
+
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await protectedStatus(403);
+    final nextCounter = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+    final acceptedCounter = nextCounter > counter ? nextCounter : counter + 1;
+    final acceptedCode = authenticatorCode(secret, acceptedCounter);
+    await tester.enterText(find.byType(TextField), acceptedCode);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    await protectedStatus(200);
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), acceptedCode);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('Verification failed. Check the code or retry later.'));
+    await protectedStatus(403);
+    await press(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), codes[0]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    await protectedStatus(200);
+    debugPrint('[MFA DEVICE] Fresh phone login denied before verification; authenticator replay rejected and recovery granted access');
+
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await press(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), codes[0]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('Verification failed. Check the code or retry later.'));
+    await protectedStatus(403);
+    await tester.enterText(find.byType(TextField), codes[1]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    final restored = GenealogyApiService();
+    addTearDown(restored.dispose);
+    expect(await restored.restoreSession(), isTrue);
+    final proof = await restored.requestJson('/auth/mfa/status');
+    expect(proof['verified'], isTrue);
+    await restored.logout();
+    expect(await SecureSessionStore().read(), isNull);
+    debugPrint('[MFA DEVICE] Used recovery code rejected; separate code and encrypted-session refresh proof passed');
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
 }

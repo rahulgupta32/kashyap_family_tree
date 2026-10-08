@@ -5,7 +5,8 @@ import '../services/genealogy_api_service.dart';
 class AuthenticatorScreen extends StatefulWidget {
   final GenealogyApiService apiService;
   final Widget Function() child;
-  const AuthenticatorScreen({super.key, required this.apiService, required this.child});
+  final bool enrollmentRequested;
+  const AuthenticatorScreen({super.key, required this.apiService, required this.child, this.enrollmentRequested = false});
   @override
   State<AuthenticatorScreen> createState() => _AuthenticatorScreenState();
 }
@@ -31,7 +32,8 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
       if (value is! Map<String, dynamic> || value['required'] is! bool || value['verified'] is! bool || value['enrolled'] is! bool) {
         throw const FormatException('Invalid security status');
       }
-      if (mounted) { setState(() { _status = value; _complete = value['required'] == false || value['verified'] == true; }); }
+      if (mounted) { setState(() { _status = value; _complete = (value['required'] == false || value['verified'] == true) &&
+          !(widget.enrollmentRequested && value['eligible'] == true && value['enrolled'] == false); }); }
     } catch (_) {
       if (mounted) { setState(() => _error = 'Security status could not be checked. Please retry.'); }
     } finally { if (mounted) { setState(() => _busy = false); } }
