@@ -191,7 +191,7 @@
           "sourceColumn": "Given Name Nepali*",
           "required": true,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameNepali",
+          "adapterTarget": "persons[].sourceNames.givenNepali",
           "approval": "OPEN"
         },
         {
@@ -199,7 +199,7 @@
           "sourceColumn": "Middle Name Nepali",
           "required": false,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameNepali",
+          "adapterTarget": "persons[].sourceNames.middleNepali",
           "approval": "OPEN"
         },
         {
@@ -207,7 +207,7 @@
           "sourceColumn": "Family Name Nepali*",
           "required": true,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameNepali",
+          "adapterTarget": "persons[].sourceNames.familyNepali",
           "approval": "OPEN"
         },
         {
@@ -215,7 +215,7 @@
           "sourceColumn": "Given Name English",
           "required": false,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameEnglish",
+          "adapterTarget": "persons[].sourceNames.givenEnglish",
           "approval": "OPEN"
         },
         {
@@ -223,7 +223,7 @@
           "sourceColumn": "Middle Name English",
           "required": false,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameEnglish",
+          "adapterTarget": "persons[].sourceNames.middleEnglish",
           "approval": "OPEN"
         },
         {
@@ -231,15 +231,15 @@
           "sourceColumn": "Family Name English",
           "required": false,
           "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
-          "adapterTarget": "persons[].nameEnglish",
+          "adapterTarget": "persons[].sourceNames.familyEnglish",
           "approval": "OPEN"
         },
         {
           "ordinal": 9,
           "sourceColumn": "Known As / Alias",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.knownAs",
           "approval": "OPEN"
         },
         {

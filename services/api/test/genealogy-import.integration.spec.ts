@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-6-relationship-source');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-7-source-names');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -134,6 +134,15 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   expect(checked.report.issues).toContainEqual({entity:'PARENT_LINK',sourceId:'EDGE-DETAIL',code:'RELATIONSHIP_SOURCE_DETAILS_REVIEW_REQUIRED'});expect(checked.report.validationPassed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(sourceDetails.reviewedBy);
   const corrected=await service.stage(admin.id,{...payload,parentLinks:[{...payload.parentLinks[0],sourceDetails:{...sourceDetails,notes:'Fictional corrected private evidence'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect(corrected.id).not.toBe(staged.id);
   expect((await service.detail(admin.id,staged.id)).payload.parentLinks[0].sourceDetails).toEqual(sourceDetails);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('preserves source components and aliases separately across corrected batches and erasure',async()=>{
+  const sourceNames={givenNepali:'  काल्पनिक  ',familyNepali:'अधिकारी',knownAs:'Fictional original alias / मूल उपनाम'};
+  const payload=source({datasetKey:'SOURCE_NAME_COMPONENTS',persons:[{...person,sourceNames}]});const staged=await service.stage(admin.id,payload);
+  expect((await service.detail(admin.id,staged.id)).payload.persons[0].sourceNames).toEqual(sourceNames);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'PERSON',sourceId:person.sourceId,code:'SOURCE_NAME_COMPONENTS_REVIEW_REQUIRED'});expect(checked.report.validationPassed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(sourceNames.knownAs);
+  const corrected=await service.stage(admin.id,{...payload,persons:[{...person,sourceNames:{...sourceNames,knownAs:'Fictional corrected alias'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);
+  expect((await service.detail(admin.id,staged.id)).payload.persons[0].sourceNames).toEqual(sourceNames);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{

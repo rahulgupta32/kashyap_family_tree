@@ -3,6 +3,18 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ it('retains independent source name components and alias text without transliteration or splitting',()=>{
+  const sourceNames={givenNepali:'  नाम  ',middleNepali:'मध्य',familyNepali:'अधिकारी',givenEnglish:'Original',middleEnglish:'Source',familyEnglish:'Adhikari',knownAs:'First alias / दोस्रो उपनाम'};
+  const p=parseImportPayload({...payload(),persons:[{...person,sourceNames}]});expect(p.persons[0].sourceNames).toEqual(sourceNames);expect(p.persons[0].nameNepali).toBe(person.nameNepali);
+  expect(validateImport(p)).toContainEqual({entity:'PERSON',sourceId:person.sourceId,code:'SOURCE_NAME_COMPONENTS_REVIEW_REQUIRED'});expect(JSON.stringify(validateImport(p))).not.toContain(sourceNames.knownAs);
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,persons:[{...p.persons[0],sourceNames:{...sourceNames,knownAs:'Corrected alias'}}]})));
+ });
+ it('rejects empty, unknown, oversized and invalid source name component shapes',()=>{
+  for(const sourceNames of [{},null,[],{phone:'private'},{givenNepali:'x'.repeat(256)},{knownAs:'bad\u0000name'},{givenEnglish:23}])expect(()=>parseImportPayload({...payload(),persons:[{...person,sourceNames}]})).toThrow();
+ });
+ it('preserves legacy names and hashes when component evidence is absent',()=>{
+  const body=payload(),p=parseImportPayload(body);expect(p.persons[0]).not.toHaveProperty('sourceNames');expect(importHash(p)).toBe(importHash(body as any));
+ });
  const link={sourceId:'PCR-DETAIL',parentSourceId:person.sourceId,childSourceId:'PER-2',type:'BIOLOGICAL',sourceRef:'SRC-1',verification:'VERIFIED'};
  it('preserves relationship source spelling and original dates without treating source review as authority',()=>{
   const sourceDetails={parentRole:' Father ',legalStatus:'Unknown',startDate:'2080-01',startCalendar:'BS',endDate:'Unknown',endCalendar:'Unknown',certainty:'Disputed',relationshipStatus:'Historical',visibility:'Private',proposedBy:'Source proposer',reviewedBy:'Source reviewer',reviewDate:'Approximate',notes:'  मूल स्रोतको टिप्पणी  '};
