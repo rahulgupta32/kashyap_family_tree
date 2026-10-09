@@ -17,8 +17,8 @@ The original acceptance ledger is preserved byte-for-byte: 229 functional + 31 n
 | Implementation classification | Requirements | Share |
 |---|---:|---:|
 | COMPLETED | 102 | 39.2% |
-| PARTIALLY_COMPLETED | 132 | 50.8% |
-| MISSING | 14 | 5.4% |
+| PARTIALLY_COMPLETED | 133 | 51.2% |
+| MISSING | 13 | 5.0% |
 | EXTERNAL_GATE | 12 | 4.6% |
 
 Implemented bounded requirements: **102/260 (39.2%)**. Release acceptance closed: **0/260 (0%)**. Partial rows are not assigned arbitrary fractional credit, so there is no defensible overall "application completion percentage" from these counts.
@@ -124,3 +124,8 @@ ADM-FR-007 moves from missing to partial based on versioned branch metadata and 
 ## Genealogy staging and reconciliation — 2026-10-09 Nepal time
 
 ADM-FR-013 advances from missing to partial with durable source-preserving staging, idempotent validation runs, target mapping/name candidate reports, bilingual review and audited source payload erasure. See GENEALOGY_IMPORT_STAGING_REPORT.md for the bounded schema and remaining full mapping, authority, promotion and rehearsal scope. Current totals are 102 completed / 132 partial / 14 missing (one functional + thirteen NFR evidence) / 12 external. All 260 original acceptance records remain open. Exact-head CI is recorded in PR #5 when verified.
+
+
+## Approved private Gregorian recurrence — 2026-10-09
+
+CAL-FR-005 moves from missing to partial based on explicit source-bound annual proposals, independent review/recusal, private calendar occurrence generation, withdrawal and notification eligibility checks. See ANNUAL_RECURRENCE_REPORT.md. The remaining Person, family audience, native controls and signed/cultural recurrence scope remains mandatory. Current totals: 102 completed / 133 partial / 13 missing (all dedicated NFR evidence) / 12 external. All 260 original acceptance rows remain open. Exact-head CI is recorded in PR #5 when verified.

@@ -2,11 +2,11 @@
 
 Owner: Jyphra Technology Pvt. Ltd.
 
-The reconciled assessment records 102 bounded implementations completed, 132 partial, 14 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
+The reconciled assessment records 102 bounded implementations completed, 133 partial, 13 missing and 12 external gates. All 260 original acceptance rows remain open; 31 exact nonfunctional targets remain mandatory. This report is a current execution map, not a production-ready declaration.
 
 ## Missing functional implementations
 
-- **CAL-FR-005**: The system shall derive approved recurring family reminders from verified Person/event data.
+- No functional row remains wholly missing; partial and external rows still require full mandatory behavior and acceptance. CAL-FR-005 now has bounded private Gregorian event recurrence; see ANNUAL_RECURRENCE_REPORT.md.
 - ADM-FR-013 now has partial staging/dry-run/reconciliation evidence; controlled promotion and full workbook/approval/rehearsal scope remain mandatory. See GENEALOGY_IMPORT_STAGING_REPORT.md.
 
 ## Missing dedicated nonfunctional evidence

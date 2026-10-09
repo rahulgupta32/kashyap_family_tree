@@ -2,6 +2,7 @@
 
 import { GenealogyAudience } from './genealogy-audience';
 import { CalendarPeriod } from './period';
+import { RecurringReminders } from './recurring-reminders';
 import { CalendarBrowse } from './browse';
 import { calendarManagement } from '@kashyap/localization';
 import React, { useState, useEffect, useRef } from 'react';
@@ -169,6 +170,7 @@ export default function CalendarAdminPage() {
 
   return (
     <div className="space-y-6">
+      <RecurringReminders events={events}/>
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">कुल क्यालेन्डर तथा चाडपर्व (Kinship Observances Calendar)</h1>

@@ -1,6 +1,9 @@
+export function recurrenceVisibility(e = 'e', u = 'u'): string {
+ return `(${e}.recurrence_rule_id IS NULL OR (${e}.host_user_id=${u}.id AND ${e}.audience_scope='PRIVATE' AND calendar_recurrence_current(${e}.recurrence_rule_id)))`;
+}
 // Alias arguments are internal SQL identifiers, never request values.
 export function eventVisibility(e = 'e', u = 'u'): string {
-  return `${u}.is_active=TRUE AND ${u}.is_suspended=FALSE AND ${u}.deleted_at IS NULL AND (
+  return `${recurrenceVisibility(e,u)} AND ${u}.is_active=TRUE AND ${u}.is_suspended=FALSE AND ${u}.deleted_at IS NULL AND (
     ${e}.host_user_id=${u}.id OR ${e}.audience_scope IN ('PUBLIC','COMMUNITY')
     OR (${e}.audience_scope='BRANCH' AND EXISTS(SELECT 1 FROM user_roles br WHERE br.user_id=${u}.id
       AND br.branch_id=${e}.branch_id AND br.role NOT IN ('GUEST','REGISTERED_USER')))

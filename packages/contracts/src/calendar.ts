@@ -33,6 +33,8 @@ export interface CreateCalendarEventDto {
 }
 
 export interface CalendarEventDetailDto {
+  recurrenceRuleId?: string | null;
+  recurrenceYear?: number | null;
   audienceSelection?: GenealogyAudienceSelection;
   invitedUserIds?: string[];
   startsAt?: string | null;

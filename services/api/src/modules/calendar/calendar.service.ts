@@ -7,7 +7,7 @@ import { DatabaseService } from '../../database/database.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { CreateCalendarEventDto, CalendarEventDetailDto, CalendarEventRsvpDto, EventAudienceScope, ErrorCode, Role, EventType } from '@kashyap/contracts';
 import { CalendarDeliveryService } from './calendar-delivery.service';
-import { eventVisibility } from './calendar-eligibility';
+import { eventVisibility, recurrenceVisibility } from './calendar-eligibility';
 import { allowedFields, textField, uuid } from '../community/community-policy';
 
 const keys=['title','description','eventType','audienceScope','branchId','location','solarDate','tithiYearBs','tithiMonthBs','tithiPaksha','tithiNumber','invitedUserIds','startsAt','reminderOffsets','version','audienceSelection','audiencePreviewId'];
@@ -177,6 +177,7 @@ export class CalendarService {
     allowedFields(dto,keys);
     return this.selectionTransaction(async client=>{
       const e=await this.locked(eventId,actor,client,dto.version);
+      if(e.recurrence_rule_id)throw new ConflictException('Annual occurrences cannot be edited or shared; withdraw the recurring rule');
       const current={title:e.title,description:e.description,eventType:e.event_type,audienceScope:e.audience_scope,branchId:e.branch_id,
         location:e.location,solarDate:e.date_bs,tithiYearBs:e.tithi_year_bs,tithiMonthBs:e.tithi_month_bs,tithiPaksha:e.tithi_paksha,tithiNumber:e.tithi_number,
         startsAt:e.starts_at?new Date(e.starts_at).toISOString():undefined,reminderOffsets:e.reminder_offsets};
@@ -215,7 +216,7 @@ export class CalendarService {
   async history(id:string,actor:AuthenticatedUser){
     return this.db.transaction(async client=>{
       const e=(await client.query('SELECT * FROM calendar_events WHERE id=$1',[uuid(id)])).rows[0];
-      if(!e||!await this.manageable(e,actor.id,client))throw new NotFoundException('Event history unavailable');
+      if(!e||!await this.canViewEvent(e,actor,client)||!await this.manageable(e,actor.id,client))throw new NotFoundException('Event history unavailable');
       await this.actor(actor.id,client);
       const rows=(await client.query(`SELECT r.version,r.action,r.actor_id AS "actorId",r.snapshot,r.created_at AS "createdAt",
         CASE WHEN p.id IS NOT NULL THEN jsonb_build_object('previewId',p.id,'basis',p.basis,'previewContext',p.preview_context,'sendContext',p.send_context,'eventVersion',p.event_version) END AS "audienceEvidence"
@@ -232,7 +233,7 @@ export class CalendarService {
     if(options?.branchId)uuid(options.branchId,'branch');
     if(options?.audienceScope&&!Object.values(EventAudienceScope).includes(options.audienceScope))throw new BadRequestException('Invalid event audience');
     const rows=(await this.db.query(`SELECT e.* FROM calendar_events e JOIN user_accounts u ON u.id=$1
-      WHERE (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN'))
+      WHERE ${recurrenceVisibility()} AND (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN'))
       AND ($2::int IS NULL OR left(e.date_bs,4)=$2::text OR e.tithi_year_bs=$2)
       AND ($3::int IS NULL OR substring(e.date_bs,6,2)=$3::text OR substring(e.date_bs,6,2)=LPAD($3::text,2,'0') OR e.tithi_month_bs=$3)
       AND ($4::uuid IS NULL OR e.branch_id=$4)
@@ -249,7 +250,7 @@ export class CalendarService {
     if(options?.branchId)uuid(options.branchId,'branch');
     if(options?.audienceScope&&!Object.values(EventAudienceScope).includes(options.audienceScope))throw new BadRequestException('Invalid event audience');
     const rows=(await this.db.query(`SELECT e.* FROM calendar_events e JOIN user_accounts u ON u.id=$1
-      WHERE (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN'))
+      WHERE ${recurrenceVisibility()} AND (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN'))
       AND ($2::int IS NULL OR left(e.date_bs,4)=$2::text OR e.tithi_year_bs=$2)
       AND ($3::int IS NULL OR substring(e.date_bs,6,2)=$3::text OR substring(e.date_bs,6,2)=LPAD($3::text,2,'0') OR e.tithi_month_bs=$3)
       AND ($4::uuid IS NULL OR e.branch_id=$4)
@@ -266,7 +267,7 @@ export class CalendarService {
     const displayDate=period.source==='AD'?"to_char(e.starts_at AT TIME ZONE 'Asia/Kathmandu','YYYY-MM-DD')":"e.date_bs";
     const eligible=`SELECT e.*,${displayDate} AS display_date FROM calendar_events e JOIN user_accounts u ON u.id=$1
       CROSS JOIN (SELECT $2::text AS period_start,$3::text AS period_end,$4::int AS period_year,$5::int AS period_month) bounds
-      WHERE (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN')) AND (${dateFilter})`;
+      WHERE ${recurrenceVisibility()} AND (${eventVisibility()} OR EXISTS(SELECT 1 FROM user_roles r WHERE r.user_id=u.id AND r.role='SUPER_ADMIN')) AND (${dateFilter})`;
     const params=[actor.id,period.source==='AD'?period.start:period.view==='DAY'?period.date:period.prefix,period.end,period.year,period.month];
     const counts=(await this.db.query(`WITH eligible AS (${eligible}) SELECT display_date,count(*)::int AS count FROM eligible GROUP BY display_date`,params)).rows;
     const rows=(await this.db.query(`WITH eligible AS (${eligible}) SELECT * FROM eligible
@@ -288,7 +289,7 @@ export class CalendarService {
     return this.detail(e,actor.id);
   }
   private async canViewEvent(e:any,actor:AuthenticatedUser,client?:any){
-    if(actor.roles.includes(Role.SUPER_ADMIN))return true;
+    if(actor.roles.includes(Role.SUPER_ADMIN)&&!e.recurrence_rule_id)return true;
     return !!(await this.db.query(`SELECT 1 FROM calendar_events e JOIN user_accounts u ON u.id=$2 WHERE e.id=$1 AND ${eventVisibility()}`,[e.id,actor.id],client)).rows.length;
   }
   async rsvpEvent(id:string,userId:string,dto:CalendarEventRsvpDto):Promise<{success:boolean;myRsvp:string}>{
@@ -315,13 +316,13 @@ export class CalendarService {
   }
   private async detail(e:any,userId:string,client?:any):Promise<CalendarEventDetailDto>{
     const invitation=(await this.db.query('SELECT rsvp_status FROM event_invitations WHERE event_id=$1 AND invited_user_id=$2 AND revoked_at IS NULL',[e.id,userId],client)).rows[0];
-    const canManage=await this.manageable(e,userId,client);
+    const canManage=!e.recurrence_rule_id&&await this.manageable(e,userId,client);
     let counts:any;
     const selection=canManage&&e.audience_preview_id?(await this.db.query('SELECT selection FROM calendar_audience_previews WHERE id=$1',[e.audience_preview_id],client)).rows[0]?.selection:undefined;
     if(canManage)counts=(await this.db.query(`SELECT count(*) FILTER(WHERE rsvp_status='GOING')::int AS going,
       count(*) FILTER(WHERE rsvp_status='MAYBE')::int AS maybe,count(*) FILTER(WHERE rsvp_status='DECLINED')::int AS declined
       FROM event_invitations WHERE event_id=$1 AND revoked_at IS NULL`,[e.id],client)).rows[0];
-    return {audienceSelection:selection,id:e.id,createdByUserId:e.host_user_id,title:e.title,description:e.description??undefined,eventType:e.event_type,
+    return {recurrenceRuleId:e.recurrence_rule_id??null,recurrenceYear:e.recurrence_year??null,audienceSelection:selection,id:e.id,createdByUserId:e.host_user_id,title:e.title,description:e.description??undefined,eventType:e.event_type,
       audienceScope:e.audience_scope,branchId:e.branch_id,location:e.location,isAllDay:!e.starts_at,solarDate:e.date_bs,
       tithiYearBs:e.tithi_year_bs,tithiMonthBs:e.tithi_month_bs,tithiPaksha:e.tithi_paksha,tithiNumber:e.tithi_number,
       startsAt:e.starts_at?new Date(e.starts_at).toISOString():null,reminderOffsets:e.reminder_offsets,version:e.version,lifecycleState:e.lifecycle_state,
