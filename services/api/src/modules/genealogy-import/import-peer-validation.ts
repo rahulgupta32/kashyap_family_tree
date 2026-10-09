@@ -11,10 +11,12 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
   const key=JSON.stringify([entity,sourceId,code]);if(!keys.has(key)){keys.add(key);issues.push({entity,sourceId,code});}
  };
  const peerBatches=peers.slice(0,50).map(p=>({id:p.id,sourceHash:p.source_hash}));
- if(peers.length>50){add('BATCH',payload.datasetKey,'PEER_BATCH_VALIDATION_LIMIT_REACHED');return {issues,peerBatches};}
+ const graphSources:GenealogyImportPayload[]=[];
+ if(peers.length>50){add('BATCH',payload.datasetKey,'PEER_BATCH_VALIDATION_LIMIT_REACHED');return {issues,peerBatches,graphSources};}
  const personIds=new Set<string>(),targets=new Set<string>(),linkIds=new Set<string>();
  for(const peer of peers){
   if(!peer.payload){add('BATCH',payload.datasetKey,'PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');continue;}
+  graphSources.push(peer.payload);
   for(const p of peer.payload.persons){personIds.add(p.sourceId);if(p.targetPersonId)targets.add(p.targetPersonId.toLowerCase());}
   for(const link of peer.payload.parentLinks)linkIds.add(link.sourceId);
  }
@@ -23,5 +25,6 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
   if(p.targetPersonId&&targets.has(p.targetPersonId.toLowerCase()))add('PERSON',p.sourceId,'CROSS_BATCH_TARGET_MAPPING_RECONCILIATION_REQUIRED');
  }
  for(const link of payload.parentLinks)if(linkIds.has(link.sourceId))add('PARENT_LINK',link.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
- return {issues,peerBatches};
+ // graphSources is transaction-local input, never part of a retained/public report.
+ return {issues,peerBatches,graphSources};
 }

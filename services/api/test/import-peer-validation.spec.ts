@@ -8,7 +8,7 @@ describe('Cross-batch source reconciliation',()=>{
   const {query,result}=check([peer()]);const r=await result;
   expect(query.mock.calls[0][1]).toEqual(['DATA','branch','current']);expect(r.peerBatches).toEqual([{id:'peer',sourceHash:'hash'}]);
   expect(r.issues.map(i=>i.code)).toEqual(['CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED','CROSS_BATCH_TARGET_MAPPING_RECONCILIATION_REQUIRED','CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED']);
-  expect(JSON.stringify(r)).not.toContain(target);
+  expect(JSON.stringify({issues:r.issues,peerBatches:r.peerBatches})).not.toContain(target);
  });
  it('deduplicates issues and matches UUIDs irrespective of casing',async()=>{
   const r=await check([peer({payload:{persons:[{sourceId:'other',targetPersonId:target.toUpperCase()}],parentLinks:[]}}),peer()]).result;

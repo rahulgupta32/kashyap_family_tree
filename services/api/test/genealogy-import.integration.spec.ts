@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-3-peer-identities');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-4-peer-graph');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -95,6 +95,22 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   await service.erase(admin.id,peer.id,{sourceHash:peer.sourceHash,reason});
   const erased=await service.dryRun(admin.id,first.id,{sourceHash:first.sourceHash,requestKey:randomUUID(),reason});expect(erased.report.issues.map(i=>i.code)).toContain('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');
   const history=await service.runs(admin.id,first.id,{});expect(history.items[2].report.peerBatches).toEqual([]);expect(history.items[1].report.peerBatches).toEqual(checked.report.peerBatches);
+ });
+ it('detects a cycle formed only by separate retained batch overlays',async()=>{
+  const targets=[];for(let i=0;i<3;i++)targets.push((await db.query('INSERT INTO persons(branch_id,generation) VALUES($1,$2) RETURNING id',[branchId,i+1])).rows[0].id);
+  const stageEdge=async(index:number,parent:number,child:number)=>service.stage(admin.id,source({datasetKey:'PEER_GRAPH',persons:[{...person,sourceId:`p-${index}`,nameNepali:`काल्पनिक अभिभावक ${index}`,targetPersonId:targets[parent]},{...person,sourceId:`c-${index}`,nameNepali:`काल्पनिक सन्तान ${index}`,targetPersonId:targets[child]}],parentLinks:[{sourceId:`edge-${index}`,parentSourceId:`p-${index}`,childSourceId:`c-${index}`,type:'BIOLOGICAL',sourceRef:'SRC-1',verification:'VERIFIED'}]}));
+  const first=await stageEdge(1,0,1),second=await stageEdge(2,1,2);
+  const runBatch=(b:any)=>service.dryRun(admin.id,b.id,{sourceHash:b.sourceHash,requestKey:randomUUID(),reason});
+  const before=await runBatch(first);expect(before.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
+  const third=await stageEdge(3,2,0);const cycled=await runBatch(first);
+  expect(cycled.report.issues).toContainEqual({entity:'PARENT_LINK',sourceId:'edge-1',code:'COMBINED_TARGET_PARENT_CYCLE'});
+  expect(cycled.report.issues.filter(i=>i.entity==='PARENT_LINK').map(i=>i.sourceId)).not.toContain('edge-3');
+  expect(cycled.report.peerBatches?.map(b=>b.id).sort()).toEqual([second.id,third.id].sort());expect(cycled.report.validationPassed).toBe(false);
+  expect((await db.query('SELECT * FROM parent_links WHERE parent_id=ANY($1::uuid[])',[targets])).rows).toEqual([]);
+  expect((await service.runs(admin.id,first.id,{})).items[1].report).toEqual(before.report);
+  await service.erase(admin.id,third.id,{sourceHash:third.sourceHash,reason});const erased=await runBatch(first);
+  expect(erased.report.issues.map(i=>i.code)).toContain('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');expect(erased.report.validationPassed).toBe(false);
+  expect((await service.runs(admin.id,first.id,{})).items[1].report).toEqual(cycled.report);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));
