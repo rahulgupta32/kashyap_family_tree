@@ -42,6 +42,11 @@ jobs:
       - name: Validate complete release implementation assessment
         run: python3 scripts/validate_release_assessment.py
 
+      - name: Validate frozen genealogy workbook field inventory
+        run: |
+          python3 scripts/validate_genealogy_workbook_mapping.py
+          python3 scripts/test_genealogy_workbook_mapping.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
