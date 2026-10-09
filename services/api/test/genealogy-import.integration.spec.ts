@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-5-target-fields');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-6-relationship-source');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -125,6 +125,16 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const refreshed=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
   expect(refreshed.report.issues.filter(i=>i.code.startsWith('TARGET_')&&i.code.endsWith('_RECONCILIATION_REQUIRED'))).toEqual([]);
   expect((await service.runs(admin.id,staged.id,{})).items[1].report).toEqual(checked.report);
+ });
+ it('retains relationship source details immutably and excludes private evidence from reports',async()=>{
+  const sourceDetails={parentRole:'Source Parent',relationshipStatus:'Disputed',reviewedBy:'Fictional private source reviewer',startDate:'2080-01',startCalendar:'BS',notes:'Fictional private historical evidence'};
+  const payload=source({datasetKey:'RELATIONSHIP_DETAILS',persons:[person,{...person,sourceId:'PER-DETAIL-2',nameNepali:'काल्पनिक विवरण व्यक्ति'}],parentLinks:[{sourceId:'EDGE-DETAIL',parentSourceId:person.sourceId,childSourceId:'PER-DETAIL-2',type:'BIOLOGICAL',sourceRef:'SRC-1',verification:'VERIFIED',sourceDetails}]});
+  const staged=await service.stage(admin.id,payload);expect((await service.detail(admin.id,staged.id)).payload.parentLinks[0].sourceDetails).toEqual(sourceDetails);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
+  expect(checked.report.issues).toContainEqual({entity:'PARENT_LINK',sourceId:'EDGE-DETAIL',code:'RELATIONSHIP_SOURCE_DETAILS_REVIEW_REQUIRED'});expect(checked.report.validationPassed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(sourceDetails.reviewedBy);
+  const corrected=await service.stage(admin.id,{...payload,parentLinks:[{...payload.parentLinks[0],sourceDetails:{...sourceDetails,notes:'Fictional corrected private evidence'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect(corrected.id).not.toBe(staged.id);
+  expect((await service.detail(admin.id,staged.id)).payload.parentLinks[0].sourceDetails).toEqual(sourceDetails);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));

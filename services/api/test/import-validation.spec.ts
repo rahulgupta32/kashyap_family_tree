@@ -3,6 +3,21 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const link={sourceId:'PCR-DETAIL',parentSourceId:person.sourceId,childSourceId:'PER-2',type:'BIOLOGICAL',sourceRef:'SRC-1',verification:'VERIFIED'};
+ it('preserves relationship source spelling and original dates without treating source review as authority',()=>{
+  const sourceDetails={parentRole:' Father ',legalStatus:'Unknown',startDate:'2080-01',startCalendar:'BS',endDate:'Unknown',endCalendar:'Unknown',certainty:'Disputed',relationshipStatus:'Historical',visibility:'Private',proposedBy:'Source proposer',reviewedBy:'Source reviewer',reviewDate:'Approximate',notes:'  मूल स्रोतको टिप्पणी  '};
+  const p=parseImportPayload({...payload(),persons:[person,{...person,sourceId:'PER-2',nameNepali:'दोस्रो नमुना'}],parentLinks:[{...link,sourceDetails}]});
+  expect(p.parentLinks[0].sourceDetails).toEqual(sourceDetails);expect(validateImport(p)).toContainEqual({entity:'PARENT_LINK',sourceId:link.sourceId,code:'RELATIONSHIP_SOURCE_DETAILS_REVIEW_REQUIRED'});
+  expect(JSON.stringify(validateImport(p))).not.toContain('Source reviewer');
+ });
+ it('binds relationship source details into the immutable hash without changing legacy payloads',()=>{
+  const original={...payload(),parentLinks:[link]};const parsed=parseImportPayload(original);
+  expect(parsed.parentLinks[0]).toEqual(link);
+  expect(importHash(parsed)).not.toBe(importHash(parseImportPayload({...original,parentLinks:[{...link,sourceDetails:{notes:'Source history evidence'}}]})));
+ });
+ it('rejects unknown, empty, oversized and unsafe relationship source details',()=>{
+  for(const sourceDetails of [{},{phone:'private'},null,[],{notes:'x'.repeat(1001)},{parentRole:'x'.repeat(101)},{notes:'bad\u0000text'},{reviewDate:42}])expect(()=>parseImportPayload({...payload(),parentLinks:[{...link,sourceDetails}]})).toThrow();
+ });
  it('retains source names and hashes reordered object keys consistently',()=>{const p=payload();const parsed=parseImportPayload(p);expect(parsed.persons[0].nameNepali).toBe(person.nameNepali);expect(validateImport(parsed)).toEqual([]);const reversed=Object.fromEntries(Object.entries(p).reverse());expect(importHash(parsed)).toBe(importHash(parseImportPayload(reversed)));});
  it('rejects unknown sensitive fields and invalid shape or resource bounds',()=>{for(const p of [{...payload(),contacts:[]},{...payload(),schemaVersion:2},{...payload(),persons:[]},{...payload(),persons:Array(201).fill(person)},{...payload(),persons:[{...person,phone:'+977000000'}]},{...payload(),persons:[{...person,generation:0}]},{...payload(),persons:[{...person,nameNepali:'bad\u0000name'}]}])expect(()=>parseImportPayload(p)).toThrow();});
  it('keeps pending consent, verification and visibility as actionable exceptions',()=>{const p=parseImportPayload({...payload(),persons:[{...person,consent:'PENDING',verification:'DISPUTED',visibility:'PUBLIC'}]});expect(validateImport(p).map(i=>i.code)).toEqual(expect.arrayContaining(['CONSENT_REVIEW_REQUIRED','VERIFICATION_REQUIRED','PRIVACY_REVIEW_REQUIRED']));});

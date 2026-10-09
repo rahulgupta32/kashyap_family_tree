@@ -8,7 +8,7 @@ import { importHash, parseImportPayload, validateImport } from './import-validat
 import { validateTargetGraph } from './import-target-graph';
 import { validateImportPeers } from './import-peer-validation';
 import { validateTargetFields } from './import-target-fields';
-const validatorVersion='staging-5-target-fields';
+const validatorVersion='staging-6-relationship-source';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {

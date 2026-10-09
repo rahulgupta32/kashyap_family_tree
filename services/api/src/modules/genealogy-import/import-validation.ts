@@ -11,6 +11,12 @@ function sourceText(value:any,label:string,max:number,min=1){
 }
 function id(value:any){const s=sourceText(value,'source identifier',80);if(!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/.test(s))throw new BadRequestException('Invalid source identifier');return s;}
 function date(value:any){allowedFields(value,['value','calendar','precision']);return {value:sourceText(value.value,'original date',80),calendar:sourceText(value.calendar,'calendar',20),precision:sourceText(value.precision,'date precision',20)};}
+function relationshipDetails(value:any){
+ const fields=['parentRole','legalStatus','startDate','startCalendar','endDate','endCalendar','certainty','relationshipStatus','visibility','proposedBy','reviewedBy','reviewDate','notes'];
+ allowedFields(value,fields);
+ if(!Object.keys(value).length)throw new BadRequestException('Relationship source details must not be empty');
+ return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
+}
 export function parseImportPayload(body:any):GenealogyImportPayload{
  allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
@@ -21,7 +27,7 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
   return {sourceId:id(p.sourceId),nameNepali:sourceText(p.nameNepali,'Nepali source name',255),...(p.nameEnglish===undefined?{}:{nameEnglish:sourceText(p.nameEnglish,'English source name',255)}),generation:p.generation,
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
- }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30)};})};
+ }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
  if(Buffer.byteLength(JSON.stringify(payload),'utf8')>1048576)throw new BadRequestException('Staged payload exceeds 1 MiB');
  return payload;
 }
@@ -55,6 +61,7 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   if(e.parentSourceId===e.childSourceId)add('SELF_PARENT');
   if(!['BIOLOGICAL','ADOPTIVE'].includes(e.type))add('UNSUPPORTED_PARENT_TYPE');
   if(e.verification!=='VERIFIED')add('RELATIONSHIP_VERIFICATION_REQUIRED');
+  if(e.sourceDetails)add('RELATIONSHIP_SOURCE_DETAILS_REVIEW_REQUIRED');
   const key=JSON.stringify([e.parentSourceId,e.childSourceId]);if(edges.has(key))add('DUPLICATE_PARENT_PAIR');edges.add(key);
   adj.set(e.parentSourceId,[...(adj.get(e.parentSourceId)||[]),e.childSourceId]);
  }

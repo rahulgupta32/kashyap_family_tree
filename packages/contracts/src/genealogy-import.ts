@@ -7,6 +7,7 @@ export interface GenealogyImportPerson {
 }
 export interface GenealogyImportParent {
  sourceId:string;parentSourceId:string;childSourceId:string;type:string;sourceRef:string;verification:string;
+ sourceDetails?:{parentRole?:string;legalStatus?:string;startDate?:string;startCalendar?:string;endDate?:string;endCalendar?:string;certainty?:string;relationshipStatus?:string;visibility?:string;proposedBy?:string;reviewedBy?:string;reviewDate?:string;notes?:string};
 }
 export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[]; }
 export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK';sourceId:string;code:string;}
