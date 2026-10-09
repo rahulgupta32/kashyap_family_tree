@@ -92,3 +92,10 @@ Four unit cases, one peer reuse case and a PostgreSQL lifecycle regression cover
 
 
 CI follow-up: the union predecessor's PostgreSQL suite passed 401 tests (including the union lifecycle case), but one graph regression retained the obsolete `staging-8-source-evidence` version expectation. Corrected that assertion to the current `staging-10-claim-evidence` version. Browser checks were skipped after the database failure. New-head database/browser verification remains pending; local unit/build/typecheck results do not substitute for it.
+
+
+### Person source metadata and field-inventory checkpoint
+
+Optional per-person `sourceMetadata` retains 17 remaining frozen person columns: original branch ID, birthplace/current locality, country, occupation/education, gotra/lineage notes, profile-photo reference, consent date, original creation/update/stewardship and restriction evidence. All text remains original and bounded; empty/unknown/unsafe metadata is rejected. References are stored without fetching media or mapping live branches. Any metadata requires `PERSON_SOURCE_METADATA_REVIEW_REQUIRED`; original consent dates, gotra and stewardship do not grant application authority or activate cultural rules. Validator and graph regression expectation advance together to `staging-11-person-metadata`. Three unit cases and a PostgreSQL lifecycle regression cover retention, immutable correction hashes, bounds, reload, no live person mutation and erasure.
+
+The 195-column inventory now names partial staging targets for all person columns and the 19 union/17 claim columns. Every mapping approval stays OPEN and production import stays blocked. Branch records, residence history, private-contact records, approved workbook transformation and controlled production writing still require implementation/governance. This checkpoint does not mark the release requirements or signed acceptance complete.

@@ -3,6 +3,7 @@ export interface GenealogyImportPerson {
  sourceId:string; nameNepali:string; nameEnglish?:string; gender:string; livingStatus:string;
  generation:number; sourceRef:string; consent:string; verification:string; visibility:string;
  targetPersonId?:string;
+ sourceMetadata?:{branchSourceId?:string;birthPlace?:string;currentDistrict?:string;currentMunicipality?:string;currentWard?:string;country?:string;occupation?:string;education?:string;gotra?:string;lineageNotes?:string;profilePhotoRef?:string;consentDate?:string;createdBy?:string;createdDate?:string;lastUpdated?:string;dataSteward?:string;restrictionReason?:string};
  sourceNames?:{givenNepali?:string;middleNepali?:string;familyNepali?:string;givenEnglish?:string;middleEnglish?:string;familyEnglish?:string;knownAs?:string};
  birth?:{value:string;calendar:string;precision:string}; death?:{value:string;calendar:string;precision:string};
 }

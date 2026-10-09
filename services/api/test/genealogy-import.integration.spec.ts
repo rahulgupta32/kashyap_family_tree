@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-10-claim-evidence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-11-person-metadata');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -174,6 +174,15 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,payload);expect((await new GenealogyImportService(db,audit).detail(admin.id,staged.id)).payload.claims).toEqual([claim]);
   const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'CLAIM',sourceId:'CASE-1',code:'CLAIM_SOURCE_REVIEW_REQUIRED'});expect(checked.report.promotionAllowed).toBe(false);
   const corrected=await service.stage(admin.id,{...payload,claims:[{...claim,decision:'Corrected'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.claims).toEqual([claim]);
+  expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('retains original person metadata through reload, correction and erasure without mutating live people',async()=>{
+  const sourceMetadata={branchSourceId:'Original branch',gotra:'Unreviewed lineage',consentDate:'2080 BS',restrictionReason:'Private source restriction',dataSteward:'Original steward',profilePhotoRef:'Original media reference'};
+  const payload=source({datasetKey:'PERSON_METADATA',persons:[{...person,sourceMetadata}]});const before=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;
+  const staged=await service.stage(admin.id,payload);expect((await new GenealogyImportService(db,audit).detail(admin.id,staged.id)).payload.persons[0].sourceMetadata).toEqual(sourceMetadata);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'PERSON',sourceId:person.sourceId,code:'PERSON_SOURCE_METADATA_REVIEW_REQUIRED'});expect(checked.report.promotionAllowed).toBe(false);
+  const corrected=await service.stage(admin.id,{...payload,persons:[{...person,sourceMetadata:{...sourceMetadata,restrictionReason:'Corrected restriction'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.persons[0].sourceMetadata).toEqual(sourceMetadata);
   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });

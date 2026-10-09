@@ -43,6 +43,12 @@ function unions(value:any){
   return {sourceId:id(record.sourceId),partner1SourceId:id(record.partner1SourceId),partner2SourceId:id(record.partner2SourceId),sourceRef:id(record.sourceRef),...fields} as import('@kashyap/contracts').GenealogyImportUnion;
  });
 }
+function sourceMetadata(value:any){
+ const fields=['branchSourceId','birthPlace','currentDistrict','currentMunicipality','currentWard','country','occupation','education','gotra','lineageNotes','profilePhotoRef','consentDate','createdBy','createdDate','lastUpdated','dataSteward','restrictionReason'];
+ allowedFields(value,fields);
+ if(!Object.keys(value).length)throw new BadRequestException('Person source metadata must not be empty');
+ return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`person source ${field}`,['lineageNotes','restrictionReason','profilePhotoRef'].includes(field)?1000:255)]));
+}
 function sourceNames(value:any){
  const fields=['givenNepali','middleNepali','familyNepali','givenEnglish','middleEnglish','familyEnglish','knownAs'];
  allowedFields(value,fields);
@@ -60,11 +66,11 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
-  allowedFields(p,['sourceId','nameNepali','nameEnglish','gender','livingStatus','generation','sourceRef','consent','verification','visibility','targetPersonId','birth','death','sourceNames']);
+  allowedFields(p,['sourceId','nameNepali','nameEnglish','gender','livingStatus','generation','sourceRef','consent','verification','visibility','targetPersonId','birth','death','sourceNames','sourceMetadata']);
   if(!Number.isInteger(p.generation)||p.generation<1||p.generation>100)throw new BadRequestException('Generation must be between 1 and 100');
   return {sourceId:id(p.sourceId),nameNepali:sourceText(p.nameNepali,'Nepali source name',255),...(p.nameEnglish===undefined?{}:{nameEnglish:sourceText(p.nameEnglish,'English source name',255)}),generation:p.generation,
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
-   ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
+   ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceMetadata===undefined?{}:{sourceMetadata:sourceMetadata(p.sourceMetadata)}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
  if(body.claims!==undefined)payload.claims=claims(body.claims);
  if(body.unions!==undefined)payload.unions=unions(body.unions);
@@ -96,6 +102,7 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   if(p.visibility!=='PRIVATE')add('PRIVACY_REVIEW_REQUIRED');
   if(p.verification!=='VERIFIED')add('VERIFICATION_REQUIRED');
   if(p.sourceNames)add('SOURCE_NAME_COMPONENTS_REVIEW_REQUIRED');
+  if(p.sourceMetadata)add('PERSON_SOURCE_METADATA_REVIEW_REQUIRED');
   if(p.consent!=='GRANTED'&&!(p.livingStatus==='DECEASED'&&p.consent==='NOT_REQUIRED'))add('CONSENT_REVIEW_REQUIRED');
   if(p.death&&p.livingStatus!=='DECEASED')add('DEATH_STATUS_CONFLICT');
   for(const d of [p.birth,p.death])if(d){

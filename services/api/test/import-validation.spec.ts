@@ -3,6 +3,16 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const sourceMetadata={branchSourceId:'Original branch',birthPlace:'Original birthplace',currentDistrict:'District',currentMunicipality:'Municipality',currentWard:'Unknown',country:'Nepal',occupation:'Source occupation',education:'Source education',gotra:'Unreviewed gotra',lineageNotes:'  मूल वंश टिप्पणी  ',profilePhotoRef:'Original media reference',consentDate:'2080 BS',createdBy:'Source creator',createdDate:'Original date',lastUpdated:'Unknown',dataSteward:'Source steward',restrictionReason:'Restricted by source'};
+ it('preserves all person metadata without changing branch, consent or name authority',()=>{
+  const p=parseImportPayload({...payload(),persons:[{...person,sourceMetadata}]});expect(p.persons[0].sourceMetadata).toEqual(sourceMetadata);expect(p.persons[0].consent).toBe(person.consent);
+  expect(validateImport(p)).toEqual([{entity:'PERSON',sourceId:person.sourceId,code:'PERSON_SOURCE_METADATA_REVIEW_REQUIRED'}]);expect(JSON.stringify(validateImport(p))).not.toContain('Source steward');
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,persons:[{...p.persons[0],sourceMetadata:{...sourceMetadata,restrictionReason:'Corrected restriction'}}]})));
+ });
+ it('rejects empty, unknown, excessive and unsafe person metadata',()=>{
+  for(const sourceMetadata of [{},null,[],{phone:'private'},{lineageNotes:'x'.repeat(1001)},{country:'x'.repeat(256)},{consentDate:42},{restrictionReason:'bad\u0000text'}])expect(()=>parseImportPayload({...payload(),persons:[{...person,sourceMetadata}]})).toThrow();
+ });
+ it('retains legacy person hashes when original metadata is absent',()=>{const body=payload(),p=parseImportPayload(body);expect(p.persons[0]).not.toHaveProperty('sourceMetadata');expect(importHash(p)).toBe(importHash(body as any));});
  const claim={sourceId:'CASE-1',entityType:'PERSON',entitySourceId:person.sourceId,fieldOrRelationship:'Original name',riskLevel:'High',visibility:'Private',status:'Resolved',claimA:'  मूल दाबी  ',claimASourceRef:person.sourceRef,claimB:'Alternate account',claimBSourceRef:person.sourceRef,assignedAuthority:'Source authority',decision:'Approved',decisionEvidenceRef:person.sourceRef,decisionDate:'2080 BS',appealStatus:'Pending',auditNotes:'Original audit notes'};
  it('retains all claim and dispute evidence without granting authority to source decisions',()=>{
   const p=parseImportPayload({...payload(),claims:[claim]});expect(p.claims).toEqual([claim]);expect(validateImport(p)).toEqual([{entity:'CLAIM',sourceId:'CASE-1',code:'CLAIM_SOURCE_REVIEW_REQUIRED'}]);
