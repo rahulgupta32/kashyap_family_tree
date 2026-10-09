@@ -87,7 +87,8 @@ export class CalendarRecurrenceService implements OnModuleInit, OnModuleDestroy 
    if(r.owner_id!==actor&&!u.isReviewer)throw new NotFoundException('Recurrence unavailable');
    await this.evidence(tx,actor,r.id,'CALENDAR_RECURRENCE_PREVIEW',r.version);
    const current=(await tx.query('SELECT calendar_recurrence_current($1) AS valid',[r.id])).rows[0].valid;
-   return {ruleVersion:r.rule_version,state:r.state,current,year:Number(q.year),startsAt:annualOccurrence(r.source_date,Number(q.year),r.local_time,r.leap_policy),timezone:'Asia/Kathmandu',audienceScope:'PRIVATE',deliveryEnabled:current};
+   const startsAt=annualOccurrence(r.source_date,Number(q.year),r.local_time,r.leap_policy);
+   return {ruleVersion:r.rule_version,state:r.state,current,year:Number(q.year),startsAt,timezone:'Asia/Kathmandu',audienceScope:'PRIVATE',deliveryEnabled:current&&startsAt!==null&&new Date(startsAt).getTime()>Date.now()};
   });
  }
  async materializeDue():Promise<number>{return this.db.transaction(async tx=>{

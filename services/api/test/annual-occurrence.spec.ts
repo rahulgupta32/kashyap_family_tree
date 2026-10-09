@@ -8,6 +8,9 @@ describe('Explicit Gregorian annual occurrence engine (engineering cases, not si
   ['2000-02-29',2027,'09:00','SKIP_YEAR',null],
   ['2000-02-29',2027,'09:00','FEBRUARY_28','2027-02-28T03:15:00.000Z'],
   ['2000-02-29',2027,'09:00','MARCH_01','2027-03-01T03:15:00.000Z'],
+  ['2030-06-15',2027,'09:00','SKIP_YEAR',null],
+  ['2030-06-15',2030,'09:00','SKIP_YEAR',null],
+  ['2030-06-15',2031,'09:00','SKIP_YEAR','2031-06-15T03:15:00.000Z'],
  ] as const)('derives %s in %s at %s with explicit %s',(source,year,time,policy,expected)=>{expect(annualOccurrence(source,year,time,policy)).toBe(expected);});
  it.each([
   ['2025-02-29',2027,'09:00','SKIP_YEAR'],['2020-04-31',2027,'09:00','SKIP_YEAR'],

@@ -11,6 +11,8 @@ export function annualOccurrence(sourceDate: string, year: number, localTime: st
   }
   const source = new Date(`${sourceDate}T00:00:00.000Z`);
   if (!Number.isFinite(source.getTime()) || source.toISOString().slice(0, 10) !== sourceDate) throw new BadRequestException('Invalid Gregorian source date');
+  // The source event itself is the first occurrence; annual reminders begin next year.
+  if (year <= source.getUTCFullYear()) return null;
   let month = source.getUTCMonth(), day = source.getUTCDate();
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   if (month === 1 && day === 29 && !leap) {

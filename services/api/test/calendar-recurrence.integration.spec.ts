@@ -56,6 +56,11 @@ describe('Approved private Gregorian annual reminders (real PostgreSQL/HTTP)',()
   const events=(await db.query('SELECT * FROM calendar_events WHERE recurrence_rule_id=$1',[r.id])).rows;expect(events.length).toBeGreaterThan(0);expect(new Set(events.map(e=>e.recurrence_year)).size).toBe(events.length);
   for(const e of events){expect(e.audience_scope).toBe('PRIVATE');expect(e.title).toBe('Private annual reminder');await request(app.getHttpServer()).get(`/calendar/events/${e.id}`).set(auth()).expect(200);await request(app.getHttpServer()).get(`/calendar/events/${e.id}`).set(auth(reviewer)).expect(403);await request(app.getHttpServer()).patch(`/calendar/events/${e.id}`).set(auth()).send({version:1,title:'Share source'}).expect(409);await propose({id:e.id,version:1}).expect(400);}
  });
+ it('does not generate reminders before a future source event or duplicate its original year',async()=>{
+  const e=await event(owner,'GENERAL_EVENT','2030-06-15T03:15:00Z'),pending=(await propose(e).expect(201)).body,r=(await decide(pending).expect(201)).body;
+  await service.materializeDue();expect((await db.query('SELECT id FROM calendar_events WHERE recurrence_rule_id=$1',[r.id])).rows).toHaveLength(0);
+  for(const year of [2027,2030]){const preview=(await request(app.getHttpServer()).get(`${base}/${r.id}/preview?year=${year}`).set(auth()).expect(200)).body;expect(preview).toMatchObject({current:true,startsAt:null,deliveryEnabled:false});}
+ });
  it('withdrawal hides occurrences from calendar and invalidates pending notices and retries',async()=>{
   const {r}=await approved();await service.materializeDue();const e=(await db.query('SELECT * FROM calendar_events WHERE recurrence_rule_id=$1 ORDER BY recurrence_year DESC',[r.id])).rows[0];expect(e).toBeTruthy();
   const eligible=async()=>Number((await db.query(`SELECT count(*) FROM calendar_notification_recipients nr JOIN audit_outbox o ON o.id=nr.outbox_id JOIN calendar_events e ON e.id=nr.event_id JOIN user_accounts u ON u.id=nr.user_id WHERE e.id=$1 AND ${calendarNoticeEligibility()}`,[e.id])).rows[0].count);
@@ -93,4 +98,16 @@ describe('Approved private Gregorian annual reminders (real PostgreSQL/HTTP)',()
   await expect(db.query(fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/048_calendar_annual_recurrence.down.sql'),'utf8'))).rejects.toThrow('Cannot discard');
   const res=await request(app.getHttpServer()).get(base).set(auth()).expect(200);expect(res.headers['cache-control']).toBe('private, no-store');await request(app.getHttpServer()).get(`${base}?after=bad`).set(auth()).expect(400);await request(app.getHttpServer()).get(`${base}?extra=true`).set(auth()).expect(400);
  });
+ it('paginates owner and independent review queues without repeating or losing proposals',async()=>{
+  for(let i=0;i<51;i++){
+   const e=(await db.query(`INSERT INTO calendar_events(host_user_id,title,event_type,audience_scope,is_public,starts_at,provenance)
+    VALUES($1,'Fictional pagination source','GENERAL_EVENT','PRIVATE',FALSE,'2020-06-15T03:15:00Z','{"source":"ORGANIZER_SUPPLIED_AD"}') RETURNING *`,[owner.id])).rows[0];
+   await service.propose(owner.id,{sourceEventId:e.id,sourceVersion:e.version,localTime:'09:00',leapDayPolicy:'SKIP_YEAR',sourceRef:reason,consent:true});
+  }
+  for(const [actor,query] of [[owner.id,{}],[reviewer.id,{queue:'true'}]] as const){
+   const first=await service.list(actor,query);expect(first.items).toHaveLength(50);expect(first.nextAfter).toBeTruthy();
+   const tail=await service.list(actor,{...query,after:first.nextAfter});const all=[...first.items,...tail.items];expect(new Set(all.map(r=>r.id)).size).toBe(all.length);expect(tail.nextAfter).toBeNull();
+   const count=Number((await db.query(`SELECT count(*) FROM calendar_recurrence_rules WHERE owner_id=$1 ${'queue' in query?"AND state='PENDING'":''}`,[owner.id])).rows[0].count);expect(all).toHaveLength(count);
+  }
+ },45000);
 });

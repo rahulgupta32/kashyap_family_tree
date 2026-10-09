@@ -31,6 +31,7 @@ export function RecurringReminders({events}:{events:CalendarEventDetailDto[]}){
  return <section className="border rounded-xl p-4 space-y-4" aria-label="Annual recurring reminders">
   <h2 className="font-bold">वार्षिक निजी सम्झना (Private annual reminders)</h2>
   <p>स्पष्ट AD मिति भएको आफ्नै सामान्य कार्यक्रमबाट मात्र। स्वतन्त्र स्वीकृति आवश्यक। तिथि तथा सांस्कृतिक पुनरावृत्ति उपलब्ध छैन। (Own Gregorian general events only; independent approval required. Cultural recurrence is unavailable.)</p>
+  <p>वार्षिक सम्झना मूल कार्यक्रमको अर्को वर्षदेखि सुरु हुन्छ। (Annual reminders begin in the year after the source event.)</p>
   <form className="grid gap-3" onSubmit={e=>{e.preventDefault();const chosen=sources.find(e=>e.id===source);if(!chosen)return;run(async()=>{await request('','POST',{sourceEventId:source,sourceVersion:chosen.version,localTime:time,leapDayPolicy:policy,sourceRef:reference,consent});});}}>
    <label>मूल कार्यक्रम (Source event)<select required value={source} onChange={e=>setSource(e.target.value)}><option value="">छान्नुहोस् (Select)</option>{sources.map(e=><option key={e.id} value={e.id}>{e.title} · v{e.version}</option>)}</select></label>
    <label>नेपाल समय (Nepal time)<input required type="time" value={time} onChange={e=>setTime(e.target.value)}/></label>
@@ -41,7 +42,7 @@ export function RecurringReminders({events}:{events:CalendarEventDetailDto[]}){
   </form>
   <label>निर्णय वा फिर्ताको कारण (Review or withdrawal reason)<input minLength={10} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>
   {message&&<p role="alert">{message}</p>}
-  {preview&&<p role="status">{preview.year}: {preview.startsAt??'यो वर्ष छोडिएको (Year skipped)'} · {preview.deliveryEnabled?'स्वीकृत (Approved and current)':'पठाइँदैन (Delivery blocked)'} · {preview.ruleVersion}</p>}
+  {preview&&<p role="status">{preview.year}: {preview.startsAt??'यो वर्ष सम्झना छैन (No occurrence this year)'} · {preview.deliveryEnabled?'स्वीकृत (Approved and current)':'पठाइँदैन (Delivery blocked)'} · {preview.ruleVersion}</p>}
   <h3>आफ्ना प्रस्ताव (My proposals)</h3><ul className="space-y-3">{rows(rules,false)}</ul>
   {cursor&&<button disabled={busy} onClick={()=>run(()=>more(false),false)}>थप प्रस्ताव (More proposals)</button>}
   {isReviewer&&<><h3>स्वतन्त्र समीक्षा (Independent review queue)</h3><ul className="space-y-3">{rows(queue,true)}</ul>{queueCursor&&<button disabled={busy} onClick={()=>run(()=>more(true),false)}>थप समीक्षा (More reviews)</button>}</>}
