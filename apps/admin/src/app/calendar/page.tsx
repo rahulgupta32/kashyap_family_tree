@@ -12,12 +12,7 @@ import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection 
 
 const label=(key: keyof typeof calendarManagement.en)=>`${calendarManagement.ne[key]} (${calendarManagement.en[key]})`;
 
-export default function CalendarAdminPage() {
-  const { accessToken, user, isLoading: sessionLoading } = useAuth();
-  const [events, setEvents] = useState<CalendarEventDetailDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [formData, setFormData] = useState({
+const initialCalendarForm=()=>({
     title: '',
     description: '',
     eventType: 'KUL_PUJA',
@@ -29,6 +24,13 @@ export default function CalendarAdminPage() {
     tithiPaksha: 'SHUKLA',
     tithiNumber: 1,
   });
+
+export default function CalendarAdminPage() {
+  const { accessToken, user, isLoading: sessionLoading } = useAuth();
+  const [events, setEvents] = useState<CalendarEventDetailDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [formData, setFormData] = useState(initialCalendarForm);
   const [branches,setBranches] = useState<any[]>([]);
   const [dateMode, setDateMode] = useState<'BS'|'AD'>('BS');
   const [startsAt, setStartsAt] = useState('');
@@ -40,13 +42,13 @@ export default function CalendarAdminPage() {
   const [derivedEnabled,setDerivedEnabled]=useState(false);
   const [selection,setSelection]=useState<GenealogyAudienceSelection|undefined>();
   const [derivedPreview,setDerivedPreview]=useState<any>(null);
-  const tokenRef=useRef(accessToken);tokenRef.current=accessToken;
+  const authorityKey=user?.roles?.slice().sort().join(',');
+  const requestScope=JSON.stringify([user?.id,authorityKey,accessToken]);
+  const requestScopeRef=useRef(requestScope);requestScopeRef.current=requestScope;
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[selection,formData.audienceScope,formData.branchId]);
   // Token rotation invalidates previews, but must not dismiss a form belonging
   // to the same account. Account/authority changes still clear private state.
-  const authorityKey=user?.roles?.slice().sort().join(',');
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[accessToken]);
-  useLayoutEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[user?.id,authorityKey]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [cancelReason, setCancelReason] = useState('');
@@ -55,23 +57,29 @@ export default function CalendarAdminPage() {
   const [rsvpPending, setRsvpPending] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  useLayoutEffect(()=>{
+    setShowCreateModal(false);setFormData(initialCalendarForm());setDateMode('BS');setStartsAt('');setReminder(false);setSearch('');
+    setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);
+    setEvents([]);setEditing(null);setEditTitle('');setCancelReason('');setHistory([]);setMessage(null);setActionLoading(false);setRsvpPending(null);
+  },[user?.id,authorityKey]);
+
   useEffect(() => {
     loadEvents();
     ApiClient.listBranches().then(setBranches).catch(()=>setBranches([]));
-  }, [accessToken]);
+  }, [accessToken,user?.id,authorityKey]);
 
   async function loadEvents() {
     if (!accessToken) return;
     setLoading(true);
     try {
       const data = await ApiClient.listCalendarEvents(accessToken);
-      if(tokenRef.current!==accessToken)return;
+      if(requestScopeRef.current!==requestScope)return;
       setEvents(data);
     } catch (err: any) {
-      if(tokenRef.current!==accessToken)return;
+      if(requestScopeRef.current!==requestScope)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      if(tokenRef.current===accessToken)setLoading(false);
+      if(requestScopeRef.current===requestScope)setLoading(false);
     }
   }
 
@@ -103,41 +111,30 @@ export default function CalendarAdminPage() {
         const key=JSON.stringify({selection,scope:formData.audienceScope,branch:payload.branchId??null});
         if(!derivedPreview||derivedPreview.key!==key||new Date(derivedPreview.expiresAt).getTime()<=Date.now()){
           const result=await ApiClient.calendarRequest(accessToken,'events/preview','POST',{audienceSelection:selection,audienceScope:formData.audienceScope,...(payload.branchId?{branchId:payload.branchId}:{})});
-          if(tokenRef.current!==accessToken)return;setDerivedPreview({...result,key});return;
+          if(requestScopeRef.current!==requestScope)return;setDerivedPreview({...result,key});return;
         }
         payload.audiencePreviewId=derivedPreview.previewId;
       }else payload.invitedUserIds = invitees;
       const key = JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId});
       if (!derivedEnabled && invitees.length && previewKey !== key) {
         await ApiClient.calendarRequest(accessToken,'events/preview','POST',{invitedUserIds:invitees,audienceScope:formData.audienceScope,...(formData.audienceScope===EventAudienceScope.BRANCH?{branchId:formData.branchId}:{})});
-        if(tokenRef.current!==accessToken)return;setPreviewKey(key); return;
+        if(requestScopeRef.current!==requestScope)return;setPreviewKey(key); return;
       }
       if (dateMode === 'BS' && formData.solarDate) {
         payload.solarDate = formData.solarDate;
       }
       await ApiClient.createCalendarEvent(accessToken, payload);
-      if(tokenRef.current!==accessToken)return;
+      if(requestScopeRef.current!==requestScope)return;
       setDerivedPreview(null);setDerivedEnabled(false);setSelection(undefined);
       setMessage({ type: 'success', text: 'वार्षिक कार्यक्रम सफलतापूर्वक सिर्जना भयो ।' });
       setShowCreateModal(false);setInvitees([]);setCandidates([]);setPreviewKey(null);setStartsAt('');setReminder(false);setDateMode('BS');
-      setFormData({
-        title: '',
-        description: '',
-        eventType: 'KUL_PUJA',
-        audienceScope: EventAudienceScope.COMMUNITY,
-        solarDate: '',
-    branchId: '',
-        tithiYearBs: 2083,
-        tithiMonthBs: 1,
-        tithiPaksha: 'SHUKLA',
-        tithiNumber: 1,
-      });
+      setFormData(initialCalendarForm());
       await loadEvents();
     } catch (err: any) {
-      if(tokenRef.current!==accessToken)return;setDerivedPreview(null);setPreviewKey(null);
+      if(requestScopeRef.current!==requestScope)return;setDerivedPreview(null);setPreviewKey(null);
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setActionLoading(false);
+      if(requestScopeRef.current===requestScope)setActionLoading(false);
     }
   }
 
@@ -147,21 +144,24 @@ export default function CalendarAdminPage() {
     setMessage(null);
     try {
       await ApiClient.rsvpCalendarEvent(accessToken, id, response);
+      if(requestScopeRef.current!==requestScope)return;
       await loadEvents();
+      if(requestScopeRef.current!==requestScope)return;
       setMessage({ type: 'success', text: 'उपस्थिति सुरक्षित गरियो (RSVP saved)' });
     } catch (error: any) {
+      if(requestScopeRef.current!==requestScope)return;
       setMessage({ type: 'error', text: error.message });
     } finally {
-      setRsvpPending(null);
+      if(requestScopeRef.current===requestScope)setRsvpPending(null);
     }
   }
 
   async function searchMembers() {
     if(!accessToken)return;
     setActionLoading(true);
-    try {setCandidates(await ApiClient.calendarRequest(accessToken,`invitees?${new URLSearchParams({q:search,audienceScope:formData.audienceScope,...(formData.audienceScope===EventAudienceScope.BRANCH?{branchId:formData.branchId}:{})})}`));}
-    catch(error:any){setMessage({type:'error',text:error.message});}
-    finally{setActionLoading(false);}
+    try {const found=await ApiClient.calendarRequest(accessToken,`invitees?${new URLSearchParams({q:search,audienceScope:formData.audienceScope,...(formData.audienceScope===EventAudienceScope.BRANCH?{branchId:formData.branchId}:{})})}`);if(requestScopeRef.current!==requestScope)return;setCandidates(found);}
+    catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
+    finally{if(requestScopeRef.current===requestScope)setActionLoading(false);}
   }
   async function manage(cancel=false) {
     if(!accessToken||!editing)return;
@@ -169,9 +169,9 @@ export default function CalendarAdminPage() {
     try {
       await ApiClient.calendarRequest(accessToken,`events/${editing.id}${cancel?'/cancel':''}`,cancel?'POST':'PATCH',
         cancel?{version:editing.version,reason:cancelReason}:{version:editing.version,title:editTitle});
-      setEditing(null);await loadEvents();
-    }catch(error:any){setMessage({type:'error',text:error.message});}
-    finally{setActionLoading(false);}
+      if(requestScopeRef.current!==requestScope)return;setEditing(null);await loadEvents();
+    }catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
+    finally{if(requestScopeRef.current===requestScope)setActionLoading(false);}
   }
 
   return (
@@ -244,8 +244,8 @@ export default function CalendarAdminPage() {
               {ev.rsvpCounts && <p>{label('attendance')}: {ev.rsvpCounts.going} Going · {ev.rsvpCounts.maybe} Maybe · {ev.rsvpCounts.declined} Declined</p>}
               {ev.canManage && ev.lifecycleState !== 'CANCELLED' && <button type="button" onClick={async()=>{
                 setEditing(ev);setEditTitle(ev.title);setCancelReason('');setHistory([]);
-                try{if(accessToken)setHistory(await ApiClient.calendarRequest(accessToken,`events/${ev.id}/history`));}
-                catch(error:any){setMessage({type:'error',text:error.message});}
+                try{if(accessToken){const revisions=await ApiClient.calendarRequest(accessToken,`events/${ev.id}/history`);if(requestScopeRef.current===requestScope)setHistory(revisions);}}
+                catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
               }}>{label('edit')}</button>}
               <div className="flex flex-wrap gap-2" aria-label="Attendance response">
                 {(['GOING', 'MAYBE', 'DECLINED'] as const).map((response) => (

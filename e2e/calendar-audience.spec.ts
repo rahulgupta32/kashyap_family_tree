@@ -53,6 +53,31 @@ test('same-account token refresh does not disable creation while the event list 
   release();await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional creation during list refresh');
  }finally{release();await page.unroute('**/calendar/events');}
 });
+test('account changes clear private calendar drafts without a page reload',async({page})=>{
+ await login(page);await page.goto('/calendar');
+ const create=page.getByRole('button',{name:/Create Event/});await expect(create).toBeEnabled();await create.click();
+ const dialog=page.getByRole('dialog',{name:'Create event',exact:true});await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional previous-account private draft');
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ let entered!:()=>void;const searching=new Promise<void>(resolve=>{entered=resolve;});
+ await page.route('**/calendar/invitees?*',async route=>{entered();await gate;await route.fulfill({json:[{userId:'fictional-old-account',name:'Fictional previous-account private recipient'}]});});
+ try{
+ await dialog.getByRole('textbox',{name:/Search members/}).fill('Fictional');await dialog.getByRole('button',{name:/Search members/}).click();await searching;
+ const lateResponse=page.waitForResponse(r=>r.url().includes('/calendar/invitees?'));
+ const phone='9800000123';expect((await page.request.post(`${API}/auth/test-clear-cooldown`,{data:{phoneNumber:phone}})).ok()).toBeTruthy();
+ const requested=await page.request.post(`${API}/auth/otp/request`,{data:{phoneNumber:phone}});expect(requested.ok()).toBeTruthy();const otpSession=await requested.json();
+ const code=await page.request.get(`${API}/auth/test-otp`,{params:{phoneNumber:`+977${phone}`}});expect(code.ok()).toBeTruthy();const {otp}=await code.json();
+ const verified=await page.request.post(`${API}/auth/otp/verify`,{data:{otpSessionId:otpSession.otpSessionId,code:otp,deviceInfo:{deviceId:'calendar-switch-fixture',platform:'web',appVersion:'1.0.0'}}});expect(verified.ok()).toBeTruthy();const session=await verified.json();
+ await page.evaluate(session=>{
+  const changes=[['kashyap_admin_user',JSON.stringify(session.user)],['kashyap_admin_access_token',session.accessToken]];
+  localStorage.setItem('kashyap_chat_outbox_generation',crypto.randomUUID());
+  for(const [key,newValue] of changes){const oldValue=localStorage.getItem(key);localStorage.setItem(key,newValue);window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue,storageArea:localStorage}));}
+ },session);
+ await expect(dialog).toHaveCount(0);await expect(create).toBeEnabled();await create.click();await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('');
+ release();await (await lateResponse).finished();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+ await expect(dialog).not.toContainText('Fictional previous-account private recipient');await expect(dialog.getByRole('textbox',{name:/Search members/})).toHaveValue('');
+ await expect(page).toHaveURL(/\/calendar$/);
+ }finally{release();await page.unroute('**/calendar/invitees?*');}
+});
 test('organizer previews a generation, invalidates changed criteria and creates an auditable invitation audience',async({page})=>{
  await login(page);
  const profileResponse=await page.request.get(`${API}/profile/me`,{headers:await headers(page)});expect(profileResponse.ok()).toBeTruthy();const profile=await profileResponse.json();
