@@ -5,7 +5,7 @@ import { CalendarPeriod } from './period';
 import { RecurringReminders } from './recurring-reminders';
 import { CalendarBrowse } from './browse';
 import { calendarManagement } from '@kashyap/localization';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection } from '@kashyap/contracts';
@@ -46,7 +46,7 @@ export default function CalendarAdminPage() {
   // to the same account. Account/authority changes still clear private state.
   const authorityKey=user?.roles?.slice().sort().join(',');
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[accessToken]);
-  useEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[user?.id,authorityKey]);
+  useLayoutEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[user?.id,authorityKey]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [cancelReason, setCancelReason] = useState('');
