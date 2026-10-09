@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-8-source-evidence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-10-claim-evidence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
