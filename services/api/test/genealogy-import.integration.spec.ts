@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-4-peer-graph');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-5-target-fields');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -111,6 +111,20 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   await service.erase(admin.id,third.id,{sourceHash:third.sourceHash,reason});const erased=await runBatch(first);
   expect(erased.report.issues.map(i=>i.code)).toContain('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');expect(erased.report.validationPassed).toBe(false);
   expect((await service.runs(admin.id,first.id,{})).items[1].report).toEqual(cycled.report);
+ });
+ it('flags target field differences, preserves private values and retains historical reports',async()=>{
+  const target=(await db.query("INSERT INTO persons(branch_id,generation,gender,living_status,birth_date_ad) VALUES($1,2,'MALE','LIVING','1980-01-02') RETURNING id",[branchId])).rows[0].id;
+  const staged=await service.stage(admin.id,source({datasetKey:'TARGET_FIELDS',persons:[{...person,targetPersonId:target,nameEnglish:'Fictional Name',birth:{calendar:'AD',precision:'EXACT',value:'1981-01-02'}}]}));
+  const before=(await db.query('SELECT * FROM persons WHERE id=$1',[target])).rows;
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
+  expect(checked.report.issues.map(i=>i.code)).toEqual(expect.arrayContaining(['TARGET_GENERATION_RECONCILIATION_REQUIRED','TARGET_GENDER_RECONCILIATION_REQUIRED','TARGET_NEPALI_NAME_RECONCILIATION_REQUIRED','TARGET_ENGLISH_NAME_RECONCILIATION_REQUIRED','TARGET_BIRTH_DATE_AD_RECONCILIATION_REQUIRED']));
+  expect(checked.report.mappedTargets).toBe(1);expect(checked.report.validationPassed).toBe(false);expect(JSON.stringify(checked.report.issues)).not.toMatch(/1980|1981|Fictional Name/);
+  expect((await db.query('SELECT * FROM persons WHERE id=$1',[target])).rows).toEqual(before);
+  await db.query("UPDATE persons SET generation=1,gender='UNKNOWN',birth_date_ad='1981-01-02' WHERE id=$1",[target]);
+  for(const [language,name] of [['ne',person.nameNepali],['en','Fictional Name']])await db.query('INSERT INTO person_names(person_id,language,first_name,last_name,full_name) VALUES($1,$2,$3,$3,$3)',[target,language,name]);
+  const refreshed=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
+  expect(refreshed.report.issues.filter(i=>i.code.startsWith('TARGET_')&&i.code.endsWith('_RECONCILIATION_REQUIRED'))).toEqual([]);
+  expect((await service.runs(admin.id,staged.id,{})).items[1].report).toEqual(checked.report);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));

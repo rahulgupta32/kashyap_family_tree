@@ -7,7 +7,8 @@ import { allowedFields, textField, uuid } from '../community/community-policy';
 import { importHash, parseImportPayload, validateImport } from './import-validation';
 import { validateTargetGraph } from './import-target-graph';
 import { validateImportPeers } from './import-peer-validation';
-const validatorVersion='staging-4-peer-graph';
+import { validateTargetFields } from './import-target-fields';
+const validatorVersion='staging-5-target-fields';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {
@@ -64,13 +65,16 @@ export class GenealogyImportService {
   const issues=validateImport(payload);let mappedTargets=0,duplicates=0;
   // One statement observes a single target snapshot; a retained report never authorizes promotion.
   const checks=(await tx.query(`SELECT s->>'sourceId' AS source_id,t.id AS target_id,t.branch_id,t.is_archived,
+   t.generation,t.gender,t.living_status,to_char(t.birth_date_ad,'YYYY-MM-DD') AS birth_date,to_char(t.death_date_ad,'YYYY-MM-DD') AS death_date,
+   ARRAY(SELECT full_name FROM person_names WHERE person_id=t.id AND language='ne') AS nepali_names,
+   ARRAY(SELECT full_name FROM person_names WHERE person_id=t.id AND language='en') AS english_names,
    (SELECT count(DISTINCT p.id) FROM persons p JOIN person_names n ON n.person_id=p.id
     WHERE p.branch_id=$2 AND p.is_archived=FALSE AND (t.id IS NULL OR p.id<>t.id)
     AND lower(btrim(regexp_replace(normalize(n.full_name,NFKC),'[[:space:]]+',' ','g')))=
      lower(btrim(regexp_replace(normalize(s->>'nameNepali',NFKC),'[[:space:]]+',' ','g')))) AS duplicates
    FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS x(s,ord) LEFT JOIN persons t ON t.id=(s->>'targetPersonId')::uuid ORDER BY ord`,[JSON.stringify(payload.persons),payload.branchId])).rows;
   checks.forEach((c,index)=>{const p=payload.persons[index];
-   if(p.targetPersonId){if(!c.target_id)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NOT_FOUND'});else if(c.branch_id!==payload.branchId||c.is_archived)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_INELIGIBLE'});else mappedTargets++;}
+   if(p.targetPersonId){if(!c.target_id)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NOT_FOUND'});else if(c.branch_id!==payload.branchId||c.is_archived)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_INELIGIBLE'});else {mappedTargets++;issues.push(...validateTargetFields(p,c));}}
    if(Number(c.duplicates)>0){duplicates++;issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NAME_DUPLICATE_CANDIDATE'});}
   });
   const peers=await validateImportPeers(tx,id,payload);issues.push(...peers.issues);
