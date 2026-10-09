@@ -31,8 +31,12 @@ export interface GenealogyImportResidence {
  sourceId:string;personSourceId:string;residenceType:string;country:string;current:string;visibility:string;sourceRef:string;
  province?:string;district?:string;municipality?:string;ward?:string;locality?:string;exactAddress?:string;latitude?:string;longitude?:string;startDate?:string;endDate?:string;
 }
-export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[];claims?:GenealogyImportClaim[];branches?:GenealogyImportBranch[];residences?:GenealogyImportResidence[]; }
-export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION'|'CLAIM'|'BRANCH'|'RESIDENCE';sourceId:string;code:string;}
+export interface GenealogyImportPrivateContact {
+ sourceId:string;personSourceId:string;contactType:string;contactValue:string;primary:string;verified:string;consentStatus:string;accessClass:string;
+ verificationDate?:string;consentDate?:string;retentionReviewDate?:string;notes?:string;
+}
+export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[];claims?:GenealogyImportClaim[];branches?:GenealogyImportBranch[];residences?:GenealogyImportResidence[];privateContacts?:GenealogyImportPrivateContact[]; }
+export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION'|'CLAIM'|'BRANCH'|'RESIDENCE'|'PRIVATE_CONTACT';sourceId:string;code:string;}
 export interface GenealogyImportReport {
  peerBatches?:{id:string;sourceHash:string}[];
  validatorVersion:string;sourceHash:string;persons:number;parentLinks:number;mappedTargets:number;unmappedPersons:number;

@@ -934,96 +934,96 @@
           "ordinal": 1,
           "sourceColumn": "Contact ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].sourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 2,
           "sourceColumn": "Person ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].personSourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 3,
           "sourceColumn": "Contact Type*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].contactType",
           "approval": "OPEN"
         },
         {
           "ordinal": 4,
           "sourceColumn": "Contact Value*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].contactValue",
           "approval": "OPEN"
         },
         {
           "ordinal": 5,
           "sourceColumn": "Primary?*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].primary",
           "approval": "OPEN"
         },
         {
           "ordinal": 6,
           "sourceColumn": "Verified?*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].verified",
           "approval": "OPEN"
         },
         {
           "ordinal": 7,
           "sourceColumn": "Verification Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].verificationDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 8,
           "sourceColumn": "Consent Status*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].consentStatus",
           "approval": "OPEN"
         },
         {
           "ordinal": 9,
           "sourceColumn": "Consent Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].consentDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 10,
           "sourceColumn": "Access Class*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].accessClass",
           "approval": "OPEN"
         },
         {
           "ordinal": 11,
           "sourceColumn": "Retention Review Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].retentionReviewDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 12,
           "sourceColumn": "Notes",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].notes",
           "approval": "OPEN"
         }
       ]

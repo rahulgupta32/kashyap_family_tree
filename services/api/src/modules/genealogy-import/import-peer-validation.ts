@@ -1,3 +1,4 @@
+import { openImportContacts } from './import-contact-storage';
 import { PoolClient } from 'pg';
 import { GenealogyImportPayload, GenealogyImportIssue } from '@kashyap/contracts';
 
@@ -13,9 +14,10 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
  const peerBatches=peers.slice(0,50).map(p=>({id:p.id,sourceHash:p.source_hash}));
  const graphSources:GenealogyImportPayload[]=[];
  if(peers.length>50){add('BATCH',payload.datasetKey,'PEER_BATCH_VALIDATION_LIMIT_REACHED');return {issues,peerBatches,graphSources};}
- const personIds=new Set<string>(),targets=new Set<string>(),linkIds=new Set<string>(),unionIds=new Set<string>(),claimIds=new Set<string>(),branchIds=new Set<string>(),residenceIds=new Set<string>();
+ const personIds=new Set<string>(),targets=new Set<string>(),linkIds=new Set<string>(),unionIds=new Set<string>(),claimIds=new Set<string>(),branchIds=new Set<string>(),residenceIds=new Set<string>(),contactIds=new Set<string>();
  for(const peer of peers){
   if(!peer.payload){add('BATCH',payload.datasetKey,'PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');continue;}
+  peer.payload=openImportContacts(peer.payload,peer.source_hash);
   graphSources.push(peer.payload);
   for(const p of peer.payload.persons){personIds.add(p.sourceId);if(p.targetPersonId)targets.add(p.targetPersonId.toLowerCase());}
   for(const link of peer.payload.parentLinks)linkIds.add(link.sourceId);
@@ -23,6 +25,7 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
   for(const claim of peer.payload.claims||[])claimIds.add(claim.sourceId);
   for(const branch of peer.payload.branches||[])branchIds.add(branch.sourceId);
   for(const residence of peer.payload.residences||[])residenceIds.add(residence.sourceId);
+  for(const contact of peer.payload.privateContacts||[])contactIds.add(contact.sourceId);
  }
  for(const p of payload.persons){
   if(personIds.has(p.sourceId))add('PERSON',p.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
@@ -33,6 +36,7 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
  for(const claim of payload.claims||[])if(claimIds.has(claim.sourceId))add('CLAIM',claim.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
  for(const branch of payload.branches||[])if(branchIds.has(branch.sourceId))add('BRANCH',branch.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
  for(const residence of payload.residences||[])if(residenceIds.has(residence.sourceId))add('RESIDENCE',residence.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
+ for(const contact of payload.privateContacts||[])if(contactIds.has(contact.sourceId))add('PRIVATE_CONTACT',contact.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
  // graphSources is transaction-local input, never part of a retained/public report.
  return {issues,peerBatches,graphSources};
 }

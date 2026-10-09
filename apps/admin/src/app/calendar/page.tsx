@@ -182,7 +182,7 @@ export default function CalendarAdminPage() {
           <p className="text-sm text-slate-500">विक्रम संवत् २०००-२०९० तथा तिथि अनुसारका कुल पूजा, श्राद्ध र सभा सम्मेलन</p>
         </div>
         <button
-          disabled={sessionLoading || !accessToken || loading}
+          disabled={sessionLoading || !accessToken || !user}
           onClick={() => setShowCreateModal(true)}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
         >

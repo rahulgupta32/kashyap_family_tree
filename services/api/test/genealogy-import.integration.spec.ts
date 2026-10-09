@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-12-branch-residence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-13-private-contacts');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -196,6 +196,22 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const corrected=await service.stage(admin.id,{...payload,residences:[{...residence,exactAddress:'Corrected fictional address'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.residences).toEqual([residence]);
   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);expect((await db.query('SELECT * FROM branches ORDER BY id')).rows).toEqual(branchesBefore);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('encrypts private contact source records, restricts access and supports correction, replay and erasure',async()=>{
+  const previous=process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=Buffer.alloc(32,23).toString('base64');
+  try{
+   const contact={sourceId:'CON-1',personSourceId:person.sourceId,contactType:'Phone',contactValue:'Fictional private number',primary:'Yes',verified:'Approved',verificationDate:'2080 BS',consentStatus:'Granted',consentDate:'Unknown',accessClass:'Public',retentionReviewDate:'Unknown',notes:'Fictional source notes'};
+   const payload=source({datasetKey:'PRIVATE_CONTACTS',privateContacts:[contact]});const before=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;const usersBefore=(await db.query('SELECT count(*) FROM user_accounts')).rows;
+   const staged=await service.stage(admin.id,payload);const stored=(await db.query('SELECT payload FROM genealogy_import_batches WHERE id=$1',[staged.id])).rows[0].payload;
+   expect(stored).not.toHaveProperty('privateContacts');expect(JSON.stringify(stored)).not.toContain(contact.contactValue);expect(JSON.stringify(stored)).not.toContain(contact.sourceId);expect(stored.privateContactsSealed.version).toBe(1);
+   expect((await new GenealogyImportService(db,audit).detail(admin.id,staged.id)).payload.privateContacts).toEqual([contact]);expect((await service.stage(admin.id,payload)).id).toBe(staged.id);
+   await request(app.getHttpServer()).get(`${base}/${staged.id}`).set(auth(member)).expect(403);
+   const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'PRIVATE_CONTACT',sourceId:'CON-1',code:'PRIVATE_CONTACT_SOURCE_REVIEW_REQUIRED'});expect(JSON.stringify(checked.report)).not.toContain(contact.contactValue);
+   const corrected=await service.stage(admin.id,{...payload,privateContacts:[{...contact,consentStatus:'Corrected'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.privateContacts).toEqual([contact]);
+   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);expect((await db.query('SELECT count(*) FROM user_accounts')).rows).toEqual(usersBefore);
+   delete process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;await request(app.getHttpServer()).get(`${base}/${staged.id}`).set(auth()).expect(503);
+   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await db.query('SELECT payload FROM genealogy_import_batches WHERE id=$1',[staged.id])).rows[0].payload).toBeNull();expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+  }finally{if(previous===undefined)delete process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;else process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=previous;}
  });
  it('rolls back staged data, reports and erasure on audit failure; sensitive reads fail closed',async()=>{
   const counts=(await db.query('SELECT count(*) FROM genealogy_import_runs')).rows[0].count;

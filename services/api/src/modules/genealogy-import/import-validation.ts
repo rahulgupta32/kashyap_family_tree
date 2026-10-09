@@ -65,6 +65,16 @@ function residences(value:any){
   return {sourceId:id(record.sourceId),personSourceId:id(record.personSourceId),sourceRef:id(record.sourceRef),...fields} as import('@kashyap/contracts').GenealogyImportResidence;
  });
 }
+function privateContacts(value:any){
+ if(!Array.isArray(value)||value.length>400)throw new BadRequestException('Stage up to 400 private contacts');
+ const required=['contactType','contactValue','primary','verified','consentStatus','accessClass'];
+ const optional=['verificationDate','consentDate','retentionReviewDate','notes'];
+ return value.map(record=>{
+  allowedFields(record,['sourceId','personSourceId',...required,...optional]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>record[field]!==undefined)].map(field=>[field,sourceText(record[field],`private contact ${field}`,field==='notes'?1000:255)]));
+  return {sourceId:id(record.sourceId),personSourceId:id(record.personSourceId),...fields} as import('@kashyap/contracts').GenealogyImportPrivateContact;
+ });
+}
 function sourceMetadata(value:any){
  const fields=['branchSourceId','birthPlace','currentDistrict','currentMunicipality','currentWard','country','occupation','education','gotra','lineageNotes','profilePhotoRef','consentDate','createdBy','createdDate','lastUpdated','dataSteward','restrictionReason'];
  allowedFields(value,fields);
@@ -84,7 +94,7 @@ function relationshipDetails(value:any){
  return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
 }
 export function parseImportPayload(body:any):GenealogyImportPayload{
- allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions','claims','branches','residences']);
+ allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions','claims','branches','residences','privateContacts']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
@@ -94,6 +104,7 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceMetadata===undefined?{}:{sourceMetadata:sourceMetadata(p.sourceMetadata)}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
+ if(body.privateContacts!==undefined)payload.privateContacts=privateContacts(body.privateContacts);
  if(body.branches!==undefined)payload.branches=branches(body.branches);
  if(body.residences!==undefined)payload.residences=residences(body.residences);
  if(body.claims!==undefined)payload.claims=claims(body.claims);
@@ -185,8 +196,16 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   // Location, date and current/visibility claims are retained for explicit review.
   add('RESIDENCE_SOURCE_REVIEW_REQUIRED');
  }
+ const contactIds=new Set<string>();
+ for(const contact of payload.privateContacts||[]){
+  const add=(code:string)=>issue('PRIVATE_CONTACT',contact.sourceId,code);
+  if(contactIds.has(contact.sourceId))add('DUPLICATE_SOURCE_ID');contactIds.add(contact.sourceId);
+  if(!personIds.has(contact.personSourceId))add('DANGLING_PERSON_REFERENCE');
+  // Consent/verified/access strings are evidence; never account registration or permission.
+  add('PRIVATE_CONTACT_SOURCE_REVIEW_REQUIRED');
+ }
  const claimIds=new Set<string>();
- const entityIds=new Map<string,Set<string>>([['PERSON',personIds],['PARENT_LINK',edgeIds],['UNION',unionIds],['BRANCH',branchIds],['RESIDENCE',residenceIds]]);
+ const entityIds=new Map<string,Set<string>>([['PERSON',personIds],['PARENT_LINK',edgeIds],['UNION',unionIds],['BRANCH',branchIds],['RESIDENCE',residenceIds],['PRIVATE_CONTACT',contactIds]]);
  if(evidenceIds)entityIds.set('SOURCE',evidenceIds);
  for(const claim of payload.claims||[]){
   const add=(code:string)=>issue('CLAIM',claim.sourceId,code);

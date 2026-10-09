@@ -7,8 +7,9 @@ import { allowedFields, textField, uuid } from '../community/community-policy';
 import { importHash, parseImportPayload, validateImport } from './import-validation';
 import { validateTargetGraph } from './import-target-graph';
 import { validateImportPeers } from './import-peer-validation';
+import { sealImportContacts, openImportContacts } from './import-contact-storage';
 import { validateTargetFields } from './import-target-fields';
-const validatorVersion='staging-12-branch-residence';
+const validatorVersion='staging-13-private-contacts';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {
@@ -26,8 +27,11 @@ export class GenealogyImportService {
   return this.db.transaction(async tx=>{
    await this.authorize(userId,tx);const payload=parseImportPayload(body),hash=importHash(payload);
    if(!(await tx.query('SELECT id FROM branches WHERE id=$1 FOR SHARE',[payload.branchId])).rows.length)throw new BadRequestException('Existing branch catalogue entry required');
+   const stored=sealImportContacts(payload,hash),serialized=JSON.stringify(stored);
+   const size=(await tx.query('SELECT octet_length($1::jsonb::text) AS bytes',[serialized])).rows[0];
+   if(Number(size.bytes)>1048576)throw new BadRequestException('Protected staged payload exceeds 1 MiB');
    const inserted=(await tx.query(`INSERT INTO genealogy_import_batches(dataset_key,branch_id,source_hash,source_description,payload,created_by,person_count,parent_count)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(dataset_key,source_hash) DO NOTHING RETURNING *`,[payload.datasetKey,payload.branchId,hash,payload.sourceDescription,JSON.stringify(payload),userId,payload.persons.length,payload.parentLinks.length])).rows[0];
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(dataset_key,source_hash) DO NOTHING RETURNING *`,[payload.datasetKey,payload.branchId,hash,payload.sourceDescription,serialized,userId,payload.persons.length,payload.parentLinks.length])).rows[0];
    const row=inserted||(await tx.query('SELECT * FROM genealogy_import_batches WHERE dataset_key=$1 AND source_hash=$2 FOR SHARE',[payload.datasetKey,hash])).rows[0];
    if(!row.payload)throw new ConflictException('Source payload was erased; it cannot be restored by retry');
    await this.evidence(tx,userId,row.id,inserted?'GENEALOGY_IMPORT_STAGED':'GENEALOGY_IMPORT_STAGE_REPLAY',{sourceHash:hash,persons:payload.persons.length,parentLinks:payload.parentLinks.length});
@@ -45,7 +49,7 @@ export class GenealogyImportService {
   if(!row.payload)throw new ConflictException('Source payload erased; retained reports remain available');
   const runs=(await tx.query('SELECT * FROM genealogy_import_runs WHERE batch_id=$1 ORDER BY sequence DESC LIMIT 50',[id])).rows;
   await this.evidence(tx,userId,id,'GENEALOGY_IMPORT_DETAIL_READ',{sourceHash:row.source_hash});
-  return {...this.dto(row),payload:row.payload,runs:runs.map(r=>this.run(r))};
+  return {...this.dto(row),payload:openImportContacts(row.payload,row.source_hash),runs:runs.map(r=>this.run(r))};
  });}
  async runs(userId:string,id:string,query:any){return this.db.transaction(async tx=>{
   await this.authorize(userId,tx);allowedFields(query,['before']);await this.batch(tx,id);
@@ -61,7 +65,7 @@ export class GenealogyImportService {
   const existing=(await tx.query('SELECT * FROM genealogy_import_runs WHERE batch_id=$1 AND request_key=$2',[id,requestKey])).rows[0];
   if(existing){if(existing.actor_id!==userId||existing.reason!==reason)throw new ConflictException('Request key already used for a different request');await this.evidence(tx,userId,id,'GENEALOGY_IMPORT_DRY_RUN_REPLAY',{runId:existing.id});return this.run(existing);}
   if(!row.payload)throw new ConflictException('Source payload erased; cannot revalidate');
-  const payload=parseImportPayload(row.payload);if(importHash(payload)!==row.source_hash)throw new ConflictException('Source integrity check failed');
+  const payload=parseImportPayload(openImportContacts(row.payload,row.source_hash));if(importHash(payload)!==row.source_hash)throw new ConflictException('Source integrity check failed');
   const issues=validateImport(payload);let mappedTargets=0,duplicates=0;
   // One statement observes a single target snapshot; a retained report never authorizes promotion.
   const checks=(await tx.query(`SELECT s->>'sourceId' AS source_id,t.id AS target_id,t.branch_id,t.is_archived,

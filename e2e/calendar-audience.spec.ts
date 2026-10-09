@@ -39,6 +39,20 @@ test('calendar creation waits for restored session before opening the private fo
   await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional restored-session event');
  }finally{release();await page.unroute('**/auth/refresh');}
 });
+test('same-account token refresh does not disable creation while the event list reloads',async({page})=>{
+ await login(page);await page.goto('/calendar');
+ const create=page.getByRole('button',{name:/Create Event/});await expect(create).toBeEnabled();
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ let entered!:()=>void;const reloading=new Promise<void>(resolve=>{entered=resolve;});
+ await page.route('**/calendar/events',async route=>{entered();await gate;await route.continue();});
+ try{
+  await page.evaluate(async()=>{await (window as any).__kashyap_refreshSession();});await reloading;
+  await expect(create).toBeEnabled();await create.click();
+  const dialog=page.getByRole('dialog',{name:'Create event',exact:true});await expect(dialog).toBeVisible();
+  await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional creation during list refresh');
+  release();await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional creation during list refresh');
+ }finally{release();await page.unroute('**/calendar/events');}
+});
 test('organizer previews a generation, invalidates changed criteria and creates an auditable invitation audience',async({page})=>{
  await login(page);
  const profileResponse=await page.request.get(`${API}/profile/me`,{headers:await headers(page)});expect(profileResponse.ok()).toBeTruthy();const profile=await profileResponse.json();

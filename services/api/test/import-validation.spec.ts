@@ -3,6 +3,18 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const contact={sourceId:'CON-1',personSourceId:person.sourceId,contactType:'Phone',contactValue:'  fictional private value  ',primary:'Yes',verified:'Approved',verificationDate:'2080 BS',consentStatus:'Granted',consentDate:'Unknown',accessClass:'Public',retentionReviewDate:'Source date',notes:'Original source notes'};
+ it('preserves all private contact evidence without interpreting verification or consent claims',()=>{
+  const p=parseImportPayload({...payload(),privateContacts:[contact]});expect(p.privateContacts).toEqual([contact]);expect(validateImport(p)).toEqual([{entity:'PRIVATE_CONTACT',sourceId:'CON-1',code:'PRIVATE_CONTACT_SOURCE_REVIEW_REQUIRED'}]);expect(JSON.stringify(validateImport(p))).not.toContain(contact.contactValue);
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,privateContacts:[{...contact,consentStatus:'Corrected'}]})));
+ });
+ it('flags duplicate contact IDs, dangling people and contact claim references',()=>{
+  const p=parseImportPayload({...payload(),privateContacts:[{...contact,personSourceId:'MISSING'},contact],claims:[{sourceId:'CASE-CON',entityType:'PRIVATE_CONTACT',entitySourceId:'MISSING',fieldOrRelationship:'Consent',riskLevel:'High',visibility:'Private',status:'Pending'}]});expect(validateImport(p).map(i=>i.code)).toEqual(expect.arrayContaining(['DUPLICATE_SOURCE_ID','DANGLING_PERSON_REFERENCE','DANGLING_ENTITY_REFERENCE','PRIVATE_CONTACT_SOURCE_REVIEW_REQUIRED']));
+ });
+ it('rejects malformed, oversized and unknown private contact fields and preserves legacy hashes',()=>{
+  for(const privateContacts of [null,{},Array(401).fill(contact),[{...contact,unknown:'private'}],[{...contact,contactValue:undefined}],[{...contact,contactValue:'x'.repeat(256)}],[{...contact,notes:'bad\u0000text'}],[{...contact,verified:true}],[{...contact,personSourceId:'bad id'}]])expect(()=>parseImportPayload({...payload(),privateContacts})).toThrow();
+  const body=payload(),p=parseImportPayload(body);expect(p).not.toHaveProperty('privateContacts');expect(importHash(p)).toBe(importHash(body as any));
+ });
  const branch={sourceId:'BR-1',nameNepali:'  मूल शाखा  ',nameEnglish:'Original branch',parentSourceId:'BR-2',historicalOrigin:'Original history',district:'District',municipality:'Municipality',ward:'Unknown',authorityPersonSourceId:person.sourceId,authorityRole:'Administrator',status:'Approved',sourceRef:person.sourceRef,approvedBy:'Source approver',approvalDate:'2080 BS'};
  const residence={sourceId:'RES-1',personSourceId:person.sourceId,residenceType:'Historical',country:'Nepal',province:'Original province',district:'District',municipality:'Municipality',ward:'Unknown',locality:'Locality',exactAddress:'  Original private address  ',latitude:'Approximate 27',longitude:'Unknown',startDate:'2080 BS',endDate:'Unknown',current:'Yes',visibility:'Public',sourceRef:person.sourceRef};
  it('preserves all branch fields and requires review of source authority and approval',()=>{

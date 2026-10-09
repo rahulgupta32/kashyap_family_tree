@@ -1,3 +1,4 @@
+import { sealImportContacts } from '../src/modules/genealogy-import/import-contact-storage';
 import { validateImportPeers } from '../src/modules/genealogy-import/import-peer-validation';
 const target='00000000-0000-4000-8000-000000000abc';
 const payload:any={datasetKey:'DATA',branchId:'branch',persons:[{sourceId:'one',targetPersonId:target}],parentLinks:[{sourceId:'edge'}]};
@@ -25,6 +26,13 @@ describe('Cross-batch source reconciliation',()=>{
  it('requires reconciliation for reused branch and residence identities',async()=>{
   const current={...payload,branches:[{sourceId:'BR-1'}],residences:[{sourceId:'RES-1'}]};const query=jest.fn().mockResolvedValue({rows:[peer({payload:{persons:[],parentLinks:[],branches:current.branches,residences:current.residences}})]});
   const r=await validateImportPeers({query} as any,'current',current);expect(r.issues).toEqual([{entity:'BRANCH',sourceId:'BR-1',code:'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED'},{entity:'RESIDENCE',sourceId:'RES-1',code:'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED'}]);
+ });
+ it('reconciles private contact IDs from encrypted peer records without exposing their values',async()=>{
+  const previous=process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=Buffer.alloc(32,19).toString('base64');
+  try{
+   const current={...payload,privateContacts:[{sourceId:'CON-1',contactValue:'Private fictional value'}]};const query=jest.fn().mockResolvedValue({rows:[peer({payload:sealImportContacts({...current,persons:[],parentLinks:[]},'hash')})]});
+   const r=await validateImportPeers({query} as any,'current',current);expect(r.issues).toEqual([{entity:'PRIVATE_CONTACT',sourceId:'CON-1',code:'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED'}]);expect(JSON.stringify(r.issues)).not.toContain('Private fictional value');
+  }finally{if(previous===undefined)delete process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;else process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=previous;}
  });
  it('does not pass when a peer source was erased',async()=>{expect((await check([peer({payload:null})]).result).issues[0].code).toBe('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');});
  it('blocks incomplete peer inspection at the explicit limit',async()=>{const r=await check(Array(51).fill(peer())).result;expect(r.peerBatches).toHaveLength(50);expect(r.issues).toEqual([{entity:'BATCH',sourceId:'DATA',code:'PEER_BATCH_VALIDATION_LIMIT_REACHED'}]);});
