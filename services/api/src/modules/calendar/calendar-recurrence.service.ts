@@ -75,9 +75,9 @@ export class CalendarRecurrenceService implements OnModuleInit, OnModuleDestroy 
    else{await this.recusal(tx,u,r.owner_id);if(r.state!=='PENDING')throw new ConflictException('Proposal already decided');}
    if(r.version!==b.version||['REJECTED','WITHDRAWN'].includes(r.state))throw new ConflictException('Proposal changed; reload');
    if(b.decision==='APPROVED'){const e=await this.source(tx,r.source_event_id,r.owner_id);if(e.version!==r.source_version)throw new ConflictException('Source changed; submit a fresh proposal');}
-   const next=(await tx.query(`UPDATE calendar_recurrence_rules SET state=$2,version=version+1,
-    reviewer_id=CASE WHEN $2='WITHDRAWN' THEN reviewer_id ELSE $3::uuid END,
-    review_reason=CASE WHEN $2='WITHDRAWN' THEN review_reason ELSE $4 END,next_check_at=NOW() WHERE id=$1 RETURNING *`,[r.id,b.decision,actor,reason])).rows[0];
+   const next=(await tx.query(`UPDATE calendar_recurrence_rules SET state=$2::varchar,version=version+1,
+    reviewer_id=CASE WHEN $2::varchar='WITHDRAWN' THEN reviewer_id ELSE $3::uuid END,
+    review_reason=CASE WHEN $2::varchar='WITHDRAWN' THEN review_reason ELSE $4::varchar END,next_check_at=NOW() WHERE id=$1 RETURNING *`,[r.id,b.decision,actor,reason])).rows[0];
    await tx.query('INSERT INTO calendar_recurrence_decisions(rule_id,version,actor_id,action,reason) VALUES($1,$2,$3,$4,$5)',[r.id,next.version,actor,b.decision,reason]);
    await this.evidence(tx,actor,r.id,`CALENDAR_RECURRENCE_${b.decision}`,next.version);return next;
   });

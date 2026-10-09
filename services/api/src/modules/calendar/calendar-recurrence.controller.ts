@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Header, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser, CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CalendarRecurrenceService } from './calendar-recurrence.service';
 @Controller('calendar/recurrences')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ThrottlerGuard)
 export class CalendarRecurrenceController {
  constructor(private readonly service:CalendarRecurrenceService){}
  @Get() @Header('Cache-Control','private, no-store') list(@CurrentUser() u:AuthenticatedUser,@Query() q:any){return this.service.list(u.id,q);}

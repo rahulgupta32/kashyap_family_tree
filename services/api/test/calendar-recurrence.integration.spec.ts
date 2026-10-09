@@ -79,7 +79,7 @@ describe('Approved private Gregorian annual reminders (real PostgreSQL/HTTP)',()
   expect((await db.query('SELECT state FROM calendar_recurrence_rules WHERE id=$1',[r.id])).rows[0].state).toBe('PENDING');expect((await db.query('SELECT id FROM calendar_events WHERE recurrence_rule_id=$1',[approvedRule.r.id])).rows).toHaveLength(0);
  });
  it('requires immediate-family recusal at approval and again after relationships change',async()=>{
-  const branch=(await db.query("INSERT INTO branches(code,name_nepali) VALUES('RECUR_FAMILY','काल्पनिक शाखा') RETURNING id")).rows[0].id;
+  const branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('RECUR_FAMILY','काल्पनिक शाखा','Fictional recurrence branch') RETURNING id")).rows[0].id;
   const parent=(await db.query('INSERT INTO persons(branch_id,generation) VALUES($1,1) RETURNING id',[branch])).rows[0].id;
   const child=(await db.query('INSERT INTO persons(branch_id,generation) VALUES($1,2) RETURNING id',[branch])).rows[0].id;
   await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[owner.id,parent]);await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[reviewer.id,child]);
