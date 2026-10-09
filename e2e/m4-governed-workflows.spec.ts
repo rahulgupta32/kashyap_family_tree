@@ -115,6 +115,8 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
 
   test('2. Change approval applies the submitted fields and advances the person version', async ({ page }) => {
     const api = await requestFactory.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
+    let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+    const listRoute=(url:URL)=>url.pathname==='/change-requests';
     try {
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
@@ -130,17 +132,26 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       await expect(page.getByText(JSON.stringify(occupation), { exact: true })).toBeVisible();
       await expect(page.getByText(JSON.stringify('Original fictional occupation'), { exact: true })).toBeVisible();
       await page.locator('textarea').fill('Reviewed both changed fields against fictional acceptance fixture.');
+      let entered!:()=>void;const staleList=new Promise<void>(resolve=>{entered=resolve;});let held=false;
+      await page.route(listRoute,async route=>{
+        if(route.request().method()!=='GET'||held){await route.continue();return;}
+        held=true;entered();await gate;await route.fulfill({status:401,json:{message:'Fictional delayed expired list response'}});
+      });
+      await page.evaluate(async()=>{localStorage.setItem('kashyap_token_refreshed_at','0');await (window as any).__kashyap_refreshSession();});await staleList;
+      const delayed=page.waitForResponse(r=>new URL(r.url()).pathname==='/change-requests'&&r.status()===401);
       const approval = page.waitForResponse(r => r.url().endsWith(`/change-requests/${request.id}/review`) && r.request().method() === 'POST');
       await page.getByRole('button', { name: /Approve & Merge/ }).click();
       expect((await approval).ok()).toBeTruthy();
       await expect(page.getByText('Change request approved successfully')).toBeVisible();
+      release();await (await delayed).finished();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+      await expect(page.getByText('Change request approved successfully')).toBeVisible();await expect(page.getByText('Fictional delayed expired list response')).toHaveCount(0);
       const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(await browserToken(page)) }));
       expect(persisted.occupation).toBe(occupation);
       expect(persisted.birthPlace).toBe('Updated fictional birthplace');
       expect(persisted.version).toBe(person.version + 1);
       const reviewed = await checkedJson(await api.get(`${API_BASE}/change-requests/${request.id}`, { headers: auth(member.accessToken) }));
       expect(reviewed.status).toBe('APPROVED');
-    } finally { await api.dispose(); }
+    } finally {release();await page.unroute(listRoute);await api.dispose(); }
   });
 
   test('3. Calendar creation and non-host RSVP persist after reload', async ({ page, browser }) => {

@@ -44,14 +44,15 @@ test('same-account token refresh does not disable creation while the event list 
  const create=page.getByRole('button',{name:/Create Event/});await expect(create).toBeEnabled();
  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
  let entered!:()=>void;const reloading=new Promise<void>(resolve=>{entered=resolve;});
- await page.route('**/calendar/events',async route=>{entered();await gate;await route.continue();});
+ const eventList=(url:URL)=>url.pathname==='/calendar/events';
+ await page.route(eventList,async route=>{entered();await gate;await route.continue();});
  try{
-  await page.evaluate(async()=>{await (window as any).__kashyap_refreshSession();});await reloading;
+  await page.evaluate(async()=>{localStorage.setItem('kashyap_token_refreshed_at','0');await (window as any).__kashyap_refreshSession();});await reloading;
   await expect(create).toBeEnabled();await create.click();
   const dialog=page.getByRole('dialog',{name:'Create event',exact:true});await expect(dialog).toBeVisible();
   await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional creation during list refresh');
   release();await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional creation during list refresh');
- }finally{release();await page.unroute('**/calendar/events');}
+ }finally{release();await page.unroute(eventList);}
 });
 test('account changes clear private calendar drafts without a page reload',async({page})=>{
  await login(page);await page.goto('/calendar');
