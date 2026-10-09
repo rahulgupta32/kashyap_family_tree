@@ -89,6 +89,8 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
  });
  it('protects evidence from mutation/destructive rollback and paginates reports',async()=>{
   await expect(db.query("UPDATE genealogy_import_batches SET source_description='changed' WHERE id=$1",[batch.id])).rejects.toThrow('append-only');await expect(db.query('DELETE FROM genealogy_import_runs WHERE batch_id=$1',[batch.id])).rejects.toThrow('append-only');
+  await expect(db.query("UPDATE genealogy_import_runs SET reason='Fictional changed report reason' WHERE batch_id=$1",[batch.id])).rejects.toThrow('append-only');
+  await expect(db.query('DELETE FROM genealogy_import_batches WHERE id=$1',[batch.id])).rejects.toThrow('append-only');
   const sql=fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/046_genealogy_import_staging.down.sql'),'utf8');await expect(db.query(sql)).rejects.toThrow('Cannot discard');
   const h=await service.runs(admin.id,batch.id,{});const older=await service.runs(admin.id,batch.id,{before:String(h.items[0].sequence)});expect(older.items.every(r=>r.sequence<h.items[0].sequence)).toBe(true);
   await request(app.getHttpServer()).get(`${base}/${batch.id}/runs?before=invalid`).set(auth()).expect(400);await request(app.getHttpServer()).get(`${base}/${batch.id}/runs?extra=true`).set(auth()).expect(400);
