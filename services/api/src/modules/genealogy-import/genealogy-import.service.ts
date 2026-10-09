@@ -5,7 +5,8 @@ import { DatabaseService } from '../../database/database.service';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { allowedFields, textField, uuid } from '../community/community-policy';
 import { importHash, parseImportPayload, validateImport } from './import-validation';
-const validatorVersion='staging-1';
+import { validateTargetGraph } from './import-target-graph';
+const validatorVersion='staging-2-target-graph';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {
@@ -71,6 +72,7 @@ export class GenealogyImportService {
    if(p.targetPersonId){if(!c.target_id)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NOT_FOUND'});else if(c.branch_id!==payload.branchId||c.is_archived)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_INELIGIBLE'});else mappedTargets++;}
    if(Number(c.duplicates)>0){duplicates++;issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NAME_DUPLICATE_CANDIDATE'});}
   });
+  issues.push(...await validateTargetGraph(tx,payload));
   const report:GenealogyImportReport={validatorVersion,sourceHash:row.source_hash,persons:payload.persons.length,parentLinks:payload.parentLinks.length,mappedTargets,unmappedPersons:payload.persons.length-mappedTargets,duplicateCandidatePersons:duplicates,issues,validationPassed:issues.length===0,promotionAllowed:false,gates:[...gates]};
   const r=(await tx.query(`INSERT INTO genealogy_import_runs(batch_id,sequence,request_key,actor_id,reason,report)
    SELECT $1,COALESCE(MAX(sequence),0)+1,$2,$3,$4,$5 FROM genealogy_import_runs WHERE batch_id=$1 RETURNING *`,[id,requestKey,userId,reason,JSON.stringify(report)])).rows[0];

@@ -67,6 +67,22 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   await db.query('UPDATE persons SET is_archived=TRUE WHERE id=$1',[target]);const second=await service.dryRun(admin.id,mapped.id,{sourceHash:mapped.sourceHash,requestKey:randomUUID(),reason});expect(second.report.mappedTargets).toBe(0);expect(second.report.issues.map(i=>i.code)).toContain('TARGET_INELIGIBLE');
   const history=await service.runs(admin.id,mapped.id,{});expect(history.items[1].report.mappedTargets).toBe(1);
  });
+ it('detects cycles through live targets and unmapped staged vertices without changing genealogy',async()=>{
+  const targets=[];for(let i=0;i<3;i++)targets.push((await db.query('INSERT INTO persons(branch_id,generation) VALUES($1,$2) RETURNING id',[branchId,i+1])).rows[0].id);
+  for(let i=0;i<2;i++)await db.query("INSERT INTO parent_links(parent_id,child_id,confidence) VALUES($1,$2,'VERIFIED')",[targets[i],targets[i+1]]);
+  const persons=[{...person,sourceId:'start',nameNepali:'काल्पनिक सुरु',targetPersonId:targets[0]},{...person,sourceId:'end',nameNepali:'काल्पनिक अन्त',targetPersonId:targets[2]},{...person,sourceId:'bridge',nameNepali:'काल्पनिक नयाँ'}];
+  const link=(sourceId:string,parentSourceId:string,childSourceId:string)=>({sourceId,parentSourceId,childSourceId,type:'BIOLOGICAL',sourceRef:'SRC-1',verification:'VERIFIED'});
+  const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
+  const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
+  const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
+  expect(report.report.validatorVersion).toBe('staging-2-target-graph');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
+  const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
+  const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
+  await db.query('DELETE FROM parent_links WHERE parent_id=ANY($1::uuid[])',[targets]);
+  const refreshed=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(refreshed.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect((await service.runs(admin.id,staged.id,{})).items[1].report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+ });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));
   const r=await service.dryRun(admin.id,broken.id,{sourceHash:broken.sourceHash,requestKey:randomUUID(),reason});expect(r.report.validationPassed).toBe(false);expect(r.report.issues.map(i=>i.code)).toEqual(expect.arrayContaining(['PARENT_CYCLE','CONSENT_REVIEW_REQUIRED','DATE_AUTHORITY_REVIEW_REQUIRED','UNSUPPORTED_PARENT_TYPE']));
