@@ -13,18 +13,20 @@ export async function validateImportPeers(tx:PoolClient,batchId:string,payload:G
  const peerBatches=peers.slice(0,50).map(p=>({id:p.id,sourceHash:p.source_hash}));
  const graphSources:GenealogyImportPayload[]=[];
  if(peers.length>50){add('BATCH',payload.datasetKey,'PEER_BATCH_VALIDATION_LIMIT_REACHED');return {issues,peerBatches,graphSources};}
- const personIds=new Set<string>(),targets=new Set<string>(),linkIds=new Set<string>();
+ const personIds=new Set<string>(),targets=new Set<string>(),linkIds=new Set<string>(),unionIds=new Set<string>();
  for(const peer of peers){
   if(!peer.payload){add('BATCH',payload.datasetKey,'PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');continue;}
   graphSources.push(peer.payload);
   for(const p of peer.payload.persons){personIds.add(p.sourceId);if(p.targetPersonId)targets.add(p.targetPersonId.toLowerCase());}
   for(const link of peer.payload.parentLinks)linkIds.add(link.sourceId);
+  for(const union of peer.payload.unions||[])unionIds.add(union.sourceId);
  }
  for(const p of payload.persons){
   if(personIds.has(p.sourceId))add('PERSON',p.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
   if(p.targetPersonId&&targets.has(p.targetPersonId.toLowerCase()))add('PERSON',p.sourceId,'CROSS_BATCH_TARGET_MAPPING_RECONCILIATION_REQUIRED');
  }
  for(const link of payload.parentLinks)if(linkIds.has(link.sourceId))add('PARENT_LINK',link.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
+ for(const union of payload.unions||[])if(unionIds.has(union.sourceId))add('UNION',union.sourceId,'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED');
  // graphSources is transaction-local input, never part of a retained/public report.
  return {issues,peerBatches,graphSources};
 }

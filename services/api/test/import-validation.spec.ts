@@ -3,6 +3,21 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const union={sourceId:'UNI-1',partner1SourceId:person.sourceId,partner2SourceId:'PER-2',unionType:' Historical marriage ',status:'Disputed',sourceRef:person.sourceRef,visibility:'Private',startDate:'2080-01',startCalendar:'BS',startPrecision:'MONTH',endDate:'Unknown',endCalendar:'Unknown',endPrecision:'UNKNOWN',ceremonyPlace:'Original place',registrationRef:'Source register',consentLegalReview:'Approved',proposedBy:'Source proposer',reviewedBy:'Source reviewer',notes:'  मूल टिप्पणी  '};
+ it('preserves all union source fields and binds corrected evidence to a new hash',()=>{
+  const body={...payload(),persons:[person,{...person,sourceId:'PER-2',nameNepali:'दोस्रो नमुना'}],unions:[union]};const p=parseImportPayload(body);
+  expect(p.unions).toEqual([union]);expect(validateImport(p)).toEqual([{entity:'UNION',sourceId:'UNI-1',code:'UNION_SOURCE_REVIEW_REQUIRED'}]);
+  expect(JSON.stringify(validateImport(p))).not.toContain('Source reviewer');
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...body,unions:[{...union,status:'Corrected'}]})));
+ });
+ it('flags duplicate union IDs, self unions and dangling partner/evidence references',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[],unions:[{...union,partner2SourceId:person.sourceId},union]});
+  expect(validateImport(p).filter(i=>i.entity==='UNION').map(i=>i.code)).toEqual(expect.arrayContaining(['SELF_UNION','DUPLICATE_SOURCE_ID','DANGLING_PERSON_REFERENCE','DANGLING_EVIDENCE_REFERENCE','UNION_SOURCE_REVIEW_REQUIRED']));
+ });
+ it('rejects malformed, excessive and unknown union fields',()=>{
+  for(const unions of [null,{},Array(201).fill(union),[{...union,phone:'private'}],[{...union,partner1SourceId:'invalid id'}],[{...union,status:undefined}],[{...union,notes:'x'.repeat(1001)}],[{...union,notes:'bad\u0000text'}]])expect(()=>parseImportPayload({...payload(),unions})).toThrow();
+ });
+ it('preserves legacy hashes when unions are absent',()=>{const body=payload(),p=parseImportPayload(body);expect(p).not.toHaveProperty('unions');expect(importHash(p)).toBe(importHash(body as any));});
  const evidence={sourceId:person.sourceRef,sourceType:'Interview',description:'  Fictional original evidence  ',recordedDate:'Unknown',reliability:'Unconfirmed',permission:'Granted',accessClass:'Private',recordedBy:'Source collector',reviewStatus:'Accepted'};
  it('preserves evidence source text and requires review even when source claims permission and acceptance',()=>{
   const p=parseImportPayload({...payload(),evidenceSources:[{...evidence,url:'https://example.invalid/source',notes:'Original source notes'}]});expect(p.evidenceSources?.[0].description).toBe(evidence.description);

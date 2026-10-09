@@ -158,6 +158,16 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));
   const r=await service.dryRun(admin.id,broken.id,{sourceHash:broken.sourceHash,requestKey:randomUUID(),reason});expect(r.report.validationPassed).toBe(false);expect(r.report.issues.map(i=>i.code)).toEqual(expect.arrayContaining(['PARENT_CYCLE','CONSENT_REVIEW_REQUIRED','DATE_AUTHORITY_REVIEW_REQUIRED','UNSUPPORTED_PARENT_TYPE']));
  });
+ it('retains union history across reload, correction and audited erasure without changing live genealogy',async()=>{
+  const union={sourceId:'UNI-1',partner1SourceId:person.sourceId,partner2SourceId:'PER-2',unionType:'Historical',status:'Disputed',sourceRef:person.sourceRef,visibility:'Private',consentLegalReview:'Approved',startDate:'2080',startCalendar:'BS',startPrecision:'YEAR',notes:'Fictional original history'};
+  const payload=source({datasetKey:'UNION_HISTORY',persons:[person,{...person,sourceId:'PER-2',nameNepali:'दोस्रो काल्पनिक व्यक्ति'}],unions:[union]});
+  const before=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;
+  const staged=await service.stage(admin.id,payload);expect((await new GenealogyImportService(db,audit).detail(admin.id,staged.id)).payload.unions).toEqual([union]);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'UNION',sourceId:'UNI-1',code:'UNION_SOURCE_REVIEW_REQUIRED'});expect(checked.report.promotionAllowed).toBe(false);
+  const corrected=await service.stage(admin.id,{...payload,unions:[{...union,status:'Corrected'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.unions).toEqual([union]);
+  expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
  it('rolls back staged data, reports and erasure on audit failure; sensitive reads fail closed',async()=>{
   const counts=(await db.query('SELECT count(*) FROM genealogy_import_runs')).rows[0].count;
   const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValue(new Error('Fictional audit failure'));try{

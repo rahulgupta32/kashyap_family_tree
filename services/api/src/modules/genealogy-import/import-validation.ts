@@ -21,6 +21,16 @@ function evidenceSources(value:any){
   return {sourceId:id(source.sourceId),...fields} as import('@kashyap/contracts').GenealogyImportEvidence;
  });
 }
+function unions(value:any){
+ if(!Array.isArray(value)||value.length>200)throw new BadRequestException('Stage up to 200 unions');
+ const required=['unionType','status','visibility'];
+ const optional=['startDate','startCalendar','startPrecision','endDate','endCalendar','endPrecision','ceremonyPlace','registrationRef','consentLegalReview','proposedBy','reviewedBy','notes'];
+ return value.map(record=>{
+  allowedFields(record,['sourceId','partner1SourceId','partner2SourceId','sourceRef',...required,...optional]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>record[field]!==undefined)].map(field=>[field,sourceText(record[field],`union ${field}`,field==='notes'?1000:255)]));
+  return {sourceId:id(record.sourceId),partner1SourceId:id(record.partner1SourceId),partner2SourceId:id(record.partner2SourceId),sourceRef:id(record.sourceRef),...fields} as import('@kashyap/contracts').GenealogyImportUnion;
+ });
+}
 function sourceNames(value:any){
  const fields=['givenNepali','middleNepali','familyNepali','givenEnglish','middleEnglish','familyEnglish','knownAs'];
  allowedFields(value,fields);
@@ -34,7 +44,7 @@ function relationshipDetails(value:any){
  return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
 }
 export function parseImportPayload(body:any):GenealogyImportPayload{
- allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources']);
+ allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
@@ -44,6 +54,7 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
+ if(body.unions!==undefined)payload.unions=unions(body.unions);
  if(body.evidenceSources!==undefined)payload.evidenceSources=evidenceSources(body.evidenceSources);
  if(Buffer.byteLength(JSON.stringify(payload),'utf8')>1048576)throw new BadRequestException('Staged payload exceeds 1 MiB');
  return payload;
@@ -92,6 +103,17 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   if(e.sourceDetails)add('RELATIONSHIP_SOURCE_DETAILS_REVIEW_REQUIRED');
   const key=JSON.stringify([e.parentSourceId,e.childSourceId]);if(edges.has(key))add('DUPLICATE_PARENT_PAIR');edges.add(key);
   adj.set(e.parentSourceId,[...(adj.get(e.parentSourceId)||[]),e.childSourceId]);
+ }
+ const unionIds=new Set<string>();
+ const evidenceIds=payload.evidenceSources===undefined?null:new Set(payload.evidenceSources.map(s=>s.sourceId));
+ for(const union of payload.unions||[]){
+  const add=(code:string)=>issue('UNION',union.sourceId,code);
+  if(unionIds.has(union.sourceId))add('DUPLICATE_SOURCE_ID');unionIds.add(union.sourceId);
+  if(!personIds.has(union.partner1SourceId)||!personIds.has(union.partner2SourceId))add('DANGLING_PERSON_REFERENCE');
+  if(union.partner1SourceId===union.partner2SourceId)add('SELF_UNION');
+  if(evidenceIds&&!evidenceIds.has(union.sourceRef))add('DANGLING_EVIDENCE_REFERENCE');
+  // Historical unions and source approval claims require explicit reconciliation.
+  add('UNION_SOURCE_REVIEW_REQUIRED');
  }
  const visiting=new Set<string>(),done=new Set<string>();let cycle=false;
  function visit(id:string){if(visiting.has(id)){cycle=true;return;}if(done.has(id))return;visiting.add(id);for(const next of adj.get(id)||[])visit(next);visiting.delete(id);done.add(id);}
