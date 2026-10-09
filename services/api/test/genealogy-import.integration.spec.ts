@@ -213,6 +213,19 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
    await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await db.query('SELECT payload FROM genealogy_import_batches WHERE id=$1',[staged.id])).rows[0].payload).toBeNull();expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
   }finally{if(previous===undefined)delete process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;else process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=previous;}
  });
+ it('reads immutable contact records across managed key rotation and refuses retired missing keys',async()=>{
+  const oldRing=process.env.IMPORT_CONTACTS_ENCRYPTION_KEYS_JSON,oldActive=process.env.IMPORT_CONTACTS_ENCRYPTION_ACTIVE_KEY_ID;
+  process.env.IMPORT_CONTACTS_ENCRYPTION_KEYS_JSON=JSON.stringify({first:Buffer.alloc(32,29).toString('base64'),second:Buffer.alloc(32,31).toString('base64')});process.env.IMPORT_CONTACTS_ENCRYPTION_ACTIVE_KEY_ID='first';
+  try{
+   const contact={sourceId:'CON-KEY',personSourceId:person.sourceId,contactType:'Phone',contactValue:'Fictional original private value',primary:'Yes',verified:'Pending',consentStatus:'Pending',accessClass:'Private'};
+   const payload=source({datasetKey:'CONTACT_KEY_ROTATION',privateContacts:[contact]});const first=await service.stage(admin.id,payload);
+   process.env.IMPORT_CONTACTS_ENCRYPTION_ACTIVE_KEY_ID='second';const second=await service.stage(admin.id,{...payload,privateContacts:[{...contact,contactValue:'Fictional corrected private value'}]});
+   expect((await service.stage(admin.id,payload)).id).toBe(first.id);expect((await service.detail(admin.id,first.id)).payload.privateContacts).toEqual([contact]);
+   const rows=(await db.query('SELECT payload FROM genealogy_import_batches WHERE id=ANY($1::uuid[]) ORDER BY id',[[first.id,second.id]])).rows;expect(new Set(rows.map(r=>r.payload.privateContactsSealed.keyId))).toEqual(new Set(['first','second']));
+   process.env.IMPORT_CONTACTS_ENCRYPTION_KEYS_JSON=JSON.stringify({second:Buffer.alloc(32,31).toString('base64')});await request(app.getHttpServer()).get(`${base}/${first.id}`).set(auth()).expect(503);expect((await service.detail(admin.id,second.id)).payload.privateContacts?.[0].contactValue).toBe('Fictional corrected private value');
+   await service.erase(admin.id,first.id,{sourceHash:first.sourceHash,reason});
+  }finally{if(oldRing===undefined)delete process.env.IMPORT_CONTACTS_ENCRYPTION_KEYS_JSON;else process.env.IMPORT_CONTACTS_ENCRYPTION_KEYS_JSON=oldRing;if(oldActive===undefined)delete process.env.IMPORT_CONTACTS_ENCRYPTION_ACTIVE_KEY_ID;else process.env.IMPORT_CONTACTS_ENCRYPTION_ACTIVE_KEY_ID=oldActive;}
+ });
  it('rolls back staged data, reports and erasure on audit failure; sensitive reads fail closed',async()=>{
   const counts=(await db.query('SELECT count(*) FROM genealogy_import_runs')).rows[0].count;
   const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValue(new Error('Fictional audit failure'));try{
