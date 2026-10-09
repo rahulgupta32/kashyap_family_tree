@@ -13,7 +13,7 @@ import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection 
 const label=(key: keyof typeof calendarManagement.en)=>`${calendarManagement.ne[key]} (${calendarManagement.en[key]})`;
 
 export default function CalendarAdminPage() {
-  const { accessToken, isLoading: sessionLoading } = useAuth();
+  const { accessToken, user, isLoading: sessionLoading } = useAuth();
   const [events, setEvents] = useState<CalendarEventDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -42,7 +42,11 @@ export default function CalendarAdminPage() {
   const [derivedPreview,setDerivedPreview]=useState<any>(null);
   const tokenRef=useRef(accessToken);tokenRef.current=accessToken;
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[selection,formData.audienceScope,formData.branchId]);
-  useEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[accessToken]);
+  // Token rotation invalidates previews, but must not dismiss a form belonging
+  // to the same account. Account/authority changes still clear private state.
+  const authorityKey=user?.roles?.slice().sort().join(',');
+  useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[accessToken]);
+  useEffect(()=>{setShowCreateModal(false);setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);},[user?.id,authorityKey]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [cancelReason, setCancelReason] = useState('');

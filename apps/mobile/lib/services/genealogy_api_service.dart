@@ -189,9 +189,10 @@ class GenealogyApiService {
     }
   }
 
-  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data}) async {
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data, String? boundAccountId}) async {
     final response = await _send(method, Uri.parse('$baseUrl$path'),
-      body: data == null ? null : json.encode(data));
+      body: data == null ? null : json.encode(data), boundAccountId: boundAccountId);
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Request session changed');}
     final decoded = response.body.isEmpty ? null : json.decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');

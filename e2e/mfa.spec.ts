@@ -48,6 +48,9 @@ test('Authenticator setup, one-time recovery display and new-session enforcement
     await view.locator('input[placeholder="6-अंकको कोड"]').fill(challengeOtp.otp);
     await view.getByRole('button', { name: /Verify & Log In/ }).click();
     await expect(view).toHaveURL(/\/mfa$/);
+    // Route navigation can precede restored-session rotation. Assert the
+    // authenticated MFA state is ready before checking the protected route.
+    await expect(view.getByRole('button', { name: 'Use a recovery code', exact: true })).toBeVisible();
     const blocked = await view.request.get(`${API}/audit/dashboard`, { headers: await headers(view) }); expect(blocked.status()).toBe(403);
     await view.getByRole('button', { name: 'Use a recovery code', exact: true }).click();
     await view.getByLabel('Recovery code', { exact: true }).fill(result.recoveryCodes[0]);

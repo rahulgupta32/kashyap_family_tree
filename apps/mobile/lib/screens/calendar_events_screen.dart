@@ -1,6 +1,7 @@
 import 'calendar_audience_picker.dart';
 import 'package:flutter/material.dart';
 import 'calendar_period_screen.dart';
+import 'calendar_recurrence_screen.dart';
 import '../services/genealogy_api_service.dart';
 import '../localization/calendar_labels.dart';
 
@@ -148,6 +149,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
       appBar: AppBar(
         title: const Text('सांस्कृतिक तथा पारिवारिक पात्रो (Calendar)'),
         actions: [
+          IconButton(tooltip: 'वार्षिक सम्झना (Annual reminders)', onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService))), icon: const Icon(Icons.event_repeat)),
           IconButton(tooltip: calendarLabels['create'], onPressed: _create, icon: const Icon(Icons.add)),
           IconButton(onPressed: _loadEvents, icon: const Icon(Icons.refresh)),
         ],
@@ -195,6 +197,8 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                                 if(ev['lifecycleState'] == 'CANCELLED') Text(calendarLabels['cancelled']!),
                                 if(ev['rsvpCounts'] != null) Text('${calendarLabels['attendance']}: ${ev['rsvpCounts']['going']} Going · ${ev['rsvpCounts']['maybe']} Maybe'),
                                 if(ev['canManage'] == true && ev['lifecycleState'] != 'CANCELLED') Wrap(children: [
+                                  if(ev['startsAt'] != null && ev['recurrenceRuleId'] == null && ['GENERAL_EVENT','COMMUNITY_MEETING'].contains(ev['eventType']))
+                                    TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService, source: Map<String,dynamic>.from(ev as Map)))), child: const Text('वार्षिक सम्झना प्रस्ताव (Propose annual reminder)')),
                                   TextButton(onPressed: () => _manage(ev as Map), child: Text(calendarLabels['edit']!)),
                                   TextButton(onPressed: () => _manage(ev as Map, cancel: true), child: Text(calendarLabels['cancel']!)),
                                 ]),

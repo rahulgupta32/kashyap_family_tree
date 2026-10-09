@@ -16,6 +16,9 @@ test('calendar creation waits for restored session before opening the private fo
   const dialog=page.getByRole('dialog',{name:'Create event',exact:true});
   await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional restored-session event');
   await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional restored-session event');
+  await page.unroute('**/auth/refresh');
+  await page.evaluate(async()=>{await (window as any).__kashyap_refreshSession();});
+  await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional restored-session event');
  }finally{release();await page.unroute('**/auth/refresh');}
 });
 test('organizer previews a generation, invalidates changed criteria and creates an auditable invitation audience',async({page})=>{
