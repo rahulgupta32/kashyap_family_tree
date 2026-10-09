@@ -21,6 +21,18 @@ function evidenceSources(value:any){
   return {sourceId:id(source.sourceId),...fields} as import('@kashyap/contracts').GenealogyImportEvidence;
  });
 }
+function claims(value:any){
+ if(!Array.isArray(value)||value.length>200)throw new BadRequestException('Stage up to 200 claims');
+ const required=['entityType','fieldOrRelationship','riskLevel','visibility','status'];
+ const optional=['claimA','claimB','assignedAuthority','decision','decisionDate','appealStatus','auditNotes'];
+ const references=['claimASourceRef','claimBSourceRef','decisionEvidenceRef'];
+ return value.map(record=>{
+  allowedFields(record,['sourceId','entitySourceId',...required,...optional,...references]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>record[field]!==undefined)].map(field=>[field,sourceText(record[field],`claim ${field}`,['claimA','claimB','decision','auditNotes'].includes(field)?1000:255)]));
+  const refs=Object.fromEntries(references.filter(field=>record[field]!==undefined).map(field=>[field,id(record[field])]));
+  return {sourceId:id(record.sourceId),entitySourceId:id(record.entitySourceId),...fields,...refs} as import('@kashyap/contracts').GenealogyImportClaim;
+ });
+}
 function unions(value:any){
  if(!Array.isArray(value)||value.length>200)throw new BadRequestException('Stage up to 200 unions');
  const required=['unionType','status','visibility'];
@@ -44,7 +56,7 @@ function relationshipDetails(value:any){
  return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
 }
 export function parseImportPayload(body:any):GenealogyImportPayload{
- allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions']);
+ allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions','claims']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
@@ -54,6 +66,7 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
+ if(body.claims!==undefined)payload.claims=claims(body.claims);
  if(body.unions!==undefined)payload.unions=unions(body.unions);
  if(body.evidenceSources!==undefined)payload.evidenceSources=evidenceSources(body.evidenceSources);
  if(Buffer.byteLength(JSON.stringify(payload),'utf8')>1048576)throw new BadRequestException('Staged payload exceeds 1 MiB');
@@ -114,6 +127,19 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   if(evidenceIds&&!evidenceIds.has(union.sourceRef))add('DANGLING_EVIDENCE_REFERENCE');
   // Historical unions and source approval claims require explicit reconciliation.
   add('UNION_SOURCE_REVIEW_REQUIRED');
+ }
+ const claimIds=new Set<string>();
+ const entityIds=new Map<string,Set<string>>([['PERSON',personIds],['PARENT_LINK',edgeIds],['UNION',unionIds]]);
+ if(evidenceIds)entityIds.set('SOURCE',evidenceIds);
+ for(const claim of payload.claims||[]){
+  const add=(code:string)=>issue('CLAIM',claim.sourceId,code);
+  if(claimIds.has(claim.sourceId))add('DUPLICATE_SOURCE_ID');claimIds.add(claim.sourceId);
+  // Entity-type vocabulary is not inferred from source spelling or cultural rules.
+  const ids=entityIds.get(claim.entityType);
+  if(ids){if(!ids.has(claim.entitySourceId))add('DANGLING_ENTITY_REFERENCE');}
+  else add('CLAIM_ENTITY_MAPPING_REVIEW_REQUIRED');
+  if(evidenceIds&&[claim.claimASourceRef,claim.claimBSourceRef,claim.decisionEvidenceRef].some(ref=>ref&&!evidenceIds.has(ref)))add('DANGLING_EVIDENCE_REFERENCE');
+  add('CLAIM_SOURCE_REVIEW_REQUIRED');
  }
  const visiting=new Set<string>(),done=new Set<string>();let cycle=false;
  function visit(id:string){if(visiting.has(id)){cycle=true;return;}if(done.has(id))return;visiting.add(id);for(const next of adj.get(id)||[])visit(next);visiting.delete(id);done.add(id);}

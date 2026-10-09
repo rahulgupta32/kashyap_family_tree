@@ -19,8 +19,12 @@ export interface GenealogyImportUnion {
  startDate?:string;startCalendar?:string;startPrecision?:string;endDate?:string;endCalendar?:string;endPrecision?:string;
  ceremonyPlace?:string;registrationRef?:string;consentLegalReview?:string;proposedBy?:string;reviewedBy?:string;notes?:string;
 }
-export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[]; }
-export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION';sourceId:string;code:string;}
+export interface GenealogyImportClaim {
+ sourceId:string;entityType:string;entitySourceId:string;fieldOrRelationship:string;riskLevel:string;visibility:string;status:string;
+ claimA?:string;claimASourceRef?:string;claimB?:string;claimBSourceRef?:string;assignedAuthority?:string;decision?:string;decisionEvidenceRef?:string;decisionDate?:string;appealStatus?:string;auditNotes?:string;
+}
+export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[];claims?:GenealogyImportClaim[]; }
+export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION'|'CLAIM';sourceId:string;code:string;}
 export interface GenealogyImportReport {
  peerBatches?:{id:string;sourceHash:string}[];
  validatorVersion:string;sourceHash:string;persons:number;parentLinks:number;mappedTargets:number;unmappedPersons:number;

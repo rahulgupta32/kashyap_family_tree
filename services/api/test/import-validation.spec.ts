@@ -3,6 +3,22 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const claim={sourceId:'CASE-1',entityType:'PERSON',entitySourceId:person.sourceId,fieldOrRelationship:'Original name',riskLevel:'High',visibility:'Private',status:'Resolved',claimA:'  मूल दाबी  ',claimASourceRef:person.sourceRef,claimB:'Alternate account',claimBSourceRef:person.sourceRef,assignedAuthority:'Source authority',decision:'Approved',decisionEvidenceRef:person.sourceRef,decisionDate:'2080 BS',appealStatus:'Pending',auditNotes:'Original audit notes'};
+ it('retains all claim and dispute evidence without granting authority to source decisions',()=>{
+  const p=parseImportPayload({...payload(),claims:[claim]});expect(p.claims).toEqual([claim]);expect(validateImport(p)).toEqual([{entity:'CLAIM',sourceId:'CASE-1',code:'CLAIM_SOURCE_REVIEW_REQUIRED'}]);
+  expect(JSON.stringify(validateImport(p))).not.toContain('Source authority');expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,claims:[{...claim,decision:'Corrected'}]})));
+ });
+ it('flags duplicate cases and dangling entity/evidence references',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[],claims:[{...claim,entitySourceId:'MISSING'},claim]});
+  expect(validateImport(p).filter(i=>i.entity==='CLAIM').map(i=>i.code)).toEqual(expect.arrayContaining(['DUPLICATE_SOURCE_ID','DANGLING_ENTITY_REFERENCE','DANGLING_EVIDENCE_REFERENCE','CLAIM_SOURCE_REVIEW_REQUIRED']));
+ });
+ it('requires explicit mapping for source entity vocabularies including object prototype names',()=>{
+  for(const entityType of ['Person','External entity','constructor','__proto__'])expect(validateImport(parseImportPayload({...payload(),claims:[{...claim,entityType}]}))).toContainEqual({entity:'CLAIM',sourceId:'CASE-1',code:'CLAIM_ENTITY_MAPPING_REVIEW_REQUIRED'});
+ });
+ it('rejects malformed, excessive and unknown claim fields and retains legacy hashes',()=>{
+  for(const claims of [null,{},Array(201).fill(claim),[{...claim,phone:'private'}],[{...claim,status:undefined}],[{...claim,claimA:'x'.repeat(1001)}],[{...claim,decisionEvidenceRef:'invalid id'}],[{...claim,auditNotes:'bad\u0000text'}]])expect(()=>parseImportPayload({...payload(),claims})).toThrow();
+  const body=payload(),p=parseImportPayload(body);expect(p).not.toHaveProperty('claims');expect(importHash(p)).toBe(importHash(body as any));
+ });
  const union={sourceId:'UNI-1',partner1SourceId:person.sourceId,partner2SourceId:'PER-2',unionType:' Historical marriage ',status:'Disputed',sourceRef:person.sourceRef,visibility:'Private',startDate:'2080-01',startCalendar:'BS',startPrecision:'MONTH',endDate:'Unknown',endCalendar:'Unknown',endPrecision:'UNKNOWN',ceremonyPlace:'Original place',registrationRef:'Source register',consentLegalReview:'Approved',proposedBy:'Source proposer',reviewedBy:'Source reviewer',notes:'  मूल टिप्पणी  '};
  it('preserves all union source fields and binds corrected evidence to a new hash',()=>{
   const body={...payload(),persons:[person,{...person,sourceId:'PER-2',nameNepali:'दोस्रो नमुना'}],unions:[union]};const p=parseImportPayload(body);

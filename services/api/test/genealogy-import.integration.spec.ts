@@ -168,6 +168,15 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });
+ it('retains dispute evidence through restart, correction and erasure without resolving live genealogy',async()=>{
+  const claim={sourceId:'CASE-1',entityType:'PERSON',entitySourceId:person.sourceId,fieldOrRelationship:'Name',riskLevel:'High',visibility:'Private',status:'Resolved',claimA:'Fictional disputed history',claimB:'Alternate history',assignedAuthority:'Source authority',decision:'Approved',decisionDate:'Unknown',appealStatus:'Pending',auditNotes:'Fictional audit notes'};
+  const payload=source({datasetKey:'CLAIM_HISTORY',claims:[claim]});const before=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;
+  const staged=await service.stage(admin.id,payload);expect((await new GenealogyImportService(db,audit).detail(admin.id,staged.id)).payload.claims).toEqual([claim]);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'CLAIM',sourceId:'CASE-1',code:'CLAIM_SOURCE_REVIEW_REQUIRED'});expect(checked.report.promotionAllowed).toBe(false);
+  const corrected=await service.stage(admin.id,{...payload,claims:[{...claim,decision:'Corrected'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.claims).toEqual([claim]);
+  expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
  it('rolls back staged data, reports and erasure on audit failure; sensitive reads fail closed',async()=>{
   const counts=(await db.query('SELECT count(*) FROM genealogy_import_runs')).rows[0].count;
   const spy=jest.spyOn(audit,'recordAuditIntent').mockRejectedValue(new Error('Fictional audit failure'));try{

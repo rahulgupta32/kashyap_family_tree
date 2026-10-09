@@ -18,6 +18,10 @@ describe('Cross-batch source reconciliation',()=>{
   const current={...payload,unions:[{sourceId:'UNI-1'}]};const query=jest.fn().mockResolvedValue({rows:[peer({payload:{persons:[],parentLinks:[],unions:[{sourceId:'UNI-1'}]}})]});
   const r=await validateImportPeers({query} as any,'current',current);expect(r.issues).toEqual([{entity:'UNION',sourceId:'UNI-1',code:'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED'}]);
  });
+ it('requires reconciliation when a dispute case ID is reused across retained batches',async()=>{
+  const current={...payload,claims:[{sourceId:'CASE-1'}]};const query=jest.fn().mockResolvedValue({rows:[peer({payload:{persons:[],parentLinks:[],claims:[{sourceId:'CASE-1'}]}})]});
+  const r=await validateImportPeers({query} as any,'current',current);expect(r.issues).toEqual([{entity:'CLAIM',sourceId:'CASE-1',code:'CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED'}]);
+ });
  it('does not pass when a peer source was erased',async()=>{expect((await check([peer({payload:null})]).result).issues[0].code).toBe('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');});
  it('blocks incomplete peer inspection at the explicit limit',async()=>{const r=await check(Array(51).fill(peer())).result;expect(r.peerBatches).toHaveLength(50);expect(r.issues).toEqual([{entity:'BATCH',sourceId:'DATA',code:'PEER_BATCH_VALIDATION_LIMIT_REACHED'}]);});
  it('allows disjoint staged identities and no peers',async()=>{
