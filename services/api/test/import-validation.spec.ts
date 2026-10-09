@@ -3,6 +3,22 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const evidence={sourceId:person.sourceRef,sourceType:'Interview',description:'  Fictional original evidence  ',recordedDate:'Unknown',reliability:'Unconfirmed',permission:'Granted',accessClass:'Private',recordedBy:'Source collector',reviewStatus:'Accepted'};
+ it('preserves evidence source text and requires review even when source claims permission and acceptance',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[{...evidence,url:'https://example.invalid/source',notes:'Original source notes'}]});expect(p.evidenceSources?.[0].description).toBe(evidence.description);
+  expect(validateImport(p)).toEqual([{entity:'SOURCE',sourceId:evidence.sourceId,code:'SOURCE_EVIDENCE_REVIEW_REQUIRED'}]);expect(JSON.stringify(validateImport(p))).not.toContain('Source collector');
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,evidenceSources:[{...evidence,permission:'Pending'}]})));
+ });
+ it('detects missing and duplicated evidence references without filling them in',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[{...evidence,sourceId:'OTHER'}, {...evidence,sourceId:'OTHER'}]});expect(validateImport(p).map(i=>i.code)).toEqual(expect.arrayContaining(['DUPLICATE_SOURCE_ID','DANGLING_EVIDENCE_REFERENCE']));
+  expect(validateImport(parseImportPayload({...payload(),evidenceSources:[]})).map(i=>i.code)).toContain('DANGLING_EVIDENCE_REFERENCE');
+ });
+ it('rejects oversized, unknown and malformed evidence records',()=>{
+  for(const evidenceSources of [null,{},Array(201).fill(evidence),[{...evidence,phone:'private'}],[{...evidence,permission:undefined}],[{...evidence,url:'x'.repeat(2049)}],[{...evidence,notes:'bad\u0000text'}]])expect(()=>parseImportPayload({...payload(),evidenceSources})).toThrow();
+ });
+ it('keeps legacy evidence representation absent without altering its hash',()=>{
+  const body=payload(),p=parseImportPayload(body);expect(p).not.toHaveProperty('evidenceSources');expect(importHash(p)).toBe(importHash(body as any));
+ });
  it('retains independent source name components and alias text without transliteration or splitting',()=>{
   const sourceNames={givenNepali:'  नाम  ',middleNepali:'मध्य',familyNepali:'अधिकारी',givenEnglish:'Original',middleEnglish:'Source',familyEnglish:'Adhikari',knownAs:'First alias / दोस्रो उपनाम'};
   const p=parseImportPayload({...payload(),persons:[{...person,sourceNames}]});expect(p.persons[0].sourceNames).toEqual(sourceNames);expect(p.persons[0].nameNepali).toBe(person.nameNepali);

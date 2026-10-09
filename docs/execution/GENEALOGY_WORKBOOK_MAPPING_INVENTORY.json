@@ -1038,144 +1038,144 @@
           "ordinal": 1,
           "sourceColumn": "Source ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 2,
           "sourceColumn": "Source Type*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceType",
           "approval": "OPEN"
         },
         {
           "ordinal": 3,
           "sourceColumn": "Title / Description*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].description",
           "approval": "OPEN"
         },
         {
           "ordinal": 4,
           "sourceColumn": "Custodian / Informant",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].custodian",
           "approval": "OPEN"
         },
         {
           "ordinal": 5,
           "sourceColumn": "Source Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 6,
           "sourceColumn": "Recorded Date*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].recordedDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 7,
           "sourceColumn": "Language",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].language",
           "approval": "OPEN"
         },
         {
           "ordinal": 8,
           "sourceColumn": "Repository / Location",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].repository",
           "approval": "OPEN"
         },
         {
           "ordinal": 9,
           "sourceColumn": "File Reference",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].fileReference",
           "approval": "OPEN"
         },
         {
           "ordinal": 10,
           "sourceColumn": "URL",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].url",
           "approval": "OPEN"
         },
         {
           "ordinal": 11,
           "sourceColumn": "Reliability*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reliability",
           "approval": "OPEN"
         },
         {
           "ordinal": 12,
           "sourceColumn": "Consent / Permission*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].permission",
           "approval": "OPEN"
         },
         {
           "ordinal": 13,
           "sourceColumn": "Access Class*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].accessClass",
           "approval": "OPEN"
         },
         {
           "ordinal": 14,
           "sourceColumn": "Related Branch ID",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].relatedBranchId",
           "approval": "OPEN"
         },
         {
           "ordinal": 15,
           "sourceColumn": "Recorded By*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].recordedBy",
           "approval": "OPEN"
         },
         {
           "ordinal": 16,
           "sourceColumn": "Reviewed By",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reviewedBy",
           "approval": "OPEN"
         },
         {
           "ordinal": 17,
           "sourceColumn": "Review Status*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reviewStatus",
           "approval": "OPEN"
         },
         {
           "ordinal": 18,
           "sourceColumn": "Notes",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].notes",
           "approval": "OPEN"
         }
       ]

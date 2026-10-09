@@ -11,6 +11,16 @@ function sourceText(value:any,label:string,max:number,min=1){
 }
 function id(value:any){const s=sourceText(value,'source identifier',80);if(!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/.test(s))throw new BadRequestException('Invalid source identifier');return s;}
 function date(value:any){allowedFields(value,['value','calendar','precision']);return {value:sourceText(value.value,'original date',80),calendar:sourceText(value.calendar,'calendar',20),precision:sourceText(value.precision,'date precision',20)};}
+function evidenceSources(value:any){
+ if(!Array.isArray(value)||value.length>200)throw new BadRequestException('Stage up to 200 evidence sources');
+ const required=['sourceType','description','recordedDate','reliability','permission','accessClass','recordedBy','reviewStatus'];
+ const optional=['custodian','sourceDate','language','repository','fileReference','url','relatedBranchId','reviewedBy','notes'];
+ return value.map(source=>{
+  allowedFields(source,['sourceId',...required,...optional]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>source[field]!==undefined)].map(field=>[field,sourceText(source[field],`evidence ${field}`,field==='url'?2048:['description','notes','repository','fileReference'].includes(field)?1000:255)]));
+  return {sourceId:id(source.sourceId),...fields} as import('@kashyap/contracts').GenealogyImportEvidence;
+ });
+}
 function sourceNames(value:any){
  const fields=['givenNepali','middleNepali','familyNepali','givenEnglish','middleEnglish','familyEnglish','knownAs'];
  allowedFields(value,fields);
@@ -24,7 +34,7 @@ function relationshipDetails(value:any){
  return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
 }
 export function parseImportPayload(body:any):GenealogyImportPayload{
- allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks']);
+ allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
@@ -34,6 +44,7 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
+ if(body.evidenceSources!==undefined)payload.evidenceSources=evidenceSources(body.evidenceSources);
  if(Buffer.byteLength(JSON.stringify(payload),'utf8')>1048576)throw new BadRequestException('Staged payload exceeds 1 MiB');
  return payload;
 }
@@ -43,6 +54,16 @@ export function importHash(payload:GenealogyImportPayload){return createHash('sh
 export function validateImport(payload:GenealogyImportPayload):GenealogyImportIssue[]{
  const issues:GenealogyImportIssue[]=[],personIds=new Set<string>(),edgeIds=new Set<string>(),targets=new Set<string>(),names=new Set<string>(),edges=new Set<string>(),adj=new Map<string,string[]>();
  const issue=(entity:GenealogyImportIssue['entity'],sourceId:string,code:string)=>issues.push({entity,sourceId,code});
+ if(payload.evidenceSources!==undefined){
+  const sources=new Set<string>();
+  for(const source of payload.evidenceSources){
+   if(sources.has(source.sourceId))issue('SOURCE',source.sourceId,'DUPLICATE_SOURCE_ID');sources.add(source.sourceId);
+   // Source permission/review strings are untrusted evidence, never application approval.
+   issue('SOURCE',source.sourceId,'SOURCE_EVIDENCE_REVIEW_REQUIRED');
+  }
+  for(const person of payload.persons)if(!sources.has(person.sourceRef))issue('PERSON',person.sourceId,'DANGLING_EVIDENCE_REFERENCE');
+  for(const link of payload.parentLinks)if(!sources.has(link.sourceRef))issue('PARENT_LINK',link.sourceId,'DANGLING_EVIDENCE_REFERENCE');
+ }
  for(const p of payload.persons){
   const add=(code:string)=>issue('PERSON',p.sourceId,code);
   if(personIds.has(p.sourceId))add('DUPLICATE_SOURCE_ID');personIds.add(p.sourceId);

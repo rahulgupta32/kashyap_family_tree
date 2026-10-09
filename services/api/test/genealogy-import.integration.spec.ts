@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-7-source-names');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-8-source-evidence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -143,6 +143,15 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'PERSON',sourceId:person.sourceId,code:'SOURCE_NAME_COMPONENTS_REVIEW_REQUIRED'});expect(checked.report.validationPassed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(sourceNames.knownAs);
   const corrected=await service.stage(admin.id,{...payload,persons:[{...person,sourceNames:{...sourceNames,knownAs:'Fictional corrected alias'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);
   expect((await service.detail(admin.id,staged.id)).payload.persons[0].sourceNames).toEqual(sourceNames);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('retains permission/provenance evidence without accepting source claims or disclosing private content',async()=>{
+  const evidence={sourceId:person.sourceRef,sourceType:'Interview',description:'Fictional private source description',recordedDate:'Unknown',reliability:'Unconfirmed',permission:'Granted',accessClass:'Private',recordedBy:'Fictional private collector',reviewStatus:'Accepted',notes:'Fictional private permission context'};
+  const payload=source({datasetKey:'SOURCE_EVIDENCE',evidenceSources:[evidence]});const staged=await service.stage(admin.id,payload);
+  expect((await service.detail(admin.id,staged.id)).payload.evidenceSources).toEqual([evidence]);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'SOURCE',sourceId:evidence.sourceId,code:'SOURCE_EVIDENCE_REVIEW_REQUIRED'});expect(checked.report.validationPassed).toBe(false);expect(checked.report.promotionAllowed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(evidence.description);
+  const corrected=await service.stage(admin.id,{...payload,evidenceSources:[{...evidence,permission:'Pending'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.evidenceSources).toEqual([evidence]);
+  const missing=await service.stage(admin.id,source({datasetKey:'MISSING_EVIDENCE',evidenceSources:[]}));const r=await service.dryRun(admin.id,missing.id,{sourceHash:missing.sourceHash,requestKey:randomUUID(),reason});expect(r.report.issues.map(i=>i.code)).toContain('DANGLING_EVIDENCE_REFERENCE');
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{

@@ -10,8 +10,12 @@ export interface GenealogyImportParent {
  sourceId:string;parentSourceId:string;childSourceId:string;type:string;sourceRef:string;verification:string;
  sourceDetails?:{parentRole?:string;legalStatus?:string;startDate?:string;startCalendar?:string;endDate?:string;endCalendar?:string;certainty?:string;relationshipStatus?:string;visibility?:string;proposedBy?:string;reviewedBy?:string;reviewDate?:string;notes?:string};
 }
-export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[]; }
-export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK';sourceId:string;code:string;}
+export interface GenealogyImportEvidence {
+ sourceId:string;sourceType:string;description:string;recordedDate:string;reliability:string;permission:string;accessClass:string;recordedBy:string;reviewStatus:string;
+ custodian?:string;sourceDate?:string;language?:string;repository?:string;fileReference?:string;url?:string;relatedBranchId?:string;reviewedBy?:string;notes?:string;
+}
+export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[]; }
+export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE';sourceId:string;code:string;}
 export interface GenealogyImportReport {
  peerBatches?:{id:string;sourceHash:string}[];
  validatorVersion:string;sourceHash:string;persons:number;parentLinks:number;mappedTargets:number;unmappedPersons:number;
