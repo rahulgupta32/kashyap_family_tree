@@ -11,7 +11,7 @@ class CulturalApi extends GenealogyApiService {
   @override
   String? get authToken => 'fictional-widget-token';
   @override
-  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String,dynamic>? data}) async {
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String,dynamic>? data, String? boundAccountId}) async {
     this.path = path;
     if (fail) { throw Exception('Cultural service temporarily unavailable'); }
     return [{'id':'fixture','title_nepali':'परीक्षण इतिहास','title_english':'Fictional history','content_nepali':'परीक्षण सामग्री','version':2,'published_at':'2026-10-08','provenance':'Fictional approved source fixture'}];

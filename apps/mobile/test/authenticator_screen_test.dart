@@ -12,7 +12,7 @@ class SecurityApi extends GenealogyApiService {
   bool failProofCheck = false;
   final List<String> operations = [];
   @override
-  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data}) async {
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data, String? boundAccountId}) async {
     operations.add(path);
     if (path.endsWith('/status')) {
       if (failStatus) { throw Exception('offline'); }
