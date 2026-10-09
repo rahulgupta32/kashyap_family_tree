@@ -10,7 +10,9 @@ import 'native_session_test.dart' show jsonResponse;
 String token(String owner) => 'x.${base64Url.encode(utf8.encode(jsonEncode({'sub': owner})))}.x';
 Map<String,dynamic> rule(String state) => {'id':'rule-1','version':state == 'WITHDRAWN' ? 3 : 2,'source_event_id':'event-1','source_version':4,'source_date':'2020-02-29','local_time':'09:00','leap_policy':'MARCH_01','source_ref':'Fictional date evidence','state':state};
 Future<void> tap(WidgetTester tester, String text) async {
-  final finder=find.text(text);await tester.ensureVisible(finder);await tester.tap(finder);await tester.pumpAndSettle();
+  final finder=find.text(text);
+  await tester.scrollUntilVisible(finder,200,scrollable:find.byType(Scrollable));
+  await tester.tap(finder);await tester.pumpAndSettle();
 }
 void main() {
  testWidgets('preview and withdrawal preserve rule version and refresh terminal state', (tester) async {
@@ -37,7 +39,7 @@ void main() {
   }))..setAuthToken(token('owner'));addTearDown(api.dispose);
   await tester.pumpWidget(MaterialApp(home:CalendarRecurrenceScreen(api:api)));await tester.pumpAndSettle();
   await tap(tester,'थप प्रस्ताव (More proposals)');expect(queries.last,{'queue':'false','after':'cursor-exact'});expect(find.text('Second evidence'),findsOneWidget);
-  await tester.ensureVisible(find.byType(SwitchListTile));await tester.tap(find.byType(SwitchListTile));await tester.pumpAndSettle();
+  await tester.scrollUntilVisible(find.byType(SwitchListTile),-200,scrollable:find.byType(Scrollable));await tester.tap(find.byType(SwitchListTile));await tester.pumpAndSettle();
   expect(find.text('Fictional date evidence'),findsNothing);expect(find.text('Second evidence'),findsNothing);expect(find.textContaining('Current reviewer authority required'),findsOneWidget);
   await tester.pumpWidget(const SizedBox());
  });
