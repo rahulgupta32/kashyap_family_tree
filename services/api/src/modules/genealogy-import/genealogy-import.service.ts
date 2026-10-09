@@ -6,7 +6,8 @@ import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.
 import { allowedFields, textField, uuid } from '../community/community-policy';
 import { importHash, parseImportPayload, validateImport } from './import-validation';
 import { validateTargetGraph } from './import-target-graph';
-const validatorVersion='staging-2-target-graph';
+import { validateImportPeers } from './import-peer-validation';
+const validatorVersion='staging-3-peer-identities';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {
@@ -73,7 +74,8 @@ export class GenealogyImportService {
    if(Number(c.duplicates)>0){duplicates++;issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NAME_DUPLICATE_CANDIDATE'});}
   });
   issues.push(...await validateTargetGraph(tx,payload));
-  const report:GenealogyImportReport={validatorVersion,sourceHash:row.source_hash,persons:payload.persons.length,parentLinks:payload.parentLinks.length,mappedTargets,unmappedPersons:payload.persons.length-mappedTargets,duplicateCandidatePersons:duplicates,issues,validationPassed:issues.length===0,promotionAllowed:false,gates:[...gates]};
+  const peers=await validateImportPeers(tx,id,payload);issues.push(...peers.issues);
+  const report:GenealogyImportReport={validatorVersion,sourceHash:row.source_hash,peerBatches:peers.peerBatches,persons:payload.persons.length,parentLinks:payload.parentLinks.length,mappedTargets,unmappedPersons:payload.persons.length-mappedTargets,duplicateCandidatePersons:duplicates,issues,validationPassed:issues.length===0,promotionAllowed:false,gates:[...gates]};
   const r=(await tx.query(`INSERT INTO genealogy_import_runs(batch_id,sequence,request_key,actor_id,reason,report)
    SELECT $1,COALESCE(MAX(sequence),0)+1,$2,$3,$4,$5 FROM genealogy_import_runs WHERE batch_id=$1 RETURNING *`,[id,requestKey,userId,reason,JSON.stringify(report)])).rows[0];
   await this.evidence(tx,userId,id,'GENEALOGY_IMPORT_DRY_RUN_COMPLETED',{runId:r.id,sourceHash:row.source_hash,issues:issues.length,mappedTargets});return this.run(r);

@@ -75,13 +75,26 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-2-target-graph');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-3-peer-identities');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
   await db.query('DELETE FROM parent_links WHERE parent_id=ANY($1::uuid[])',[targets]);
   const refreshed=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(refreshed.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await service.runs(admin.id,staged.id,{})).items[1].report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+ });
+ it('retains peer hashes and blocks cross-batch identities and erased evidence',async()=>{
+  const target=(await db.query('INSERT INTO persons(branch_id,generation) VALUES($1,1) RETURNING id',[branchId])).rows[0].id;
+  const first=await service.stage(admin.id,source({datasetKey:'PEER_IDENTITIES',persons:[{...person,targetPersonId:target}]}));
+  const initial=await service.dryRun(admin.id,first.id,{sourceHash:first.sourceHash,requestKey:randomUUID(),reason});expect(initial.report.peerBatches).toEqual([]);
+  const peer=await service.stage(admin.id,source({datasetKey:'PEER_IDENTITIES',sourceDescription:'Fictional corrected source requires reconciliation',persons:[{...person,targetPersonId:target,nameNepali:'काल्पनिक संशोधन'}]}));
+  const checked=await service.dryRun(admin.id,first.id,{sourceHash:first.sourceHash,requestKey:randomUUID(),reason});
+  expect(checked.report.peerBatches).toEqual([{id:peer.id,sourceHash:peer.sourceHash}]);
+  expect(checked.report.issues.map(i=>i.code)).toEqual(expect.arrayContaining(['CROSS_BATCH_SOURCE_ID_RECONCILIATION_REQUIRED','CROSS_BATCH_TARGET_MAPPING_RECONCILIATION_REQUIRED']));
+  expect(checked.report.validationPassed).toBe(false);expect(checked.report.promotionAllowed).toBe(false);
+  await service.erase(admin.id,peer.id,{sourceHash:peer.sourceHash,reason});
+  const erased=await service.dryRun(admin.id,first.id,{sourceHash:first.sourceHash,requestKey:randomUUID(),reason});expect(erased.report.issues.map(i=>i.code)).toContain('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');
+  const history=await service.runs(admin.id,first.id,{});expect(history.items[2].report.peerBatches).toEqual([]);expect(history.items[1].report.peerBatches).toEqual(checked.report.peerBatches);
  });
  it('preserves cycle, missing reference and calendar/consent exceptions',async()=>{
   const broken=await service.stage(admin.id,source({datasetKey:'BROKEN_TEST',persons:[{...person,consent:'PENDING',birth:{value:'2080-01-01',calendar:'BS',precision:'EXACT'}}],parentLinks:[{sourceId:'PCR-1',parentSourceId:person.sourceId,childSourceId:person.sourceId,type:'GUARDIAN',sourceRef:'SRC-1',verification:'DRAFT'}]}));

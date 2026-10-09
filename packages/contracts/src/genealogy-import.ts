@@ -11,6 +11,7 @@ export interface GenealogyImportParent {
 export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[]; }
 export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK';sourceId:string;code:string;}
 export interface GenealogyImportReport {
+ peerBatches?:{id:string;sourceHash:string}[];
  validatorVersion:string;sourceHash:string;persons:number;parentLinks:number;mappedTargets:number;unmappedPersons:number;
  duplicateCandidatePersons:number;issues:GenealogyImportIssue[];validationPassed:boolean;promotionAllowed:false;gates:string[];
 }
