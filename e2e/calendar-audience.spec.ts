@@ -1,5 +1,23 @@
 import {test,expect} from '@playwright/test';
 import {API,login,headers} from './helpers/auth';
+test('late recurring reminder rows do not move the event creation control',async({page})=>{
+ await login(page);
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ await page.route('**/calendar/recurrences*',async route=>{
+  await gate;
+  const items=Array.from({length:12},(_,i)=>({id:`fictional-layout-${i}`,source_ref:`Fictional layout evidence ${i}`,source_date:'2020-01-01',local_time:'09:00',leap_policy:'SKIP_YEAR',state:'WITHDRAWN',version:1,source_event_id:'fictional-source',source_version:1}));
+  await route.fulfill({json:{items,nextAfter:null}});
+ });
+ try{
+  await page.goto('/calendar');const create=page.getByRole('button',{name:/Create Event/});await expect(create).toBeEnabled();
+  const before=await create.boundingBox();expect(before).not.toBeNull();
+  release();await expect(page.getByRole('region',{name:'Annual recurring reminders'})).toContainText('Fictional layout evidence 11');
+  const after=await create.boundingBox();expect(after).not.toBeNull();expect(Math.abs(after!.y-before!.y)).toBeLessThan(1);
+  await create.click();const dialog=page.getByRole('dialog',{name:'Create event',exact:true});await expect(dialog).toBeVisible();
+  await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional stable calendar creation');
+  await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional stable calendar creation');
+ }finally{release();await page.unroute('**/calendar/recurrences*');}
+});
 test('calendar creation waits for restored session before opening the private form',async({page})=>{
  await login(page);
  let release!:()=>void;

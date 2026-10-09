@@ -35,3 +35,9 @@ These are progress annotations against the original assessment, not signed relea
 ## Remaining scope
 
 Recurrence, ancestry/generation calendar audiences, a Flutter invitation picker, complete calendar editor fields, delivery-provider acceptance, approved BS/Tithi conversion, device matrix and full localization/accessibility acceptance remain open. Workers use the existing audit outbox/provider pipeline; creating a reminder is not evidence of production SMS/push/email receipt. The source assessment's 102/104/42/12 classification is still its original baseline, not a new completion percentage.
+
+## Calendar creation control layout checkpoint
+
+Relationship-staging CI 37970252666 passed database checks but timed out in the M4 calendar browser scenario after clicking Create Event while waiting for its title field. Retained trace shows a completed click, no dialog and concurrent refresh/reminder loads. Later unchanged-calendar CI 37970827451 passed the platform job. This intermittent result does not establish a deterministic root cause; async reminder layout above the creation control is a plausible contributor.
+
+The calendar header/Create Event button now precedes the asynchronously growing recurrence panel, so late reminder rows cannot displace the control. The new browser regression holds recurrence responses, records the button position, releases twelve fictional rows, asserts unchanged vertical position, then opens/fills the dialog. Existing restoration/rotation and identity/authority guards remain in place. Local typecheck/test collection and exact-head CI are recorded separately in PR #5. This addresses control stability without claiming that every possible session/render race is resolved. No acceptance, merge or production deployment.

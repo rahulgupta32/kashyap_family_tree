@@ -176,7 +176,6 @@ export default function CalendarAdminPage() {
 
   return (
     <div className="space-y-6">
-      <RecurringReminders events={events}/>
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">कुल क्यालेन्डर तथा चाडपर्व (Kinship Observances Calendar)</h1>
@@ -190,6 +189,8 @@ export default function CalendarAdminPage() {
           + नयाँ कार्यक्रम थप्नुहोस् (Create Event)
         </button>
       </div>
+
+      <RecurringReminders events={events}/>
 
       {message && (
         <div className={`p-4 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
