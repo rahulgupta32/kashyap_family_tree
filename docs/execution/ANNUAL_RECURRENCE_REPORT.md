@@ -21,3 +21,9 @@ The dedicated engine cases cover explicit leap-day outcomes, invalid dates/input
 ## Mandatory remaining scope
 
 Person-derived reminders need independently verified Person dates, identity/claim and privacy/consent lifecycle checks. Broader family/branch/invitee reminder audiences need approved relationship rules and source-bound audience evidence. Native proposal/review controls and full multilingual/device/accessibility acceptance remain. BS/Tithi and religious recurrence need the designated authority's versioned approved source, signed catalogue and reference cases; engineering must not invent those rules. Named review owners, accepted evidence, production notification/provider acceptance, operating monitoring and frozen NFR targets remain required. This checkpoint is not production-ready approval.
+
+## Session restoration regression follow-up — 2026-10-09
+
+Exact-head CI for `fece77c4ae93f4fd017bc8dc53914d469a4f0f23` passed unit and PostgreSQL suites, Flutter, storage and scanner checks, but the invitation browser scenario failed: the Create dialog opened before restored-session rotation and was closed by the session invalidation effect. The recurrence browser scenario passed. This run is not full green acceptance.
+
+Calendar creation now waits for session initialization and the current calendar load. Calendar requests discard results and errors after token changes. The session-change form invalidation remains enforced. A browser regression deliberately holds refresh, confirms creation is disabled, then releases refresh and verifies the form remains usable. Local TypeScript and ledger checks pass; exact published-head CI must verify browser and Android behavior before recording full verification. Native recurrence controls remain pending.

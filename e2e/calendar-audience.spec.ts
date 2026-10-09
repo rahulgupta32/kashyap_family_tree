@@ -1,5 +1,23 @@
 import {test,expect} from '@playwright/test';
 import {API,login,headers} from './helpers/auth';
+test('calendar creation waits for restored session before opening the private form',async({page})=>{
+ await login(page);
+ let release!:()=>void;
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ let entered!:()=>void;
+ const restoring=new Promise<void>(resolve=>{entered=resolve;});
+ await page.route('**/auth/refresh',async route=>{entered();await gate;await route.continue();});
+ try{
+  await page.goto('/calendar');await restoring;
+  const create=page.getByRole('button',{name:/Create Event/});
+  await expect(create).toBeDisabled();
+  await expect(page.getByRole('dialog',{name:'Create event',exact:true})).toHaveCount(0);
+  release();await expect(create).toBeEnabled();await create.click();
+  const dialog=page.getByRole('dialog',{name:'Create event',exact:true});
+  await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional restored-session event');
+  await expect(dialog.getByPlaceholder('उदा: कुल पूजा २०८३')).toHaveValue('Fictional restored-session event');
+ }finally{release();await page.unroute('**/auth/refresh');}
+});
 test('organizer previews a generation, invalidates changed criteria and creates an auditable invitation audience',async({page})=>{
  await login(page);
  const profileResponse=await page.request.get(`${API}/profile/me`,{headers:await headers(page)});expect(profileResponse.ok()).toBeTruthy();const profile=await profileResponse.json();

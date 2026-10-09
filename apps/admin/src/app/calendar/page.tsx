@@ -13,7 +13,7 @@ import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection 
 const label=(key: keyof typeof calendarManagement.en)=>`${calendarManagement.ne[key]} (${calendarManagement.en[key]})`;
 
 export default function CalendarAdminPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, isLoading: sessionLoading } = useAuth();
   const [events, setEvents] = useState<CalendarEventDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -61,11 +61,13 @@ export default function CalendarAdminPage() {
     setLoading(true);
     try {
       const data = await ApiClient.listCalendarEvents(accessToken);
+      if(tokenRef.current!==accessToken)return;
       setEvents(data);
     } catch (err: any) {
+      if(tokenRef.current!==accessToken)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setLoading(false);
+      if(tokenRef.current===accessToken)setLoading(false);
     }
   }
 
@@ -177,6 +179,7 @@ export default function CalendarAdminPage() {
           <p className="text-sm text-slate-500">विक्रम संवत् २०००-२०९० तथा तिथि अनुसारका कुल पूजा, श्राद्ध र सभा सम्मेलन</p>
         </div>
         <button
+          disabled={sessionLoading || !accessToken || loading}
           onClick={() => setShowCreateModal(true)}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
         >
