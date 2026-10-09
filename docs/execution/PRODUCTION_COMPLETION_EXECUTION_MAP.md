@@ -53,14 +53,14 @@ Each row below still requires its full recorded behavior and acceptance; these a
 - **DUP (2)**: DUP-FR-001, DUP-FR-002
 - **REL (9)**: REL-FR-002, REL-FR-003, REL-FR-004, REL-FR-005, REL-FR-007, REL-FR-008, REL-FR-009, REL-FR-011, REL-FR-013
 - **CUL (8)**: CUL-FR-002, CUL-FR-003, CUL-FR-004, CUL-FR-005, CUL-FR-006, CUL-FR-007, CUL-FR-008, CUL-FR-009
-- **CAL (8)**: CAL-FR-001, CAL-FR-002, CAL-FR-003, CAL-FR-004, CAL-FR-009, CAL-FR-010, CAL-FR-011, CAL-FR-012
+- **CAL (9)**: CAL-FR-001, CAL-FR-002, CAL-FR-003, CAL-FR-004, CAL-FR-005, CAL-FR-009, CAL-FR-010, CAL-FR-011, CAL-FR-012
 - **JUT (4)**: JUT-FR-005, JUT-FR-006, JUT-FR-008, JUT-FR-009
 - **NOT (5)**: NOT-FR-003, NOT-FR-004, NOT-FR-005, NOT-FR-007, NOT-FR-011
 - **INV (10)**: INV-FR-001, INV-FR-002, INV-FR-003, INV-FR-004, INV-FR-005, INV-FR-006, INV-FR-008, INV-FR-009, INV-FR-010, INV-FR-012
 - **COM (12)**: COM-FR-001, COM-FR-002, COM-FR-003, COM-FR-005, COM-FR-006, COM-FR-007, COM-FR-008, COM-FR-009, COM-FR-010, COM-FR-012, COM-FR-013, COM-FR-014
 - **MAP (4)**: MAP-FR-001, MAP-FR-004, MAP-FR-006, MAP-FR-007
 - **CHAT (12)**: CHAT-FR-001, CHAT-FR-002, CHAT-FR-003, CHAT-FR-004, CHAT-FR-005, CHAT-FR-006, CHAT-FR-007, CHAT-FR-009, CHAT-FR-010, CHAT-FR-012, CHAT-FR-013, CHAT-FR-014
-- **ADM (11)**: ADM-FR-001, ADM-FR-002, ADM-FR-007, ADM-FR-008, ADM-FR-009, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-014, ADM-FR-015, ADM-FR-016
+- **ADM (12)**: ADM-FR-001, ADM-FR-002, ADM-FR-007, ADM-FR-008, ADM-FR-009, ADM-FR-010, ADM-FR-011, ADM-FR-012, ADM-FR-013, ADM-FR-014, ADM-FR-015, ADM-FR-016
 - **AUD (3)**: AUD-FR-001, AUD-FR-002, AUD-FR-005
 - **PRIV (2)**: PRIV-FR-006, PRIV-FR-008
 - **I18N (4)**: I18N-FR-001, I18N-FR-002, I18N-FR-004, I18N-FR-005
@@ -78,6 +78,10 @@ Each row below still requires its full recorded behavior and acceptance; these a
 
 Authentication lifecycle completion is documented separately in AUTHENTICATOR_LIFECYCLE_REPORT.md. Governed emergency recovery and distinct-factor administrative login remain blockers. Engineering can continue independently on much of this map, but it cannot invent production credentials, cultural approvals or signed acceptance. No completion percentage or launch date is inferred from CI counts.
 
+## Historical checkpoint notes
+
+The counts in this section describe prior checkpoints; the current assessment is given above and in the final note.
+
 Cultural document CMS implementation now supplies partial evidence for eight former missing rows; authority content and full acceptance remain open. See CULTURAL_REVISION_CMS_REPORT.md. The remaining missing functional count is 7; missing dedicated NFR evidence remains 13.
 
 Exact administrative ID lookup now supplies partial evidence for SRCH-FR-008; see ADMIN_EXACT_LOOKUP_REPORT.md. Seven functional implementations and 13 dedicated NFR evidence requirements remain missing, alongside all recorded partial and external requirements.
@@ -93,3 +97,6 @@ Branch/generation metadata console now supplies partial evidence for ADM-FR-007;
 
 
 Genealogy staging checkpoint — 2026-10-09 Nepal time: ADM-FR-013 gains partial implementation evidence. CAL-FR-005 is the remaining wholly missing functional workflow. Thirteen dedicated NFR evidence gaps, all recorded partial/external requirements and all 260 signed acceptance rows remain open. Staging validation does not authorize promotion or substitute for two isolated import rehearsals.
+
+
+Current recurrence checkpoint — 2026-10-09: CAL-FR-005 gains partial private Gregorian annual event recurrence. Current totals are 102 completed /133 partial /13 missing dedicated NFR evidence /12 external gates; no functional row is wholly missing, and all 260 acceptance rows remain open. Person, broader family audiences, native controls and signed/cultural recurrence scope remain mandatory. See ANNUAL_RECURRENCE_REPORT.md.

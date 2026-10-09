@@ -1,6 +1,7 @@
 """Validate the implementation assessment without changing release acceptance."""
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,17 @@ def main():
     report = (ROOT / 'docs/execution/RELEASE_IMPLEMENTATION_ASSESSMENT.md').read_text()
     for status, count in counts.items():
         assert f'| {status} | {count} | {count / 260:.1%} |' in report, 'Summary count is stale'
+    execution_map = (ROOT / 'docs/execution/PRODUCTION_COMPLETION_EXECUTION_MAP.md').read_text()
+    partial_by_area = defaultdict(set)
+    for row in assessment:
+        if row['implementation_status'] == 'PARTIALLY_COMPLETED':
+            partial_by_area[row['requirement_id'].split('-')[0]].add(row['requirement_id'])
+    mapped = {}
+    for area, count, ids in re.findall(r'^- \*\*([A-Z0-9]+) \((\d+)\)\*\*: (.+)$', execution_map, re.M):
+        listed = ids.split(', ')
+        assert len(listed) == int(count) == len(set(listed)), f'{area}: execution map count differs'
+        mapped[area] = set(listed)
+    assert mapped == dict(partial_by_area), 'Execution map partial rows differ from assessment'
     print(f'PASS: all 260 requirements preserved; 31 exact frozen NFR targets; evidence paths exist; {dict(counts)}')
 
 
