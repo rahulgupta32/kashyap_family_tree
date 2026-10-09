@@ -54,112 +54,112 @@
           "ordinal": 1,
           "sourceColumn": "Branch ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].sourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 2,
           "sourceColumn": "Branch Name Nepali*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].nameNepali",
           "approval": "OPEN"
         },
         {
           "ordinal": 3,
           "sourceColumn": "Branch Name English",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].nameEnglish",
           "approval": "OPEN"
         },
         {
           "ordinal": 4,
           "sourceColumn": "Parent Branch ID",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].parentSourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 5,
           "sourceColumn": "Historical Origin",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].historicalOrigin",
           "approval": "OPEN"
         },
         {
           "ordinal": 6,
           "sourceColumn": "District",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].district",
           "approval": "OPEN"
         },
         {
           "ordinal": 7,
           "sourceColumn": "Municipality",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].municipality",
           "approval": "OPEN"
         },
         {
           "ordinal": 8,
           "sourceColumn": "Ward",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].ward",
           "approval": "OPEN"
         },
         {
           "ordinal": 9,
           "sourceColumn": "Authority Person ID",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].authorityPersonSourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 10,
           "sourceColumn": "Authority Role",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].authorityRole",
           "approval": "OPEN"
         },
         {
           "ordinal": 11,
           "sourceColumn": "Status*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].status",
           "approval": "OPEN"
         },
         {
           "ordinal": 12,
           "sourceColumn": "Evidence Source ID",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].sourceRef",
           "approval": "OPEN"
         },
         {
           "ordinal": 13,
           "sourceColumn": "Approved By",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].approvedBy",
           "approval": "OPEN"
         },
         {
           "ordinal": 14,
           "sourceColumn": "Approval Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].approvalDate",
           "approval": "OPEN"
         }
       ]
@@ -790,136 +790,136 @@
           "ordinal": 1,
           "sourceColumn": "Residence ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].sourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 2,
           "sourceColumn": "Person ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].personSourceId",
           "approval": "OPEN"
         },
         {
           "ordinal": 3,
           "sourceColumn": "Residence Type*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].residenceType",
           "approval": "OPEN"
         },
         {
           "ordinal": 4,
           "sourceColumn": "Country*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].country",
           "approval": "OPEN"
         },
         {
           "ordinal": 5,
           "sourceColumn": "Province",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].province",
           "approval": "OPEN"
         },
         {
           "ordinal": 6,
           "sourceColumn": "District",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].district",
           "approval": "OPEN"
         },
         {
           "ordinal": 7,
           "sourceColumn": "Municipality",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].municipality",
           "approval": "OPEN"
         },
         {
           "ordinal": 8,
           "sourceColumn": "Ward",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].ward",
           "approval": "OPEN"
         },
         {
           "ordinal": 9,
           "sourceColumn": "Locality",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].locality",
           "approval": "OPEN"
         },
         {
           "ordinal": 10,
           "sourceColumn": "Exact Address",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].exactAddress",
           "approval": "OPEN"
         },
         {
           "ordinal": 11,
           "sourceColumn": "Latitude",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].latitude",
           "approval": "OPEN"
         },
         {
           "ordinal": 12,
           "sourceColumn": "Longitude",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].longitude",
           "approval": "OPEN"
         },
         {
           "ordinal": 13,
           "sourceColumn": "Start Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].startDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 14,
           "sourceColumn": "End Date",
           "required": false,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].endDate",
           "approval": "OPEN"
         },
         {
           "ordinal": 15,
           "sourceColumn": "Current?*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].current",
           "approval": "OPEN"
         },
         {
           "ordinal": 16,
           "sourceColumn": "Visibility*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].visibility",
           "approval": "OPEN"
         },
         {
           "ordinal": 17,
           "sourceColumn": "Source ID*",
           "required": true,
-          "disposition": "REQUIRES_SCHEMA_AND_GOVERNANCE",
-          "adapterTarget": null,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].sourceRef",
           "approval": "OPEN"
         }
       ]

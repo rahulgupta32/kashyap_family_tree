@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-11-person-metadata');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-12-branch-residence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -184,6 +184,17 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toContainEqual({entity:'PERSON',sourceId:person.sourceId,code:'PERSON_SOURCE_METADATA_REVIEW_REQUIRED'});expect(checked.report.promotionAllowed).toBe(false);
   const corrected=await service.stage(admin.id,{...payload,persons:[{...person,sourceMetadata:{...sourceMetadata,restrictionReason:'Corrected restriction'}}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.persons[0].sourceMetadata).toEqual(sourceMetadata);
   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);
+  await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('retains branch authority and private residence evidence without changing live branches or people',async()=>{
+  const branch={sourceId:'BR-1',nameNepali:'मूल काल्पनिक शाखा',status:'Approved',approvedBy:'Source approver',authorityPersonSourceId:person.sourceId};
+  const residence={sourceId:'RES-1',personSourceId:person.sourceId,residenceType:'Historical',country:'Nepal',current:'Yes',visibility:'Public',sourceRef:person.sourceRef,exactAddress:'Fictional private source address',latitude:'Approximate',startDate:'2080 BS'};
+  const payload=source({datasetKey:'BRANCH_RESIDENCE',branches:[branch],residences:[residence]});const before=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;const branchesBefore=(await db.query('SELECT * FROM branches ORDER BY id')).rows;
+  const staged=await service.stage(admin.id,payload);const loaded=await new GenealogyImportService(db,audit).detail(admin.id,staged.id);expect(loaded.payload.branches).toEqual([branch]);expect(loaded.payload.residences).toEqual([residence]);
+  await request(app.getHttpServer()).get(`${base}/${staged.id}`).set(auth(member)).expect(403);
+  const checked=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});expect(checked.report.issues).toEqual(expect.arrayContaining([{entity:'BRANCH',sourceId:'BR-1',code:'BRANCH_SOURCE_REVIEW_REQUIRED'},{entity:'RESIDENCE',sourceId:'RES-1',code:'RESIDENCE_SOURCE_REVIEW_REQUIRED'}]));expect(checked.report.promotionAllowed).toBe(false);expect(JSON.stringify(checked.report)).not.toContain(residence.exactAddress);
+  const corrected=await service.stage(admin.id,{...payload,residences:[{...residence,exactAddress:'Corrected fictional address'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.residences).toEqual([residence]);
+  expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);expect((await db.query('SELECT * FROM branches ORDER BY id')).rows).toEqual(branchesBefore);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
  });
  it('rolls back staged data, reports and erasure on audit failure; sensitive reads fail closed',async()=>{

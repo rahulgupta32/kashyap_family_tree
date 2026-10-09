@@ -43,6 +43,28 @@ function unions(value:any){
   return {sourceId:id(record.sourceId),partner1SourceId:id(record.partner1SourceId),partner2SourceId:id(record.partner2SourceId),sourceRef:id(record.sourceRef),...fields} as import('@kashyap/contracts').GenealogyImportUnion;
  });
 }
+function branches(value:any){
+ if(!Array.isArray(value)||value.length>200)throw new BadRequestException('Stage up to 200 branches');
+ const required=['nameNepali','status'];
+ const optional=['nameEnglish','historicalOrigin','district','municipality','ward','authorityRole','approvedBy','approvalDate'];
+ const references=['parentSourceId','authorityPersonSourceId','sourceRef'];
+ return value.map(record=>{
+  allowedFields(record,['sourceId',...required,...optional,...references]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>record[field]!==undefined)].map(field=>[field,sourceText(record[field],`branch ${field}`,field==='historicalOrigin'?1000:255)]));
+  const refs=Object.fromEntries(references.filter(field=>record[field]!==undefined).map(field=>[field,id(record[field])]));
+  return {sourceId:id(record.sourceId),...fields,...refs} as import('@kashyap/contracts').GenealogyImportBranch;
+ });
+}
+function residences(value:any){
+ if(!Array.isArray(value)||value.length>400)throw new BadRequestException('Stage up to 400 residences');
+ const required=['residenceType','country','current','visibility'];
+ const optional=['province','district','municipality','ward','locality','exactAddress','latitude','longitude','startDate','endDate'];
+ return value.map(record=>{
+  allowedFields(record,['sourceId','personSourceId','sourceRef',...required,...optional]);
+  const fields=Object.fromEntries([...required,...optional.filter(field=>record[field]!==undefined)].map(field=>[field,sourceText(record[field],`residence ${field}`,field==='exactAddress'?1000:255)]));
+  return {sourceId:id(record.sourceId),personSourceId:id(record.personSourceId),sourceRef:id(record.sourceRef),...fields} as import('@kashyap/contracts').GenealogyImportResidence;
+ });
+}
 function sourceMetadata(value:any){
  const fields=['branchSourceId','birthPlace','currentDistrict','currentMunicipality','currentWard','country','occupation','education','gotra','lineageNotes','profilePhotoRef','consentDate','createdBy','createdDate','lastUpdated','dataSteward','restrictionReason'];
  allowedFields(value,fields);
@@ -62,7 +84,7 @@ function relationshipDetails(value:any){
  return Object.fromEntries(fields.filter(field=>value[field]!==undefined).map(field=>[field,sourceText(value[field],`relationship source ${field}`,field==='notes'?1000:100)]));
 }
 export function parseImportPayload(body:any):GenealogyImportPayload{
- allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions','claims']);
+ allowedFields(body,['schemaVersion','datasetKey','branchId','sourceDescription','persons','parentLinks','evidenceSources','unions','claims','branches','residences']);
  if(body.schemaVersion!==1)throw new BadRequestException('Supported import schemaVersion is 1');
  if(!Array.isArray(body.persons)||body.persons.length<1||body.persons.length>200||!Array.isArray(body.parentLinks)||body.parentLinks.length>400)throw new BadRequestException('Stage 1–200 persons and up to 400 parent links per batch');
  const payload:GenealogyImportPayload={schemaVersion:1,datasetKey:id(body.datasetKey),branchId:uuid(body.branchId,'branch'),sourceDescription:sourceText(body.sourceDescription,'source description',1000,10),persons:body.persons.map((p:any)=>{
@@ -72,6 +94,8 @@ export function parseImportPayload(body:any):GenealogyImportPayload{
    gender:sourceText(p.gender,'gender',20),livingStatus:sourceText(p.livingStatus,'living status',20),sourceRef:id(p.sourceRef),consent:sourceText(p.consent,'consent',30),verification:sourceText(p.verification,'verification',30),visibility:sourceText(p.visibility,'visibility',30),
    ...(p.targetPersonId===undefined?{}:{targetPersonId:uuid(p.targetPersonId,'target Person')}),...(p.sourceMetadata===undefined?{}:{sourceMetadata:sourceMetadata(p.sourceMetadata)}),...(p.sourceNames===undefined?{}:{sourceNames:sourceNames(p.sourceNames)}),...(p.birth===undefined?{}:{birth:date(p.birth)}),...(p.death===undefined?{}:{death:date(p.death)})};
  }),parentLinks:body.parentLinks.map((e:any)=>{allowedFields(e,['sourceId','parentSourceId','childSourceId','type','sourceRef','verification','sourceDetails']);return {sourceId:id(e.sourceId),parentSourceId:id(e.parentSourceId),childSourceId:id(e.childSourceId),type:sourceText(e.type,'parent type',30),sourceRef:id(e.sourceRef),verification:sourceText(e.verification,'verification',30),...(e.sourceDetails===undefined?{}:{sourceDetails:relationshipDetails(e.sourceDetails)})};})};
+ if(body.branches!==undefined)payload.branches=branches(body.branches);
+ if(body.residences!==undefined)payload.residences=residences(body.residences);
  if(body.claims!==undefined)payload.claims=claims(body.claims);
  if(body.unions!==undefined)payload.unions=unions(body.unions);
  if(body.evidenceSources!==undefined)payload.evidenceSources=evidenceSources(body.evidenceSources);
@@ -135,8 +159,34 @@ export function validateImport(payload:GenealogyImportPayload):GenealogyImportIs
   // Historical unions and source approval claims require explicit reconciliation.
   add('UNION_SOURCE_REVIEW_REQUIRED');
  }
+ const branchIds=new Set<string>(),residenceIds=new Set<string>(),branchParents=new Map<string,string[]>();
+ for(const branch of payload.branches||[]){
+  const add=(code:string)=>issue('BRANCH',branch.sourceId,code);
+  if(branchIds.has(branch.sourceId))add('DUPLICATE_SOURCE_ID');branchIds.add(branch.sourceId);
+  if(branch.authorityPersonSourceId&&!personIds.has(branch.authorityPersonSourceId))add('DANGLING_PERSON_REFERENCE');
+  if(branch.sourceRef&&evidenceIds&&!evidenceIds.has(branch.sourceRef))add('DANGLING_EVIDENCE_REFERENCE');
+  if(branch.parentSourceId===branch.sourceId)add('SELF_BRANCH_PARENT');
+  if(branch.parentSourceId)branchParents.set(branch.sourceId,[...(branchParents.get(branch.sourceId)||[]),branch.parentSourceId]);
+  add('BRANCH_SOURCE_REVIEW_REQUIRED');
+ }
+ for(const branch of payload.branches||[])if(branch.parentSourceId&&!branchIds.has(branch.parentSourceId))issue('BRANCH',branch.sourceId,'DANGLING_BRANCH_REFERENCE');
+ const branchVisiting=new Set<string>(),branchDone=new Set<string>();let branchCycle=false;
+ function visitBranch(sourceId:string){if(branchVisiting.has(sourceId)){branchCycle=true;return;}if(branchDone.has(sourceId))return;branchVisiting.add(sourceId);for(const parent of branchParents.get(sourceId)||[])visitBranch(parent);branchVisiting.delete(sourceId);branchDone.add(sourceId);}
+ for(const sourceId of branchIds)visitBranch(sourceId);if(branchCycle)issue('BATCH',payload.datasetKey,'BRANCH_CYCLE');
+ if(payload.branches!==undefined){
+  for(const person of payload.persons)if(person.sourceMetadata?.branchSourceId&&!branchIds.has(person.sourceMetadata.branchSourceId))issue('PERSON',person.sourceId,'DANGLING_BRANCH_REFERENCE');
+  for(const source of payload.evidenceSources||[])if(source.relatedBranchId&&!branchIds.has(source.relatedBranchId))issue('SOURCE',source.sourceId,'DANGLING_BRANCH_REFERENCE');
+ }
+ for(const residence of payload.residences||[]){
+  const add=(code:string)=>issue('RESIDENCE',residence.sourceId,code);
+  if(residenceIds.has(residence.sourceId))add('DUPLICATE_SOURCE_ID');residenceIds.add(residence.sourceId);
+  if(!personIds.has(residence.personSourceId))add('DANGLING_PERSON_REFERENCE');
+  if(evidenceIds&&!evidenceIds.has(residence.sourceRef))add('DANGLING_EVIDENCE_REFERENCE');
+  // Location, date and current/visibility claims are retained for explicit review.
+  add('RESIDENCE_SOURCE_REVIEW_REQUIRED');
+ }
  const claimIds=new Set<string>();
- const entityIds=new Map<string,Set<string>>([['PERSON',personIds],['PARENT_LINK',edgeIds],['UNION',unionIds]]);
+ const entityIds=new Map<string,Set<string>>([['PERSON',personIds],['PARENT_LINK',edgeIds],['UNION',unionIds],['BRANCH',branchIds],['RESIDENCE',residenceIds]]);
  if(evidenceIds)entityIds.set('SOURCE',evidenceIds);
  for(const claim of payload.claims||[]){
   const add=(code:string)=>issue('CLAIM',claim.sourceId,code);

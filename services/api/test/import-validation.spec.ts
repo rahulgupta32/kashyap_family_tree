@@ -3,6 +3,33 @@ import { importHash, parseImportPayload, validateImport } from '../src/modules/g
 const person={sourceId:'PER-00000001',nameNepali:'  नमुना अधिकारी  ',gender:'UNKNOWN',livingStatus:'LIVING',generation:1,sourceRef:'SRC-00000001',consent:'GRANTED',verification:'VERIFIED',visibility:'PRIVATE'};
 const payload=()=>({schemaVersion:1,datasetKey:'FICTIONAL_TEST',branchId:randomUUID(),sourceDescription:'Fictional validator fixture only',persons:[{...person}],parentLinks:[]});
 describe('Source-preserving import validation',()=>{
+ const branch={sourceId:'BR-1',nameNepali:'  मूल शाखा  ',nameEnglish:'Original branch',parentSourceId:'BR-2',historicalOrigin:'Original history',district:'District',municipality:'Municipality',ward:'Unknown',authorityPersonSourceId:person.sourceId,authorityRole:'Administrator',status:'Approved',sourceRef:person.sourceRef,approvedBy:'Source approver',approvalDate:'2080 BS'};
+ const residence={sourceId:'RES-1',personSourceId:person.sourceId,residenceType:'Historical',country:'Nepal',province:'Original province',district:'District',municipality:'Municipality',ward:'Unknown',locality:'Locality',exactAddress:'  Original private address  ',latitude:'Approximate 27',longitude:'Unknown',startDate:'2080 BS',endDate:'Unknown',current:'Yes',visibility:'Public',sourceRef:person.sourceRef};
+ it('preserves all branch fields and requires review of source authority and approval',()=>{
+  const p=parseImportPayload({...payload(),branches:[branch,{sourceId:'BR-2',nameNepali:'दोस्रो शाखा',status:'Pending'}]});expect(p.branches?.[0]).toEqual(branch);
+  expect(validateImport(p).filter(i=>i.entity==='BRANCH')).toEqual([{entity:'BRANCH',sourceId:'BR-1',code:'BRANCH_SOURCE_REVIEW_REQUIRED'},{entity:'BRANCH',sourceId:'BR-2',code:'BRANCH_SOURCE_REVIEW_REQUIRED'}]);
+  expect(JSON.stringify(validateImport(p))).not.toContain('Source approver');expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,branches:[{...branch,status:'Corrected'},p.branches![1]]})));
+ });
+ it('detects cyclic, self, duplicate and dangling branch references without changing source records',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[],persons:[{...person,sourceMetadata:{branchSourceId:'MISSING'}}],branches:[{...branch,authorityPersonSourceId:'MISSING'}, {...branch,sourceId:'BR-2',parentSourceId:'BR-1'}, {...branch,parentSourceId:'BR-1'}, {...branch,sourceId:'BR-3',parentSourceId:'MISSING'}]});
+  expect(validateImport(p).map(i=>i.code)).toEqual(expect.arrayContaining(['BRANCH_CYCLE','SELF_BRANCH_PARENT','DUPLICATE_SOURCE_ID','DANGLING_PERSON_REFERENCE','DANGLING_BRANCH_REFERENCE','DANGLING_EVIDENCE_REFERENCE']));expect(p.branches?.[0].parentSourceId).toBe('BR-2');
+ });
+ it('preserves residence history and raw coordinates without exposing them in reports',()=>{
+  const p=parseImportPayload({...payload(),residences:[residence,{...residence,sourceId:'RES-2',current:'No'}]});expect(p.residences?.[0]).toEqual(residence);
+  expect(validateImport(p).filter(i=>i.entity==='RESIDENCE')).toHaveLength(2);expect(JSON.stringify(validateImport(p))).not.toContain(residence.exactAddress);
+  expect(importHash(p)).not.toBe(importHash(parseImportPayload({...p,residences:[{...residence,exactAddress:'Corrected address'}]})));
+ });
+ it('flags duplicate residence IDs and dangling person/evidence references',()=>{
+  const p=parseImportPayload({...payload(),evidenceSources:[],residences:[{...residence,personSourceId:'MISSING'},residence]});expect(validateImport(p).filter(i=>i.entity==='RESIDENCE').map(i=>i.code)).toEqual(expect.arrayContaining(['DUPLICATE_SOURCE_ID','DANGLING_PERSON_REFERENCE','DANGLING_EVIDENCE_REFERENCE','RESIDENCE_SOURCE_REVIEW_REQUIRED']));
+ });
+ it('rejects unknown, unsafe, malformed and excessive branch or residence records',()=>{
+  for(const branches of [null,{},Array(201).fill(branch),[{...branch,phone:'private'}],[{...branch,status:undefined}],[{...branch,parentSourceId:'bad id'}],[{...branch,historicalOrigin:'x'.repeat(1001)}],[{...branch,approvedBy:'bad\u0000text'}]])expect(()=>parseImportPayload({...payload(),branches})).toThrow();
+  for(const residences of [null,{},Array(401).fill(residence),[{...residence,phone:'private'}],[{...residence,country:undefined}],[{...residence,personSourceId:'bad id'}],[{...residence,exactAddress:'x'.repeat(1001)}],[{...residence,latitude:27}],[{...residence,locality:'bad\u0000text'}]])expect(()=>parseImportPayload({...payload(),residences})).toThrow();
+ });
+ it('checks branch and residence claim references and preserves legacy hashes',()=>{
+  const p=parseImportPayload({...payload(),branches:[],residences:[],claims:[{sourceId:'CASE-B',entityType:'BRANCH',entitySourceId:'MISSING',fieldOrRelationship:'Parent',riskLevel:'High',visibility:'Private',status:'Pending'},{sourceId:'CASE-R',entityType:'RESIDENCE',entitySourceId:'MISSING',fieldOrRelationship:'Address',riskLevel:'High',visibility:'Private',status:'Pending'}]});expect(validateImport(p).filter(i=>i.code==='DANGLING_ENTITY_REFERENCE')).toHaveLength(2);
+  const body=payload(),legacy=parseImportPayload(body);expect(legacy).not.toHaveProperty('branches');expect(legacy).not.toHaveProperty('residences');expect(importHash(legacy)).toBe(importHash(body as any));
+ });
  const sourceMetadata={branchSourceId:'Original branch',birthPlace:'Original birthplace',currentDistrict:'District',currentMunicipality:'Municipality',currentWard:'Unknown',country:'Nepal',occupation:'Source occupation',education:'Source education',gotra:'Unreviewed gotra',lineageNotes:'  मूल वंश टिप्पणी  ',profilePhotoRef:'Original media reference',consentDate:'2080 BS',createdBy:'Source creator',createdDate:'Original date',lastUpdated:'Unknown',dataSteward:'Source steward',restrictionReason:'Restricted by source'};
  it('preserves all person metadata without changing branch, consent or name authority',()=>{
   const p=parseImportPayload({...payload(),persons:[{...person,sourceMetadata}]});expect(p.persons[0].sourceMetadata).toEqual(sourceMetadata);expect(p.persons[0].consent).toBe(person.consent);

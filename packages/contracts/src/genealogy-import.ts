@@ -24,8 +24,15 @@ export interface GenealogyImportClaim {
  sourceId:string;entityType:string;entitySourceId:string;fieldOrRelationship:string;riskLevel:string;visibility:string;status:string;
  claimA?:string;claimASourceRef?:string;claimB?:string;claimBSourceRef?:string;assignedAuthority?:string;decision?:string;decisionEvidenceRef?:string;decisionDate?:string;appealStatus?:string;auditNotes?:string;
 }
-export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[];claims?:GenealogyImportClaim[]; }
-export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION'|'CLAIM';sourceId:string;code:string;}
+export interface GenealogyImportBranch {
+ sourceId:string;nameNepali:string;status:string;nameEnglish?:string;parentSourceId?:string;historicalOrigin?:string;district?:string;municipality?:string;ward?:string;authorityPersonSourceId?:string;authorityRole?:string;sourceRef?:string;approvedBy?:string;approvalDate?:string;
+}
+export interface GenealogyImportResidence {
+ sourceId:string;personSourceId:string;residenceType:string;country:string;current:string;visibility:string;sourceRef:string;
+ province?:string;district?:string;municipality?:string;ward?:string;locality?:string;exactAddress?:string;latitude?:string;longitude?:string;startDate?:string;endDate?:string;
+}
+export interface GenealogyImportPayload { schemaVersion:1;datasetKey:string;branchId:string;sourceDescription:string;persons:GenealogyImportPerson[];parentLinks:GenealogyImportParent[];evidenceSources?:GenealogyImportEvidence[];unions?:GenealogyImportUnion[];claims?:GenealogyImportClaim[];branches?:GenealogyImportBranch[];residences?:GenealogyImportResidence[]; }
+export interface GenealogyImportIssue {entity:'BATCH'|'PERSON'|'PARENT_LINK'|'SOURCE'|'UNION'|'CLAIM'|'BRANCH'|'RESIDENCE';sourceId:string;code:string;}
 export interface GenealogyImportReport {
  peerBatches?:{id:string;sourceHash:string}[];
  validatorVersion:string;sourceHash:string;persons:number;parentLinks:number;mappedTargets:number;unmappedPersons:number;
