@@ -44,10 +44,18 @@ async function manifest(pool) {
     JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal ORDER BY c.relname,t.tgname`)).rows;
   const sequences = (await pool.query("SELECT sequencename,last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename")).rows;
+  const columns = (await pool.query(`SELECT table_name,column_name,ordinal_position,column_default,is_nullable,
+    data_type,udt_schema,udt_name,character_maximum_length,numeric_precision,numeric_scale,
+    datetime_precision,is_identity,identity_generation,is_generated,generation_expression
+    FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,ordinal_position`)).rows;
+  // Trigger declarations alone do not prove the restored enforcement function is intact.
+  const routines = (await pool.query(`SELECT p.proname,pg_get_function_identity_arguments(p.oid) AS arguments,
+    pg_get_functiondef(p.oid) AS definition FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE n.nspname='public' AND p.prokind IN ('f','p') ORDER BY p.proname,arguments`)).rows;
   return { records,
     constraints: constraints.map(row => ({ ...row, definition: canonicalSchemaDefinition(row.definition) })),
     indexes: indexes.map(row => ({ ...row, indexdef: canonicalSchemaDefinition(row.indexdef) })),
-    triggers, sequences };
+    triggers, sequences, columns, routines };
 }
 
 async function run() {
@@ -80,6 +88,7 @@ async function run() {
       [file.split('_')[0], file, createHash('sha256').update(sql).digest('hex')]);
   }
   stage = 'SEED_FICTIONAL_WITNESSES';
+  await source.query('CREATE FUNCTION public.kashyap_restore_fixture() RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT 1 $$');
   const userId = (await source.query("INSERT INTO user_accounts(phone_number,is_phone_verified) VALUES('+9779800000099',true) RETURNING id")).rows[0].id;
   const branchId = (await source.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('RESTORE_FIXTURE','काल्पनिक शाखा','Fictional restore branch') RETURNING id")).rows[0].id;
   const people = (await source.query('INSERT INTO persons(branch_id,generation,created_by) VALUES($1,1,$2),($1,2,$2) RETURNING id,generation', [branchId, userId])).rows;
@@ -113,7 +122,7 @@ async function run() {
   result.mismatchedAreas = Object.keys(before).filter(key => digest(before[key]) !== digest(after[key]));
   // Schema-only diagnostics keep strict comparison failures reviewable without emitting records.
   result.schemaDifferences = {};
-  for (const key of ['constraints', 'indexes', 'triggers', 'sequences']) {
+  for (const key of ['constraints', 'indexes', 'triggers', 'sequences', 'columns', 'routines']) {
     if (!result.mismatchedAreas.includes(key)) continue;
     const oldRows = new Set(before[key].map(canonicalAuditJson));
     const newRows = new Set(after[key].map(canonicalAuditJson));
@@ -123,6 +132,26 @@ async function run() {
     };
   }
   assert.deepEqual(after, before);
+  stage = 'VERIFY_SCHEMA_DRIFT_DETECTION';
+  // Real PostgreSQL negative controls: roll back each mutation before continuing.
+  // These witnesses prove unchanged records/triggers cannot hide changed functions or columns.
+  await target.query('BEGIN');
+  try {
+    await target.query('CREATE OR REPLACE FUNCTION public.kashyap_restore_fixture() RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT 2 $$');
+    const changed = await manifest(target);
+    assert.notDeepEqual(changed.routines, before.routines);
+    assert.deepEqual(changed.records, before.records);
+    assert.deepEqual(changed.triggers, before.triggers);
+  } finally { await target.query('ROLLBACK'); }
+  await target.query('BEGIN');
+  try {
+    await target.query('ALTER TABLE public.persons ADD COLUMN restore_drift_fixture integer DEFAULT 7');
+    const changed = await manifest(target);
+    assert.notDeepEqual(changed.columns, before.columns);
+  } finally { await target.query('ROLLBACK'); }
+  assert.deepEqual(await manifest(target), before);
+  result.routineDriftDetection = 'VERIFIED'; result.columnDriftDetection = 'VERIFIED';
+  stage = 'VERIFY_RESTORED_PROTECTIONS';
   const targetAudit = new AuditRepository(adapter(target));
   const integrity = await targetAudit.verifyIntegrity(); assert.equal(integrity.status, 'VERIFIED'); assert.equal(integrity.verifiedRecords, 1);
   await assert.rejects(target.query('UPDATE audit_logs SET action=action'), /immutable/i);
