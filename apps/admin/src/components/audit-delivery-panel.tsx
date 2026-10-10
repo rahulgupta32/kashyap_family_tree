@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Role } from '@kashyap/contracts';
 import { useAuth } from '../context/auth-context';
+import { AuditRecoveryPanel } from './audit-recovery-panel';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 interface DeliveryStatus {
@@ -46,7 +47,7 @@ export function AuditDeliveryPanel() {
     return () => { active.current?.abort(); };
   }, [load]);
   if (!allowed || isLoading || !accessToken) return null;
-  return <section aria-labelledby="audit-delivery-heading" className="space-y-3 rounded border p-4">
+  return <><section aria-labelledby="audit-delivery-heading" className="space-y-3 rounded border p-4">
     <h2 id="audit-delivery-heading" className="text-lg font-semibold">अडिट वितरण (Audit delivery)</h2>
     <button type="button" disabled={busy} onClick={() => void load()} className="rounded border p-2">
       {busy ? 'जाँच हुँदैछ… Checking…' : 'अवस्था ताजा गर्नुहोस् (Refresh delivery status)'}
@@ -73,5 +74,5 @@ export function AuditDeliveryPanel() {
         <p role="alert">समीक्षा आवश्यक छ। Review retained evidence through the approved incident process. Exhausted events are retained; automatic delivery has stopped. OTP attempts without a recorded outcome for ten minutes are shown for investigation.</p>}
       <p className="text-sm">These counts support investigation. Alert routing, fleet monitoring and governed recovery still require operational configuration.</p>
     </>}
-  </section>;
+  </section><AuditRecoveryPanel key={user?.id} /></>;
 }

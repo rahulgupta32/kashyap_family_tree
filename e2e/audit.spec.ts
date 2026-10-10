@@ -44,3 +44,31 @@ test('Delivery refresh clears old status and presents an unavailable response wi
  await expect(page.getByText('This API process)',{exact:false})).toHaveCount(0);
  await expect(page.getByText('Private fictional upstream detail',{exact:false})).toHaveCount(0);
 });
+
+test('Recovery review exposes labelled controls, rejects unconfirmed actions and clears stale evidence',async({page})=>{
+ await login(page);
+ const event='11111111-1111-4111-8111-111111111111';
+ await page.route(`${API}/audit/delivery/recovery`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({exhausted:[{id:event,created_at:new Date().toISOString(),retry_count:10}],requests:[]})}));
+ await page.goto('/audit');
+ const panel=page.getByRole('region',{name:'समीक्षित पुनः प्रयास (Reviewed audit retry)',exact:true});
+ await expect(panel.getByLabel('सुधारको कारण (Recovery reason)',{exact:true})).toHaveValue('DEPENDENCY_RECOVERED');
+ await expect(panel.getByRole('link',{name:'प्रमाणक जाँच (Verify authenticator)',exact:true})).toHaveAttribute('href','/mfa');
+ let input:any;
+ await page.route(`${API}/audit/delivery/${event}/recovery`,route=>{input=route.request().postDataJSON();return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Private upstream detail'})});});
+ await panel.getByRole('button',{name:'प्रस्ताव गर्नुहोस् (Propose one retry)',exact:true}).click();
+ await expect(panel.getByRole('alert')).toContainText('Action unconfirmed');
+ expect(input.reasonCode).toBe('DEPENDENCY_RECOVERED');expect(input.requestId).toMatch(/^[0-9a-f-]{36}$/);
+ await expect(panel.getByText(event,{exact:false})).toHaveCount(0);await expect(panel.getByText('Private upstream detail',{exact:false})).toHaveCount(0);
+});
+
+test('Recovery approval disables self-approval and expired proposals while permitting a distinct review',async({page})=>{
+ await login(page);const me=await page.request.get(`${API}/auth/me`,{headers:await headers(page)});expect(me.ok()).toBeTruthy();const actor=await me.json();
+ const own='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',expired='33333333-3333-4333-8333-333333333333';
+ const item=(id:string,proposed_by:string,expires_at:string)=>({id,outbox_id:id,proposed_by,reason_code:'DEPENDENCY_RECOVERED',expires_at,outcome:null});
+ await page.route(`${API}/audit/delivery/recovery`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({exhausted:[],requests:[item(own,actor.id,new Date(Date.now()+3600000).toISOString()),item(other,'44444444-4444-4444-8444-444444444444',new Date(Date.now()+3600000).toISOString()),item(expired,'44444444-4444-4444-8444-444444444444',new Date(Date.now()-1000).toISOString())]})}));
+ await page.goto('/audit');const panel=page.getByRole('region',{name:'समीक्षित पुनः प्रयास (Reviewed audit retry)',exact:true});
+ const buttons=panel.getByRole('button',{name:'स्वीकृत गरी एक प्रयास गर्नुहोस् (Approve one attempt)',exact:true});
+ await expect(buttons).toHaveCount(3);await expect(buttons.nth(0)).toBeDisabled();await expect(buttons.nth(1)).toBeEnabled();await expect(buttons.nth(2)).toBeDisabled();
+ await page.route(`${API}/audit/delivery/recovery/${other}/approve`,route=>route.fulfill({status:201,contentType:'application/json',body:JSON.stringify({id:other,outcome:'FAILED',alreadyDecided:false})}));
+ await buttons.nth(1).click();await expect(panel.getByRole('status')).toContainText('Retry failed; evidence remains retained');
+});

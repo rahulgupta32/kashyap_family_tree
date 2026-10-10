@@ -78,6 +78,8 @@ Each row below still requires its full recorded behavior and acceptance; these a
 
 Authentication lifecycle completion is documented separately in AUTHENTICATOR_LIFECYCLE_REPORT.md. Governed emergency recovery and distinct-factor administrative login remain blockers. Engineering can continue independently on much of this map, but it cannot invent production credentials, cultural approvals or signed acceptance. No completion percentage or launch date is inferred from CI counts.
 
+Exhausted audit delivery now has bounded two-person Super Admin proposal/approval, current authenticator verification, immutable decisions and one supervised attempt without resetting failures. See AUDIT_GOVERNED_RECOVERY_REPORT.md. Full incident procedure, paging, fleet alerts and production acceptance remain open; this does not implement emergency account recovery or close any original acceptance row.
+
 ## Historical checkpoint notes
 
 The counts in this section describe prior checkpoints; the current assessment is given above and in the final note.

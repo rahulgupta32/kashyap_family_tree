@@ -104,6 +104,12 @@ async function run() {
   await outbox.processOutboxEntry(processed.id, audit);
   const retained = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: child, actorId: userId, newValue: { fixture: 'Fictional retry evidence' } });
   await outbox.markFailed(retained.id, 'FICTIONAL_RESTORE_RETRY');
+  const exhausted = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: child, actorId: userId, newValue: { fixture: 'Fictional exhausted evidence' } });
+  await source.query("UPDATE audit_outbox SET status='FAILED',retry_count=10 WHERE id=$1", [exhausted.id]);
+  const recoveryId = randomUUID();
+  const reviewerId = (await source.query("INSERT INTO user_accounts(phone_number,is_phone_verified) VALUES('+9779800000098',true) RETURNING id")).rows[0].id;
+  await source.query("INSERT INTO audit_delivery_recovery_requests(id,outbox_id,proposed_by,reason_code) VALUES($1,$2,$3,'DEPENDENCY_RECOVERED')", [recoveryId, exhausted.id, userId]);
+  await source.query("INSERT INTO audit_delivery_recovery_decisions(request_id,approved_by,outcome) VALUES($1,$2,'FAILED')", [recoveryId, reviewerId]);
   assert.equal((await audit.verifyIntegrity()).status, 'VERIFIED');
   const before = await manifest(source);
   stage = 'DUMP_AND_RESTORE';
@@ -158,6 +164,10 @@ async function run() {
   await assert.rejects(target.query('INSERT INTO parent_links(parent_id,child_id) VALUES($1,$1)', [parent]));
   const retry = (await target.query('SELECT status,retry_count,next_attempt_at FROM audit_outbox WHERE id=$1', [retained.id])).rows[0];
   assert.equal(retry.status, 'FAILED'); assert.equal(retry.retry_count, 1); assert.ok(retry.next_attempt_at);
+  assert.equal((await target.query('SELECT outcome FROM audit_delivery_recovery_decisions WHERE request_id=$1', [recoveryId])).rows[0].outcome, 'FAILED');
+  await assert.rejects(target.query('UPDATE audit_delivery_recovery_requests SET reason_code=reason_code'), /immutable/i);
+  await assert.rejects(target.query('DELETE FROM audit_delivery_recovery_decisions'), /immutable/i);
+  result.retainedRecoveryEvidence = 'VERIFIED';
   await targetAudit.appendAuditLog('UPDATE', 'persons', child, userId, 'SYSTEM', null, { fixture: 'Post-restore append' });
   assert.equal((await targetAudit.verifyIntegrity()).verifiedRecords, 2);
   result.status = 'PASSED'; result.checkedTables = before.records.length; result.migrations = files.length;
