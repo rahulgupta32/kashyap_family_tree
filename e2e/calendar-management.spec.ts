@@ -1,6 +1,40 @@
 import { test, expect } from '@playwright/test';
 import { login, headers, API } from './helpers/auth';
 
+test('an older real event-list response cannot erase a newly created gathering', async ({ page }) => {
+  await login(page);await page.goto('/calendar');
+  const createButton=page.getByRole('button',{name:/Create Event/i});await expect(createButton).toBeEnabled();
+  await expect(page.getByText('कार्यक्रमहरू लोड हुँदैछन्...', {exact:true})).toHaveCount(0);
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  let entered!:()=>void;const captured=new Promise<void>(resolve=>{entered=resolve;});
+  let held=false,capturedToken='';const eventList=(url:URL)=>url.pathname==='/calendar/events';
+  await page.route(eventList,async route=>{
+    if(route.request().method()!=='GET'||held){await route.continue();return;}
+    held=true;capturedToken=route.request().headers().authorization;
+    const snapshot=await route.fetch();expect(snapshot.ok()).toBeTruthy();entered();await gate;
+    await route.fulfill({response:snapshot});
+  });
+  try {
+    await page.evaluate(async()=>{localStorage.setItem('kashyap_token_refreshed_at','0');await (window as any).__kashyap_refreshSession();});await captured;
+    const tokenBefore=await headers(page);
+    expect(capturedToken).toBe(tokenBefore.Authorization);
+    await createButton.click();const create=page.getByRole('dialog',{name:'Create event',exact:true});
+    const title=`Fictional list ordering ${Date.now()}`;
+    await create.getByPlaceholder('उदा: कुल पूजा २०८३').fill(title);
+    await create.getByRole('combobox',{name:/Date source/}).selectOption('AD');
+    await create.getByLabel(/Gregorian date and time/).fill(new Date(Date.now()+86400000*3).toISOString().slice(0,16));
+    await create.getByRole('button',{name:'सिर्जना गर्नुहोस् (Save)',exact:true}).click();
+    const card=page.getByRole('article',{name:title,exact:true});await expect(card).toBeVisible();
+    expect(await headers(page)).toEqual(tokenBefore);
+    const delayed=page.waitForResponse(r=>new URL(r.url()).pathname==='/calendar/events'&&r.request().method()==='GET');
+    release();await (await delayed).finished();
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    await expect(card).toBeVisible();
+    const persisted=await page.request.get(`${API}/calendar/events`,{headers:await headers(page)});expect(persisted.ok()).toBeTruthy();
+    expect((await persisted.json()).filter((e:any)=>e.title===title)).toHaveLength(1);
+  } finally {release();await page.unroute(eventList);}
+});
+
 test('organizer creates an AD gathering, edits its revision and cancels RSVP', async ({ page }) => {
   await login(page);
   await page.goto('/calendar');

@@ -45,6 +45,7 @@ export default function CalendarAdminPage() {
   const authorityKey=user?.roles?.slice().sort().join(',');
   const requestScope=JSON.stringify([user?.id,authorityKey,accessToken]);
   const requestScopeRef=useRef(requestScope);requestScopeRef.current=requestScope;
+  const eventListSequence=useRef(0);
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[selection,formData.audienceScope,formData.branchId]);
   // Token rotation invalidates previews, but must not dismiss a form belonging
   // to the same account. Account/authority changes still clear private state.
@@ -70,16 +71,17 @@ export default function CalendarAdminPage() {
 
   async function loadEvents() {
     if (!accessToken) return;
+    const sequence=++eventListSequence.current;
     setLoading(true);
     try {
       const data = await ApiClient.listCalendarEvents(accessToken);
-      if(requestScopeRef.current!==requestScope)return;
+      if(requestScopeRef.current!==requestScope||eventListSequence.current!==sequence)return;
       setEvents(data);
     } catch (err: any) {
-      if(requestScopeRef.current!==requestScope)return;
+      if(requestScopeRef.current!==requestScope||eventListSequence.current!==sequence)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      if(requestScopeRef.current===requestScope)setLoading(false);
+      if(requestScopeRef.current===requestScope&&eventListSequence.current===sequence)setLoading(false);
     }
   }
 
