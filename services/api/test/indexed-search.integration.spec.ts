@@ -43,4 +43,10 @@ describe('Indexed source-preserving candidates and fixed fuzzy semantics (Postgr
   const next=await repo.searchPersons({query:'rahul gupta',page:2,limit:1});expect(next.total).toBe(visible.length);expect(next.items.map(i=>i.id)).toEqual(visible.slice(1,2));
   const source=(await iso.client.query('SELECT full_name FROM person_names ORDER BY created_at,id')).rows.map(r=>r.full_name);expect(source.sort()).toEqual([...names].sort());
  });
+ it('scores a matching recorded non-primary alias while returning the original primary display name',async()=>{
+  const owner=(await iso.client.query("SELECT person_id FROM person_names WHERE full_name='Rahul Gupta'")).rows[0].person_id;
+  await iso.client.query("INSERT INTO person_names(person_id,language,first_name,last_name,full_name,is_primary) VALUES($1,'en','Rahul','Fixture','Rahul Exact Alias',false)",[owner]);
+  const result=await repo.searchPersons({query:'rahul exact alias',page:1,limit:20});
+  const person=result.items.find(item=>item.id===owner);expect(person).toBeDefined();expect(person!.similarityScore).toBe(1);expect(person!.primaryNameEnglish).toBe('Rahul Gupta');
+ });
 });
