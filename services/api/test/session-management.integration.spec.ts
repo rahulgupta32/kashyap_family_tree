@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
+import request = require('supertest');
 import { DatabaseService } from '../src/database/database.service';
 import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
@@ -30,7 +30,7 @@ describe('Account-scoped device management and atomic revocation (PostgreSQL/HTT
   const serialized=JSON.stringify(response.body);for(const key of ['refresh_token_hash','PRIVATE_DEVICE_ID','PRIVATE_USER_AGENT','127.0.0.1'])expect(serialized).not.toContain(key);
  });
  it('pages deterministically and rejects foreign cursors, malformed IDs and current-device revocation',async()=>{
-  await db.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at) SELECT $1,md5(i::text||$1::text),'ios',CURRENT_TIMESTAMP+INTERVAL '1 hour' FROM generate_series(1,51) i",[actor]);
+  await db.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at) SELECT $1::uuid,md5(i::text||($1::uuid)::text),'ios',CURRENT_TIMESTAMP+INTERVAL '1 hour' FROM generate_series(1,51) i",[actor]);
   const first=await service.list(actor,current);expect(first.items).toHaveLength(50);expect(first.nextCursor).toBeTruthy();const next=await service.list(actor,current,first.nextCursor!);expect(next.items).toHaveLength(3);expect(next.nextCursor).toBeNull();expect(new Set([...first.items,...next.items].map(s=>s.id)).size).toBe(53);
   await request(app.getHttpServer()).get(`/auth/sessions?cursor=${foreign}`).expect(404);await request(app.getHttpServer()).post('/auth/sessions/not-a-uuid/revoke').expect(400);await request(app.getHttpServer()).post(`/auth/sessions/${current}/revoke`).expect(400);
  });
