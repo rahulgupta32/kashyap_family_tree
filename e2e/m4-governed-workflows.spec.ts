@@ -176,9 +176,16 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       await card.getByRole('button', { name: /\(Going\)/ }).click();
       expect((await response).ok()).toBeTruthy();
       await expect(card.getByRole('button', { name: /\(Going\)/ })).toHaveAttribute('aria-pressed', 'true');
+      const previousToken = await browserToken(attendee);
       await attendee.reload();
       await expect(attendee.getByRole('article', { name: title }).getByRole('button', { name: /\(Going\)/ })).toHaveAttribute('aria-pressed', 'true');
-      const token = await browserToken(attendee);
+      // Rendering restored rows can precede bootstrap refresh completion. Join the
+      // application's refresh promise rather than racing a cached access token.
+      const token = await attendee.evaluate(async () => (window as any).__kashyap_refreshSession());
+      expect(token).toBeTruthy();
+      expect(token).not.toBe(previousToken);
+      const revoked = await attendee.request.get(`${API_BASE}/calendar/events/${created.id}`, { headers: auth(previousToken) });
+      expect(revoked.status()).toBe(401);
       const persisted = await checkedJson(await attendee.request.get(`${API_BASE}/calendar/events/${created.id}`, { headers: auth(token) }));
       expect(persisted.myRsvp).toBe('GOING');
     } finally { await context.close(); }
