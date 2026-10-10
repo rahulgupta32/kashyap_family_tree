@@ -35,6 +35,14 @@ export default function RootLayout({
                   <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     ड्यासवोर्ड (Dashboard)
                   </Link>
+                  <Link href="/mfa?setup=1" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
+                    सुरक्षा प्रमाणीकरण (Security verification)
+                  </Link>
+                  <Link href="/devices" className="block px-3 py-2 text-slate-300">मेरा उपकरणहरू (My devices)</Link>
+                  <Link href="/lookup" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">ठ्याक्कै ID खोज (Exact ID lookup)</Link>
+              <Link href="/settings" className="block p-2 rounded hover:bg-gray-100">सेटिङ (Settings)</Link>
+              <Link href="/imports" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm">वंशावली आयात समीक्षा (Genealogy import review)</Link>
+              <Link href="/branches" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm">शाखा र पुस्ता (Branches and generations)</Link>
                   <Link href="/people" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     वंशावली सूची (People Directory)
                   </Link>
@@ -56,6 +64,15 @@ export default function RootLayout({
                   <Link href="/profile" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     प्रोफाइल तथा गोपनीयता (Profile)
                   </Link>
+                  <Link href="/cultural" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">संस्कृति (Culture)</Link>
+                  <Link href="/community" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">समुदाय (Community)</Link>
+                  <Link href="/media-operations" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">मिडिया सञ्चालन (Media operations)</Link>
+                  <Link href="/audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अडिट इतिहास (Audit history)</Link>
+                  <Link href="/map" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">परिवारको स्थान (Household map)</Link>
+<Link href="/chat" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सन्देश (Messages)</Link>
+                  <Link href="/notifications" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सूचनाहरू (Notifications)</Link>
+                  <Link href="/broadcasts" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">प्रशासनिक सूचनाहरू (Notices)</Link>
+                  <Link href="/follows" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अनुसरण (Following)</Link>
                 </nav>
               </div>
               <div className="p-2 border-t border-slate-800 text-xs text-slate-400">
@@ -77,4 +94,3 @@ export default function RootLayout({
     </html>
   );
 }
-

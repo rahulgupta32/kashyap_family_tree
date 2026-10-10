@@ -3,6 +3,7 @@ import 'services/genealogy_api_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/person_search_screen.dart';
 import 'screens/sign_in_screen.dart';
+import 'screens/authenticator_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,9 @@ class _KashyapAppState extends State<KashyapApp> {
     _apiService.onSessionExpired = () {
       if (mounted) { setState(() { _browsePublic = false; _sessionEpoch++; }); }
     };
+    _apiService.onMfaRequired = () {
+      if (mounted) { setState(() => _sessionEpoch++); }
+    };
     if (widget.initialToken != null) {
       _apiService.setAuthToken(widget.initialToken);
       _loading = false;
@@ -48,6 +52,7 @@ class _KashyapAppState extends State<KashyapApp> {
   @override
   void dispose() {
     _apiService.onSessionExpired = null;
+    _apiService.onMfaRequired = null;
     if (widget.apiService == null) { _apiService.dispose(); }
     super.dispose();
   }
@@ -61,12 +66,16 @@ class _KashyapAppState extends State<KashyapApp> {
       theme: AppTheme.theme,
       home: _loading ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : _apiService.authToken != null || _browsePublic
-          ? PersonSearchScreen(apiService: _apiService,
-              onSignIn: () => setState(() => _browsePublic = false),
-              onSignOut: () async { await _apiService.logout(); })
+          ? (_apiService.authToken != null
+              ? AuthenticatorScreen(apiService: _apiService, child: () => _personSearch())
+              : _personSearch())
           : SignInScreen(apiService: _apiService,
               onSignedIn: () => setState(() { _browsePublic = false; _sessionEpoch++; }),
               onBrowsePublic: () => setState(() => _browsePublic = true)),
     );
   }
+
+  Widget _personSearch() => PersonSearchScreen(apiService: _apiService,
+              onSignIn: () => setState(() => _browsePublic = false),
+              onSignOut: () async { await _apiService.logout(); });
 }

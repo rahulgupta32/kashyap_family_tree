@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request as requestFactory } from '@playwright/test';
 import { ErrorCode } from '@kashyap/contracts';
 
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:3000';
@@ -144,11 +144,31 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
       page2.waitForResponse((r) => r.url().includes('/auth/refresh')),
     ]);
 
+    // Hold the real refresh request until both tabs have started their calls.
+    // Promise.all of automation commands alone does not guarantee browser overlap.
+    let started = 0;
+    let releaseRequests!: () => void;
+    const bothStarted = new Promise<void>(resolve => { releaseRequests = resolve; });
+    await context.exposeFunction('__refreshAttemptStarted', () => {
+      started++;
+      if (started === 2) releaseRequests();
+    });
+    const holdRefresh = async (route: any) => {
+      await bothStarted;
+      await route.continue();
+    };
+    await context.route('**/auth/refresh', holdRefresh);
+    const refreshInTab = () => {
+      const pending = (window as any).__kashyap_refreshSession();
+      void (window as any).__refreshAttemptStarted();
+      return pending;
+    };
     const [t1Token, t2Token, refreshResponse] = await Promise.all([
-      page.evaluate(() => (window as any).__kashyap_refreshSession()),
-      page2.evaluate(() => (window as any).__kashyap_refreshSession()),
+      page.evaluate(refreshInTab),
+      page2.evaluate(refreshInTab),
       refreshResponsePromise,
     ]);
+    await context.unroute('**/auth/refresh', holdRefresh);
 
     expect(t1Token).toBeTruthy();
     expect(t2Token).toBeTruthy();
@@ -262,4 +282,23 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     expect(noCookieBody.errorCode).toBe(ErrorCode.UNAUTHORIZED);
     expect(noCookieBody.message).toContain('Refresh token is required');
   });
+});
+
+
+// Independent request contexts deliberately do not inherit trusted fixture headers.
+test('Cookie mutations reject absent and opaque origins before refresh processing', async () => {
+  const api = await requestFactory.newContext();
+  try {
+    for (const origin of [undefined, 'null', 'https://attacker.example']) {
+      const response = await api.post(`${API_BASE}/auth/refresh`, {
+        headers: { Cookie: 'refreshToken=invalid', Origin: origin || '' }, data: {},
+      });
+      expect(response.status()).toBe(403);
+      expect((await response.json()).errorCode).toBe('AUTH_1010');
+    }
+    const trusted = await api.post(`${API_BASE}/auth/refresh`, {
+      headers: { Cookie: 'refreshToken=invalid', Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` }, data: {},
+    });
+    expect(trusted.status()).toBe(401);
+  } finally { await api.dispose(); }
 });

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +11,7 @@ import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'package:kashyap_mobile/services/session_store.dart';
+import 'package:kashyap_mobile/services/chat_outbox.dart';
 
 const base = String.fromEnvironment('API_BASE_URL');
 const phone = String.fromEnvironment('M4_PHONE');
@@ -17,6 +20,23 @@ const rootId = String.fromEnvironment('M4_ROOT');
 const parentId = String.fromEnvironment('M4_PARENT');
 const childId = String.fromEnvironment('M4_CHILD');
 const eventId = String.fromEnvironment('M4_EVENT');
+
+// The real API commits the first send, but this device transport deliberately
+// loses its response. Recovery must reuse the persisted intent, never resend new IDs.
+class LoseFirstChatResponseClient extends http.BaseClient {
+  final http.Client _inner=http.Client();
+  bool _lost=false;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response=await _inner.send(request);
+    if(!_lost&&request.method=='POST'&&(request.url.path.endsWith('/messages')||request.url.path.endsWith('/attachments'))){
+      _lost=true;await response.stream.drain<void>();throw http.ClientException('Fictional lost chat response');
+    }
+    return response;
+  }
+  @override
+  void close()=>_inner.close();
+}
 
 Future<dynamic> api(String path, {String? token, Map<String, dynamic>? data}) async {
   final headers = {'Content-Type': 'application/json', if (token != null) 'Authorization': 'Bearer $token'};
@@ -48,11 +68,16 @@ Future<void> until(WidgetTester tester, Finder finder) async {
 }
 
 Future<void> press(WidgetTester tester, Finder finder) async {
-  // Dismiss the native keyboard before calculating scroll and hit-test positions.
+  // Native IME inset changes can arrive after focus loss on the Android emulator.
+  // Recalculate the scroll after each rendered frame until the actual hit test succeeds.
   FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
-  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
-  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  for (var attempt = 0; attempt < 30; attempt++) {
+    await tester.pump(const Duration(milliseconds: 150));
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 150));
+    if (finder.hitTestable().evaluate().isNotEmpty) break;
+  }
   expect(finder.hitTestable(), findsWidgets, reason: 'The action must be visible and tappable');
   await tester.tap(finder.hitTestable());
   await tester.pump();
@@ -68,6 +93,23 @@ Future<void> drawer(WidgetTester tester, String label) async {
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
   await press(tester, find.text(label));
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+}
+
+// Test-only RFC 6238 computation; keys/codes are never printed or persisted.
+String authenticatorCode(String secret, int counter) {
+  var bits = 0, number = 0;
+  final bytes = <int>[];
+  for (final char in secret.split('')) {
+    number = (number << 5) | 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(char);
+    bits += 5;
+    if (bits >= 8) { bits -= 8; bytes.add((number >> bits) & 255); }
+  }
+  final message = ByteData(8)..setUint64(0, counter);
+  final hash = Hmac(sha1, bytes).convert(message.buffer.asUint8List()).bytes;
+  final offset = hash.last & 15;
+  final binary = ((hash[offset] & 127) << 24) | (hash[offset + 1] << 16) |
+    (hash[offset + 2] << 8) | hash[offset + 3];
+  return (binary % 1000000).toString().padLeft(6, '0');
 }
 
 void main() {
@@ -185,6 +227,30 @@ void main() {
     await back(tester);
     debugPrint('[M4 DEVICE] Governed change and linked/unlinked profile save/reload passed');
 
+    final photoOwner=service.chatAccountId!;
+    const photoPng='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=';
+    final uploadedPhoto=await service.profilePhotoRequest('/photo',photoOwner,method:'POST',data:{'mimeType':'image/png','dataBase64':photoPng,'crop':{'left':0,'top':0,'width':5000,'height':10000}});
+    var photoReady=false;
+    for(var attempt=0;attempt<25;attempt++){
+      final processing=await service.profilePhotoRequest('/media/${uploadedPhoto['assetId']}/processing',photoOwner);
+      if(processing['status']=='READY'){photoReady=true;break;}
+      await Future<void>.delayed(const Duration(seconds:1));
+    }
+    expect(photoReady,isTrue);
+    final processedPhoto=await service.downloadProfilePhoto(uploadedPhoto['assetId'] as String,photoOwner);
+    expect(processedPhoto.headers['content-type'],contains('image/webp'));expect(utf8.decode(processedPhoto.bodyBytes.take(4).toList()),'RIFF');
+    final originalPhoto=await http.get(Uri.parse('$base/profile/media/${uploadedPhoto['assetId']}'),headers:{'Authorization':'Bearer ${service.authToken}'});
+    expect(originalPhoto.statusCode,200);expect(originalPhoto.bodyBytes,base64Decode(photoPng));
+    await drawer(tester,'प्रोफाइल तथा गोपनीयता (Profile Privacy)');
+    await until(tester,find.text('फोटो तयार छ / Photo ready'));
+    await press(tester,find.text('फोटो हटाउनुहोस् / Remove photo'));
+    final removalDeadline=DateTime.now().add(const Duration(seconds:30));
+    while(find.text('फोटो हटाउनुहोस् / Remove photo').evaluate().isNotEmpty && DateTime.now().isBefore(removalDeadline)){await tester.pump(const Duration(milliseconds:100));}
+    expect(find.text('फोटो हटाउनुहोस् / Remove photo'),findsNothing);
+    final photoRemoved=await service.getMyProfile();expect(photoRemoved['avatarAssetId'],isNull);
+    await back(tester);
+    debugPrint('[M4 DEVICE] Live image worker produced private cropped WebP, preserved original bytes and native photo removal cleared the display reference');
+
     await drawer(tester, 'पात्रो तथा कार्यक्रम (Calendar)');
     final going = find.byKey(const ValueKey('rsvp-$eventId-GOING'));
     await until(tester, going);
@@ -196,13 +262,141 @@ void main() {
     expect(tester.widget<ChoiceChip>(going).selected, isTrue);
     expect((await api('/calendar/events/$eventId', token: service.authToken))['myRsvp'], 'GOING');
     await back(tester);
+    // Android Keystore-backed queue survives service recreation and reconciles a
+    // real committed PostgreSQL message whose first HTTP response was lost.
+    final group=await api('/chat/conversations',token:tier2,data:{'type':'FAMILY_BRANCH','branchId':corrected['branchId'],'title':'Fictional Android outbox'});
+    await api('/chat/conversations/${group['id']}/join',token:service.authToken,data:{});
+    await SecureChatOutboxStore().clear();
+    final firstQueueApi=GenealogyApiService(baseUrl:base,client:LoseFirstChatResponseClient())..setAuthToken(service.authToken);
+    final queued=await firstQueueApi.chatOutbox.enqueue(group['id'] as String,'Fictional Android durable outbox ${DateTime.now().microsecondsSinceEpoch}');
+    await firstQueueApi.chatOutbox.pump();expect((await firstQueueApi.chatOutbox.list()).single.id,queued.id);firstQueueApi.dispose();
+    final secondQueueApi=GenealogyApiService(baseUrl:base)..setAuthToken(service.authToken);
+    expect((await secondQueueApi.chatOutbox.list()).single.id,queued.id);
+    await secondQueueApi.chatOutbox.retry(queued.id);await secondQueueApi.chatOutbox.pump();expect(await secondQueueApi.chatOutbox.list(),isEmpty);
+    final messages=await api('/chat/conversations/${group['id']}/messages',token:service.authToken) as List;
+    expect(messages.where((m)=>m['content']==queued.content).length,1);secondQueueApi.dispose();
+    debugPrint('[M4 DEVICE] Encrypted durable outbox restored after lost real response; exactly one PostgreSQL message');
+    const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==';
+    final firstFileApi=GenealogyApiService(baseUrl:base,client:LoseFirstChatResponseClient())..setAuthToken(service.authToken);
+    final queuedFile=await firstFileApi.chatOutbox.enqueue(group['id'] as String,'Fictional Android file ${DateTime.now().microsecondsSinceEpoch}',attachment:{'mimeType':'image/png','dataBase64':png});
+    await firstFileApi.chatOutbox.pump();expect((await firstFileApi.chatOutbox.list()).single.id,queuedFile.id);firstFileApi.dispose();
+    final secondFileApi=GenealogyApiService(baseUrl:base)..setAuthToken(service.authToken);
+    expect((await secondFileApi.chatOutbox.list()).single.attachment!['dataBase64'],png);
+    await secondFileApi.chatOutbox.retry(queuedFile.id);await secondFileApi.chatOutbox.pump();expect(await secondFileApi.chatOutbox.list(),isEmpty);
+    final fileMessages=await api('/chat/conversations/${group['id']}/messages',token:service.authToken) as List;
+    final fileMessage=fileMessages.singleWhere((m)=>m['content']==queuedFile.content);
+    expect(fileMessage['attachment']['mimeType'],'image/png');
+    final downloaded=await secondFileApi.downloadChatAttachment(group['id'] as String,fileMessage['id'] as String,service.chatAccountId!);
+    expect(base64Encode(downloaded.bodyBytes),png);secondFileApi.dispose();
+    debugPrint('[M4 DEVICE] Encrypted attachment outbox restored after lost committed response; one message and authorized original file bytes');
     final restored = GenealogyApiService();
     addTearDown(restored.dispose);
     expect(await restored.restoreSession(), isTrue);
     expect((await restored.getMyProfile())['personId'], rootId);
     await restored.logout();
     expect(await SecureSessionStore().read(), isNull);
+    expect(await SecureChatOutboxStore().read(), isNull);
     debugPrint('[M4 DEVICE] Persisted RSVP, native refresh and logout passed. Live acceptance complete.');
     await tester.pumpWidget(const SizedBox.shrink());
   }, timeout: const Timeout(Duration(minutes: 8)));
+  testWidgets('Native authenticator enrollment, fresh-login verification and one-use recovery on Android', (tester) async {
+    const authorityPhone = '+9779847100088';
+    await SecureSessionStore().clear();
+    final bootstrapToken = await reviewerLogin(authorityPhone);
+    final account = await api('/auth/me', token: bootstrapToken);
+    final admin = await reviewerLogin('+9779800000001');
+    await api('/auth/roles/assign', token: admin,
+      data: {'userId': account['id'], 'role': 'SUPER_ADMIN'});
+    final service = GenealogyApiService();
+    addTearDown(service.dispose);
+    Future<void> phoneLogin() async {
+      await api('/auth/test-clear-cooldown', data: {'phoneNumber': authorityPhone});
+      await until(tester, find.byKey(const Key('sign-in-phone')));
+      await tester.enterText(find.byKey(const Key('sign-in-phone')), authorityPhone);
+      await press(tester, find.byKey(const Key('sign-in-submit')));
+      await until(tester, find.byKey(const Key('sign-in-code')));
+      final challenge = await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(authorityPhone)}');
+      await tester.enterText(find.byKey(const Key('sign-in-code')), challenge['otp'] as String);
+      await press(tester, find.byKey(const Key('sign-in-submit')));
+    }
+    Future<void> protectedStatus(int expected) async {
+      final response = await http.get(Uri.parse('$base/audit/dashboard'),
+        headers: {'Authorization': 'Bearer ${service.authToken}'});
+      expect(response.statusCode, expected);
+    }
+    await tester.pumpWidget(KashyapApp(apiService: service));
+    await phoneLogin();
+    await until(tester, find.byType(PersonSearchScreen));
+    await press(tester, find.byTooltip('Security verification'));
+    await until(tester, find.text('Set up authenticator'));
+    await press(tester, find.text('Set up authenticator'));
+    await until(tester, find.text('Restart expired setup'));
+    final texts = tester.widgetList<Text>(find.byType(Text));
+    final secret = texts.map((t) => t.data ?? '').singleWhere((s) => RegExp(r'^[A-Z2-7]{32}$').hasMatch(s));
+    final counter = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+    await tester.enterText(find.byType(TextField), authenticatorCode(secret, counter));
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('I saved the codes — continue'));
+    // Scrolling constructs lazily rendered recovery rows on the actual device.
+    await tester.drag(find.byType(ListView), const Offset(0, -250));
+    await tester.pumpAndSettle();
+    final codes = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data ?? '')
+      .where((s) => RegExp(r'^[a-f0-9]{32}$').hasMatch(s)).toList();
+    expect(codes.length, greaterThanOrEqualTo(2));
+    final saved = (await SecureSessionStore().read())!;
+    expect(saved.contains(secret), isFalse);
+    expect(codes.any(saved.contains), isFalse);
+    await press(tester, find.text('I saved the codes — continue'));
+    await until(tester, find.text('Manage authenticator'));
+    await back(tester);
+    await protectedStatus(200);
+    debugPrint('[MFA DEVICE] Real native setup, confirmation and transient recovery-code display passed');
+
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await protectedStatus(403);
+    final nextCounter = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+    final acceptedCounter = nextCounter > counter ? nextCounter : counter + 1;
+    final acceptedCode = authenticatorCode(secret, acceptedCounter);
+    await tester.enterText(find.byType(TextField), acceptedCode);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    await protectedStatus(200);
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), acceptedCode);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('Verification failed. Check the code or retry later.'));
+    await protectedStatus(403);
+    await press(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), codes[0]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    await protectedStatus(200);
+    debugPrint('[MFA DEVICE] Fresh phone login denied before verification; authenticator replay rejected and recovery granted access');
+
+    await press(tester, find.byTooltip('Sign out'));
+    await phoneLogin();
+    await until(tester, find.text('Use recovery code'));
+    await press(tester, find.text('Use recovery code'));
+    await tester.enterText(find.byType(TextField), codes[0]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.text('Verification failed. Check the code or retry later.'));
+    await protectedStatus(403);
+    await tester.enterText(find.byType(TextField), codes[1]);
+    await press(tester, find.text('Verify'));
+    await until(tester, find.byType(PersonSearchScreen));
+    final restored = GenealogyApiService();
+    addTearDown(restored.dispose);
+    expect(await restored.restoreSession(), isTrue);
+    final proof = await restored.requestJson('/auth/mfa/status');
+    expect(proof['verified'], isTrue);
+    await restored.logout();
+    expect(await SecureSessionStore().read(), isNull);
+    debugPrint('[MFA DEVICE] Used recovery code rejected; separate code and encrypted-session refresh proof passed');
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
 }

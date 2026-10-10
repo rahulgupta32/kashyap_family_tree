@@ -1,3 +1,4 @@
+import 'device_sessions_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
@@ -8,6 +9,13 @@ import 'claim_profile_screen.dart';
 import 'change_request_screen.dart';
 import 'calendar_events_screen.dart';
 import 'profile_privacy_screen.dart';
+import 'community_screen.dart';
+import 'cultural_content_screen.dart';
+import 'chat_screen.dart';
+import 'household_map_screen.dart';
+import 'notification_inbox_screen.dart';
+import 'follow_manager_screen.dart';
+import 'authenticator_screen.dart';
 
 class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -69,6 +77,18 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if (widget.apiService.authToken != null)
+            IconButton(tooltip: 'मेरा उपकरणहरू (My devices)', icon: const Icon(Icons.devices), onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeviceSessionsScreen(apiService: widget.apiService)));
+            }),
+          if (widget.apiService.authToken != null)
+            IconButton(tooltip: 'Security verification', icon: const Icon(Icons.security), onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => AuthenticatorScreen(
+                apiService: widget.apiService, enrollmentRequested: true, manageCredentials: true,
+                child: () => Scaffold(appBar: AppBar(title: const Text('Security verification')),
+                  body: const Padding(padding: EdgeInsets.all(20), child: Text(
+                    'Security verification is complete or is not required for your current account.'))))));
+            }),
           if (widget.apiService.authToken == null && widget.onSignIn != null)
             IconButton(tooltip: 'Sign in', onPressed: widget.onSignIn, icon: const Icon(Icons.login)),
           if (widget.apiService.authToken != null && widget.onSignOut != null)
@@ -171,6 +191,27 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 );
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.forum),
+              title: const Text('समुदाय (Community)'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CommunityScreen(apiService: widget.apiService)));
+              },
+            ),
+            if (widget.apiService.authToken != null)
+              ListTile(leading: const Icon(Icons.menu_book), title: const Text('संस्कृति (Culture)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => CulturalContentScreen(apiService: widget.apiService))); }),
+            ListTile(leading: const Icon(Icons.map), title: const Text('परिवारको स्थान (Localities)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdMapScreen(apiService: widget.apiService))); }),
+            ListTile(leading: const Icon(Icons.chat), title: const Text('सन्देश (Messages)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(apiService: widget.apiService))); }),
+            if (widget.apiService.authToken != null)
+              ListTile(leading: const Icon(Icons.notifications), title: const Text('सूचनाहरू (Notifications)'), onTap: () {
+                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationInboxScreen(apiService: widget.apiService)));
+              }),
+            if (widget.apiService.authToken != null)
+              ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('अनुसरण (Following)'), onTap: () {
+                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => FollowManagerScreen(apiService: widget.apiService)));
+              }),
             ListTile(
               leading: const Icon(Icons.calendar_month, color: Colors.deepOrange),
               title: const Text('पात्रो तथा कार्यक्रम (Calendar)'),

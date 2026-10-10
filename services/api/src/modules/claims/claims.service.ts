@@ -1,6 +1,7 @@
-import * as fs from 'fs';
+import { MediaStorageService } from '../../media/media-storage.service';
 import {
   Injectable,
+  Optional,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
@@ -40,6 +41,7 @@ export class ClaimsService {
     private readonly branchRepo: BranchRepository,
     private readonly userRepo: UserRepository,
     private readonly auditOutboxRepo: AuditOutboxRepository,
+    @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
   ) {}
 
   private generatePresignedUrl(mediaAssetId: string, claimantUserId?: string): string {
@@ -59,7 +61,7 @@ export class ClaimsService {
     if (!attachments || attachments.length === 0) return;
     for (const att of attachments) {
       const res = await client.query(
-        'SELECT id, uploader_user_id, quarantine_status, retention_status FROM media_assets WHERE id = $1',
+        'SELECT id, uploader_user_id, bucket, quarantine_status, retention_status FROM media_assets WHERE id = $1',
         [att.mediaAssetId],
       );
       const asset = res.rows[0];
@@ -69,6 +71,7 @@ export class ClaimsService {
           message: `Evidence media asset not found: ${att.mediaAssetId}`,
         });
       }
+      if (asset.bucket !== 'private-profiles') throw new BadRequestException('Choose a private profile evidence upload');
       if (asset.uploader_user_id !== uploaderUserId) {
         throw new ForbiddenException({
           errorCode: ErrorCode.FORBIDDEN,
@@ -96,7 +99,7 @@ export class ClaimsService {
     queryUser?: string,
     queryExpires?: string,
     querySig?: string,
-  ): Promise<{ filePath: string; fileName: string; mimeType: string; byteSize: number }> {
+  ): Promise<{ buffer: Buffer; fileName: string; mimeType: string; byteSize: number }> {
     if (!viewer || !viewer.id) {
       throw new UnauthorizedException('Authentication required to access evidence asset');
     }
@@ -106,6 +109,8 @@ export class ClaimsService {
     if (!asset) {
       throw new NotFoundException('Evidence media asset not found');
     }
+
+    if (asset.bucket !== 'private-profiles') throw new NotFoundException('Evidence media asset not found');
 
     if (asset.quarantine_status !== 'CLEAN') {
       throw new ForbiddenException('Media asset failed malware scan and has been quarantined');
@@ -182,12 +187,9 @@ export class ClaimsService {
       throw new ForbiddenException('You do not have permission to access or stream this evidence asset');
     }
 
-    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
-      throw new NotFoundException('Physical media file not found on storage volume');
-    }
-
+    const buffer = await this.storage.read(asset);
     return {
-      filePath: asset.storage_path,
+      buffer,
       fileName: asset.file_name,
       mimeType: asset.mime_type,
       byteSize: asset.byte_size,

@@ -16,6 +16,9 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   let mockRoles: Map<string, any[]>;
   let mockSessions: Map<string, any>;
   let mockAuditLogs: any[];
+  let mockAuditIntents: any[];
+  let mockDatabase: any;
+  let mockAuditOutboxRepo: any;
 
   let mockRedisService: any;
   let mockUserRepo: any;
@@ -32,6 +35,12 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     mockRoles = new Map();
     mockSessions = new Map();
     mockAuditLogs = [];
+    mockAuditIntents = [];
+    mockDatabase = { transaction: jest.fn(async (callback:any)=>{
+      const before=structuredClone(mockSessions),count=mockAuditIntents.length;
+      try {return await callback({});} catch(error){mockSessions.clear();before.forEach((value,key)=>mockSessions.set(key,value));mockAuditIntents.splice(count);throw error;}
+    })};
+    mockAuditOutboxRepo={recordAuditIntent:jest.fn(async(data:any)=>{mockAuditIntents.push(data);return {id:'fictional-audit-intent'};}),processOutboxEntry:jest.fn().mockResolvedValue(true),markFailed:jest.fn().mockResolvedValue(undefined)};
 
     mockRedisService = {
       isReady: jest.fn().mockReturnValue(true),
@@ -80,6 +89,12 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         return Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 1000));
       }),
       eval: jest.fn(async (script: string, numKeys: number, ...args: any[]) => {
+        if (numKeys === 1) {
+          const key=args[0],ttl=Number(args[1]),item=mockRedisData.get(key);
+          const value=Number(item?.value||0)+1;
+          mockRedisData.set(key,{value:String(value),expiresAt:item?.expiresAt||Date.now()+ttl*1000});
+          return value;
+        }
         if (numKeys === 5) {
           // Atomic OTP reservation script
           const cooldownKey = args[0];
@@ -283,12 +298,13 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         }
         return count;
       }),
-      rotateSessionTransactional: jest.fn(async (tokenHash: string, data: any) => {
+      rotateSessionTransactional: jest.fn(async (tokenHash: string, data: any, recordOutcome: any) => mockDatabase.transaction(async (client:any) => {
+        const complete = async (result:any) => { if(recordOutcome) await recordOutcome(result, client); return result; };
         const oldSession = Array.from(mockSessions.values()).find(
           (s) => s.refresh_token_hash === tokenHash,
         );
         if (!oldSession) {
-          return { status: 'NOT_FOUND' };
+          return complete({ status: 'NOT_FOUND' });
         }
         if (oldSession.revoked_at) {
           for (const s of mockSessions.values()) {
@@ -296,10 +312,11 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
               s.revoked_at = new Date();
             }
           }
-          return { status: 'REUSED', oldSession };
+          return complete({ status: 'REUSED', oldSession });
         }
         if (new Date(oldSession.expires_at).getTime() < Date.now()) {
-          return { status: 'EXPIRED' };
+          oldSession.revoked_at = new Date();
+          return complete({ status: 'EXPIRED', oldSession });
         }
 
         oldSession.revoked_at = new Date();
@@ -317,8 +334,8 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
           created_at: new Date(),
         };
         mockSessions.set(newSession.id, newSession);
-        return { status: 'SUCCESS', newSession, oldSession };
-      }),
+        return complete({ status: 'SUCCESS', newSession, oldSession });
+      })),
     };
 
     mockBranchRepo = {
@@ -341,6 +358,8 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       mockBranchRepo,
       mockAuditRepo,
       smsProvider,
+      mockDatabase,
+      mockAuditOutboxRepo,
     );
   });
 
@@ -392,6 +411,53 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     });
   });
 
+  describe('Durable OTP lifecycle evidence',()=>{
+    it('blocks SMS and Redis mutation when the initial evidence write is unavailable',async()=>{
+      const sms=jest.spyOn(smsProvider,'sendOtp');
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private storage detail'));
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(sms).not.toHaveBeenCalled();expect(mockRedisService.eval).not.toHaveBeenCalled();
+    });
+    it('does not consume verification attempts when the initial evidence write fails',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      mockRedisService.eval.mockClear();mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private storage detail'));
+      await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(mockRedisService.eval).not.toHaveBeenCalled();expect(JSON.parse(mockRedisData.get('otp:challenge:+9779841234567')!.value).attempts).toBe(0);
+    });
+    it('records fixed cooldown, invalid-code and exhausted-attempt outcomes without secrets',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toThrow();
+      for(let i=0;i<5;i++)await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toThrow();
+      const outcomes=mockAuditIntents.filter(e=>e.action.endsWith('_OUTCOME')).map(e=>e.newValue.reasonCode);
+      expect(outcomes).toContain(ErrorCode.OTP_RESEND_COOLDOWN);expect(outcomes.filter(c=>c===ErrorCode.INVALID_OTP)).toHaveLength(4);expect(outcomes).toContain(ErrorCode.OTP_MAX_ATTEMPTS_EXCEEDED);
+      const evidence=JSON.stringify(mockAuditIntents);
+      for(const secret of ['9841234567',requested.otpSessionId,'000000',smsProvider.getLastOtp('+9779841234567')!])expect(evidence).not.toContain(secret);
+    });
+    it('cleans up thrown SMS failures and redacts logs and retained outcomes',async()=>{
+      jest.spyOn(smsProvider,'sendOtp').mockRejectedValueOnce(new Error('Secret provider credential +9779841234567'));
+      const logging=jest.spyOn((authService as any).logger,'error').mockImplementation(()=>{});
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.EXTERNAL_PROVIDER_ERROR}});
+      expect(mockRedisData.has('otp:challenge:+9779841234567')).toBe(false);
+      expect(mockAuditIntents.at(-1).newValue.reasonCode).toBe(ErrorCode.EXTERNAL_PROVIDER_ERROR);
+      expect(logging).toHaveBeenCalledWith('OTP_SMS_DISPATCH_FAILED');
+      expect(JSON.stringify(logging.mock.calls)).not.toContain('Secret provider');logging.mockRestore();
+    });
+    it('returns no challenge credentials if provider acceptance outcome cannot be acknowledged',async()=>{
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any)=>{if(data.action==='OTP_REQUEST_OUTCOME')throw new Error('Private commit failure');return record(data);});
+      const sms=jest.spyOn(smsProvider,'sendOtp');
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(sms).toHaveBeenCalledTimes(1);expect(mockAuditIntents).toHaveLength(1);expect(mockAuditIntents[0].newValue.outcome).toBe('STARTED');
+    });
+    it('retains the attempt and returns safe unavailability when failure outcome persistence fails',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any)=>{if(data.action==='OTP_VERIFY_OUTCOME')throw new Error('Private outcome failure');return record(data);});
+      await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(mockAuditIntents.at(-1).action).toBe('OTP_VERIFY_ATTEMPT');expect(mockSessions.size).toBe(0);
+    });
+  });
+
   describe('OTP Verification & Single-Use Atomic Consumption (AUTH-FR-003, EC-0013, EC-0014, EC-0015)', () => {
     it('should successfully verify valid OTP, create persistent account without claiming person, and issue tokens', async () => {
       const initRes = await authService.requestOtp({ phoneNumber: '9841234567' });
@@ -418,8 +484,50 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       expect(decoded.roles).toContain(Role.REGISTERED_USER);
 
       // Verify audit log recorded LOGIN
-      expect(mockAuditLogs.length).toBeGreaterThan(0);
-      expect(mockAuditLogs[0][0]).toBe(AuditAction.LOGIN);
+      const loginIntent=mockAuditIntents.find(e=>e.action===AuditAction.LOGIN);
+      expect(loginIntent).toBeDefined();
+      expect(loginIntent.newValue.sessionId).toBe(decoded.sid);
+      expect(mockAuditIntents.find(e=>e.action==='OTP_VERIFY_ATTEMPT').entityId).toBe(loginIntent.newValue.operationId);
+      expect(JSON.stringify(mockAuditIntents)).not.toContain(session.refreshToken);
+      expect(JSON.stringify(mockAuditIntents)).not.toContain(session.user.phoneNumber);
+    });
+
+    it('returns no tokens and rolls back the session when durable login audit fails',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const code=smsProvider.getLastOtp('+9779841234567')!;
+      const signing=jest.spyOn(jwtService,'sign');
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any,...args:any[])=>{if(data.action===AuditAction.LOGIN)throw new Error('Private fictional database failure');return record(data,...args);});
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('Login could not be completed');
+      expect(mockSessions.size).toBe(0);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(0);expect(signing).not.toHaveBeenCalled();
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('OTP session expired or not found');
+    });
+
+    it('keeps a committed login usable when audit delivery fails but retains retry evidence',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('Private downstream failure'));
+      const result=await authService.verifyOtp({otpSessionId:challenge.otpSessionId,code:smsProvider.getLastOtp('+9779841234567')!});
+      expect(result.accessToken).toBeTruthy();expect(mockSessions.size).toBe(1);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(1);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent','LOGIN_AUDIT_DELIVERY_FAILED');
+    });
+
+    it('refuses verification before consuming an OTP when durable login dependencies are missing',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const unavailable=new AuthService(jwtService,mockRedisService,mockUserRepo,mockSessionRepo,mockBranchRepo,mockAuditRepo,smsProvider);
+      await expect(unavailable.verifyOtp({otpSessionId:challenge.otpSessionId,code:smsProvider.getLastOtp('+9779841234567')!})).rejects.toThrow('Durable login audit is unavailable');
+      expect(mockSessions.size).toBe(0);expect(mockRedisData.has(`otp:session:${challenge.otpSessionId}`)).toBe(true);
+    });
+
+    it('does not sign credentials when transaction commit cannot be confirmed',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const code=smsProvider.getLastOtp('+9779841234567')!;
+      const signing=jest.spyOn(jwtService,'sign');
+      mockDatabase.transaction.mockImplementationOnce(async(callback:any)=>{await callback({});throw new Error('Fictional lost commit acknowledgement');});
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('Login could not be completed');
+      expect(signing).not.toHaveBeenCalled();
+      // An uncertain commit may have persisted both records; it must not be
+      // retried or claimed rolled back without database evidence.
+      expect(mockSessions.size).toBe(1);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(1);
     });
 
     it('should atomically consume OTP and prevent replay attack (EC-0013)', async () => {
@@ -493,6 +601,67 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   });
 
   describe('Sessions, Refresh Token Rotation & Replay Detection (AUTH-FR-006, EC-0020)', () => {
+    async function loginForRefresh() {
+      const request = await authService.requestOtp({ phoneNumber: '9841234567' });
+      return authService.verifyOtp({ otpSessionId: request.otpSessionId, code: smsProvider.getLastOtp('+9779841234567')! });
+    }
+
+    it('keeps a failed logout transaction active and returns a fixed unavailable response', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture insertion failure'));
+      await expect(authService.logout({refreshToken:session.refreshToken})).rejects.toMatchObject({status:503});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at===null)).toBe(true);
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('retains logout intent with a fixed retry error after delivery failure', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('private fixture delivery failure'));
+      expect(await authService.logout({refreshToken:session.refreshToken})).toEqual({success:true});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at!==null)).toBe(true);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent','LOGOUT_AUDIT_DELIVERY_FAILED');
+      expect(mockAuditIntents.some(row=>row.action===AuditAction.LOGOUT)).toBe(true);
+    });
+
+    it('returns fixed unavailable on logout-all evidence failure without revoking sessions', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture insertion failure'));
+      await expect(authService.logoutAll(session.user.id)).rejects.toMatchObject({status:503});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at===null)).toBe(true);
+    });
+
+    it('returns no replacement credentials and preserves the old session on failed evidence insertion', async () => {
+      const first = await loginForRefresh();
+      const oldId = Array.from(mockSessions.keys())[0];
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture failure'));
+      const sign = jest.spyOn(jwtService, 'sign');
+      await expect(authService.refreshToken({ refreshToken: first.refreshToken })).rejects.toMatchObject({ status: 503 });
+      expect(sign).not.toHaveBeenCalled();
+      expect(mockSessions.size).toBe(1);
+      expect(mockSessions.get(oldId).revoked_at).toBeNull();
+    });
+
+    it('retains redacted rotation evidence when immediate delivery is unavailable', async () => {
+      const first = await loginForRefresh();
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('private fixture failure'));
+      const next = await authService.refreshToken({ refreshToken: first.refreshToken });
+      expect(next.accessToken).toBeDefined();
+      const outcome = mockAuditIntents.find(row => row.newValue?.outcome === 'REFRESH_ROTATED');
+      expect(outcome).toBeDefined();
+      expect(JSON.stringify(outcome)).not.toContain(first.refreshToken);
+      expect(JSON.stringify(outcome)).not.toContain(next.refreshToken);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent', 'REFRESH_AUDIT_DELIVERY_FAILED');
+    });
+
+    it('returns no credentials on unconfirmed rotation and records no best-effort replay audit', async () => {
+      const first = await loginForRefresh();
+      mockSessionRepo.rotateSessionTransactional.mockRejectedValueOnce(new Error('private commit diagnostic'));
+      const sign = jest.spyOn(jwtService, 'sign');
+      await expect(authService.refreshToken({ refreshToken: first.refreshToken })).rejects.toMatchObject({ status: 503 });
+      expect(sign).not.toHaveBeenCalled();
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
+
     it('should rotate refresh token on /auth/refresh and invalidate previous token', async () => {
       const initRes = await authService.requestOtp({ phoneNumber: '9841234567' });
       const sentOtp = smsProvider.getLastOtp('+9779841234567')!;
@@ -538,6 +707,14 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   });
 
   describe('Role Assignment & Governance (BR-GOV-004, EC-0230)', () => {
+    it('does not let branch administrators assign or revoke Central Admin even within their own branch', async () => {
+      await mockUserRepo.assignRole('branch-operator', Role.BRANCH_ADMIN, 'b-kaski');
+      await expect(authService.assignUserRole('branch-operator', [Role.BRANCH_ADMIN], 'target', Role.CENTRAL_ADMIN, 'b-kaski'))
+        .rejects.toMatchObject({ status: 403, response: { errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED } });
+      await expect(authService.revokeUserRole('branch-operator', [Role.BRANCH_ADMIN], 'target', Role.CENTRAL_ADMIN, 'b-kaski'))
+        .rejects.toMatchObject({ status: 403, response: { errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED } });
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
     it('should prevent self-elevation when user attempts to assign roles to themselves (BR-GOV-004)', async () => {
       const userId = 'u-operator-01';
 

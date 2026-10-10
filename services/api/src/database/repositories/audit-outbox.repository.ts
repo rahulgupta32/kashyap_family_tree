@@ -19,6 +19,7 @@ export interface AuditOutboxRecord {
   last_error: string | null;
   created_at: Date;
   processed_at: Date | null;
+  next_attempt_at: Date | null;
 }
 
 @Injectable()
@@ -58,8 +59,8 @@ export class AuditOutboxRepository {
       data.entityId,
       data.actorId || null,
       data.actorRole || null,
-      data.oldValue ? JSON.stringify(data.oldValue) : null,
-      data.newValue ? JSON.stringify(data.newValue) : null,
+      data.oldValue === undefined ? null : JSON.stringify(data.oldValue),
+      data.newValue === undefined ? null : JSON.stringify(data.newValue),
       data.ipAddress || null,
       data.userAgent || null,
     ];
@@ -73,10 +74,39 @@ export class AuditOutboxRepository {
 
   async getPendingEntries(limit = 50): Promise<AuditOutboxRecord[]> {
     const res = await this.db.query<AuditOutboxRecord>(
-      `SELECT * FROM audit_outbox WHERE status IN ('PENDING', 'FAILED') AND retry_count < 10 ORDER BY created_at ASC LIMIT $1;`,
+      `SELECT * FROM audit_outbox WHERE status IN ('PENDING', 'FAILED') AND retry_count < 10
+       AND (next_attempt_at IS NULL OR next_attempt_at <= CURRENT_TIMESTAMP) ORDER BY created_at ASC,id LIMIT $1;`,
       [limit],
     );
     return res.rows;
+  }
+
+  async getDeliverySummary() {
+    // A single statement gives a consistent aggregate snapshot. Never expose
+    // event IDs, identities, addresses, payloads or provider diagnostics here.
+    const result = await this.db.query(`
+      WITH backlog AS (
+        SELECT count(*)::int AS "pending",
+          count(*) FILTER (WHERE status='FAILED')::int AS "failed",
+          count(*) FILTER (WHERE retry_count>=10)::int AS "exhausted",
+          count(*) FILTER (WHERE retry_count<10 AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP))::int AS "due",
+          count(*) FILTER (WHERE retry_count<10 AND next_attempt_at>CURRENT_TIMESTAMP)::int AS "delayed",
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-created_at)))),0)::double precision AS "oldestPendingAgeSeconds",
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-coalesce(next_attempt_at,created_at)))))
+            FILTER (WHERE retry_count<10 AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP)),0)::double precision AS "oldestDueAgeSeconds"
+        FROM audit_outbox WHERE status IN ('PENDING','FAILED')
+      ), unresolved AS (
+        SELECT count(*)::int AS "unresolvedOtpAttempts"
+        FROM audit_outbox attempt
+        WHERE attempt.action IN ('OTP_REQUEST_ATTEMPT','OTP_VERIFY_ATTEMPT')
+          AND attempt.created_at<CURRENT_TIMESTAMP-INTERVAL '10 minutes'
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_outbox outcome
+            WHERE outcome.new_value->>'operationId'=attempt.entity_id::text
+              AND outcome.action IN ('OTP_REQUEST_OUTCOME','OTP_VERIFY_OUTCOME','LOGIN')
+          )
+      ) SELECT backlog.*,unresolved.* FROM backlog CROSS JOIN unresolved`);
+    return result.rows[0];
   }
 
   async findByEntityId(entityId: string): Promise<AuditOutboxRecord[]> {
@@ -97,7 +127,10 @@ export class AuditOutboxRepository {
   }
 
   async markFailed(id: string, errorMessage: string, client?: any): Promise<void> {
-    const query = `UPDATE audit_outbox SET status = 'FAILED', retry_count = retry_count + 1, last_error = $2 WHERE id = $1;`;
+    const query = `UPDATE audit_outbox SET status = 'FAILED',
+      next_attempt_at = clock_timestamp() + make_interval(secs => LEAST(3600,30 * power(2,LEAST(retry_count,7)))::double precision),
+      retry_count = LEAST(retry_count + 1,10), last_error = $2
+      WHERE id = $1 AND status <> 'PROCESSED';`;
     if (client) {
       await client.query(query, [id, errorMessage]);
     } else {
@@ -182,28 +215,52 @@ export class AuditOutboxRepository {
    * - Checks idempotency and atomically appends to audit_logs and marks the entry PROCESSED.
    * - Backed by database-enforced uniqueness on audit_logs(new_value->>'outboxId').
    */
-  async drainOutbox(auditRepo: AuditRepository): Promise<{ processed: number; failed: number }> {
+  async processScheduledEntry(entryId:string,auditRepo:AuditRepository):Promise<'PROCESSED'|'FAILED'|'SKIPPED'> {
+    return this.db.transaction(async client=>{
+      const eligible=await client.query(`SELECT id FROM audit_outbox WHERE id=$1
+        AND status IN ('PENDING','FAILED') AND retry_count<10
+        AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP) FOR UPDATE SKIP LOCKED`,[entryId]);
+      if(!eligible.rows.length)return 'SKIPPED';
+      // Keep the eligibility row locked while rolling back failed append work.
+      // This prevents overlapping workers from consuming the same retry window.
+      await client.query('SAVEPOINT audit_delivery');
+      try {
+        await this.processOutboxEntry(entryId,auditRepo,client);
+        await client.query('RELEASE SAVEPOINT audit_delivery');
+        return 'PROCESSED';
+      } catch {
+        await client.query('ROLLBACK TO SAVEPOINT audit_delivery');
+        await this.markFailed(entryId,'AUDIT_DELIVERY_FAILED',client);
+        await client.query('RELEASE SAVEPOINT audit_delivery');
+        return 'FAILED';
+      }
+    });
+  }
+
+  async drainOutbox(auditRepo: AuditRepository,limit=100): Promise<{ processed: number; failed: number }> {
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new RangeError('Audit delivery batch must be 1–100');
     let processed = 0;
     let failed = 0;
 
     try {
-      const pending = await this.getPendingEntries(100);
+      const pending = await this.getPendingEntries(limit);
       for (const entry of pending) {
         try {
-          const didProcess = await this.processOutboxEntry(entry.id, auditRepo);
-          if (didProcess) {
+          const result = await this.processScheduledEntry(entry.id, auditRepo);
+          if (result==='PROCESSED') {
             processed++;
-          }
-        } catch (err: any) {
+          } else if(result==='FAILED') {failed++;this.logger.warn(`Audit delivery deferred for entry ${entry.id}`);}
+        } catch {
           failed++;
-          this.logger.warn(`Failed to drain audit outbox entry ${entry.id}: ${err.message}`);
-          await this.markFailed(entry.id, err.message);
+          this.logger.warn(`Audit delivery transaction unavailable for entry ${entry.id}`);
         }
       }
-    } catch (err: any) {
-      this.logger.error(`Error during audit outbox drain: ${err.message}`);
+    } catch {
+      this.logger.error('Audit outbox selection unavailable; retained evidence will be retried');
+      throw new Error('AUDIT_SELECTION_UNAVAILABLE');
     }
 
     return { processed, failed };
   }
 }
+

@@ -1,11 +1,15 @@
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { cookieOriginMiddleware } from './security/cookie-origin.middleware';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.enableShutdownHooks(['SIGINT', 'SIGTERM']);
+  app.useBodyParser('json', { limit: '16mb' });
 
   const defaultOrigins = [
     'http://localhost:3000',
@@ -32,6 +36,9 @@ async function bootstrap() {
     return false;
   };
 
+  // Reject cookie mutations before CORS can turn an untrusted origin into a generic error.
+  app.use(cookieOriginMiddleware(isOriginAllowed));
+
   app.enableCors({
     origin: (origin, callback) => {
       if (isOriginAllowed(origin)) {
@@ -41,28 +48,6 @@ async function bootstrap() {
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
-  });
-
-  // CSRF Defense-in-depth: For cookie-authenticated mutating requests, validate Origin header against allowlist
-  app.use((req: any, res: any, next: any) => {
-    const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
-    if (mutatingMethods.includes(req.method)) {
-      const cookieHeader = req.headers.cookie;
-      const hasCookieAuth = cookieHeader && cookieHeader.includes('refreshToken=');
-      if (hasCookieAuth) {
-        const origin = req.headers.origin;
-        if (!isOriginAllowed(origin)) {
-          return res.status(403).json({
-            success: false,
-            errorCode: 'AUTH_1010',
-            message: 'Forbidden: Request origin is untrusted or missing for cookie-authenticated mutation.',
-            timestamp: new Date().toISOString(),
-            path: req.originalUrl,
-          });
-        }
-      }
-    }
-    next();
   });
 
   app.useGlobalPipes(

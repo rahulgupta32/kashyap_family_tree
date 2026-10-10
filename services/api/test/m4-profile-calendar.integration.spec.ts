@@ -193,10 +193,7 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
 
     it('4. should upload photo, verify magic bytes, release clean file, and verify HMAC signed access', async () => {
       // 1. Valid PNG buffer with correct magic bytes: 0x89 0x50 0x4E 0x47
-      const validPng = Buffer.concat([
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        Buffer.alloc(64, 0x20),
-      ]);
+      const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=', 'base64');
       const uploadRes = await profileService.uploadPhoto(testUserId, 'image/png', validPng.toString('base64'));
       expect(uploadRes.assetId).toBeDefined();
       expect(uploadRes.quarantineStatus).toBe('CLEAN');
@@ -231,10 +228,7 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
 
     it('6. should reject upload fail-closed (503) when malware scanner fails and keep file inaccessible', async () => {
       process.env.SIMULATE_SCANNER_FAILURE = 'true';
-      const validPng = Buffer.concat([
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        Buffer.alloc(64, 0x20),
-      ]);
+      const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=', 'base64');
 
       try {
         await expect(
@@ -429,10 +423,7 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
 
     it('15. should delete account with single-use challenge, put contested evidence on LEGAL_HOLD with retention records, purge non-held assets, and PRESERVE lineage', async () => {
       // Setup contested evidence attached to a DISPUTED claim
-      const pngBuffer = Buffer.concat([
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        Buffer.alloc(64, 0x20),
-      ]);
+      const pngBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=', 'base64');
       const upload1 = await profileService.uploadPhoto(testUserId, 'image/png', pngBuffer.toString('base64'));
       heldAssetId = upload1.assetId;
 
@@ -512,11 +503,9 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
     });
 
     it('17. should reject anonymous media streaming requests without an authenticated viewer', async () => {
-      const pngBuffer = Buffer.concat([
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        Buffer.alloc(64, 0x20),
-      ]);
-      const photo = await profileService.uploadPhoto(testUserId, 'image/png', pngBuffer.toString('base64'));
+      const pngBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=', 'base64');
+      await expect(profileService.uploadPhoto(testUserId, 'image/png', pngBuffer.toString('base64'))).rejects.toThrow('Active account required');
+      const photo = await profileService.uploadPhoto(otherUserId, 'image/png', pngBuffer.toString('base64'));
 
       await expect(
         profileService.getMediaAsset(photo.assetId, undefined),

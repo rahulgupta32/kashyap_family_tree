@@ -20,6 +20,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
               rows: [{
                 id: params[0],
                 uploader_user_id: 'u-401',
+                bucket: 'private-profiles',
                 quarantine_status: 'CLEAN',
                 retention_status: 'ACTIVE',
               }],
@@ -146,6 +147,19 @@ describe('ClaimsService (State Transitions & Governance)', () => {
       mockUserRepo,
       mockAuditOutboxRepo,
     );
+  });
+
+  it('denies conversation assets through evidence downloads for both their owner and global authority', async () => {
+    mockDb.query.mockResolvedValue({rows:[{id:'asset',bucket:'private-chat',uploader_user_id:'owner',quarantine_status:'CLEAN',retention_status:'ACTIVE'}]});
+    for (const viewer of [{id:'owner',roles:[Role.VERIFIED_MEMBER]},{id:'admin',roles:[Role.SUPER_ADMIN]}]) {
+      await expect(claimsService.getEvidenceMediaAsset('asset',viewer as any)).rejects.toThrow('Evidence media asset not found');
+    }
+    expect(mockDb.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects linking conversation assets as claim evidence before ownership or file access', async () => {
+    const client={query:jest.fn().mockResolvedValue({rows:[{id:'asset',bucket:'private-chat',uploader_user_id:'owner',quarantine_status:'CLEAN',retention_status:'ACTIVE'}]})};
+    await expect((claimsService as any).validateEvidenceAttachments(client,'owner',[{mediaAssetId:'asset'}])).rejects.toThrow('Choose a private profile evidence upload');
   });
 
   describe('Claim Submission & Statement of Truth', () => {

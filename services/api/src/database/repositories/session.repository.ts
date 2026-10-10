@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
+import { Role } from '@kashyap/contracts';
+import { privilegedSessionExpired } from '../../modules/auth/privileged-session.policy';
+import { PoolClient } from 'pg';
 
 export interface UserSessionRecord {
   id: string;
   user_id: string;
+  session_family_id: string;
+  owner_revoked_at: Date | null;
   refresh_token_hash: string;
   device_id: string | null;
   device_platform: string;
@@ -13,6 +18,15 @@ export interface UserSessionRecord {
   expires_at: Date;
   revoked_at: Date | null;
   created_at: Date;
+  authenticated_at: Date | null;
+  mfa_verified_at: Date | null;
+  mfa_generation: number | null;
+}
+
+export interface SessionRotationResult {
+  status: 'SUCCESS' | 'REUSED' | 'EXPIRED' | 'NOT_FOUND';
+  oldSession?: UserSessionRecord;
+  newSession?: UserSessionRecord;
 }
 
 @Injectable()
@@ -30,7 +44,7 @@ export class SessionRepository {
     ipAddress?: string | null;
     userAgent?: string | null;
     expiresAt: Date;
-  }): Promise<UserSessionRecord> {
+  }, client?: PoolClient): Promise<UserSessionRecord> {
     const query = `
       INSERT INTO user_sessions (
         user_id, refresh_token_hash, device_platform, device_id, device_name,
@@ -49,7 +63,7 @@ export class SessionRepository {
       data.userAgent || null,
       data.expiresAt,
     ];
-    const res = await this.db.query<UserSessionRecord>(query, params);
+    const res = await this.db.query<UserSessionRecord>(query, params, client);
     return res.rows[0];
   }
 
@@ -85,12 +99,17 @@ export class SessionRepository {
       ipAddress?: string | null;
       userAgent?: string | null;
     },
-  ): Promise<{
-    status: 'SUCCESS' | 'REUSED' | 'EXPIRED' | 'NOT_FOUND';
-    oldSession?: UserSessionRecord;
-    newSession?: UserSessionRecord;
-  }> {
+    recordOutcome?: (result: SessionRotationResult, client: PoolClient) => Promise<void>,
+  ): Promise<SessionRotationResult> {
     return this.db.transaction(async (client) => {
+      const complete = async (result: SessionRotationResult): Promise<SessionRotationResult> => {
+        if (recordOutcome) await recordOutcome(result, client);
+        return result;
+      };
+      // Serialize all rotations/revocations in this server-created family.
+      // Lookup does not authorize; the locked row is validated again below.
+      const family = (await client.query('SELECT session_family_id FROM user_sessions WHERE refresh_token_hash=$1', [oldTokenHash])).rows[0];
+      if (family) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['session-family:'+family.session_family_id]);
       // 1. Lock the session row with SELECT ... FOR UPDATE (prevents concurrent duplicate successor creation)
       const lockRes = await client.query<UserSessionRecord>(
         `SELECT * FROM user_sessions WHERE refresh_token_hash = $1 FOR UPDATE;`,
@@ -98,27 +117,31 @@ export class SessionRepository {
       );
 
       if (lockRes.rows.length === 0) {
-        return { status: 'NOT_FOUND' };
+        return complete({ status: 'NOT_FOUND' });
       }
 
       const session = lockRes.rows[0];
 
       // 2. Token reuse / replay check: if already revoked, trigger universal user session revocation (EC-0020)
       if (session.revoked_at !== null) {
+        // A user-ended login must not sign out their other devices on a late refresh.
+        if (session.owner_revoked_at) return complete({ status: 'EXPIRED', oldSession: session });
         await client.query(
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL;`,
           [session.user_id],
         );
-        return { status: 'REUSED', oldSession: session };
+        return complete({ status: 'REUSED', oldSession: session });
       }
 
-      // 3. Expiry check
-      if (new Date() > session.expires_at) {
+      // Current authority and original OTP time survive every refresh successor.
+      const roleResult = await client.query<{ role: Role }>('SELECT role FROM user_roles WHERE user_id = $1', [session.user_id]);
+      // 3. Expiry check (including privileged absolute age).
+      if (new Date() >= session.expires_at || privilegedSessionExpired(roleResult.rows.map(r => r.role), session.authenticated_at)) {
         await client.query(
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1;`,
           [session.id],
         );
-        return { status: 'EXPIRED', oldSession: session };
+        return complete({ status: 'EXPIRED', oldSession: session });
       }
 
       // 4. Revoke the old session
@@ -131,9 +154,9 @@ export class SessionRepository {
       const insertRes = await client.query<UserSessionRecord>(
         `INSERT INTO user_sessions (
           user_id, refresh_token_hash, device_platform, device_id, device_name,
-          ip_address, user_agent, expires_at
+          ip_address, user_agent, expires_at, authenticated_at, mfa_verified_at, mfa_generation, session_family_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *;`,
         [
           session.user_id,
@@ -144,14 +167,18 @@ export class SessionRepository {
           newSessionData.ipAddress !== undefined ? newSessionData.ipAddress : session.ip_address,
           newSessionData.userAgent !== undefined ? newSessionData.userAgent : session.user_agent,
           newSessionData.expiresAt,
+          session.authenticated_at,
+          session.mfa_verified_at,
+          session.mfa_generation,
+          session.session_family_id,
         ],
       );
 
-      return {
+      return complete({
         status: 'SUCCESS',
         oldSession: session,
         newSession: insertRes.rows[0],
-      };
+      });
     });
   }
 

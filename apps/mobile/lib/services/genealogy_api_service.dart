@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import '../models/person.dart';
 import '../models/tree_node.dart';
 import 'session_store.dart';
+import 'chat_connection.dart';
+import 'chat_outbox.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -10,22 +12,47 @@ class GenealogyApiService {
   String? _refreshToken;
   final http.Client _client;
   final SessionStore _sessionStore;
+  final ChatOutboxStore _chatOutboxStore;
+  ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   void Function()? onSessionExpired;
+  void Function()? onMfaRequired;
 
   GenealogyApiService({
     this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000'),
     http.Client? client,
     SessionStore? sessionStore,
+    ChatOutboxStore? chatOutboxStore,
   }) : _client = client ?? http.Client(),
-       _sessionStore = sessionStore ?? SecureSessionStore();
+       _sessionStore = sessionStore ?? SecureSessionStore(),
+       _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore();
 
   void setAuthToken(String? token) {
+    _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
   }
 
   String? get authToken => _authToken;
+
+  // This subject scopes encrypted local intent, not server authorization. Every
+  // send still authenticates and checks current permissions in the API.
+  String? get chatAccountId {
+    try {
+      final parts=_authToken?.split('.');
+      if(parts==null||parts.length!=3){return null;}
+      final value=json.decode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      return value is Map&&value['sub'] is String?value['sub'] as String:null;
+    } catch(_){return null;}
+  }
+  ChatOutbox get chatOutbox => _chatOutbox ??= ChatOutbox(store:_chatOutboxStore,server:Uri.parse(baseUrl).toString(),
+    currentOwner:()=>chatAccountId,send:(message,owner) async {
+      final response=await _send('POST',Uri.parse('$baseUrl/chat/conversations/${message.conversationId}/${message.attachment==null?'messages':'attachments'}'),
+        boundAccountId:owner,body:json.encode({'content':message.content,'clientMessageId':message.id,...?message.attachment}));
+      if(response.statusCode<200||response.statusCode>=300){throw ChatSendFailure(response.statusCode);}
+      final value=json.decode(response.body);
+      if(value is! Map||value['id'] is! String){throw const FormatException('Invalid committed message response');}
+    });
 
   Future<void> _acceptSession(Map<String, dynamic> data) async {
     final access = data['accessToken'];
@@ -59,7 +86,7 @@ class GenealogyApiService {
     _authToken = null;
     _refreshToken = null;
     try { await _sessionStore.clear(); }
-    finally { onSessionExpired?.call(); }
+    finally { try { await chatOutbox.clear(); } finally { onSessionExpired?.call(); } }
   }
 
   Future<bool> _refreshSession() async {
@@ -87,8 +114,9 @@ class GenealogyApiService {
     return true;
   }
 
-  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true}) async {
+  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId}) async {
     Future<http.Response> send() async {
+      if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
       final request = http.Request(method, uri);
       request.headers.addAll(authenticated ? _headers : {'Content-Type': 'application/json'});
       if (body != null) { request.body = body; }
@@ -97,14 +125,22 @@ class GenealogyApiService {
     }
     final tokenUsed = _authToken;
     var response = await send();
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
     if (authenticated && response.statusCode == 401 && _refreshToken != null) {
       if (_authToken != tokenUsed || await _refreshSession()) { response = await send(); }
     }
     if (authenticated && response.statusCode == 401 && _authToken != null) { await _clearSession(); }
+    if (authenticated && response.statusCode == 403) {
+      try {
+        final value = json.decode(response.body);
+        if (value is Map && value['errorCode'] == 'MFA_REQUIRED') { onMfaRequired?.call(); }
+      } on FormatException { /* Non-JSON denials remain ordinary errors. */ }
+    }
     return response;
   }
 
   Future<void> logout() async {
+    _chatOutbox?.stop();
     try {
       if (_refreshing != null) { await _refreshing; }
       final response = await _send('POST', Uri.parse('$baseUrl/auth/logout'),
@@ -115,7 +151,7 @@ class GenealogyApiService {
     }
   }
 
-  void dispose() => _client.close();
+  void dispose() { _chatOutbox?.dispose(); _client.close(); }
 
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
@@ -151,6 +187,37 @@ class GenealogyApiService {
     } else {
       throw Exception('OTP प्रमाणीकरण असफल भयो (${response.statusCode})');
     }
+  }
+
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data, String? boundAccountId}) async {
+    final response = await _send(method, Uri.parse('$baseUrl$path'),
+      body: data == null ? null : json.encode(data), boundAccountId: boundAccountId);
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Request session changed');}
+    final decoded = response.body.isEmpty ? null : json.decode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
+    }
+    return decoded;
+  }
+
+  Future<dynamic> communityMedia(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/community$path'),body:data==null?null:json.encode(data),boundAccountId:owner);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception('Community image request failed (${response.statusCode})');}
+    return method=='GET'?response:json.decode(response.body);
+  }
+
+  Future<http.Response> downloadChatAttachment(String conversationId,String messageId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/chat/conversations/$conversationId/messages/$messageId/attachment'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Attachment unavailable (${response.statusCode})');}
+    return response;
+  }
+
+  Future<ChatConnection> openChatConnection() async {
+    // A real authenticated request rotates an expired native session before the socket opens.
+    await getMyProfile();
+    final token = _authToken;
+    if (token == null) { throw StateError('Sign in for messaging'); }
+    return NativeChatConnection.connect(baseUrl, token);
   }
 
   // Bilingual search
@@ -274,6 +341,17 @@ class GenealogyApiService {
     final response = await _send('GET', Uri.parse('$baseUrl/profile/me'));
     if (response.statusCode != 200) { throw Exception('Profile load failed (${response.statusCode})'); }
     return json.decode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String,dynamic>> profilePhotoRequest(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/profile$path'),boundAccountId:owner,body:data==null?null:json.encode(data));
+    final result=json.decode(response.body);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception(result is Map?result['message']??'Photo request failed':'Photo request failed');}
+    return Map<String,dynamic>.from(result as Map);
+  }
+  Future<http.Response> downloadProfilePhoto(String assetId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/profile/media/$assetId?variant=thumbnail'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Photo unavailable');}return response;
   }
 
   Future<void> rsvpEvent(String eventId, String response) async {

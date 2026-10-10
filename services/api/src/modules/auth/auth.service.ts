@@ -1,3 +1,4 @@
+import { privilegedSessionExpired } from './privileged-session.policy';
 import {
   Injectable,
   BadRequestException,
@@ -7,6 +8,7 @@ import {
   Logger,
   Inject,
   Optional,
+  HttpException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -25,7 +27,7 @@ import {
 } from '@kashyap/contracts';
 import { RedisService } from '../../redis/redis.service';
 import { UserRepository } from '../../database/repositories/user.repository';
-import { SessionRepository } from '../../database/repositories/session.repository';
+import { SessionRepository, SessionRotationResult } from '../../database/repositories/session.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditRepository } from '../../database/repositories/audit.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
@@ -71,10 +73,91 @@ export class AuthService {
     return process.env.NODE_ENV === 'test' && process.env.ALLOW_IN_MEMORY_AUTH_FALLBACK === 'true';
   }
 
+  private evidenceUnavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+      message: 'Authentication evidence is unavailable. Please try again later.',
+      messageNepali: 'प्रमाणीकरण अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+    });
+  }
+
+  private async beginOtpAttempt(operation: 'REQUEST' | 'VERIFY', clientIp: string): Promise<string> {
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
+    const operationId = crypto.randomUUID();
+    try {
+      await this.auditOutboxRepo.recordAuditIntent({
+        action: `OTP_${operation}_ATTEMPT`, entityType: 'authentication_attempts', entityId: operationId,
+        newValue: { operationId, operation, outcome: 'STARTED' }, ipAddress: clientIp,
+      });
+    } catch {
+      this.logger.error('AUTH_EVIDENCE_WRITE_UNAVAILABLE');
+      throw this.evidenceUnavailable();
+    }
+    return operationId;
+  }
+
+  private otpFailureCode(error: unknown): string {
+    const response = error instanceof HttpException ? error.getResponse() : undefined;
+    const code = typeof response === 'object' && response !== null && 'errorCode' in response
+      ? (response as { errorCode: unknown }).errorCode : undefined;
+    const allowed = [ErrorCode.INVALID_PHONE_NUMBER, ErrorCode.OTP_EXPIRED, ErrorCode.OTP_MAX_ATTEMPTS_EXCEEDED,
+      ErrorCode.OTP_RESEND_COOLDOWN, ErrorCode.INVALID_OTP, ErrorCode.RATE_LIMIT_EXCEEDED,
+      ErrorCode.ACCOUNT_SUSPENDED, ErrorCode.ACCOUNT_DELETED, ErrorCode.EXTERNAL_PROVIDER_ERROR,
+      ErrorCode.SERVICE_UNAVAILABLE];
+    return allowed.includes(code as ErrorCode) ? code as string : 'AUTH_OPERATION_UNAVAILABLE';
+  }
+
+  private async recordOtpOutcome(operationId: string, operation: 'REQUEST' | 'VERIFY', outcome: 'SMS_ACCEPTED' | 'REJECTED', reasonCode: string): Promise<void> {
+    try {
+      await this.auditOutboxRepo!.recordAuditIntent({
+        action: `OTP_${operation}_OUTCOME`, entityType: 'authentication_attempts', entityId: operationId,
+        newValue: { operationId, operation, outcome, reasonCode },
+      });
+    } catch {
+      this.logger.error('AUTH_EVIDENCE_OUTCOME_UNAVAILABLE');
+      throw this.evidenceUnavailable();
+    }
+  }
+
+  async requestOtp(dto: RequestOtpDto, clientIp = '127.0.0.1'): Promise<RequestOtpResponse> {
+    const operationId = await this.beginOtpAttempt('REQUEST', clientIp);
+    let result: RequestOtpResponse;
+    try {
+      result = await this.requestOtpOperation(dto, clientIp);
+    } catch (error) {
+      await this.recordOtpOutcome(operationId, 'REQUEST', 'REJECTED', this.otpFailureCode(error));
+      if (error instanceof HttpException) throw error;
+      throw this.evidenceUnavailable();
+    }
+    // Provider acceptance is not a delivery receipt. No challenge credentials
+    // are returned until the outcome has been durably acknowledged.
+    await this.recordOtpOutcome(operationId, 'REQUEST', 'SMS_ACCEPTED', 'SMS_ACCEPTED');
+    return result;
+  }
+
+  async verifyOtp(dto: VerifyOtpDto, clientIp = '127.0.0.1', userAgent = 'unknown'): Promise<AuthSessionDto> {
+    if (!this.db || !this.auditOutboxRepo) {
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Durable login audit is unavailable',
+        messageNepali: 'लगइन अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+      });
+    }
+    const operationId = await this.beginOtpAttempt('VERIFY', clientIp);
+    try {
+      // Successful verification is evidenced by LOGIN in the session transaction.
+      return await this.verifyOtpOperation(dto, clientIp, userAgent, operationId);
+    } catch (error) {
+      await this.recordOtpOutcome(operationId, 'VERIFY', 'REJECTED', this.otpFailureCode(error));
+      if (error instanceof HttpException) throw error;
+      throw this.evidenceUnavailable();
+    }
+  }
+
   /**
    * Request OTP verification code for mobile number (AUTH-FR-001, AUTH-FR-002, AUTH-FR-004, EC-0011, EC-0012, EC-0225)
    */
-  async requestOtp(dto: RequestOtpDto, clientIp = '127.0.0.1'): Promise<RequestOtpResponse> {
+  private async requestOtpOperation(dto: RequestOtpDto, clientIp: string): Promise<RequestOtpResponse> {
     // 1. Normalize phone to canonical E.164 (+97798XXXXXXXX)
     const phone = normalizeNepaliPhone(dto.phoneNumber);
 
@@ -92,10 +175,13 @@ export class AuthService {
     if (isRedisLive && process.env.NODE_ENV !== 'test') {
       // IP rate limit (15 requests per 10 mins)
       const ipKey = `otp:ratelimit:ip:${clientIp}`;
-      const ipAttempts = await this.redisService.incr(ipKey);
-      if (ipAttempts === 1) {
-        await this.redisService.expire(ipKey, 600);
-      }
+      const ipAttempts = Number(await this.redisService.eval(`
+        local attempts = redis.call('INCR', KEYS[1])
+        if attempts == 1 or redis.call('TTL', KEYS[1]) < 0 then
+          redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return attempts
+      `, 1, ipKey, 600));
       if (ipAttempts > 15) {
         throw new BadRequestException({
           errorCode: ErrorCode.RATE_LIMIT_EXCEEDED,
@@ -211,9 +297,11 @@ export class AuthService {
     }
 
     // 5. Dispatch OTP via configured SMS Provider (AUTH-FR-002)
-    const smsResult = await this.smsProvider.sendOtp(phone, otpCode);
+    let smsResult: { success: boolean };
+    try { smsResult = await this.smsProvider.sendOtp(phone, otpCode); }
+    catch { smsResult = { success: false }; }
     if (!smsResult.success) {
-      this.logger.error(`SMS dispatch failed for phone ${phone}: ${smsResult.error}`);
+      this.logger.error('OTP_SMS_DISPATCH_FAILED');
       // Atomic SMS failure cleanup:
       // Clean up ONLY the failed challenge using atomic identity check without deleting newer challenges
       if (isRedisLive) {
@@ -268,11 +356,19 @@ export class AuthService {
    * Verify OTP and issue persistent tokens and authenticated session
    * (AUTH-FR-003, AUTH-FR-005, AUTH-FR-010, BR-GOV-001, EC-0013, EC-0014, EC-0015, EC-0023)
    */
-  async verifyOtp(
+  private async verifyOtpOperation(
     dto: VerifyOtpDto,
-    clientIp = '127.0.0.1',
-    userAgent = 'unknown',
+    clientIp: string,
+    userAgent: string,
+    operationId: string,
   ): Promise<AuthSessionDto> {
+    if (!this.db || !this.auditOutboxRepo) {
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Durable login audit is unavailable',
+        messageNepali: 'लगइन अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+      });
+    }
     const isRedisLive = this.redisService.isReady();
 
     if (!isRedisLive && !this.isExplicitTestFallback()) {
@@ -488,16 +584,46 @@ export class AuthService {
     const refreshTokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
     const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-    const session = await this.sessionRepo.createSession({
-      userId: user.id,
-      refreshTokenHash,
-      devicePlatform: dto.deviceInfo?.platform || 'web',
-      deviceId: dto.deviceInfo?.deviceId || null,
-      deviceName: dto.deviceInfo?.appVersion || null,
-      ipAddress: clientIp,
-      userAgent,
-      expiresAt: refreshExpiresAt,
-    });
+    let session: Awaited<ReturnType<SessionRepository['createSession']>>;
+    let loginAuditId: string;
+    try {
+      session = await this.db.transaction(async tx => {
+        const created = await this.sessionRepo.createSession({
+          userId: user.id,
+          refreshTokenHash,
+          devicePlatform: dto.deviceInfo?.platform || 'web',
+          deviceId: dto.deviceInfo?.deviceId || null,
+          deviceName: dto.deviceInfo?.appVersion || null,
+          ipAddress: clientIp,
+          userAgent,
+          expiresAt: refreshExpiresAt,
+        }, tx);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGIN, entityType: 'user_accounts', entityId: user.id, actorId: user.id,
+          actorRole: roles[0] || Role.REGISTERED_USER,
+          newValue: { roles, sessionId: created.id, operationId }, ipAddress: clientIp, userAgent,
+        }, tx);
+        loginAuditId = intent.id;
+        return created;
+      });
+    } catch {
+      // The challenge is already consumed. Never return credentials for a
+      // session whose durable audit/commit could not be confirmed.
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Login could not be completed. Request a new verification code.',
+        messageNepali: 'लगइन पूरा हुन सकेन। कृपया नयाँ प्रमाणीकरण कोड अनुरोध गर्नुहोस्।',
+      });
+    }
+
+    // Delivery can be retried from durable evidence without undoing a committed
+    // login. Do not drain unrelated backlog or expose downstream error details.
+    try {
+      await this.auditOutboxRepo.processOutboxEntry(loginAuditId!, this.auditRepo);
+    } catch {
+      this.logger.warn('Login audit delivery deferred; durable evidence retained');
+      await this.auditOutboxRepo.markFailed(loginAuditId!, 'LOGIN_AUDIT_DELIVERY_FAILED').catch(() => {});
+    }
 
     // 8. Access Token Issuance bound to persistent session sid (AUTH-FR-005)
     const payload: JwtPayload = {
@@ -516,23 +642,6 @@ export class AuthService {
       audience: JWT_AUDIENCE,
       expiresIn: JWT_ACCESS_EXPIRY,
     });
-
-    // 9. Append-Only Audit Logging (AUTH-FR-011, AUD-FR-001..005)
-    try {
-      await this.auditRepo.appendAuditLog(
-        AuditAction.LOGIN,
-        'user_accounts',
-        user.id,
-        user.id,
-        roles[0] || 'REGISTERED_USER',
-        null,
-        { phoneNumber: user.phone_number, roles, sessionId: session.id },
-        clientIp,
-        userAgent,
-      );
-    } catch (auditErr: any) {
-      this.logger.warn(`Audit log creation failed: ${auditErr.message}`);
-    }
 
     return {
       accessToken,
@@ -570,14 +679,61 @@ export class AuthService {
     const newRefreshTokenHash = crypto.createHash('sha256').update(newRawRefreshToken).digest('hex');
     const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Transactional rotation with SELECT ... FOR UPDATE row locking
-    const rotationResult = await this.sessionRepo.rotateSessionTransactional(tokenHash, {
-      newRefreshTokenHash,
-      expiresAt: newExpiresAt,
-      devicePlatform: 'web',
-      ipAddress: clientIp,
-      userAgent,
-    });
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
+    let rotationResult: SessionRotationResult;
+    let auditId: string | undefined;
+    let observedReplayUser: string | undefined;
+    try {
+      // Session mutation and redacted evidence share the locked transaction.
+      // No replacement credentials escape an unconfirmed commit.
+      rotationResult = await this.sessionRepo.rotateSessionTransactional(tokenHash, {
+        newRefreshTokenHash,
+        expiresAt: newExpiresAt,
+        devicePlatform: 'web',
+        ipAddress: clientIp,
+        userAgent,
+      }, async (result, client) => {
+        if (result.status === 'REUSED') observedReplayUser = result.oldSession!.user_id;
+        // Unknown tokens do not identify an account/session and cause no mutation.
+        if (!result.oldSession) return;
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.UPDATE,
+          entityType: 'user_sessions',
+          entityId: result.oldSession.id,
+          actorId: result.oldSession.user_id,
+          actorRole: 'SYSTEM',
+          newValue: {
+            outcome: result.status === 'SUCCESS' ? 'REFRESH_ROTATED'
+              : result.status === 'REUSED' ? 'REFRESH_REPLAY_ALL_SESSIONS_REVOKED' : 'REFRESH_EXPIRED_SESSION_REVOKED',
+            ...(result.newSession ? { successorSessionId: result.newSession.id } : {}),
+          },
+          ipAddress: clientIp,
+          userAgent,
+        }, client);
+        auditId = intent.id;
+      });
+    } catch {
+      // Audit unavailability must not suppress the existing security response
+      // to a known replay. This does not retry rotation or issue credentials.
+      if (observedReplayUser) {
+        try {
+          await this.sessionRepo.revokeAllForUser(observedReplayUser);
+          this.logger.error('REFRESH_REPLAY_REVOKED_WITH_UNCONFIRMED_EVIDENCE');
+        } catch {
+          this.logger.error('REFRESH_REPLAY_REVOCATION_UNCONFIRMED');
+        }
+      }
+      this.logger.error('REFRESH_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
+    }
+    if (auditId) {
+      try {
+        await this.auditOutboxRepo.processOutboxEntry(auditId, this.auditRepo);
+      } catch {
+        this.logger.warn('Refresh audit delivery deferred; durable evidence retained');
+        await this.auditOutboxRepo.markFailed(auditId, 'REFRESH_AUDIT_DELIVERY_FAILED').catch(() => {});
+      }
+    }
 
     if (rotationResult.status === 'NOT_FOUND') {
       throw new UnauthorizedException({
@@ -588,24 +744,9 @@ export class AuthService {
 
     // Token Reuse / Replay Detection (EC-0020)
     if (rotationResult.status === 'REUSED') {
-      const victimUserId = rotationResult.oldSession!.user_id;
       this.logger.error(
-        `SECURITY ALERT: Refresh token reuse detected for user ${victimUserId}! All sessions terminated (EC-0020).`,
+        'REFRESH_TOKEN_REUSE_DETECTED_ALL_SESSIONS_REVOKED',
       );
-
-      try {
-        await this.auditRepo.appendAuditLog(
-          AuditAction.UPDATE,
-          'user_sessions',
-          victimUserId,
-          victimUserId,
-          'SYSTEM',
-          null,
-          { alert: 'REFRESH_TOKEN_REUSE_DETECTED', action: 'ALL_SESSIONS_REVOKED' },
-          clientIp,
-          userAgent,
-        );
-      } catch {}
 
       throw new UnauthorizedException({
         errorCode: ErrorCode.REFRESH_TOKEN_REUSED,
@@ -636,6 +777,13 @@ export class AuthService {
     // Fetch up-to-date roles from database
     const roleRecords = await this.userRepo.getUserRoles(user.id);
     const roles = roleRecords.map((r) => r.role);
+    if (privilegedSessionExpired(roles, newSession.authenticated_at)) {
+      await this.sessionRepo.revokeSession(newSession.id);
+      throw new UnauthorizedException({
+        errorCode: ErrorCode.SESSION_EXPIRED,
+        message: 'Privileged session requires fresh authentication. Please log in again.',
+      });
+    }
     const branchIds = roleRecords.map((r) => r.branch_id).filter((b): b is string => b !== null);
 
     const payload: JwtPayload = {
@@ -722,63 +870,32 @@ export class AuthService {
       });
     }
 
+    if (!targetUserId) {
+      throw new UnauthorizedException({ errorCode: ErrorCode.UNAUTHORIZED, message: 'Persistent session owner is required for logout' });
+    }
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
     const uniqueSessions = Array.from(new Set(sessionsToRevoke));
-
-    // Execute session revocation and audit outbox recording in the same PostgreSQL transaction
-    const executeRevocation = async (client?: any) => {
-      for (const sId of uniqueSessions) {
-        await this.sessionRepo.revokeSession(sId, client);
-      }
-
-      if (targetUserId) {
-        if (this.auditOutboxRepo) {
-          await this.auditOutboxRepo.recordAuditIntent(
-            {
-              action: AuditAction.LOGOUT,
-              entityType: 'user_sessions',
-              entityId: uniqueSessions[0] || targetUserId,
-              actorId: targetUserId,
-              actorRole: 'USER',
-              oldValue: null,
-              newValue: { revokedSessions: uniqueSessions },
-              ipAddress: clientIp,
-              userAgent,
-            },
-            client,
-          );
-        } else {
-          await this.auditRepo.appendAuditLog(
-            AuditAction.LOGOUT,
-            'user_sessions',
-            uniqueSessions[0] || targetUserId,
-            targetUserId,
-            'USER',
-            null,
-            { revokedSessions: uniqueSessions },
-            clientIp,
-            userAgent,
-            client,
-          );
-        }
-      }
-    };
-
-    if (this.db) {
-      await this.db.transaction(async (client) => {
-        await executeRevocation(client);
+    let auditId: string;
+    try {
+      auditId = await this.db.transaction(async (client) => {
+        for (const id of uniqueSessions) await this.sessionRepo.revokeSession(id, client);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGOUT,
+          entityType: 'user_sessions',
+          entityId: uniqueSessions[0],
+          actorId: targetUserId,
+          actorRole: 'USER',
+          newValue: { revokedSessions: uniqueSessions },
+          ipAddress: clientIp,
+          userAgent,
+        }, client);
+        return intent.id;
       });
-    } else {
-      await executeRevocation();
+    } catch {
+      this.logger.error('LOGOUT_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
     }
-
-    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
-    if (this.auditOutboxRepo) {
-      try {
-        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-      } catch (err: any) {
-        this.logger.warn(`Audit outbox drain failed post-commit during logout: ${err.message}`);
-      }
-    }
+    await this.deliverLogoutAudit(auditId);
 
     return { success: true };
   }
@@ -791,60 +908,41 @@ export class AuthService {
     clientIp = '127.0.0.1',
     userAgent = 'unknown',
   ): Promise<{ success: boolean; revokedCount: number }> {
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
     let revokedCount = 0;
-
-    const executeRevocationAll = async (client?: any) => {
-      revokedCount = await this.sessionRepo.revokeAllForUser(userId, client);
-
-      if (this.auditOutboxRepo) {
-        await this.auditOutboxRepo.recordAuditIntent(
-          {
-            action: AuditAction.LOGOUT,
-            entityType: 'user_sessions',
-            entityId: userId,
-            actorId: userId,
-            actorRole: 'USER',
-            oldValue: null,
-            newValue: { scope: 'ALL_DEVICES', revokedCount },
-            ipAddress: clientIp,
-            userAgent,
-          },
-          client,
-        );
-      } else {
-        await this.auditRepo.appendAuditLog(
-          AuditAction.LOGOUT,
-          'user_sessions',
-          userId,
-          userId,
-          'USER',
-          null,
-          { scope: 'ALL_DEVICES', revokedCount },
-          clientIp,
+    let auditId: string;
+    try {
+      auditId = await this.db.transaction(async (client) => {
+        revokedCount = await this.sessionRepo.revokeAllForUser(userId, client);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGOUT,
+          entityType: 'user_sessions',
+          entityId: userId,
+          actorId: userId,
+          actorRole: 'USER',
+          newValue: { scope: 'ALL_DEVICES', revokedCount },
+          ipAddress: clientIp,
           userAgent,
-          client,
-        );
-      }
-    };
-
-    if (this.db) {
-      await this.db.transaction(async (client) => {
-        await executeRevocationAll(client);
+        }, client);
+        return intent.id;
       });
-    } else {
-      await executeRevocationAll();
+    } catch {
+      this.logger.error('LOGOUT_ALL_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
     }
-
-    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
-    if (this.auditOutboxRepo) {
-      try {
-        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-      } catch (err: any) {
-        this.logger.warn(`Audit outbox drain failed post-commit during logoutAll: ${err.message}`);
-      }
-    }
+    await this.deliverLogoutAudit(auditId);
 
     return { success: true, revokedCount };
+  }
+
+  private async deliverLogoutAudit(auditId: string): Promise<void> {
+    try {
+      // Only this mutation's event is attempted; the scheduled worker owns backlog delivery.
+      await this.auditOutboxRepo!.processOutboxEntry(auditId, this.auditRepo);
+    } catch {
+      this.logger.warn('Logout audit delivery deferred; durable evidence retained');
+      await this.auditOutboxRepo!.markFailed(auditId, 'LOGOUT_AUDIT_DELIVERY_FAILED').catch(() => {});
+    }
   }
 
   /**
@@ -917,10 +1015,10 @@ export class AuthService {
       }
 
       // Branch Admin cannot assign administrative roles
-      if (role === Role.SUPER_ADMIN || role === Role.BRANCH_ADMIN) {
+      if ([Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED,
-          message: 'Only Super Administrators can assign administrative roles (SUPER_ADMIN, BRANCH_ADMIN).',
+          message: 'Only Super Administrators can assign administrative roles (SUPER_ADMIN, CENTRAL_ADMIN, BRANCH_ADMIN).',
         });
       }
 
@@ -1017,7 +1115,7 @@ export class AuthService {
         });
       }
 
-      if (role === Role.SUPER_ADMIN || role === Role.BRANCH_ADMIN) {
+      if ([Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED,
           message: 'Only Super Administrators can revoke administrative roles.',

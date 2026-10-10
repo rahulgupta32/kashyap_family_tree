@@ -4,9 +4,51 @@ on:
   push:
     branches: [main, develop, 'feat/*']
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, 'feat/*']
 
 jobs:
+  search-scale:
+    name: Fictional million-Person search repository benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
+      - name: Verify evidence aggregation and measure actual repository queries
+        run: |
+          node --test scripts/search-scale-metrics.test.cjs
+          node scripts/verify-search-scale.cjs
+        env:
+          NODE_ENV: test
+          KASHYAP_DISPOSABLE_SEARCH_SCALE: 'true'
+          KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: search-scale-${{ github.run_id }}
+          path: test-results/search-scale.json
+          if-no-files-found: error
+
   build-and-test:
     name: Build & Verify Platform (PostgreSQL Service, Typecheck, Build, Unit & Integration Tests)
     runs-on: ubuntu-latest
@@ -39,6 +81,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate complete release implementation assessment
+        run: python3 scripts/validate_release_assessment.py
+
+      - name: Validate frozen genealogy workbook field inventory
+        run: |
+          python3 scripts/validate_genealogy_workbook_mapping.py
+          python3 scripts/test_genealogy_workbook_mapping.py
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,10 +97,13 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Install dependencies (Strict Frozen Lockfile)
         run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm run audit:production
 
       - name: Build shared packages
         run: pnpm run build:packages
@@ -84,6 +137,27 @@ jobs:
           SEED_ADMINS: 'true'
           JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
           SPARROW_SMS_TOKEN: test_sparrow_token
+
+      - name: Rehearse disposable fictional database restore and retained audit integrity
+        run: |
+          node --test scripts/restore-schema-canonicalization.test.cjs
+          node scripts/verify-disposable-restore.cjs
+        env:
+          NODE_ENV: test
+          KASHYAP_DISPOSABLE_RESTORE: 'true'
+          KASHYAP_RESTORE_CONTAINER: ${{ job.services.postgres.id }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+
+      - name: Retain disposable restore evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-restore-${{ github.run_id }}
+          path: test-results/disposable-restore.json
+          if-no-files-found: warn
 
       - name: Install Playwright Browsers
         run: pnpm exec playwright install --with-deps chromium
@@ -162,7 +236,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
       - name: Verify real daemon scanning
@@ -193,6 +267,7 @@ jobs:
     timeout-minutes: 45
     env:
       NODE_ENV: test
+      RUN_IMAGE_WORKER: 'true'
       USE_REAL_POSTGRES: 'true'
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
@@ -226,7 +301,7 @@ jobs:
           node-version: 20
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 9.15.9
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -275,3 +350,76 @@ jobs:
             test-results/m4-device-*.json
             test-results/kashyap-m4-debug.apk
           retention-days: 14
+
+  private-object-storage:
+    name: Private S3 media with real object storage and PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      RUN_S3_ACCEPTANCE: 'true'
+      MEDIA_STORAGE_BACKEND: s3
+      MEDIA_S3_ENDPOINT: http://127.0.0.1:9000
+      MEDIA_S3_BUCKET: kashyap-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      MEDIA_S3_REGION: us-east-1
+      MEDIA_S3_FORCE_PATH_STYLE: 'true'
+      AWS_ACCESS_KEY_ID: fictional_ci_storage
+      AWS_SECRET_ACCESS_KEY: fictional_ci_storage_password
+      USE_REAL_POSTGRES: 'true'
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: kashyap_test_user
+      DB_PASSWORD: kashyap_test_password
+      DB_NAME: kashyap_test_s3
+      JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
+      SPARROW_SMS_TOKEN: test_sparrow_token
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: kashyap_test_s3
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages
+      - name: Checkout pinned object storage fixture source
+        uses: actions/checkout@v4
+        with:
+          repository: minio/minio
+          ref: RELEASE.2025-09-07T16-13-09Z
+          path: .ci/minio
+      - name: Setup fixture Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: .ci/minio/go.mod
+          cache: false
+      - name: Build pinned object storage fixture
+        run: go build -o "$RUNNER_TEMP/kashyap-ci-minio" .
+        working-directory: .ci/minio
+      - name: Start isolated object storage fixture
+        run: |
+          MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" "$RUNNER_TEMP/kashyap-ci-minio" server "$RUNNER_TEMP/kashyap-ci-objects" --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 > "$RUNNER_TEMP/kashyap-ci-minio.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:9000/minio/health/live; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:9000/minio/health/live
+      - name: Verify private bytes, authorization, retries, integrity and cleanup
+        run: pnpm --filter @kashyap/api run test:integration --testPathPattern=s3-media
+      - name: Object storage diagnostics
+        if: failure()
+        run: cat "$RUNNER_TEMP/kashyap-ci-minio.log"

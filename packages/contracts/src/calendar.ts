@@ -4,7 +4,17 @@
 
 import { EventAudienceScope } from './enums.js';
 
+export type GenealogyAudienceSelection =
+  | { type: 'BRANCH'; branchId: string }
+  | { type: 'GENERATION'; branchId: string; generation: number }
+  | { type: 'DESCENDANTS'; ancestorPersonId: string };
+
 export interface CreateCalendarEventDto {
+  audienceSelection?: GenealogyAudienceSelection;
+  audiencePreviewId?: string;
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
   title: string;
   description?: string;
   eventType: string;
@@ -23,6 +33,15 @@ export interface CreateCalendarEventDto {
 }
 
 export interface CalendarEventDetailDto {
+  recurrenceRuleId?: string | null;
+  recurrenceYear?: number | null;
+  audienceSelection?: GenealogyAudienceSelection;
+  invitedUserIds?: string[];
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
+  lifecycleState?: 'ACTIVE' | 'CANCELLED';
+  canManage?: boolean;
   id: string;
   createdByUserId: string;
   title: string;

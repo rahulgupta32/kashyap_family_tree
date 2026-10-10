@@ -34,7 +34,64 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 
+export class SessionRefreshError extends Error {
+  constructor(public status:number,message:string){super(message);}
+}
+
 export class ApiClient {
+  static async calendarRecurrences<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/calendar/recurrences${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Recurring reminder request failed');return data;
+  }
+
+  static async genealogyImports<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/admin/genealogy-imports${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Genealogy staging request failed');return data;
+  }
+
+  static async branchAdministration<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/admin/branches${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Branch administration request failed');return data;
+  }
+  static async applicationSettings<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/admin/settings${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new SessionRefreshError(response.status,data.message||'Settings request failed');return data;
+  }
+
+  static async exactLookup(type:string,id:string,token:string):Promise<{type:string;id:string;result:Record<string,unknown>}>{
+    const response=await fetch(`${API_BASE}/admin/lookup?${new URLSearchParams({type,id})}`,{headers:this.getHeaders(token),credentials:'include',cache:'no-store'});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'Lookup failed');return data;
+  }
+
+  static async cultural<T>(path:string,token:string,method='GET',body?:unknown):Promise<T>{
+    const response=await fetch(`${API_BASE}/cultural/content${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'Cultural content request failed');return data;
+  }
+
+  static async profilePhoto(path:string,token:string,method='GET',body?:unknown):Promise<any> {
+    const response=await fetch(`${API_BASE}/profile${path}`,{method,headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const data=await response.json();if(!response.ok)throw new Error(data.message||'Photo request failed');return data;
+  }
+  static async profileImage(assetId:string,token:string):Promise<Blob> {
+    const response=await fetch(`${API_BASE}/profile/media/${assetId}?variant=thumbnail`,{headers:{Authorization:`Bearer ${token}`},credentials:'include',cache:'no-store'});
+    if(!response.ok)throw new Error('Photo is not ready');return response.blob();
+  }
+  static async community<T = unknown>(path: string, token: string, method = 'GET', body?: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE}/community${path}`, {
+      method, headers: this.getHeaders(token), credentials: 'include', cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || `Community request failed (${response.status})`);
+    return data as T;
+  }
+
+  static async communityImage(postId:string,assetId:string,token:string,variant='display'):Promise<Blob>{
+    const response=await fetch(`${API_BASE}/community/posts/${postId}/media/${assetId}?variant=${variant}`,{headers:this.getHeaders(token),credentials:'include',cache:'no-store'});
+    if(!response.ok)throw new Error(response.status===503?'Image is processing. Try again shortly.':'Image unavailable');
+    return response.blob();
+  }
+
   private static getHeaders(token?: string): HeadersInit {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) {
@@ -81,9 +138,9 @@ export class ApiClient {
       body: JSON.stringify(dto || {}),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(()=>({}));
     if (!res.ok) {
-      throw new Error(data.messageNepali || data.message || 'Token refresh failed');
+      throw new SessionRefreshError(res.status,data.messageNepali || data.message || 'Token refresh failed');
     }
     return data;
   }
@@ -427,6 +484,14 @@ export class ApiClient {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.messageNepali || data.message || 'Change request review failed');
+    return data;
+  }
+
+  static async calendarRequest(token: string, path: string, method = 'GET', body?: unknown): Promise<any> {
+    const res = await fetch(`${API_BASE}/calendar/${path}`, {method, headers: this.getHeaders(token), credentials:'include',
+      cache:'no-store', ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+    const data = await res.json();
+    if(!res.ok)throw new Error(data.message || 'Calendar action failed');
     return data;
   }
 

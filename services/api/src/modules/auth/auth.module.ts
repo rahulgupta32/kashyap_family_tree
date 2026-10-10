@@ -1,9 +1,14 @@
+import { SessionManagementController } from './session-management.controller';
+import { SessionManagementService } from './session-management.service';
+import { MfaService } from './mfa.service';
+import { MfaController } from './mfa.controller';
 import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './guards/jwt.strategy';
+import { OtpIngressGuard } from './guards/otp-ingress.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { BranchGuard } from './guards/branch.guard';
@@ -41,9 +46,12 @@ const isProd = process.env.NODE_ENV === 'production';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, MfaController, SessionManagementController],
   providers: [
+    SessionManagementService,
     AuthService,
+    OtpIngressGuard,
+    MfaService,
     JwtStrategy,
     JwtAuthGuard,
     RolesGuard,
@@ -57,6 +65,8 @@ const isProd = process.env.NODE_ENV === 'production';
   ],
   exports: [
     AuthService,
+    MfaService,
+    JwtStrategy,
     JwtModule,
     PassportModule,
     JwtAuthGuard,
@@ -67,3 +77,4 @@ const isProd = process.env.NODE_ENV === 'production';
   ],
 })
 export class AuthModule {}
+
