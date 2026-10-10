@@ -2,6 +2,8 @@
 
 This file records executable progress so work can resume without a conversation transcript.
 
+Latest recovery: see [2026-10-10 verification recovery](SESSION_RECOVERY_VERIFICATION_2026-10-10.md). The checkpoints below are historical; their pending CI statements are superseded by that report where explicitly verified.
+
 ## Source and preservation
 
 - Recovery baseline: `77ec6c40afd9cd608655c82a4e990823aa6b0fcb`.
