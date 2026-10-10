@@ -30,6 +30,7 @@ import {
   Role,
   ErrorCode,
 } from '@kashyap/contracts';
+import { OtpIngressGuard } from './guards/otp-ingress.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -83,6 +84,7 @@ export class AuthController {
   ) {}
 
   @Post('otp/request')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request OTP verification code for mobile number (AUTH-FR-001, AUTH-FR-002)' })
   @ApiResponse({ status: 200, description: 'OTP challenge initiated successfully' })
@@ -92,6 +94,7 @@ export class AuthController {
   }
 
   @Post('otp/verify')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify OTP code and retrieve access token with HttpOnly refresh cookie (AUTH-FR-003, AUTH-FR-005)' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully' })
@@ -147,6 +150,7 @@ export class AuthController {
   }
 
   @Post('native/verify')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Native platform OTP verification with token body transport' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully with token body transport' })

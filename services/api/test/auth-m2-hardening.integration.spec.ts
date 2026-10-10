@@ -434,11 +434,30 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       }finally{process.env.NODE_ENV=environment;send.mockRestore();}
       const row=(await dbService.query("SELECT new_value FROM audit_outbox WHERE action='OTP_REQUEST_OUTCOME' AND created_at>=$1",[start])).rows[0];expect(row.new_value.reasonCode).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);
     });
+    it('shares a real Redis ingress window across OTP request/native verification before evidence and SMS writes',async()=>{
+      const environment=process.env.NODE_ENV,phone=freshPhone(),send=jest.spyOn(smsAdapter,'sendOtp');
+      const count=()=>dbService.query("SELECT count(*)::int AS count FROM audit_outbox WHERE entity_type='authentication_attempts'").then(r=>r.rows[0].count);
+      const before=await count();process.env.NODE_ENV='development';
+      const keys=['otp:ratelimit:ingress:::ffff:127.0.0.1','otp:ratelimit:ingress:127.0.0.1'];for(const key of keys)await redisService.set(key,'59');
+      try{
+        const allowed=await post('/auth/otp/request',{phoneNumber:phone});expect(allowed.status).toBe(200);expect(send).toHaveBeenCalledTimes(1);expect(await count()).toBe(before+2);
+        const denied=await post('/auth/native/verify',{otpSessionId:'fictional-unconsumed-session',code:'000000'});expect(denied.status).toBe(429);expect(Number(denied.headers.get('retry-after'))).toBeGreaterThan(0);expect(Number(denied.headers.get('retry-after'))).toBeLessThanOrEqual(60);expect((await denied.json() as any).errorCode).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);
+        expect((await post('/auth/otp/request',{phoneNumber:phone})).status).toBe(429);expect(send).toHaveBeenCalledTimes(1);expect(await count()).toBe(before+2);
+        const used=(await Promise.all(keys.map(async key=>({value:await redisService.get(key),ttl:await redisService.ttl(key)})))).find(r=>r.value==='62');expect(used).toBeDefined();expect(used!.ttl).toBeGreaterThan(0);
+      }finally{process.env.NODE_ENV=environment;send.mockRestore();}
+    });
+    it('refuses HTTP authentication before evidence writes when the admission dependency is unavailable',async()=>{
+      const environment=process.env.NODE_ENV,phone=freshPhone(),before=(await dbService.query('SELECT count(*)::int AS count FROM audit_outbox')).rows[0].count;
+      const readiness=jest.spyOn(redisService,'isReady').mockReturnValue(false);process.env.NODE_ENV='development';
+      try{const response=await post('/auth/otp/request',{phoneNumber:phone});expect(response.status).toBe(503);expect((await response.json() as any).errorCode).toBe(ErrorCode.SERVICE_UNAVAILABLE);expect((await dbService.query('SELECT count(*)::int AS count FROM audit_outbox')).rows[0].count).toBe(before);}finally{process.env.NODE_ENV=environment;readiness.mockRestore();}
+    });
     it('restricts aggregate delivery status to current central authority with MFA and suppresses private database errors',async()=>{
       expect((await fetch(`${baseUrl}/audit/delivery`)).status).toBe(401);
       const user=await loginUser(freshPhone());
       const call=()=>fetch(`${baseUrl}/audit/delivery`,{headers:{Authorization:`Bearer ${user.accessToken}`}});
-      expect((await call()).status).toBe(403);await userRepo.assignRole(user.userId,Role.CENTRAL_ADMIN);expect((await call()).status).toBe(403);
+      expect((await call()).status).toBe(403);await userRepo.assignRole(user.userId,Role.CENTRAL_ADMIN);
+      const environment=process.env.NODE_ENV;process.env.NODE_ENV='production';
+      try{const required=await call();expect(required.status).toBe(403);expect((await required.json() as any).errorCode).toBe('MFA_REQUIRED');}finally{process.env.NODE_ENV=environment;}
       const enrollment=await fetch(`${baseUrl}/auth/mfa/enroll`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:'{}'});expect(enrollment.status).toBe(201);const setup:any=await enrollment.json();
       const confirmed=await fetch(`${baseUrl}/auth/mfa/confirm`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({code:totp(setup.secret,Math.floor(Date.now()/30000))})});expect(confirmed.status).toBe(201);
       const response=await call();expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');const data:any=await response.json();expect(data.worker.scope).toBe('THIS_API_PROCESS');expect(data.worker.lifecycle).toBe('TEST_DISABLED');expect(data.backlog.pending).toBeGreaterThan(0);expect(data.backlog.unresolvedOtpAttempts).toBeGreaterThan(0);

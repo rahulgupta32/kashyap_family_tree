@@ -6,6 +6,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './guards/jwt.strategy';
+import { OtpIngressGuard } from './guards/otp-ingress.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { BranchGuard } from './guards/branch.guard';
@@ -46,6 +47,7 @@ const isProd = process.env.NODE_ENV === 'production';
   controllers: [AuthController, MfaController],
   providers: [
     AuthService,
+    OtpIngressGuard,
     MfaService,
     JwtStrategy,
     JwtAuthGuard,
