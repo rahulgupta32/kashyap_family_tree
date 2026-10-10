@@ -8,6 +8,7 @@ import {
   Logger,
   Inject,
   Optional,
+  HttpException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -72,10 +73,91 @@ export class AuthService {
     return process.env.NODE_ENV === 'test' && process.env.ALLOW_IN_MEMORY_AUTH_FALLBACK === 'true';
   }
 
+  private evidenceUnavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+      message: 'Authentication evidence is unavailable. Please try again later.',
+      messageNepali: 'प्रमाणीकरण अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+    });
+  }
+
+  private async beginOtpAttempt(operation: 'REQUEST' | 'VERIFY', clientIp: string): Promise<string> {
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
+    const operationId = crypto.randomUUID();
+    try {
+      await this.auditOutboxRepo.recordAuditIntent({
+        action: `OTP_${operation}_ATTEMPT`, entityType: 'authentication_attempts', entityId: operationId,
+        newValue: { operationId, operation, outcome: 'STARTED' }, ipAddress: clientIp,
+      });
+    } catch {
+      this.logger.error('AUTH_EVIDENCE_WRITE_UNAVAILABLE');
+      throw this.evidenceUnavailable();
+    }
+    return operationId;
+  }
+
+  private otpFailureCode(error: unknown): string {
+    const response = error instanceof HttpException ? error.getResponse() : undefined;
+    const code = typeof response === 'object' && response !== null && 'errorCode' in response
+      ? (response as { errorCode: unknown }).errorCode : undefined;
+    const allowed = [ErrorCode.INVALID_PHONE_NUMBER, ErrorCode.OTP_EXPIRED, ErrorCode.OTP_MAX_ATTEMPTS_EXCEEDED,
+      ErrorCode.OTP_RESEND_COOLDOWN, ErrorCode.INVALID_OTP, ErrorCode.RATE_LIMIT_EXCEEDED,
+      ErrorCode.ACCOUNT_SUSPENDED, ErrorCode.ACCOUNT_DELETED, ErrorCode.EXTERNAL_PROVIDER_ERROR,
+      ErrorCode.SERVICE_UNAVAILABLE];
+    return allowed.includes(code as ErrorCode) ? code as string : 'AUTH_OPERATION_UNAVAILABLE';
+  }
+
+  private async recordOtpOutcome(operationId: string, operation: 'REQUEST' | 'VERIFY', outcome: 'SMS_ACCEPTED' | 'REJECTED', reasonCode: string): Promise<void> {
+    try {
+      await this.auditOutboxRepo!.recordAuditIntent({
+        action: `OTP_${operation}_OUTCOME`, entityType: 'authentication_attempts', entityId: operationId,
+        newValue: { operationId, operation, outcome, reasonCode },
+      });
+    } catch {
+      this.logger.error('AUTH_EVIDENCE_OUTCOME_UNAVAILABLE');
+      throw this.evidenceUnavailable();
+    }
+  }
+
+  async requestOtp(dto: RequestOtpDto, clientIp = '127.0.0.1'): Promise<RequestOtpResponse> {
+    const operationId = await this.beginOtpAttempt('REQUEST', clientIp);
+    let result: RequestOtpResponse;
+    try {
+      result = await this.requestOtpOperation(dto, clientIp);
+    } catch (error) {
+      await this.recordOtpOutcome(operationId, 'REQUEST', 'REJECTED', this.otpFailureCode(error));
+      if (error instanceof HttpException) throw error;
+      throw this.evidenceUnavailable();
+    }
+    // Provider acceptance is not a delivery receipt. No challenge credentials
+    // are returned until the outcome has been durably acknowledged.
+    await this.recordOtpOutcome(operationId, 'REQUEST', 'SMS_ACCEPTED', 'SMS_ACCEPTED');
+    return result;
+  }
+
+  async verifyOtp(dto: VerifyOtpDto, clientIp = '127.0.0.1', userAgent = 'unknown'): Promise<AuthSessionDto> {
+    if (!this.db || !this.auditOutboxRepo) {
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Durable login audit is unavailable',
+        messageNepali: 'लगइन अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+      });
+    }
+    const operationId = await this.beginOtpAttempt('VERIFY', clientIp);
+    try {
+      // Successful verification is evidenced by LOGIN in the session transaction.
+      return await this.verifyOtpOperation(dto, clientIp, userAgent, operationId);
+    } catch (error) {
+      await this.recordOtpOutcome(operationId, 'VERIFY', 'REJECTED', this.otpFailureCode(error));
+      if (error instanceof HttpException) throw error;
+      throw this.evidenceUnavailable();
+    }
+  }
+
   /**
    * Request OTP verification code for mobile number (AUTH-FR-001, AUTH-FR-002, AUTH-FR-004, EC-0011, EC-0012, EC-0225)
    */
-  async requestOtp(dto: RequestOtpDto, clientIp = '127.0.0.1'): Promise<RequestOtpResponse> {
+  private async requestOtpOperation(dto: RequestOtpDto, clientIp: string): Promise<RequestOtpResponse> {
     // 1. Normalize phone to canonical E.164 (+97798XXXXXXXX)
     const phone = normalizeNepaliPhone(dto.phoneNumber);
 
@@ -93,10 +175,13 @@ export class AuthService {
     if (isRedisLive && process.env.NODE_ENV !== 'test') {
       // IP rate limit (15 requests per 10 mins)
       const ipKey = `otp:ratelimit:ip:${clientIp}`;
-      const ipAttempts = await this.redisService.incr(ipKey);
-      if (ipAttempts === 1) {
-        await this.redisService.expire(ipKey, 600);
-      }
+      const ipAttempts = Number(await this.redisService.eval(`
+        local attempts = redis.call('INCR', KEYS[1])
+        if attempts == 1 or redis.call('TTL', KEYS[1]) < 0 then
+          redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return attempts
+      `, 1, ipKey, 600));
       if (ipAttempts > 15) {
         throw new BadRequestException({
           errorCode: ErrorCode.RATE_LIMIT_EXCEEDED,
@@ -212,9 +297,11 @@ export class AuthService {
     }
 
     // 5. Dispatch OTP via configured SMS Provider (AUTH-FR-002)
-    const smsResult = await this.smsProvider.sendOtp(phone, otpCode);
+    let smsResult: { success: boolean };
+    try { smsResult = await this.smsProvider.sendOtp(phone, otpCode); }
+    catch { smsResult = { success: false }; }
     if (!smsResult.success) {
-      this.logger.error(`SMS dispatch failed for phone ${phone}: ${smsResult.error}`);
+      this.logger.error('OTP_SMS_DISPATCH_FAILED');
       // Atomic SMS failure cleanup:
       // Clean up ONLY the failed challenge using atomic identity check without deleting newer challenges
       if (isRedisLive) {
@@ -269,10 +356,11 @@ export class AuthService {
    * Verify OTP and issue persistent tokens and authenticated session
    * (AUTH-FR-003, AUTH-FR-005, AUTH-FR-010, BR-GOV-001, EC-0013, EC-0014, EC-0015, EC-0023)
    */
-  async verifyOtp(
+  private async verifyOtpOperation(
     dto: VerifyOtpDto,
-    clientIp = '127.0.0.1',
-    userAgent = 'unknown',
+    clientIp: string,
+    userAgent: string,
+    operationId: string,
   ): Promise<AuthSessionDto> {
     if (!this.db || !this.auditOutboxRepo) {
       throw new ServiceUnavailableException({
@@ -513,7 +601,7 @@ export class AuthService {
         const intent = await this.auditOutboxRepo!.recordAuditIntent({
           action: AuditAction.LOGIN, entityType: 'user_accounts', entityId: user.id, actorId: user.id,
           actorRole: roles[0] || Role.REGISTERED_USER,
-          newValue: { roles, sessionId: created.id }, ipAddress: clientIp, userAgent,
+          newValue: { roles, sessionId: created.id, operationId }, ipAddress: clientIp, userAgent,
         }, tx);
         loginAuditId = intent.id;
         return created;

@@ -81,6 +81,34 @@ export class AuditOutboxRepository {
     return res.rows;
   }
 
+  async getDeliverySummary() {
+    // A single statement gives a consistent aggregate snapshot. Never expose
+    // event IDs, identities, addresses, payloads or provider diagnostics here.
+    const result = await this.db.query(`
+      WITH backlog AS (
+        SELECT count(*)::int AS "pending",
+          count(*) FILTER (WHERE status='FAILED')::int AS "failed",
+          count(*) FILTER (WHERE retry_count>=10)::int AS "exhausted",
+          count(*) FILTER (WHERE retry_count<10 AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP))::int AS "due",
+          count(*) FILTER (WHERE retry_count<10 AND next_attempt_at>CURRENT_TIMESTAMP)::int AS "delayed",
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-created_at)))),0)::double precision AS "oldestPendingAgeSeconds",
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-coalesce(next_attempt_at,created_at)))))
+            FILTER (WHERE retry_count<10 AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP)),0)::double precision AS "oldestDueAgeSeconds"
+        FROM audit_outbox WHERE status IN ('PENDING','FAILED')
+      ), unresolved AS (
+        SELECT count(*)::int AS "unresolvedOtpAttempts"
+        FROM audit_outbox attempt
+        WHERE attempt.action IN ('OTP_REQUEST_ATTEMPT','OTP_VERIFY_ATTEMPT')
+          AND attempt.created_at<CURRENT_TIMESTAMP-INTERVAL '10 minutes'
+          AND NOT EXISTS (
+            SELECT 1 FROM audit_outbox outcome
+            WHERE outcome.new_value->>'operationId'=attempt.entity_id::text
+              AND outcome.action IN ('OTP_REQUEST_OUTCOME','OTP_VERIFY_OUTCOME','LOGIN')
+          )
+      ) SELECT backlog.*,unresolved.* FROM backlog CROSS JOIN unresolved`);
+    return result.rows[0];
+  }
+
   async findByEntityId(entityId: string): Promise<AuditOutboxRecord[]> {
     const res = await this.db.query<AuditOutboxRecord>(
       `SELECT * FROM audit_outbox WHERE entity_id = $1 ORDER BY created_at DESC;`,
@@ -229,6 +257,7 @@ export class AuditOutboxRepository {
       }
     } catch {
       this.logger.error('Audit outbox selection unavailable; retained evidence will be retried');
+      throw new Error('AUDIT_SELECTION_UNAVAILABLE');
     }
 
     return { processed, failed };

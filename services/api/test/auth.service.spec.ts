@@ -89,6 +89,12 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         return Math.max(0, Math.ceil((item.expiresAt - Date.now()) / 1000));
       }),
       eval: jest.fn(async (script: string, numKeys: number, ...args: any[]) => {
+        if (numKeys === 1) {
+          const key=args[0],ttl=Number(args[1]),item=mockRedisData.get(key);
+          const value=Number(item?.value||0)+1;
+          mockRedisData.set(key,{value:String(value),expiresAt:item?.expiresAt||Date.now()+ttl*1000});
+          return value;
+        }
         if (numKeys === 5) {
           // Atomic OTP reservation script
           const cooldownKey = args[0];
@@ -403,6 +409,53 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     });
   });
 
+  describe('Durable OTP lifecycle evidence',()=>{
+    it('blocks SMS and Redis mutation when the initial evidence write is unavailable',async()=>{
+      const sms=jest.spyOn(smsProvider,'sendOtp');
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private storage detail'));
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(sms).not.toHaveBeenCalled();expect(mockRedisService.eval).not.toHaveBeenCalled();
+    });
+    it('does not consume verification attempts when the initial evidence write fails',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      mockRedisService.eval.mockClear();mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private storage detail'));
+      await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(mockRedisService.eval).not.toHaveBeenCalled();expect(JSON.parse(mockRedisData.get('otp:challenge:+9779841234567')!.value).attempts).toBe(0);
+    });
+    it('records fixed cooldown, invalid-code and exhausted-attempt outcomes without secrets',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toThrow();
+      for(let i=0;i<5;i++)await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toThrow();
+      const outcomes=mockAuditIntents.filter(e=>e.action.endsWith('_OUTCOME')).map(e=>e.newValue.reasonCode);
+      expect(outcomes).toContain(ErrorCode.OTP_RESEND_COOLDOWN);expect(outcomes.filter(c=>c===ErrorCode.INVALID_OTP)).toHaveLength(4);expect(outcomes).toContain(ErrorCode.OTP_MAX_ATTEMPTS_EXCEEDED);
+      const evidence=JSON.stringify(mockAuditIntents);
+      for(const secret of ['9841234567',requested.otpSessionId,'000000',smsProvider.getLastOtp('+9779841234567')!])expect(evidence).not.toContain(secret);
+    });
+    it('cleans up thrown SMS failures and redacts logs and retained outcomes',async()=>{
+      jest.spyOn(smsProvider,'sendOtp').mockRejectedValueOnce(new Error('Secret provider credential +9779841234567'));
+      const logging=jest.spyOn((authService as any).logger,'error').mockImplementation(()=>{});
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.EXTERNAL_PROVIDER_ERROR}});
+      expect(mockRedisData.has('otp:challenge:+9779841234567')).toBe(false);
+      expect(mockAuditIntents.at(-1).newValue.reasonCode).toBe(ErrorCode.EXTERNAL_PROVIDER_ERROR);
+      expect(logging).toHaveBeenCalledWith('OTP_SMS_DISPATCH_FAILED');
+      expect(JSON.stringify(logging.mock.calls)).not.toContain('Secret provider');logging.mockRestore();
+    });
+    it('returns no challenge credentials if provider acceptance outcome cannot be acknowledged',async()=>{
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any)=>{if(data.action==='OTP_REQUEST_OUTCOME')throw new Error('Private commit failure');return record(data);});
+      const sms=jest.spyOn(smsProvider,'sendOtp');
+      await expect(authService.requestOtp({phoneNumber:'9841234567'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(sms).toHaveBeenCalledTimes(1);expect(mockAuditIntents).toHaveLength(1);expect(mockAuditIntents[0].newValue.outcome).toBe('STARTED');
+    });
+    it('retains the attempt and returns safe unavailability when failure outcome persistence fails',async()=>{
+      const requested=await authService.requestOtp({phoneNumber:'9841234567'});
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any)=>{if(data.action==='OTP_VERIFY_OUTCOME')throw new Error('Private outcome failure');return record(data);});
+      await expect(authService.verifyOtp({otpSessionId:requested.otpSessionId,code:'000000'})).rejects.toMatchObject({response:{errorCode:ErrorCode.SERVICE_UNAVAILABLE}});
+      expect(mockAuditIntents.at(-1).action).toBe('OTP_VERIFY_ATTEMPT');expect(mockSessions.size).toBe(0);
+    });
+  });
+
   describe('OTP Verification & Single-Use Atomic Consumption (AUTH-FR-003, EC-0013, EC-0014, EC-0015)', () => {
     it('should successfully verify valid OTP, create persistent account without claiming person, and issue tokens', async () => {
       const initRes = await authService.requestOtp({ phoneNumber: '9841234567' });
@@ -429,9 +482,10 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       expect(decoded.roles).toContain(Role.REGISTERED_USER);
 
       // Verify audit log recorded LOGIN
-      expect(mockAuditIntents).toHaveLength(1);
-      expect(mockAuditIntents[0].action).toBe(AuditAction.LOGIN);
-      expect(mockAuditIntents[0].newValue.sessionId).toBe(decoded.sid);
+      const loginIntent=mockAuditIntents.find(e=>e.action===AuditAction.LOGIN);
+      expect(loginIntent).toBeDefined();
+      expect(loginIntent.newValue.sessionId).toBe(decoded.sid);
+      expect(mockAuditIntents.find(e=>e.action==='OTP_VERIFY_ATTEMPT').entityId).toBe(loginIntent.newValue.operationId);
       expect(JSON.stringify(mockAuditIntents)).not.toContain(session.refreshToken);
       expect(JSON.stringify(mockAuditIntents)).not.toContain(session.user.phoneNumber);
     });
@@ -440,9 +494,10 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
       const code=smsProvider.getLastOtp('+9779841234567')!;
       const signing=jest.spyOn(jwtService,'sign');
-      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private fictional database failure'));
+      const record=mockAuditOutboxRepo.recordAuditIntent.getMockImplementation();
+      mockAuditOutboxRepo.recordAuditIntent.mockImplementation(async(data:any,...args:any[])=>{if(data.action===AuditAction.LOGIN)throw new Error('Private fictional database failure');return record(data,...args);});
       await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('Login could not be completed');
-      expect(mockSessions.size).toBe(0);expect(mockAuditIntents).toHaveLength(0);expect(signing).not.toHaveBeenCalled();
+      expect(mockSessions.size).toBe(0);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(0);expect(signing).not.toHaveBeenCalled();
       await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('OTP session expired or not found');
     });
 
@@ -450,7 +505,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
       mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('Private downstream failure'));
       const result=await authService.verifyOtp({otpSessionId:challenge.otpSessionId,code:smsProvider.getLastOtp('+9779841234567')!});
-      expect(result.accessToken).toBeTruthy();expect(mockSessions.size).toBe(1);expect(mockAuditIntents).toHaveLength(1);
+      expect(result.accessToken).toBeTruthy();expect(mockSessions.size).toBe(1);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(1);
       expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent','LOGIN_AUDIT_DELIVERY_FAILED');
     });
 
@@ -470,7 +525,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       expect(signing).not.toHaveBeenCalled();
       // An uncertain commit may have persisted both records; it must not be
       // retried or claimed rolled back without database evidence.
-      expect(mockSessions.size).toBe(1);expect(mockAuditIntents).toHaveLength(1);
+      expect(mockSessions.size).toBe(1);expect(mockAuditIntents.filter(e=>e.action===AuditAction.LOGIN)).toHaveLength(1);
     });
 
     it('should atomically consume OTP and prevent replay attack (EC-0013)', async () => {

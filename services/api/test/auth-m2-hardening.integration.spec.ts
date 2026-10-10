@@ -377,6 +377,78 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
     });
   });
 
+  describe('Durable redacted OTP attempt/outcome evidence',()=>{
+    const post=(path:string,body:any)=>fetch(`${baseUrl}${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const freshPhone=()=>`+9779870${Math.floor(100000+Math.random()*900000)}`;
+    it('retains request acceptance, cooldown, invalid, exhausted and expired outcomes without challenge credentials',async()=>{
+      const phone=freshPhone(),start=new Date();
+      const request=await post('/auth/otp/request',{phoneNumber:phone});expect(request.status).toBe(200);
+      const challenge:any=await request.json(),code=smsAdapter.getLastOtp(phone)!;
+      expect((await post('/auth/otp/request',{phoneNumber:phone})).status).toBe(400);
+      for(let i=0;i<5;i++)expect((await post('/auth/otp/verify',{otpSessionId:challenge.otpSessionId,code:'000000'})).status).toBe(400);
+      expect((await post('/auth/otp/verify',{otpSessionId:challenge.otpSessionId,code})).status).toBe(400);
+      const rows=(await dbService.query("SELECT action,entity_id,actor_id,new_value FROM audit_outbox WHERE entity_type='authentication_attempts' AND created_at>=$1",[start])).rows;
+      const attempts=rows.filter(r=>r.action.endsWith('_ATTEMPT')),outcomes=rows.filter(r=>r.action.endsWith('_OUTCOME'));
+      expect(attempts).toHaveLength(8);expect(outcomes).toHaveLength(8);
+      for(const row of attempts){expect(row.actor_id).toBeNull();expect(outcomes.filter(o=>o.entity_id===row.entity_id)).toHaveLength(1);}
+      const reasons=outcomes.map(r=>r.new_value.reasonCode);
+      expect(reasons).toContain('SMS_ACCEPTED');expect(reasons).toContain(ErrorCode.OTP_RESEND_COOLDOWN);expect(reasons.filter(r=>r===ErrorCode.INVALID_OTP)).toHaveLength(4);expect(reasons).toContain(ErrorCode.OTP_MAX_ATTEMPTS_EXCEEDED);expect(reasons).toContain(ErrorCode.OTP_EXPIRED);
+      const evidence=JSON.stringify(rows);for(const secret of [phone,challenge.otpSessionId,code,'000000'])expect(evidence).not.toContain(secret);
+    });
+    it('refuses request and verification side effects when initial audit intent insertion fails',async()=>{
+      const phone=freshPhone(),send=jest.spyOn(smsAdapter,'sendOtp'),record=auditOutboxRepo.recordAuditIntent.bind(auditOutboxRepo);
+      const unavailable=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockImplementationOnce(async()=>{throw new Error('Private fictional evidence failure');});
+      try{const response=await post('/auth/otp/request',{phoneNumber:phone});expect(response.status).toBe(503);expect(send).not.toHaveBeenCalled();expect(await redisService.get(`otp:challenge:${phone}`)).toBeNull();expect(JSON.stringify(await response.json())).not.toContain('Private fictional');}finally{unavailable.mockRestore();send.mockRestore();}
+      const requested=await post('/auth/otp/request',{phoneNumber:phone}),challenge:any=await requested.json();
+      const blocked=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockImplementation(async(data,tx)=>{if(data.action==='OTP_VERIFY_ATTEMPT')throw new Error('Private fictional evidence failure');return record(data,tx);});
+      try{const response=await post('/auth/otp/verify',{otpSessionId:challenge.otpSessionId,code:'000000'});expect(response.status).toBe(503);expect(response.headers.get('set-cookie')).toBeNull();expect(JSON.parse((await redisService.get(`otp:challenge:${phone}`))!).attempts).toBe(0);}finally{blocked.mockRestore();}
+    });
+    it('keeps actual accepted-outcome evidence after a lost acknowledgement without returning challenge credentials',async()=>{
+      const phone=freshPhone(),start=new Date(),record=auditOutboxRepo.recordAuditIntent.bind(auditOutboxRepo);
+      const uncertain=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockImplementation(async(data,tx)=>{const result=await record(data,tx);if(data.action==='OTP_REQUEST_OUTCOME')throw new Error('Private lost acknowledgement');return result;});
+      try{const response=await post('/auth/otp/request',{phoneNumber:phone});expect(response.status).toBe(503);const body:any=await response.json();expect(body.otpSessionId).toBeUndefined();expect(JSON.stringify(body)).not.toContain('Private lost');}finally{uncertain.mockRestore();}
+      const rows=(await dbService.query("SELECT action,new_value FROM audit_outbox WHERE entity_type='authentication_attempts' AND created_at>=$1",[start])).rows;expect(rows).toHaveLength(2);expect(rows.find(r=>r.action==='OTP_REQUEST_OUTCOME').new_value.outcome).toBe('SMS_ACCEPTED');expect(smsAdapter.getLastOtp(phone)).toBeTruthy();
+    });
+    it('retains an unresolved verification attempt when rejected-outcome persistence is unavailable',async()=>{
+      const phone=freshPhone(),requested=await post('/auth/otp/request',{phoneNumber:phone}),challenge:any=await requested.json();
+      const record=auditOutboxRepo.recordAuditIntent.bind(auditOutboxRepo),baseline=(await auditOutboxRepo.getDeliverySummary()).unresolvedOtpAttempts;
+      const unavailable=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockImplementation(async(data,tx)=>{if(data.action==='OTP_VERIFY_OUTCOME')throw new Error('Private fictional outcome outage');return record(data,tx);});
+      try{const response=await post('/auth/native/verify',{otpSessionId:challenge.otpSessionId,code:'000000'});expect(response.status).toBe(503);const body:any=await response.json();expect(body.accessToken).toBeUndefined();expect(body.refreshToken).toBeUndefined();expect(JSON.stringify(body)).not.toContain('Private fictional');}finally{unavailable.mockRestore();}
+      const attempt=(await dbService.query("SELECT id FROM audit_outbox WHERE action='OTP_VERIFY_ATTEMPT' ORDER BY created_at DESC LIMIT 1")).rows[0];
+      await dbService.query("UPDATE audit_outbox SET created_at=CURRENT_TIMESTAMP-INTERVAL '11 minutes' WHERE id=$1",[attempt.id]);
+      expect((await auditOutboxRepo.getDeliverySummary()).unresolvedOtpAttempts).toBe(baseline+1);
+    });
+    it('cleans actual Redis reservation after a thrown SMS-provider failure',async()=>{
+      const phone=freshPhone(),start=new Date(),send=jest.spyOn(smsAdapter,'sendOtp').mockRejectedValueOnce(new Error(`Secret provider credential ${phone}`));
+      try{const response=await post('/auth/otp/request',{phoneNumber:phone});expect(response.status).toBe(503);expect((await response.json() as any).errorCode).toBe(ErrorCode.EXTERNAL_PROVIDER_ERROR);expect(await redisService.get(`otp:challenge:${phone}`)).toBeNull();expect(await redisService.get(`otp:active_session:${phone}`)).toBeNull();}finally{send.mockRestore();}
+      const row=(await dbService.query("SELECT new_value FROM audit_outbox WHERE action='OTP_REQUEST_OUTCOME' AND created_at>=$1",[start])).rows[0];expect(row.new_value.reasonCode).toBe(ErrorCode.EXTERNAL_PROVIDER_ERROR);expect(JSON.stringify(row)).not.toContain(phone);
+    });
+    it('records IP-rate rejection and repairs a pre-existing counter without an expiry atomically',async()=>{
+      const environment=process.env.NODE_ENV,phone=freshPhone(),start=new Date(),send=jest.spyOn(smsAdapter,'sendOtp');
+      process.env.NODE_ENV='development';
+      const ipKey='otp:ratelimit:ip:::ffff:127.0.0.1';await redisService.set(ipKey,'15');
+      // Fetch may use IPv4 or mapped IPv4 depending on the listener.
+      await redisService.set('otp:ratelimit:ip:127.0.0.1','15');
+      try{const response=await post('/auth/otp/request',{phoneNumber:phone});expect(response.status).toBe(400);expect((await response.json() as any).errorCode).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);expect(send).not.toHaveBeenCalled();
+        const keys=[ipKey,'otp:ratelimit:ip:127.0.0.1'];const used=(await Promise.all(keys.map(async key=>({value:await redisService.get(key),ttl:await redisService.ttl(key)})))).find(r=>r.value==='16');expect(used).toBeDefined();expect(used!.ttl).toBeGreaterThan(0);expect(used!.ttl).toBeLessThanOrEqual(600);
+      }finally{process.env.NODE_ENV=environment;send.mockRestore();}
+      const row=(await dbService.query("SELECT new_value FROM audit_outbox WHERE action='OTP_REQUEST_OUTCOME' AND created_at>=$1",[start])).rows[0];expect(row.new_value.reasonCode).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);
+    });
+    it('restricts aggregate delivery status to current central authority with MFA and suppresses private database errors',async()=>{
+      expect((await fetch(`${baseUrl}/audit/delivery`)).status).toBe(401);
+      const user=await loginUser(freshPhone());
+      const call=()=>fetch(`${baseUrl}/audit/delivery`,{headers:{Authorization:`Bearer ${user.accessToken}`}});
+      expect((await call()).status).toBe(403);await userRepo.assignRole(user.userId,Role.CENTRAL_ADMIN);expect((await call()).status).toBe(403);
+      const enrollment=await fetch(`${baseUrl}/auth/mfa/enroll`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:'{}'});expect(enrollment.status).toBe(201);const setup:any=await enrollment.json();
+      const confirmed=await fetch(`${baseUrl}/auth/mfa/confirm`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({code:totp(setup.secret,Math.floor(Date.now()/30000))})});expect(confirmed.status).toBe(201);
+      const response=await call();expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');const data:any=await response.json();expect(data.worker.scope).toBe('THIS_API_PROCESS');expect(data.worker.lifecycle).toBe('TEST_DISABLED');expect(data.backlog.pending).toBeGreaterThan(0);expect(data.backlog.unresolvedOtpAttempts).toBeGreaterThan(0);
+      for(const key of ['entity_id','actor_id','ip_address','user_agent','new_value','last_error'])expect(JSON.stringify(data)).not.toContain(key);
+      const failing=jest.spyOn(auditOutboxRepo,'getDeliverySummary').mockRejectedValueOnce(new Error('Private connection string'));
+      try{const failed=await call();expect(failed.status).toBe(503);expect(JSON.stringify(await failed.json())).not.toContain('Private connection');}finally{failing.mockRestore();}
+      await userRepo.revokeRole(user.userId,Role.CENTRAL_ADMIN);expect((await call()).status).toBe(403);
+    });
+  });
+
   // ==========================================================================
   // Item 1: Authenticate logout and bind sessions to their owners
   // ==========================================================================
@@ -827,7 +899,8 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       const phone=`+9779880${Math.floor(100000+Math.random()*900000)}`;
       const requested=await fetch(`${baseUrl}/auth/otp/request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneNumber:phone})});
       expect(requested.ok).toBe(true);const challenge:any=await requested.json();const otp=smsAdapter.getLastOtp(phone)!;
-      const failing=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockRejectedValueOnce(new Error('Private fictional audit database failure'));
+      const record=auditOutboxRepo.recordAuditIntent.bind(auditOutboxRepo);
+      const failing=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockImplementation(async(data,client)=>{if(data.action===AuditAction.LOGIN)throw new Error('Private fictional audit database failure');return record(data,client);});
       let body:any;
       try {
         const response=await fetch(`${baseUrl}/auth/otp/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({otpSessionId:challenge.otpSessionId,code:otp})});
@@ -895,6 +968,9 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
 
     it('Durable audit outbox: session revocation persists in PostgreSQL even if audit drain fails', async () => {
       const user = await loginUser(`+9779883${Math.floor(100000 + Math.random() * 900000)}`);
+
+      // Clear unrelated due authentication attempts before injecting this logout outage.
+      await auditOutboxRepo.drainOutbox(auditRepo);
 
       // Mock auditRepo.appendAuditLog to fail during drain
       const originalAppend = auditRepo.appendAuditLog;
