@@ -3,6 +3,7 @@ const { Pool } = require('../services/api/node_modules/pg');
 const { PersonRepository } = require('../services/api/dist/database/repositories/person.repository');
 const { randomUUID,createHash } = require('node:crypto');
 const { performance } = require('node:perf_hooks');
+const { execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,7 +44,9 @@ async function run(){
  result.personCount=Number((await pool.query('SELECT count(*) FROM persons')).rows[0].count);assert.equal(result.personCount,1000000);
  await pool.query('ANALYZE persons');await pool.query('ANALYZE person_names');
  result.postgresqlVersion=(await pool.query('SHOW server_version')).rows[0].server_version;
- result.sourceSha=process.env.GITHUB_SHA||null;
+ result.checkoutSha=process.env.GITHUB_SHA||null;
+ result.sourceSha=process.env.KASHYAP_SOURCE_HEAD_SHA||process.env.GITHUB_SHA||null;
+ result.sourceTreeSha=execFileSync('git',['rev-parse','HEAD^{tree}'],{cwd:path.join(__dirname,'..'),encoding:'utf8'}).trim();
  const repo=new PersonRepository({query:(sql,params)=>pool.query(sql,params)});
  const id=i=>createHash('md5').update('fictional-scale-person-'+i).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
  const scenarios=[{label:'NORMALIZED_NAME_WITH_PRIVATE_MATCH_EXCLUDED',query:'scale name needle',expectedId:id(1)},
@@ -64,7 +67,7 @@ async function run(){
  if(result.status!=='PASSED')process.exitCode=1;
 }
 (async()=>{
- try{await run();}catch{result.status='FAILED';result.failedStage=stage;result.errorCode='SEARCH_SCALE_REHEARSAL_FAILED';process.exitCode=1;}
+ try{await run();}catch(error){result.status='FAILED';result.failedStage=stage;result.errorCode=error.code==='57014'?'QUERY_DEADLINE_EXCEEDED':'SEARCH_SCALE_REHEARSAL_FAILED';process.exitCode=1;}
  finally{
   result.cleanup='PASSED';
   if(pool)try{await pool.end();}catch{result.cleanup='FAILED';}

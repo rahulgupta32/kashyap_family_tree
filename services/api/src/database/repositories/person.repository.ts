@@ -381,15 +381,9 @@ export class PersonRepository {
       params.push(q);
       const rawParam = paramIdx++;
 
-      conditions.push(`(
-        EXISTS (
-          SELECT 1 FROM person_names pn 
-          WHERE pn.person_id = p.id 
-            AND (lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))) LIKE $${wildParam} OR similarity(lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))), $${rawParam}) >= 0.3)
-        )
-        OR p.mool_ghar ILIKE $${wildParam}
-        OR p.birth_place ILIKE $${wildParam}
-      )`);
+      // Select indexed candidates once instead of evaluating fuzzy aliases for
+      // every Person. The outer visibility/archive/filter predicates remain identical.
+      conditions.push(`p.id IN (SELECT person_id FROM public.person_search_candidates($${rawParam},$${wildParam}))`);
 
       searchScoreSql = `COALESCE((SELECT MAX(similarity(lower(btrim(regexp_replace(normalize(pn.full_name, NFKC), '[[:space:]]+', ' ', 'g'))), $${rawParam})) FROM person_names pn WHERE pn.person_id = p.id), 0.0) as similarity_score`;
     }
