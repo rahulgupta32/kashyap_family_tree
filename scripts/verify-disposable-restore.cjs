@@ -107,6 +107,17 @@ async function run() {
   stage = 'VERIFY_RESTORED_RECORDS_AND_PROTECTIONS';
   const after = await manifest(target);
   result.mismatchedAreas = Object.keys(before).filter(key => digest(before[key]) !== digest(after[key]));
+  // Schema-only diagnostics keep strict comparison failures reviewable without emitting records.
+  result.schemaDifferences = {};
+  for (const key of ['constraints', 'indexes', 'triggers', 'sequences']) {
+    if (!result.mismatchedAreas.includes(key)) continue;
+    const oldRows = new Set(before[key].map(canonicalAuditJson));
+    const newRows = new Set(after[key].map(canonicalAuditJson));
+    result.schemaDifferences[key] = {
+      sourceOnly: before[key].filter(row => !newRows.has(canonicalAuditJson(row))),
+      restoredOnly: after[key].filter(row => !oldRows.has(canonicalAuditJson(row))),
+    };
+  }
   assert.deepEqual(after, before);
   const targetAudit = new AuditRepository(adapter(target));
   const integrity = await targetAudit.verifyIntegrity(); assert.equal(integrity.status, 'VERIFIED'); assert.equal(integrity.verifiedRecords, 1);
@@ -139,6 +150,7 @@ async function run() {
     result.finishedAt = new Date().toISOString();
     const report = path.join(__dirname, '../test-results/disposable-restore.json'); fs.mkdirSync(path.dirname(report), { recursive: true });
     fs.writeFileSync(report, JSON.stringify(result, null, 2), { mode: 0o600 });
+    if (result.status === 'FAILED') console.log(JSON.stringify({ failedStage: result.failedStage, errorCode: result.errorCode, schemaDifferences: result.schemaDifferences }));
     console.log(`${result.status}: disposable fictional restore; production acceptance remains open; report: test-results/disposable-restore.json`);
   }
 })();
