@@ -24,7 +24,7 @@ export default function DevicesPage(){
   catch{if(epoch===generation.current&&!abort.signal.aborted){setItems([]);setNext(null);setSelected(null);setMessage('कार्य पुष्टि भएन। सूची ताजा गर्नुहोस्। (Action unconfirmed. Refresh the list before retrying.)');}}
   finally{if(epoch===generation.current)setBusy(false);}
  }
- return <main className="mx-auto max-w-3xl p-6 space-y-4">
+ return <section aria-label="मेरा उपकरणहरू (My devices)" className="mx-auto max-w-3xl p-6 space-y-4">
   <h1 className="text-2xl font-bold">मेरा उपकरणहरू (My devices)</h1>
   <p>आफ्नो अर्को उपकरणको सत्र समाप्त गर्न सक्नुहुन्छ। (Review recorded sessions and sign out another device. Device labels are supplied by the client and do not prove device identity.)</p>
   {!accessToken&&!isLoading&&<p role="alert">साइन इन आवश्यक छ। (Sign in required.)</p>}
@@ -43,5 +43,5 @@ export default function DevicesPage(){
    <button disabled={busy} onClick={()=>void revoke()}>पुष्टि गर्नुहोस् (Confirm sign out)</button>{' '}
    <button disabled={busy} onClick={()=>setSelected(null)}>रद्द गर्नुहोस् (Cancel)</button>
   </section>}
- </main>;
+ </section>;
 }
