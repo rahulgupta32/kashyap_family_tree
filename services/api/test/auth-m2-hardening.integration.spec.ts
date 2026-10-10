@@ -928,6 +928,7 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect(['PENDING', 'FAILED']).toContain(matchingEntry.status);
 
       // 3. Subsequent drain must successfully process the entry into audit_logs
+      await dbService.query('UPDATE audit_outbox SET next_attempt_at=CURRENT_TIMESTAMP WHERE id=$1',[matchingEntry!.id]);
       const drainResult = await auditOutboxRepo.drainOutbox(auditRepo);
       expect(drainResult.processed).toBeGreaterThanOrEqual(1);
 
