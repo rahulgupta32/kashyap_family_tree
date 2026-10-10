@@ -40,7 +40,7 @@ test('Delivery refresh clears old status and presents an unavailable response wi
  await expect(page.getByText('This API process)',{exact:false})).toContainText('TEST_DISABLED');
  await page.route(`${API}/audit/delivery`,route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'Private fictional upstream detail'})}));
  await page.getByRole('button',{name:'अवस्था ताजा गर्नुहोस् (Refresh delivery status)',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('Audit delivery status is unavailable');
+ await expect(page.getByRole('region',{name:'अडिट वितरण (Audit delivery)',exact:true}).getByRole('alert')).toContainText('Audit delivery status is unavailable');
  await expect(page.getByText('This API process)',{exact:false})).toHaveCount(0);
  await expect(page.getByText('Private fictional upstream detail',{exact:false})).toHaveCount(0);
 });
