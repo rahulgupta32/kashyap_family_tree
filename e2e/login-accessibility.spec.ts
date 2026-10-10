@@ -9,7 +9,8 @@ test('Keyboard sign-in has associated labels, announced errors and focus across 
   await expect(phone).toHaveAttribute('autocomplete', 'tel-national');
   await phone.fill('123');
   await phone.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('Error');
+  await expect(page.locator('#login-error')).toHaveAttribute('role', 'alert');
+  await expect(page.locator('#login-error')).toContainText('Error');
   await expect(phone).toHaveAttribute('aria-invalid', 'true');
   await page.request.post(`${API}/auth/test-clear-cooldown`, { data: { phoneNumber: '9847788991' } });
   await phone.fill('9847788991');
@@ -30,7 +31,7 @@ test('Keyboard sign-in has associated labels, announced errors and focus across 
 test('A current central administrator can sign in normally, restore the session and read authorized delivery status', async ({ page }) => {
   await login(page);
   const administratorHeaders = await headers(page);
-  const transport = await requestFactory.newContext();
+  const transport = await requestFactory.newContext({ extraHTTPHeaders: {} });
   const phone = `984${Math.floor(1000000 + Math.random() * 9000000)}`;
   try {
     const requested = await transport.post(`${API}/auth/otp/request`, { data: { phoneNumber: phone } });
