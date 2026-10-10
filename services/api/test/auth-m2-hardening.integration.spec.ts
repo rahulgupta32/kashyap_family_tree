@@ -458,8 +458,10 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect((await call()).status).toBe(403);await userRepo.assignRole(user.userId,Role.CENTRAL_ADMIN);
       const environment=process.env.NODE_ENV;process.env.NODE_ENV='production';
       try{const required=await call();expect(required.status).toBe(403);expect((await required.json() as any).errorCode).toBe('MFA_REQUIRED');}finally{process.env.NODE_ENV=environment;}
-      const enrollment=await fetch(`${baseUrl}/auth/mfa/enroll`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:'{}'});expect(enrollment.status).toBe(201);const setup:any=await enrollment.json();
-      const confirmed=await fetch(`${baseUrl}/auth/mfa/confirm`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({code:totp(setup.secret,Math.floor(Date.now()/30000))})});expect(confirmed.status).toBe(201);
+      const enrollment=await fetch(`${baseUrl}/auth/mfa/enroll`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:'{}'});expect(enrollment.status).toBe(201);const setup:any=await enrollment.json();expect(setup.secret).toMatch(/^[A-Z2-7]{32}$/);
+      const factor=(await dbService.query('SELECT pending_ciphertext FROM account_authenticators WHERE user_id=$1',[user.userId])).rows[0];
+      const secret=decryptSecret(factor.pending_ciphertext,user.userId);
+      const confirmed=await fetch(`${baseUrl}/auth/mfa/confirm`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({code:totp(secret,Math.floor(Date.now()/30000))})});expect(confirmed.status).toBe(201);
       const response=await call();expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');const data:any=await response.json();expect(data.worker.scope).toBe('THIS_API_PROCESS');expect(data.worker.lifecycle).toBe('TEST_DISABLED');expect(data.backlog.pending).toBeGreaterThan(0);expect(data.backlog.unresolvedOtpAttempts).toBeGreaterThan(0);
       for(const key of ['entity_id','actor_id','ip_address','user_agent','new_value','last_error'])expect(JSON.stringify(data)).not.toContain(key);
       const failing=jest.spyOn(auditOutboxRepo,'getDeliverySummary').mockRejectedValueOnce(new Error('Private connection string'));
