@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
 import { Role } from '@kashyap/contracts';
 import { privilegedSessionExpired } from '../../modules/auth/privileged-session.policy';
+import { PoolClient } from 'pg';
 
 export interface UserSessionRecord {
   id: string;
@@ -35,7 +36,7 @@ export class SessionRepository {
     ipAddress?: string | null;
     userAgent?: string | null;
     expiresAt: Date;
-  }): Promise<UserSessionRecord> {
+  }, client?: PoolClient): Promise<UserSessionRecord> {
     const query = `
       INSERT INTO user_sessions (
         user_id, refresh_token_hash, device_platform, device_id, device_name,
@@ -54,7 +55,7 @@ export class SessionRepository {
       data.userAgent || null,
       data.expiresAt,
     ];
-    const res = await this.db.query<UserSessionRecord>(query, params);
+    const res = await this.db.query<UserSessionRecord>(query, params, client);
     return res.rows[0];
   }
 

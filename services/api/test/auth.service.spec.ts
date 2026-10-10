@@ -16,6 +16,9 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   let mockRoles: Map<string, any[]>;
   let mockSessions: Map<string, any>;
   let mockAuditLogs: any[];
+  let mockAuditIntents: any[];
+  let mockDatabase: any;
+  let mockAuditOutboxRepo: any;
 
   let mockRedisService: any;
   let mockUserRepo: any;
@@ -32,6 +35,12 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     mockRoles = new Map();
     mockSessions = new Map();
     mockAuditLogs = [];
+    mockAuditIntents = [];
+    mockDatabase = { transaction: jest.fn(async (callback:any)=>{
+      const before=new Map(mockSessions),count=mockAuditIntents.length;
+      try {return await callback({});} catch(error){mockSessions.clear();before.forEach((value,key)=>mockSessions.set(key,value));mockAuditIntents.splice(count);throw error;}
+    })};
+    mockAuditOutboxRepo={recordAuditIntent:jest.fn(async(data:any)=>{mockAuditIntents.push(data);return {id:'fictional-audit-intent'};}),processOutboxEntry:jest.fn().mockResolvedValue(true),markFailed:jest.fn().mockResolvedValue(undefined)};
 
     mockRedisService = {
       isReady: jest.fn().mockReturnValue(true),
@@ -341,6 +350,8 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       mockBranchRepo,
       mockAuditRepo,
       smsProvider,
+      mockDatabase,
+      mockAuditOutboxRepo,
     );
   });
 
@@ -418,8 +429,48 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       expect(decoded.roles).toContain(Role.REGISTERED_USER);
 
       // Verify audit log recorded LOGIN
-      expect(mockAuditLogs.length).toBeGreaterThan(0);
-      expect(mockAuditLogs[0][0]).toBe(AuditAction.LOGIN);
+      expect(mockAuditIntents).toHaveLength(1);
+      expect(mockAuditIntents[0].action).toBe(AuditAction.LOGIN);
+      expect(mockAuditIntents[0].newValue.sessionId).toBe(decoded.sid);
+      expect(JSON.stringify(mockAuditIntents)).not.toContain(session.refreshToken);
+      expect(JSON.stringify(mockAuditIntents)).not.toContain(session.user.phoneNumber);
+    });
+
+    it('returns no tokens and rolls back the session when durable login audit fails',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const code=smsProvider.getLastOtp('+9779841234567')!;
+      const signing=jest.spyOn(jwtService,'sign');
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('Private fictional database failure'));
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('Login could not be completed');
+      expect(mockSessions.size).toBe(0);expect(mockAuditIntents).toHaveLength(0);expect(signing).not.toHaveBeenCalled();
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('OTP session expired or not found');
+    });
+
+    it('keeps a committed login usable when audit delivery fails but retains retry evidence',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('Private downstream failure'));
+      const result=await authService.verifyOtp({otpSessionId:challenge.otpSessionId,code:smsProvider.getLastOtp('+9779841234567')!});
+      expect(result.accessToken).toBeTruthy();expect(mockSessions.size).toBe(1);expect(mockAuditIntents).toHaveLength(1);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent','LOGIN_AUDIT_DELIVERY_FAILED');
+    });
+
+    it('refuses verification before consuming an OTP when durable login dependencies are missing',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const unavailable=new AuthService(jwtService,mockRedisService,mockUserRepo,mockSessionRepo,mockBranchRepo,mockAuditRepo,smsProvider);
+      await expect(unavailable.verifyOtp({otpSessionId:challenge.otpSessionId,code:smsProvider.getLastOtp('+9779841234567')!})).rejects.toThrow('Durable login audit is unavailable');
+      expect(mockSessions.size).toBe(0);expect(mockRedisData.has(`otp:session:${challenge.otpSessionId}`)).toBe(true);
+    });
+
+    it('does not sign credentials when transaction commit cannot be confirmed',async()=>{
+      const challenge=await authService.requestOtp({phoneNumber:'9841234567'});
+      const code=smsProvider.getLastOtp('+9779841234567')!;
+      const signing=jest.spyOn(jwtService,'sign');
+      mockDatabase.transaction.mockImplementationOnce(async(callback:any)=>{await callback({});throw new Error('Fictional lost commit acknowledgement');});
+      await expect(authService.verifyOtp({otpSessionId:challenge.otpSessionId,code})).rejects.toThrow('Login could not be completed');
+      expect(signing).not.toHaveBeenCalled();
+      // An uncertain commit may have persisted both records; it must not be
+      // retried or claimed rolled back without database evidence.
+      expect(mockSessions.size).toBe(1);expect(mockAuditIntents).toHaveLength(1);
     });
 
     it('should atomically consume OTP and prevent replay attack (EC-0013)', async () => {

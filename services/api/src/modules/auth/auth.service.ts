@@ -274,6 +274,13 @@ export class AuthService {
     clientIp = '127.0.0.1',
     userAgent = 'unknown',
   ): Promise<AuthSessionDto> {
+    if (!this.db || !this.auditOutboxRepo) {
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Durable login audit is unavailable',
+        messageNepali: 'लगइन अभिलेख सेवा हाल अनुपलब्ध छ। कृपया केही समयपछि पुनः प्रयास गर्नुहोस्।',
+      });
+    }
     const isRedisLive = this.redisService.isReady();
 
     if (!isRedisLive && !this.isExplicitTestFallback()) {
@@ -489,16 +496,46 @@ export class AuthService {
     const refreshTokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
     const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-    const session = await this.sessionRepo.createSession({
-      userId: user.id,
-      refreshTokenHash,
-      devicePlatform: dto.deviceInfo?.platform || 'web',
-      deviceId: dto.deviceInfo?.deviceId || null,
-      deviceName: dto.deviceInfo?.appVersion || null,
-      ipAddress: clientIp,
-      userAgent,
-      expiresAt: refreshExpiresAt,
-    });
+    let session: Awaited<ReturnType<SessionRepository['createSession']>>;
+    let loginAuditId: string;
+    try {
+      session = await this.db.transaction(async tx => {
+        const created = await this.sessionRepo.createSession({
+          userId: user.id,
+          refreshTokenHash,
+          devicePlatform: dto.deviceInfo?.platform || 'web',
+          deviceId: dto.deviceInfo?.deviceId || null,
+          deviceName: dto.deviceInfo?.appVersion || null,
+          ipAddress: clientIp,
+          userAgent,
+          expiresAt: refreshExpiresAt,
+        }, tx);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGIN, entityType: 'user_accounts', entityId: user.id, actorId: user.id,
+          actorRole: roles[0] || Role.REGISTERED_USER,
+          newValue: { roles, sessionId: created.id }, ipAddress: clientIp, userAgent,
+        }, tx);
+        loginAuditId = intent.id;
+        return created;
+      });
+    } catch {
+      // The challenge is already consumed. Never return credentials for a
+      // session whose durable audit/commit could not be confirmed.
+      throw new ServiceUnavailableException({
+        errorCode: ErrorCode.SERVICE_UNAVAILABLE,
+        message: 'Login could not be completed. Request a new verification code.',
+        messageNepali: 'लगइन पूरा हुन सकेन। कृपया नयाँ प्रमाणीकरण कोड अनुरोध गर्नुहोस्।',
+      });
+    }
+
+    // Delivery can be retried from durable evidence without undoing a committed
+    // login. Do not drain unrelated backlog or expose downstream error details.
+    try {
+      await this.auditOutboxRepo.processOutboxEntry(loginAuditId!, this.auditRepo);
+    } catch {
+      this.logger.warn('Login audit delivery deferred; durable evidence retained');
+      await this.auditOutboxRepo.markFailed(loginAuditId!, 'LOGIN_AUDIT_DELIVERY_FAILED').catch(() => {});
+    }
 
     // 8. Access Token Issuance bound to persistent session sid (AUTH-FR-005)
     const payload: JwtPayload = {
@@ -517,23 +554,6 @@ export class AuthService {
       audience: JWT_AUDIENCE,
       expiresIn: JWT_ACCESS_EXPIRY,
     });
-
-    // 9. Append-Only Audit Logging (AUTH-FR-011, AUD-FR-001..005)
-    try {
-      await this.auditRepo.appendAuditLog(
-        AuditAction.LOGIN,
-        'user_accounts',
-        user.id,
-        user.id,
-        roles[0] || 'REGISTERED_USER',
-        null,
-        { phoneNumber: user.phone_number, roles, sessionId: session.id },
-        clientIp,
-        userAgent,
-      );
-    } catch (auditErr: any) {
-      this.logger.warn(`Audit log creation failed: ${auditErr.message}`);
-    }
 
     return {
       accessToken,

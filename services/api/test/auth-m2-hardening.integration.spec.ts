@@ -802,6 +802,63 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
   // Item 5: Mandatory Audit Evidence & Durable Outbox
   // ==========================================================================
   describe('5. Durable Audit Outbox & Transactional Role Rollback', () => {
+    it('commits login sessions with redacted durable audit and delivers exactly once after an audit outage',async()=>{
+      const phone=`+9779880${Math.floor(100000+Math.random()*900000)}`;
+      const unavailable=jest.spyOn(auditRepo,'appendAuditLog').mockRejectedValueOnce(new Error('Fictional initial login delivery outage'));
+      let user:Awaited<ReturnType<typeof loginUser>>;
+      try {user=await loginUser(phone);} finally {unavailable.mockRestore();}
+      const entries=await auditOutboxRepo.findByEntityId(user.userId);
+      const entry=entries.find(e=>e.action===AuditAction.LOGIN&&e.new_value?.sessionId===user.sessionId);
+      expect(entry).toBeDefined();expect(entry!.status).toBe('FAILED');expect(entry!.last_error).toBe('LOGIN_AUDIT_DELIVERY_FAILED');
+      const session=await sessionRepo.findById(user.sessionId);expect(session?.revoked_at).toBeNull();
+      const metadata=JSON.stringify(entry!.new_value);
+      for(const secret of [phone,user.refreshToken,user.accessToken,smsAdapter.getLastOtp(phone)!])expect(metadata).not.toContain(secret);
+      const failing=jest.spyOn(auditRepo,'appendAuditLog').mockRejectedValueOnce(new Error('Fictional login audit delivery outage'));
+      try {await expect(auditOutboxRepo.processOutboxEntry(entry!.id,auditRepo)).rejects.toThrow('Fictional login audit delivery outage');}
+      finally {failing.mockRestore();}
+      expect((await dbService.query('SELECT status FROM audit_outbox WHERE id=$1',[entry!.id])).rows[0].status).toBe('FAILED');
+      expect((await sessionRepo.findById(user.sessionId))?.revoked_at).toBeNull();
+      expect(await auditOutboxRepo.processOutboxEntry(entry!.id,auditRepo)).toBe(true);
+      expect(await auditOutboxRepo.processOutboxEntry(entry!.id,auditRepo)).toBe(false);
+      expect((await dbService.query("SELECT id FROM audit_logs WHERE new_value->>'outboxId'=$1",[entry!.id])).rows).toHaveLength(1);
+    });
+
+    it('rolls back login session creation and emits no refresh cookie when audit insertion fails',async()=>{
+      const phone=`+9779880${Math.floor(100000+Math.random()*900000)}`;
+      const requested=await fetch(`${baseUrl}/auth/otp/request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneNumber:phone})});
+      expect(requested.ok).toBe(true);const challenge:any=await requested.json();const otp=smsAdapter.getLastOtp(phone)!;
+      const failing=jest.spyOn(auditOutboxRepo,'recordAuditIntent').mockRejectedValueOnce(new Error('Private fictional audit database failure'));
+      let body:any;
+      try {
+        const response=await fetch(`${baseUrl}/auth/otp/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({otpSessionId:challenge.otpSessionId,code:otp})});
+        expect(response.status).toBe(503);expect(response.headers.get('set-cookie')).toBeNull();body=await response.json();
+        expect(body.accessToken).toBeUndefined();expect(body.refreshToken).toBeUndefined();expect(JSON.stringify(body)).not.toContain('Private fictional');
+      } finally {failing.mockRestore();}
+      const account=await userRepo.findByPhone(phone);expect(account).not.toBeNull();
+      expect((await dbService.query('SELECT id FROM user_sessions WHERE user_id=$1',[account!.id])).rows).toHaveLength(0);
+      expect(await auditOutboxRepo.findByEntityId(account!.id)).toHaveLength(0);
+      const replay=await fetch(`${baseUrl}/auth/otp/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({otpSessionId:challenge.otpSessionId,code:otp})});expect(replay.status).toBe(400);expect((await replay.json() as any).errorCode).toBe(ErrorCode.OTP_EXPIRED);
+      const fresh=await loginUser(phone);expect(fresh.accessToken).toBeTruthy();
+    });
+
+    it('returns no credentials after a lost login commit acknowledgement while retaining both committed records',async()=>{
+      const phone=`+9779880${Math.floor(100000+Math.random()*900000)}`;
+      const requested=await fetch(`${baseUrl}/auth/otp/request`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneNumber:phone})});
+      expect(requested.ok).toBe(true);const challenge:any=await requested.json();const otp=smsAdapter.getLastOtp(phone)!;
+      const transact=dbService.transaction.bind(dbService);
+      const uncertain=jest.spyOn(dbService,'transaction').mockImplementationOnce(async callback=>{await transact(callback);throw new Error('Fictional lost login commit acknowledgement');});
+      try {
+        const response=await fetch(`${baseUrl}/auth/otp/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({otpSessionId:challenge.otpSessionId,code:otp})});
+        expect(response.status).toBe(503);expect(response.headers.get('set-cookie')).toBeNull();
+        const body:any=await response.json();expect(body.accessToken).toBeUndefined();expect(body.refreshToken).toBeUndefined();
+      } finally {uncertain.mockRestore();}
+      const account=await userRepo.findByPhone(phone);expect(account).not.toBeNull();
+      const sessions=(await dbService.query('SELECT id FROM user_sessions WHERE user_id=$1',[account!.id])).rows;expect(sessions).toHaveLength(1);
+      const intents=await auditOutboxRepo.findByEntityId(account!.id);expect(intents).toHaveLength(1);expect(intents[0].new_value.sessionId).toBe(sessions[0].id);
+      const replay=await fetch(`${baseUrl}/auth/otp/verify`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({otpSessionId:challenge.otpSessionId,code:otp})});expect(replay.status).toBe(400);
+      const fresh=await loginUser(phone);expect(fresh.sessionId).not.toBe(sessions[0].id);
+    });
+
     it('should roll back role assignment if audit logging fails', async () => {
       const user = await loginUser(`+9779881${Math.floor(100000 + Math.random() * 900000)}`);
       const superAdminUser = await loginUser(`+9779882${Math.floor(100000 + Math.random() * 900000)}`);
