@@ -7,6 +7,47 @@ on:
     branches: [main, develop, 'feat/*']
 
 jobs:
+  search-scale:
+    name: Fictional million-Person search repository benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kashyap_test_user
+          POSTGRES_PASSWORD: kashyap_test_password
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:packages && pnpm --filter @kashyap/api run build
+      - name: Verify evidence aggregation and measure actual repository queries
+        run: |
+          node --test scripts/search-scale-metrics.test.cjs
+          node scripts/verify-search-scale.cjs
+        env:
+          NODE_ENV: test
+          KASHYAP_DISPOSABLE_SEARCH_SCALE: 'true'
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: search-scale-${{ github.run_id }}
+          path: test-results/search-scale.json
+          if-no-files-found: error
+
   build-and-test:
     name: Build & Verify Platform (PostgreSQL Service, Typecheck, Build, Unit & Integration Tests)
     runs-on: ubuntu-latest
