@@ -38,6 +38,7 @@ export default function RootLayout({
                   <Link href="/mfa?setup=1" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     सुरक्षा प्रमाणीकरण (Security verification)
                   </Link>
+                  <Link href="/devices" className="block px-3 py-2 text-slate-300">मेरा उपकरणहरू (My devices)</Link>
                   <Link href="/lookup" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">ठ्याक्कै ID खोज (Exact ID lookup)</Link>
               <Link href="/settings" className="block p-2 rounded hover:bg-gray-100">सेटिङ (Settings)</Link>
               <Link href="/imports" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm">वंशावली आयात समीक्षा (Genealogy import review)</Link>

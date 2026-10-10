@@ -98,7 +98,9 @@ async function run() {
   }
   await source.query('INSERT INTO parent_links(parent_id,child_id,created_by) VALUES($1,$2,$3)', [parent, child, userId]);
   await source.query("INSERT INTO user_roles(user_id,role,branch_id) VALUES($1,'REGISTERED_USER',$2)", [userId, branchId]);
-  await source.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at) VALUES($1,$2,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour')", [userId, digest(randomUUID())]);
+  const liveSession=(await source.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at) VALUES($1,$2,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour') RETURNING id", [userId, digest(randomUUID())])).rows[0].id;
+  const endedFamily=randomUUID();
+  await source.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at,session_family_id,revoked_at,owner_revoked_at) VALUES($1,$2,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour',$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),($1,$4,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour',$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",[userId,digest(randomUUID()),endedFamily,digest(randomUUID())]);
   const sourceAdapter = adapter(source), audit = new AuditRepository(sourceAdapter), outbox = new AuditOutboxRepository(sourceAdapter);
   const processed = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: parent, actorId: userId, newValue: { fixture: 'Fictional restore evidence' } });
   await outbox.processOutboxEntry(processed.id, audit);
@@ -168,6 +170,10 @@ async function run() {
   await assert.rejects(target.query('UPDATE audit_delivery_recovery_requests SET reason_code=reason_code'), /immutable/i);
   await assert.rejects(target.query('DELETE FROM audit_delivery_recovery_decisions'), /immutable/i);
   result.retainedRecoveryEvidence = 'VERIFIED';
+  const familyRows=(await target.query('SELECT session_family_id,revoked_at,owner_revoked_at FROM user_sessions WHERE session_family_id=$1',[endedFamily])).rows;
+  assert.equal(familyRows.length,2);assert.ok(familyRows.every(row=>row.revoked_at&&row.owner_revoked_at));
+  assert.equal((await target.query('SELECT revoked_at FROM user_sessions WHERE id=$1',[liveSession])).rows[0].revoked_at,null);
+  result.retainedSessionFamilies='VERIFIED';
   await targetAudit.appendAuditLog('UPDATE', 'persons', child, userId, 'SYSTEM', null, { fixture: 'Post-restore append' });
   assert.equal((await targetAudit.verifyIntegrity()).verifiedRecords, 2);
   result.status = 'PASSED'; result.checkedTables = before.records.length; result.migrations = files.length;

@@ -1,3 +1,5 @@
+import { SessionManagementController } from './session-management.controller';
+import { SessionManagementService } from './session-management.service';
 import { MfaService } from './mfa.service';
 import { MfaController } from './mfa.controller';
 import { Module, Global } from '@nestjs/common';
@@ -44,8 +46,9 @@ const isProd = process.env.NODE_ENV === 'production';
       }),
     }),
   ],
-  controllers: [AuthController, MfaController],
+  controllers: [AuthController, MfaController, SessionManagementController],
   providers: [
+    SessionManagementService,
     AuthService,
     OtpIngressGuard,
     MfaService,

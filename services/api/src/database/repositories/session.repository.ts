@@ -7,6 +7,8 @@ import { PoolClient } from 'pg';
 export interface UserSessionRecord {
   id: string;
   user_id: string;
+  session_family_id: string;
+  owner_revoked_at: Date | null;
   refresh_token_hash: string;
   device_id: string | null;
   device_platform: string;
@@ -104,6 +106,10 @@ export class SessionRepository {
         if (recordOutcome) await recordOutcome(result, client);
         return result;
       };
+      // Serialize all rotations/revocations in this server-created family.
+      // Lookup does not authorize; the locked row is validated again below.
+      const family = (await client.query('SELECT session_family_id FROM user_sessions WHERE refresh_token_hash=$1', [oldTokenHash])).rows[0];
+      if (family) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['session-family:'+family.session_family_id]);
       // 1. Lock the session row with SELECT ... FOR UPDATE (prevents concurrent duplicate successor creation)
       const lockRes = await client.query<UserSessionRecord>(
         `SELECT * FROM user_sessions WHERE refresh_token_hash = $1 FOR UPDATE;`,
@@ -118,6 +124,8 @@ export class SessionRepository {
 
       // 2. Token reuse / replay check: if already revoked, trigger universal user session revocation (EC-0020)
       if (session.revoked_at !== null) {
+        // A user-ended login must not sign out their other devices on a late refresh.
+        if (session.owner_revoked_at) return complete({ status: 'EXPIRED', oldSession: session });
         await client.query(
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL;`,
           [session.user_id],
@@ -146,9 +154,9 @@ export class SessionRepository {
       const insertRes = await client.query<UserSessionRecord>(
         `INSERT INTO user_sessions (
           user_id, refresh_token_hash, device_platform, device_id, device_name,
-          ip_address, user_agent, expires_at, authenticated_at, mfa_verified_at, mfa_generation
+          ip_address, user_agent, expires_at, authenticated_at, mfa_verified_at, mfa_generation, session_family_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *;`,
         [
           session.user_id,
@@ -162,6 +170,7 @@ export class SessionRepository {
           session.authenticated_at,
           session.mfa_verified_at,
           session.mfa_generation,
+          session.session_family_id,
         ],
       );
 

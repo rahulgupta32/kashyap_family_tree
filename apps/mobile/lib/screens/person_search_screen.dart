@@ -1,3 +1,4 @@
+import 'device_sessions_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
@@ -76,6 +77,10 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if (widget.apiService.authToken != null)
+            IconButton(tooltip: 'मेरा उपकरणहरू (My devices)', icon: const Icon(Icons.devices), onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeviceSessionsScreen(apiService: widget.apiService)));
+            }),
           if (widget.apiService.authToken != null)
             IconButton(tooltip: 'Security verification', icon: const Icon(Icons.security), onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => AuthenticatorScreen(
