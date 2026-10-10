@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert/strict');
+const { canonicalSchemaDefinition } = require('./restore-schema-canonicalization.cjs');
 const { AuditRepository, canonicalAuditJson } = require('../services/api/dist/database/repositories/audit.repository');
 const { AuditOutboxRepository } = require('../services/api/dist/database/repositories/audit-outbox.repository');
 
@@ -43,7 +44,10 @@ async function manifest(pool) {
     JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
     WHERE n.nspname='public' AND NOT t.tgisinternal ORDER BY c.relname,t.tgname`)).rows;
   const sequences = (await pool.query("SELECT sequencename,last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename")).rows;
-  return { records, constraints, indexes, triggers, sequences };
+  return { records,
+    constraints: constraints.map(row => ({ ...row, definition: canonicalSchemaDefinition(row.definition) })),
+    indexes: indexes.map(row => ({ ...row, indexdef: canonicalSchemaDefinition(row.indexdef) })),
+    triggers, sequences };
 }
 
 async function run() {

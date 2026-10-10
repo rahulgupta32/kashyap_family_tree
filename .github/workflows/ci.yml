@@ -97,7 +97,9 @@ jobs:
           SPARROW_SMS_TOKEN: test_sparrow_token
 
       - name: Rehearse disposable fictional database restore and retained audit integrity
-        run: node scripts/verify-disposable-restore.cjs
+        run: |
+          node --test scripts/restore-schema-canonicalization.test.cjs
+          node scripts/verify-disposable-restore.cjs
         env:
           NODE_ENV: test
           KASHYAP_DISPOSABLE_RESTORE: 'true'
