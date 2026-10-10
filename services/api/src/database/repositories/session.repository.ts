@@ -21,6 +21,12 @@ export interface UserSessionRecord {
   mfa_generation: number | null;
 }
 
+export interface SessionRotationResult {
+  status: 'SUCCESS' | 'REUSED' | 'EXPIRED' | 'NOT_FOUND';
+  oldSession?: UserSessionRecord;
+  newSession?: UserSessionRecord;
+}
+
 @Injectable()
 export class SessionRepository {
   private readonly logger = new Logger(SessionRepository.name);
@@ -91,12 +97,13 @@ export class SessionRepository {
       ipAddress?: string | null;
       userAgent?: string | null;
     },
-  ): Promise<{
-    status: 'SUCCESS' | 'REUSED' | 'EXPIRED' | 'NOT_FOUND';
-    oldSession?: UserSessionRecord;
-    newSession?: UserSessionRecord;
-  }> {
+    recordOutcome?: (result: SessionRotationResult, client: PoolClient) => Promise<void>,
+  ): Promise<SessionRotationResult> {
     return this.db.transaction(async (client) => {
+      const complete = async (result: SessionRotationResult): Promise<SessionRotationResult> => {
+        if (recordOutcome) await recordOutcome(result, client);
+        return result;
+      };
       // 1. Lock the session row with SELECT ... FOR UPDATE (prevents concurrent duplicate successor creation)
       const lockRes = await client.query<UserSessionRecord>(
         `SELECT * FROM user_sessions WHERE refresh_token_hash = $1 FOR UPDATE;`,
@@ -104,7 +111,7 @@ export class SessionRepository {
       );
 
       if (lockRes.rows.length === 0) {
-        return { status: 'NOT_FOUND' };
+        return complete({ status: 'NOT_FOUND' });
       }
 
       const session = lockRes.rows[0];
@@ -115,7 +122,7 @@ export class SessionRepository {
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL;`,
           [session.user_id],
         );
-        return { status: 'REUSED', oldSession: session };
+        return complete({ status: 'REUSED', oldSession: session });
       }
 
       // Current authority and original OTP time survive every refresh successor.
@@ -126,7 +133,7 @@ export class SessionRepository {
           `UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1;`,
           [session.id],
         );
-        return { status: 'EXPIRED', oldSession: session };
+        return complete({ status: 'EXPIRED', oldSession: session });
       }
 
       // 4. Revoke the old session
@@ -158,11 +165,11 @@ export class SessionRepository {
         ],
       );
 
-      return {
+      return complete({
         status: 'SUCCESS',
         oldSession: session,
         newSession: insertRes.rows[0],
-      };
+      });
     });
   }
 

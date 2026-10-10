@@ -27,7 +27,7 @@ import {
 } from '@kashyap/contracts';
 import { RedisService } from '../../redis/redis.service';
 import { UserRepository } from '../../database/repositories/user.repository';
-import { SessionRepository } from '../../database/repositories/session.repository';
+import { SessionRepository, SessionRotationResult } from '../../database/repositories/session.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditRepository } from '../../database/repositories/audit.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
@@ -679,14 +679,61 @@ export class AuthService {
     const newRefreshTokenHash = crypto.createHash('sha256').update(newRawRefreshToken).digest('hex');
     const newExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    // Transactional rotation with SELECT ... FOR UPDATE row locking
-    const rotationResult = await this.sessionRepo.rotateSessionTransactional(tokenHash, {
-      newRefreshTokenHash,
-      expiresAt: newExpiresAt,
-      devicePlatform: 'web',
-      ipAddress: clientIp,
-      userAgent,
-    });
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
+    let rotationResult: SessionRotationResult;
+    let auditId: string | undefined;
+    let observedReplayUser: string | undefined;
+    try {
+      // Session mutation and redacted evidence share the locked transaction.
+      // No replacement credentials escape an unconfirmed commit.
+      rotationResult = await this.sessionRepo.rotateSessionTransactional(tokenHash, {
+        newRefreshTokenHash,
+        expiresAt: newExpiresAt,
+        devicePlatform: 'web',
+        ipAddress: clientIp,
+        userAgent,
+      }, async (result, client) => {
+        if (result.status === 'REUSED') observedReplayUser = result.oldSession!.user_id;
+        // Unknown tokens do not identify an account/session and cause no mutation.
+        if (!result.oldSession) return;
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.UPDATE,
+          entityType: 'user_sessions',
+          entityId: result.oldSession.id,
+          actorId: result.oldSession.user_id,
+          actorRole: 'SYSTEM',
+          newValue: {
+            outcome: result.status === 'SUCCESS' ? 'REFRESH_ROTATED'
+              : result.status === 'REUSED' ? 'REFRESH_REPLAY_ALL_SESSIONS_REVOKED' : 'REFRESH_EXPIRED_SESSION_REVOKED',
+            ...(result.newSession ? { successorSessionId: result.newSession.id } : {}),
+          },
+          ipAddress: clientIp,
+          userAgent,
+        }, client);
+        auditId = intent.id;
+      });
+    } catch {
+      // Audit unavailability must not suppress the existing security response
+      // to a known replay. This does not retry rotation or issue credentials.
+      if (observedReplayUser) {
+        try {
+          await this.sessionRepo.revokeAllForUser(observedReplayUser);
+          this.logger.error('REFRESH_REPLAY_REVOKED_WITH_UNCONFIRMED_EVIDENCE');
+        } catch {
+          this.logger.error('REFRESH_REPLAY_REVOCATION_UNCONFIRMED');
+        }
+      }
+      this.logger.error('REFRESH_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
+    }
+    if (auditId) {
+      try {
+        await this.auditOutboxRepo.processOutboxEntry(auditId, this.auditRepo);
+      } catch {
+        this.logger.warn('Refresh audit delivery deferred; durable evidence retained');
+        await this.auditOutboxRepo.markFailed(auditId, 'REFRESH_AUDIT_DELIVERY_FAILED').catch(() => {});
+      }
+    }
 
     if (rotationResult.status === 'NOT_FOUND') {
       throw new UnauthorizedException({
@@ -697,24 +744,9 @@ export class AuthService {
 
     // Token Reuse / Replay Detection (EC-0020)
     if (rotationResult.status === 'REUSED') {
-      const victimUserId = rotationResult.oldSession!.user_id;
       this.logger.error(
-        `SECURITY ALERT: Refresh token reuse detected for user ${victimUserId}! All sessions terminated (EC-0020).`,
+        'REFRESH_TOKEN_REUSE_DETECTED_ALL_SESSIONS_REVOKED',
       );
-
-      try {
-        await this.auditRepo.appendAuditLog(
-          AuditAction.UPDATE,
-          'user_sessions',
-          victimUserId,
-          victimUserId,
-          'SYSTEM',
-          null,
-          { alert: 'REFRESH_TOKEN_REUSE_DETECTED', action: 'ALL_SESSIONS_REVOKED' },
-          clientIp,
-          userAgent,
-        );
-      } catch {}
 
       throw new UnauthorizedException({
         errorCode: ErrorCode.REFRESH_TOKEN_REUSED,

@@ -37,7 +37,7 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
     mockAuditLogs = [];
     mockAuditIntents = [];
     mockDatabase = { transaction: jest.fn(async (callback:any)=>{
-      const before=new Map(mockSessions),count=mockAuditIntents.length;
+      const before=structuredClone(mockSessions),count=mockAuditIntents.length;
       try {return await callback({});} catch(error){mockSessions.clear();before.forEach((value,key)=>mockSessions.set(key,value));mockAuditIntents.splice(count);throw error;}
     })};
     mockAuditOutboxRepo={recordAuditIntent:jest.fn(async(data:any)=>{mockAuditIntents.push(data);return {id:'fictional-audit-intent'};}),processOutboxEntry:jest.fn().mockResolvedValue(true),markFailed:jest.fn().mockResolvedValue(undefined)};
@@ -298,12 +298,13 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
         }
         return count;
       }),
-      rotateSessionTransactional: jest.fn(async (tokenHash: string, data: any) => {
+      rotateSessionTransactional: jest.fn(async (tokenHash: string, data: any, recordOutcome: any) => mockDatabase.transaction(async (client:any) => {
+        const complete = async (result:any) => { if(recordOutcome) await recordOutcome(result, client); return result; };
         const oldSession = Array.from(mockSessions.values()).find(
           (s) => s.refresh_token_hash === tokenHash,
         );
         if (!oldSession) {
-          return { status: 'NOT_FOUND' };
+          return complete({ status: 'NOT_FOUND' });
         }
         if (oldSession.revoked_at) {
           for (const s of mockSessions.values()) {
@@ -311,10 +312,11 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
               s.revoked_at = new Date();
             }
           }
-          return { status: 'REUSED', oldSession };
+          return complete({ status: 'REUSED', oldSession });
         }
         if (new Date(oldSession.expires_at).getTime() < Date.now()) {
-          return { status: 'EXPIRED' };
+          oldSession.revoked_at = new Date();
+          return complete({ status: 'EXPIRED', oldSession });
         }
 
         oldSession.revoked_at = new Date();
@@ -332,8 +334,8 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
           created_at: new Date(),
         };
         mockSessions.set(newSession.id, newSession);
-        return { status: 'SUCCESS', newSession, oldSession };
-      }),
+        return complete({ status: 'SUCCESS', newSession, oldSession });
+      })),
     };
 
     mockBranchRepo = {
@@ -599,6 +601,43 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   });
 
   describe('Sessions, Refresh Token Rotation & Replay Detection (AUTH-FR-006, EC-0020)', () => {
+    async function loginForRefresh() {
+      const request = await authService.requestOtp({ phoneNumber: '9841234567' });
+      return authService.verifyOtp({ otpSessionId: request.otpSessionId, code: smsProvider.getLastOtp('+9779841234567')! });
+    }
+
+    it('returns no replacement credentials and preserves the old session on failed evidence insertion', async () => {
+      const first = await loginForRefresh();
+      const oldId = Array.from(mockSessions.keys())[0];
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture failure'));
+      const sign = jest.spyOn(jwtService, 'sign');
+      await expect(authService.refreshToken({ refreshToken: first.refreshToken })).rejects.toMatchObject({ status: 503 });
+      expect(sign).not.toHaveBeenCalled();
+      expect(mockSessions.size).toBe(1);
+      expect(mockSessions.get(oldId).revoked_at).toBeNull();
+    });
+
+    it('retains redacted rotation evidence when immediate delivery is unavailable', async () => {
+      const first = await loginForRefresh();
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('private fixture failure'));
+      const next = await authService.refreshToken({ refreshToken: first.refreshToken });
+      expect(next.accessToken).toBeDefined();
+      const outcome = mockAuditIntents.find(row => row.newValue?.outcome === 'REFRESH_ROTATED');
+      expect(outcome).toBeDefined();
+      expect(JSON.stringify(outcome)).not.toContain(first.refreshToken);
+      expect(JSON.stringify(outcome)).not.toContain(next.refreshToken);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent', 'REFRESH_AUDIT_DELIVERY_FAILED');
+    });
+
+    it('returns no credentials on unconfirmed rotation and records no best-effort replay audit', async () => {
+      const first = await loginForRefresh();
+      mockSessionRepo.rotateSessionTransactional.mockRejectedValueOnce(new Error('private commit diagnostic'));
+      const sign = jest.spyOn(jwtService, 'sign');
+      await expect(authService.refreshToken({ refreshToken: first.refreshToken })).rejects.toMatchObject({ status: 503 });
+      expect(sign).not.toHaveBeenCalled();
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
+
     it('should rotate refresh token on /auth/refresh and invalidate previous token', async () => {
       const initRes = await authService.requestOtp({ phoneNumber: '9841234567' });
       const sentOtp = smsProvider.getLastOtp('+9779841234567')!;
