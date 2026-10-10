@@ -257,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const isAdmin = Boolean(
-    user && (user.roles.includes(Role.SUPER_ADMIN) || user.roles.includes(Role.BRANCH_ADMIN)),
+    user && user.roles.some(role => [Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)),
   );
 
   return (

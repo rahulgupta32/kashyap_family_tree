@@ -42,9 +42,9 @@ describe('Refresh mutation and durable evidence (real PostgreSQL)', () => {
       devicePlatform: 'ANDROID', expiresAt: new Date(Date.now() + (expired ? -1000 : 3600000)) });
     return { token, session };
   }
-  async function evidence() {
+  async function evidence(action = 'UPDATE') {
     return (await db.query('SELECT * FROM audit_outbox WHERE actor_id=$1 AND action=$2 ORDER BY created_at,id',
-      [actor, 'UPDATE'])).rows;
+      [actor, action])).rows;
   }
 
   it('retains redacted rotation evidence linked to the committed successor', async () => {
@@ -129,5 +129,62 @@ describe('Refresh mutation and durable evidence (real PostgreSQL)', () => {
     expect((await evidence()).map(row => row.new_value.outcome).sort()).toEqual([
       'REFRESH_REPLAY_ALL_SESSIONS_REVOKED', 'REFRESH_ROTATED',
     ]);
+  });
+
+  it('limits logout to the intended session and retains its own redacted audit intent', async () => {
+    const first=await seed(),second=await seed();
+    await service.logout({refreshToken:first.token});
+    expect((await sessions.findById(first.session.id))!.revoked_at).not.toBeNull();
+    expect((await sessions.findById(second.session.id))!.revoked_at).toBeNull();
+    const rows=await evidence('LOGOUT');expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({status:'PROCESSED',entity_id:first.session.id,new_value:{revokedSessions:[first.session.id]}});
+    expect(JSON.stringify(rows[0].new_value)).not.toContain(first.token);
+    expect(JSON.stringify(rows[0].new_value)).not.toContain(hash(first.token));
+  });
+
+  it('retains account-wide logout count and revocation in a single transaction', async () => {
+    await seed();await seed();
+    expect(await service.logoutAll(actor)).toEqual({success:true,revokedCount:2});
+    expect(await sessions.getActiveSessionsForUser(actor)).toHaveLength(0);
+    expect((await evidence('LOGOUT'))[0].new_value).toEqual({scope:'ALL_DEVICES',revokedCount:2});
+  });
+
+  it('rolls back every revocation when logout-all evidence insertion fails', async () => {
+    await seed();await seed();
+    jest.spyOn(outbox,'recordAuditIntent').mockRejectedValue(new Error('private fictional insertion failure'));
+    await expect(service.logoutAll(actor)).rejects.toMatchObject({status:503});
+    expect(await sessions.getActiveSessionsForUser(actor)).toHaveLength(2);
+    expect(await evidence('LOGOUT')).toHaveLength(0);
+  });
+
+  it('returns no logout success on a lost acknowledgement while preserving actual committed revocation and evidence', async () => {
+    const {token,session}=await seed();const transaction=db.transaction.bind(db);
+    jest.spyOn(db,'transaction').mockImplementationOnce(async(callback:any)=>{
+      await transaction(callback);throw new Error('private fictional lost acknowledgement');
+    });
+    await expect(service.logout({refreshToken:token})).rejects.toMatchObject({status:503});
+    expect((await sessions.findById(session.id))!.revoked_at).not.toBeNull();
+    const rows=await evidence('LOGOUT');expect(rows).toHaveLength(1);expect(rows[0].status).toBe('PENDING');
+  });
+
+  it('does not roll back logout or drain unrelated backlog after immediate delivery fails', async () => {
+    const {token,session}=await seed();
+    const unrelated=await outbox.recordAuditIntent({action:'UPDATE',entityType:'user_sessions',entityId:session.id,actorId:actor,newValue:{fixture:'unrelated'}});
+    const drain=jest.spyOn(outbox,'drainOutbox');
+    jest.spyOn(outbox,'processOutboxEntry').mockRejectedValue(new Error('private fictional delivery failure'));
+    expect(await service.logout({refreshToken:token})).toEqual({success:true});
+    expect(drain).not.toHaveBeenCalled();
+    expect((await sessions.findById(session.id))!.revoked_at).not.toBeNull();
+    const rows=await evidence('LOGOUT');expect(rows[0]).toMatchObject({status:'FAILED',retry_count:1,last_error:'LOGOUT_AUDIT_DELIVERY_FAILED'});
+    expect(rows[0].next_attempt_at).not.toBeNull();
+    expect((await db.query('SELECT status FROM audit_outbox WHERE id=$1',[unrelated.id])).rows[0].status).toBe('PENDING');
+  });
+
+  it('refuses logout mutations without durable dependencies instead of silently falling back', async () => {
+    const {token,session}=await seed();
+    const unavailable=new AuthService(new JwtService(),{} as any,users,sessions,new BranchRepository(db),new AuditRepository(db),new TestSmsProviderAdapter());
+    await expect(unavailable.logout({refreshToken:token})).rejects.toMatchObject({status:503});
+    await expect(unavailable.logoutAll(actor)).rejects.toMatchObject({status:503});
+    expect((await sessions.findById(session.id))!.revoked_at).toBeNull();expect(await evidence('LOGOUT')).toHaveLength(0);
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Role } from '@kashyap/contracts';
 import { ApiClient } from '../../lib/api-client';
@@ -18,6 +18,15 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingUserPhone, setPendingUserPhone] = useState<string | null>(null);
+  const phoneInput = useRef<HTMLInputElement>(null);
+  const otpInput = useRef<HTMLInputElement>(null);
+  const deniedHeading = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (step === 'PHONE') phoneInput.current?.focus();
+    if (step === 'OTP') otpInput.current?.focus();
+    if (step === 'ACCESS_DENIED') deniedHeading.current?.focus();
+  }, [step]);
 
   // If already logged in as admin, redirect to dashboard
   useEffect(() => {
@@ -71,6 +80,7 @@ export default function LoginPage() {
 
       const hasAdminPrivilege =
         session.user.roles.includes(Role.SUPER_ADMIN) ||
+        session.user.roles.includes(Role.CENTRAL_ADMIN) ||
         session.user.roles.includes(Role.BRANCH_ADMIN);
 
       const culturalEntry=new URLSearchParams(window.location.search).get('next')==='/cultural'&&session.user.roles.some(r=>r!==Role.GUEST&&r!==Role.REGISTERED_USER);
@@ -108,28 +118,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4">
+    <section aria-labelledby="login-heading" className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4">
       {/* Brand Header */}
       <div className="mb-8 text-center">
         <div className="w-16 h-16 rounded-full bg-saffron-600 text-white text-2xl font-bold flex items-center justify-center mx-auto shadow-md mb-3">
           क
         </div>
-        <h1 className="text-2xl font-bold text-slate-800">कश्यप अधिकारी वंशावली</h1>
+        <h1 id="login-heading" className="text-2xl font-bold text-slate-800">कश्यप अधिकारी वंशावली</h1>
         <p className="text-sm text-slate-500 mt-1">प्रशासनिक पोर्टल (Central Administration Portal)</p>
       </div>
 
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
         {error && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+          <div id="login-error" role="alert" className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
             <p className="font-semibold">त्रुटि (Error):</p>
             <p>{error}</p>
           </div>
         )}
 
         {step === 'PHONE' && (
-          <form onSubmit={handleRequestOtp} className="space-y-6">
+          <form onSubmit={handleRequestOtp} aria-busy={isSubmitting} className="space-y-6">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label htmlFor="login-phone" className="block text-sm font-semibold text-slate-700 mb-2">
                 मोबाइल नम्बर (Mobile Number)
               </label>
               <div className="relative">
@@ -137,6 +147,13 @@ export default function LoginPage() {
                   +977
                 </span>
                 <input
+                  id="login-phone"
+                  ref={phoneInput}
+                  autoComplete="tel-national"
+                  inputMode="tel"
+                  aria-describedby={error ? 'phone-help login-error' : 'phone-help'}
+                  aria-invalid={Boolean(error)}
+                  disabled={isSubmitting}
                   type="tel"
                   required
                   placeholder="98XXXXXXXX"
@@ -145,7 +162,7 @@ export default function LoginPage() {
                   className="w-full pl-16 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-saffron-500 focus:border-transparent text-slate-900 font-mono text-base"
                 />
               </div>
-              <p className="text-xs text-slate-400 mt-2">
+              <p id="phone-help" className="text-xs text-slate-600 mt-2">
                 नेपालको १०-अंकीय मोबाइल नम्बर प्रविष्ट गर्नुहोस् (९८ वा ९७ बाट सुरु भएको)।
               </p>
             </div>
@@ -161,15 +178,16 @@ export default function LoginPage() {
         )}
 
         {step === 'OTP' && (
-          <form onSubmit={handleVerifyOtp} className="space-y-6">
+          <form onSubmit={handleVerifyOtp} aria-busy={isSubmitting} className="space-y-6">
             <div>
               <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-semibold text-slate-700">
+                <label htmlFor="login-otp" className="text-sm font-semibold text-slate-700">
                   प्रमाणीकरण कोड (Verification OTP)
                 </label>
                 <button
                   type="button"
-                  onClick={() => setStep('PHONE')}
+                  disabled={isSubmitting}
+                  onClick={() => { setStep('PHONE'); setOtpCode(''); setOtpSessionId(''); setError(null); }}
                   className="text-xs text-saffron-600 hover:underline"
                 >
                   नम्बर परिवर्तन गर्नुहोस् (Change)
@@ -177,6 +195,13 @@ export default function LoginPage() {
               </div>
 
               <input
+                id="login-otp"
+                ref={otpInput}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                aria-describedby={error ? 'otp-help login-error' : 'otp-help'}
+                aria-invalid={Boolean(error)}
+                disabled={isSubmitting}
                 type="text"
                 required
                 maxLength={6}
@@ -185,7 +210,7 @@ export default function LoginPage() {
                 onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                 className="w-full px-4 py-3 text-center tracking-widest text-2xl font-bold rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-saffron-500 focus:border-transparent text-slate-900 font-mono"
               />
-              <p className="text-xs text-slate-400 mt-2 text-center">
+              <p id="otp-help" className="text-xs text-slate-600 mt-2 text-center">
                 {phoneNumber} मा पठाइएको ६ अंकको कोड प्रविष्ट गर्नुहोस्।
               </p>
             </div>
@@ -219,11 +244,11 @@ export default function LoginPage() {
               !
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800">
+              <h2 ref={deniedHeading} tabIndex={-1} className="text-lg font-bold text-slate-800">
                 पहुँच अस्वीकृत (Access Denied)
               </h2>
               <p className="text-sm text-slate-600 mt-2">
-                मोबाइल नम्बर <span className="font-mono font-bold text-slate-800">{pendingUserPhone}</span> लाई कुनै पनि प्रशासनिक भूमिका (Super Admin वा Branch Admin) प्रदान गरिएको छैन।
+                मोबाइल नम्बर <span className="font-mono font-bold text-slate-800">{pendingUserPhone}</span> लाई कुनै पनि प्रशासनिक भूमिका (Super Admin, Central Admin वा Branch Admin) प्रदान गरिएको छैन।
               </p>
               <p className="text-xs text-slate-500 mt-3">
                 प्रशासनिक पहुँच प्राप्त गर्नका लागि केन्द्रीय प्रशासकसँग सम्पर्क गर्नुहोस्।
@@ -246,9 +271,9 @@ export default function LoginPage() {
       </div>
 
       <div className="mt-8 text-center text-xs text-slate-400">
-        <p>सुरक्षित केन्द्रीय प्रमाणीकरण (PostgreSQL & Redis Session Enforced)</p>
-        <p className="mt-1">Kashyap Adhikari Family Tree Governance — Release 1.0</p>
+        <p>सुरक्षित खाता पहुँच (Secure account access)</p>
+        <p className="mt-1">Kashyap Adhikari Family Tree Administration</p>
       </div>
-    </div>
+    </section>
   );
 }

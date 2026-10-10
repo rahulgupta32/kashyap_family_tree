@@ -96,6 +96,25 @@ jobs:
           JWT_SECRET: test_jwt_secret_key_minimum_32_chars_long_12345
           SPARROW_SMS_TOKEN: test_sparrow_token
 
+      - name: Rehearse disposable fictional database restore and retained audit integrity
+        run: node scripts/verify-disposable-restore.cjs
+        env:
+          NODE_ENV: test
+          KASHYAP_DISPOSABLE_RESTORE: 'true'
+          KASHYAP_RESTORE_CONTAINER: ${{ job.services.postgres.id }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: kashyap_test_user
+          DB_PASSWORD: kashyap_test_password
+
+      - name: Retain disposable restore evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-restore-${{ github.run_id }}
+          path: test-results/disposable-restore.json
+          if-no-files-found: warn
+
       - name: Install Playwright Browsers
         run: pnpm exec playwright install --with-deps chromium
 

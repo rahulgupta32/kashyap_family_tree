@@ -446,6 +446,28 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
         const used=(await Promise.all(keys.map(async key=>({value:await redisService.get(key),ttl:await redisService.ttl(key)})))).find(r=>r.value==='62');expect(used).toBeDefined();expect(used!.ttl).toBeGreaterThan(0);
       }finally{process.env.NODE_ENV=environment;send.mockRestore();}
     });
+    it('bounds browser and native refresh before rotation and audit growth in the shared admission window',async()=>{
+      const user=await loginUser(freshPhone());
+      const environment=process.env.NODE_ENV;
+      const keys=['otp:ratelimit:ingress:::ffff:127.0.0.1','otp:ratelimit:ingress:127.0.0.1'];
+      for(const key of keys)await redisService.set(key,'59');
+      process.env.NODE_ENV='development';
+      try{
+        const allowed=await post('/auth/native/refresh',{refreshToken:user.refreshToken});
+        expect(allowed.status).toBe(200);const next:any=await allowed.json();expect(next.refreshToken).toBeTruthy();
+        const before=(await dbService.query('SELECT count(*)::int AS count FROM audit_outbox')).rows[0].count;
+        for(const path of ['/auth/refresh','/auth/native/refresh']){
+          const denied=await post(path,{refreshToken:next.refreshToken});expect(denied.status).toBe(429);
+          expect(Number(denied.headers.get('retry-after'))).toBeGreaterThan(0);
+          expect(JSON.stringify(await denied.json())).not.toContain(next.refreshToken);
+        }
+        expect((await dbService.query('SELECT count(*)::int AS count FROM audit_outbox')).rows[0].count).toBe(before);
+        expect(await sessionRepo.getActiveSessionsForUser(user.userId)).toHaveLength(1);
+        const readiness=jest.spyOn(redisService,'isReady').mockReturnValue(false);
+        try{expect((await post('/auth/native/refresh',{refreshToken:next.refreshToken})).status).toBe(503);}finally{readiness.mockRestore();}
+        expect(await sessionRepo.getActiveSessionsForUser(user.userId)).toHaveLength(1);
+      }finally{process.env.NODE_ENV=environment;}
+    });
     it('refuses HTTP authentication before evidence writes when the admission dependency is unavailable',async()=>{
       const environment=process.env.NODE_ENV,phone=freshPhone(),before=(await dbService.query('SELECT count(*)::int AS count FROM audit_outbox')).rows[0].count;
       const readiness=jest.spyOn(redisService,'isReady').mockReturnValue(false);process.env.NODE_ENV='development';
@@ -468,6 +490,24 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       try{const failed=await call();expect(failed.status).toBe(503);expect(JSON.stringify(await failed.json())).not.toContain('Private connection');}finally{failing.mockRestore();}
       await userRepo.revokeRole(user.userId,Role.CENTRAL_ADMIN);expect((await call()).status).toBe(403);
     });
+  });
+
+  it('denies branch administrators Central Admin assignment and revocation at the HTTP boundary',async()=>{
+    const operator=await loginUser(`+9779873${Math.floor(100000+Math.random()*900000)}`);
+    const target=await loginUser(`+9779874${Math.floor(100000+Math.random()*900000)}`);
+    await userRepo.assignRole(operator.userId,Role.BRANCH_ADMIN,branchAId);
+    const call=(operation:string)=>fetch(`${baseUrl}/auth/roles/${operation}`,{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${operator.accessToken}`},
+      body:JSON.stringify({userId:target.userId,role:Role.CENTRAL_ADMIN,branchId:branchAId}),
+    });
+    const assigned=await call('assign');expect(assigned.status).toBe(403);
+    expect((await assigned.json() as any).errorCode).toBe(ErrorCode.ROLE_ASSIGNMENT_DENIED);
+    expect((await userRepo.getUserRoles(target.userId)).some(row=>row.role===Role.CENTRAL_ADMIN)).toBe(false);
+    // Retained historical branch-scoped central records still cannot be revoked by a branch administrator.
+    await userRepo.assignRole(target.userId,Role.CENTRAL_ADMIN,branchAId);
+    const revoked=await call('revoke');expect(revoked.status).toBe(403);
+    expect((await revoked.json() as any).errorCode).toBe(ErrorCode.ROLE_ASSIGNMENT_DENIED);
+    expect((await userRepo.getUserRoles(target.userId)).some(row=>row.role===Role.CENTRAL_ADMIN)).toBe(true);
   });
 
   // ==========================================================================
@@ -1055,7 +1095,8 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
           },
           body: JSON.stringify({}),
         });
-        expect(res.status).toBe(500);
+        expect(res.status).toBe(503);
+        expect(JSON.stringify(await res.json())).not.toContain('Simulated Outbox');
       } finally {
         auditOutboxRepo.recordAuditIntent = originalRecord;
       }

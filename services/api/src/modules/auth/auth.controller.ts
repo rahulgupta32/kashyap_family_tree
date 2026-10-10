@@ -118,6 +118,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Renew session using HttpOnly cookie with rotation & reuse detection (AUTH-FR-006, EC-0020)' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
@@ -172,6 +173,7 @@ export class AuthController {
   }
 
   @Post('native/refresh')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Native platform token rotation with token body transport' })
   @ApiResponse({ status: 200, description: 'Token rotated successfully with token body transport' })
@@ -226,10 +228,10 @@ export class AuthController {
           audience: JWT_AUDIENCE,
           algorithms: [JWT_ALGORITHM],
         });
-      } catch (err: any) {
+      } catch {
         throw new UnauthorizedException({
           errorCode: ErrorCode.UNAUTHORIZED,
-          message: `Authentication required for logout: invalid or expired Bearer token (${err.message})`,
+          message: 'Authentication required for logout: invalid or expired Bearer token',
         });
       }
 

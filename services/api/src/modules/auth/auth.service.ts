@@ -870,63 +870,32 @@ export class AuthService {
       });
     }
 
+    if (!targetUserId) {
+      throw new UnauthorizedException({ errorCode: ErrorCode.UNAUTHORIZED, message: 'Persistent session owner is required for logout' });
+    }
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
     const uniqueSessions = Array.from(new Set(sessionsToRevoke));
-
-    // Execute session revocation and audit outbox recording in the same PostgreSQL transaction
-    const executeRevocation = async (client?: any) => {
-      for (const sId of uniqueSessions) {
-        await this.sessionRepo.revokeSession(sId, client);
-      }
-
-      if (targetUserId) {
-        if (this.auditOutboxRepo) {
-          await this.auditOutboxRepo.recordAuditIntent(
-            {
-              action: AuditAction.LOGOUT,
-              entityType: 'user_sessions',
-              entityId: uniqueSessions[0] || targetUserId,
-              actorId: targetUserId,
-              actorRole: 'USER',
-              oldValue: null,
-              newValue: { revokedSessions: uniqueSessions },
-              ipAddress: clientIp,
-              userAgent,
-            },
-            client,
-          );
-        } else {
-          await this.auditRepo.appendAuditLog(
-            AuditAction.LOGOUT,
-            'user_sessions',
-            uniqueSessions[0] || targetUserId,
-            targetUserId,
-            'USER',
-            null,
-            { revokedSessions: uniqueSessions },
-            clientIp,
-            userAgent,
-            client,
-          );
-        }
-      }
-    };
-
-    if (this.db) {
-      await this.db.transaction(async (client) => {
-        await executeRevocation(client);
+    let auditId: string;
+    try {
+      auditId = await this.db.transaction(async (client) => {
+        for (const id of uniqueSessions) await this.sessionRepo.revokeSession(id, client);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGOUT,
+          entityType: 'user_sessions',
+          entityId: uniqueSessions[0],
+          actorId: targetUserId,
+          actorRole: 'USER',
+          newValue: { revokedSessions: uniqueSessions },
+          ipAddress: clientIp,
+          userAgent,
+        }, client);
+        return intent.id;
       });
-    } else {
-      await executeRevocation();
+    } catch {
+      this.logger.error('LOGOUT_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
     }
-
-    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
-    if (this.auditOutboxRepo) {
-      try {
-        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-      } catch (err: any) {
-        this.logger.warn(`Audit outbox drain failed post-commit during logout: ${err.message}`);
-      }
-    }
+    await this.deliverLogoutAudit(auditId);
 
     return { success: true };
   }
@@ -939,60 +908,41 @@ export class AuthService {
     clientIp = '127.0.0.1',
     userAgent = 'unknown',
   ): Promise<{ success: boolean; revokedCount: number }> {
+    if (!this.db || !this.auditOutboxRepo) throw this.evidenceUnavailable();
     let revokedCount = 0;
-
-    const executeRevocationAll = async (client?: any) => {
-      revokedCount = await this.sessionRepo.revokeAllForUser(userId, client);
-
-      if (this.auditOutboxRepo) {
-        await this.auditOutboxRepo.recordAuditIntent(
-          {
-            action: AuditAction.LOGOUT,
-            entityType: 'user_sessions',
-            entityId: userId,
-            actorId: userId,
-            actorRole: 'USER',
-            oldValue: null,
-            newValue: { scope: 'ALL_DEVICES', revokedCount },
-            ipAddress: clientIp,
-            userAgent,
-          },
-          client,
-        );
-      } else {
-        await this.auditRepo.appendAuditLog(
-          AuditAction.LOGOUT,
-          'user_sessions',
-          userId,
-          userId,
-          'USER',
-          null,
-          { scope: 'ALL_DEVICES', revokedCount },
-          clientIp,
+    let auditId: string;
+    try {
+      auditId = await this.db.transaction(async (client) => {
+        revokedCount = await this.sessionRepo.revokeAllForUser(userId, client);
+        const intent = await this.auditOutboxRepo!.recordAuditIntent({
+          action: AuditAction.LOGOUT,
+          entityType: 'user_sessions',
+          entityId: userId,
+          actorId: userId,
+          actorRole: 'USER',
+          newValue: { scope: 'ALL_DEVICES', revokedCount },
+          ipAddress: clientIp,
           userAgent,
-          client,
-        );
-      }
-    };
-
-    if (this.db) {
-      await this.db.transaction(async (client) => {
-        await executeRevocationAll(client);
+        }, client);
+        return intent.id;
       });
-    } else {
-      await executeRevocationAll();
+    } catch {
+      this.logger.error('LOGOUT_ALL_COMMIT_UNCONFIRMED');
+      throw this.evidenceUnavailable();
     }
-
-    // Post-commit delivery attempt (best-effort; failures do not roll back committed revocation)
-    if (this.auditOutboxRepo) {
-      try {
-        await this.auditOutboxRepo.drainOutbox(this.auditRepo);
-      } catch (err: any) {
-        this.logger.warn(`Audit outbox drain failed post-commit during logoutAll: ${err.message}`);
-      }
-    }
+    await this.deliverLogoutAudit(auditId);
 
     return { success: true, revokedCount };
+  }
+
+  private async deliverLogoutAudit(auditId: string): Promise<void> {
+    try {
+      // Only this mutation's event is attempted; the scheduled worker owns backlog delivery.
+      await this.auditOutboxRepo!.processOutboxEntry(auditId, this.auditRepo);
+    } catch {
+      this.logger.warn('Logout audit delivery deferred; durable evidence retained');
+      await this.auditOutboxRepo!.markFailed(auditId, 'LOGOUT_AUDIT_DELIVERY_FAILED').catch(() => {});
+    }
   }
 
   /**
@@ -1065,10 +1015,10 @@ export class AuthService {
       }
 
       // Branch Admin cannot assign administrative roles
-      if (role === Role.SUPER_ADMIN || role === Role.BRANCH_ADMIN) {
+      if ([Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED,
-          message: 'Only Super Administrators can assign administrative roles (SUPER_ADMIN, BRANCH_ADMIN).',
+          message: 'Only Super Administrators can assign administrative roles (SUPER_ADMIN, CENTRAL_ADMIN, BRANCH_ADMIN).',
         });
       }
 
@@ -1165,7 +1115,7 @@ export class AuthService {
         });
       }
 
-      if (role === Role.SUPER_ADMIN || role === Role.BRANCH_ADMIN) {
+      if ([Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)) {
         throw new ForbiddenException({
           errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED,
           message: 'Only Super Administrators can revoke administrative roles.',

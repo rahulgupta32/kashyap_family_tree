@@ -606,6 +606,30 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
       return authService.verifyOtp({ otpSessionId: request.otpSessionId, code: smsProvider.getLastOtp('+9779841234567')! });
     }
 
+    it('keeps a failed logout transaction active and returns a fixed unavailable response', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture insertion failure'));
+      await expect(authService.logout({refreshToken:session.refreshToken})).rejects.toMatchObject({status:503});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at===null)).toBe(true);
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('retains logout intent with a fixed retry error after delivery failure', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.processOutboxEntry.mockRejectedValueOnce(new Error('private fixture delivery failure'));
+      expect(await authService.logout({refreshToken:session.refreshToken})).toEqual({success:true});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at!==null)).toBe(true);
+      expect(mockAuditOutboxRepo.markFailed).toHaveBeenCalledWith('fictional-audit-intent','LOGOUT_AUDIT_DELIVERY_FAILED');
+      expect(mockAuditIntents.some(row=>row.action===AuditAction.LOGOUT)).toBe(true);
+    });
+
+    it('returns fixed unavailable on logout-all evidence failure without revoking sessions', async () => {
+      const session=await loginForRefresh();
+      mockAuditOutboxRepo.recordAuditIntent.mockRejectedValueOnce(new Error('private fixture insertion failure'));
+      await expect(authService.logoutAll(session.user.id)).rejects.toMatchObject({status:503});
+      expect(Array.from(mockSessions.values()).every(row=>row.revoked_at===null)).toBe(true);
+    });
+
     it('returns no replacement credentials and preserves the old session on failed evidence insertion', async () => {
       const first = await loginForRefresh();
       const oldId = Array.from(mockSessions.keys())[0];
@@ -683,6 +707,14 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   });
 
   describe('Role Assignment & Governance (BR-GOV-004, EC-0230)', () => {
+    it('does not let branch administrators assign or revoke Central Admin even within their own branch', async () => {
+      await mockUserRepo.assignRole('branch-operator', Role.BRANCH_ADMIN, 'b-kaski');
+      await expect(authService.assignUserRole('branch-operator', [Role.BRANCH_ADMIN], 'target', Role.CENTRAL_ADMIN, 'b-kaski'))
+        .rejects.toMatchObject({ status: 403, response: { errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED } });
+      await expect(authService.revokeUserRole('branch-operator', [Role.BRANCH_ADMIN], 'target', Role.CENTRAL_ADMIN, 'b-kaski'))
+        .rejects.toMatchObject({ status: 403, response: { errorCode: ErrorCode.ROLE_ASSIGNMENT_DENIED } });
+      expect(mockAuditRepo.appendAuditLog).not.toHaveBeenCalled();
+    });
     it('should prevent self-elevation when user attempts to assign roles to themselves (BR-GOV-004)', async () => {
       const userId = 'u-operator-01';
 

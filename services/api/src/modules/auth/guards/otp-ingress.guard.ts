@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, S
 import { ErrorCode } from '@kashyap/contracts';
 import { RedisService } from '../../../redis/redis.service';
 
-/** Admission control runs before validation, audit writes, SMS and OTP work. */
+/** Shared public-auth admission runs before validation, audit writes and credential work. */
 @Injectable()
 export class OtpIngressGuard implements CanActivate {
   constructor(private readonly redis: RedisService) {}
