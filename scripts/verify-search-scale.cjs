@@ -47,13 +47,19 @@ async function run(){
  result.checkoutSha=process.env.GITHUB_SHA||null;
  result.sourceSha=process.env.KASHYAP_SOURCE_HEAD_SHA||process.env.GITHUB_SHA||null;
  result.sourceTreeSha=execFileSync('git',['rev-parse','HEAD^{tree}'],{cwd:path.join(__dirname,'..'),encoding:'utf8'}).trim();
- const repo=new PersonRepository({query:(sql,params)=>pool.query(sql,params)});
+ let capture=false,captured=[];
+ const repo=new PersonRepository({query:(sql,params)=>{if(capture)captured.push({sql,params});return pool.query(sql,params);}});
+ const safePlan=node=>({nodeType:node['Node Type'],relation:node['Relation Name'],index:node['Index Name'],
+  plannedRows:node['Plan Rows'],actualRows:node['Actual Rows'],loops:node['Actual Loops'],
+  sharedHits:node['Shared Hit Blocks'],sharedReads:node['Shared Read Blocks'],children:(node.Plans||[]).map(safePlan)});
  const id=i=>createHash('md5').update('fictional-scale-person-'+i).digest('hex').replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/,'$1-$2-$3-$4-$5');
  const scenarios=[{label:'NORMALIZED_NAME_WITH_PRIVATE_MATCH_EXCLUDED',query:'scale name needle',expectedId:id(1)},
   {label:'LOCATION_ONLY_MATCH',query:'QzxRemoteResidenceMarker',expectedId:id(3)}];
  for(const scenario of scenarios){
   stage='WARMUP_'+scenario.label;
+  capture=true;captured=[];
   const warm=await repo.searchPersons({query:scenario.query,page:1,limit:20});assert.equal(warm.total,1);assert.equal(warm.items[0]?.id,scenario.expectedId);
+  capture=false;
   stage='MEASURE_'+scenario.label;const samples=[];let next=0;
   await Promise.all(Array.from({length:4},async()=>{
    while(next++<20){const start=performance.now();let correct=false;
@@ -61,7 +67,13 @@ async function run(){
     catch{}samples.push({elapsedMs:performance.now()-start,correct});
    }
   }));
-  result.cases.push({label:scenario.label,concurrency:4,warmupRequests:1,...summarize(samples,20,1000)});
+  const measured={label:scenario.label,concurrency:4,warmupRequests:1,...summarize(samples,20,1000),plans:[]};
+  result.cases.push(measured);
+  stage='POST_MEASUREMENT_PLAN_'+scenario.label;
+  for(const statement of captured){
+   const plan=(await pool.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+statement.sql,statement.params)).rows[0]['QUERY PLAN'][0];
+   measured.plans.push({executionMs:plan['Execution Time'],planningMs:plan['Planning Time'],plan:safePlan(plan.Plan)});
+  }
  }
  result.status=result.cases.every(c=>c.passed)?'PASSED':'TARGET_NOT_MET';
  if(result.status!=='PASSED')process.exitCode=1;

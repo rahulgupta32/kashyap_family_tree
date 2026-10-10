@@ -14,13 +14,13 @@ export class SessionManagementService {
     try {
       let boundary: any;
       if (cursor) {
-        boundary = (await this.db.query('SELECT created_at,id FROM user_sessions WHERE id=$1 AND user_id=$2', [cursor,userId])).rows[0];
+        boundary = (await this.db.query('SELECT id FROM user_sessions WHERE id=$1 AND user_id=$2', [cursor,userId])).rows[0];
         if (!boundary) throw new NotFoundException('Device page is unavailable. Refresh the list.');
       }
       const rows = (await this.db.query(`SELECT id,device_platform,device_name,created_at,authenticated_at,expires_at FROM user_sessions
         WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
-        ${boundary ? 'AND (created_at,id)<($2::timestamptz,$3::uuid)' : ''}
-        ORDER BY created_at DESC,id DESC LIMIT 51`, boundary ? [userId,boundary.created_at,boundary.id] : [userId])).rows;
+        ${boundary ? 'AND (created_at,id)<(SELECT created_at,id FROM user_sessions WHERE id=$2 AND user_id=$1)' : ''}
+        ORDER BY created_at DESC,id DESC LIMIT 51`, boundary ? [userId,boundary.id] : [userId])).rows;
       return { items: rows.slice(0,50).map(row=>({ id:row.id, platform:row.device_platform,
         label:typeof row.device_name==='string'?row.device_name.slice(0,80):null,
         createdAt:row.created_at,authenticatedAt:row.authenticated_at,expiresAt:row.expires_at,isCurrent:row.id===currentSessionId })),
