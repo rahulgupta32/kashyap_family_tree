@@ -79,4 +79,29 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     expect(sms.sendOtp).not.toHaveBeenCalled();
     expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[job])).rows[0].delivery_status).toBe('SKIPPED');
   });
+  it.each(['initial','retry','stranded'])('stores only redacted metadata after %s provider failure', async path => {
+    const secret = 'fictional-private-phone-otp-provider-token\nforged-log';
+    sms.sendOtp.mockRejectedValueOnce(new Error(secret));
+    let job: string;
+    if (path === 'initial') {
+      const result = await dispatcher.processRecord(await record());
+      expect(result).toMatchObject([{status:'FAILED',error:'NOTIFICATION_DELIVERY_UNAVAILABLE'}]);
+      job = (await db.query('SELECT id FROM notification_dispatches WHERE recipient_user_id=$1',[recipient])).rows[0].id;
+    } else {
+      job = await failedJob();
+      if (path === 'stranded') {
+        await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=NOW()-INTERVAL '1 minute' WHERE id=$1",[job]);
+        await dispatcher.recoverStrandedJobs();
+      } else await dispatcher.retryFailedDispatches();
+    }
+    const stored = (await db.query('SELECT delivery_status,retry_count,error_message,provider_response,worker_id,lease_expires_at,next_retry_at FROM notification_dispatches WHERE id=$1',[job])).rows[0];
+    expect(stored).toMatchObject({delivery_status:'FAILED',retry_count:1,error_message:'NOTIFICATION_DELIVERY_UNAVAILABLE'});
+    expect(JSON.stringify(stored)).not.toContain(secret);
+    if (path !== 'initial') {
+      expect(stored.worker_id).toBeNull(); expect(stored.lease_expires_at).toBeNull(); expect(stored.next_retry_at).toBeTruthy();
+    }
+    if (path === 'retry') expect(stored.provider_response.error).toBe('NOTIFICATION_DELIVERY_UNAVAILABLE');
+    expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+  });
+
 });

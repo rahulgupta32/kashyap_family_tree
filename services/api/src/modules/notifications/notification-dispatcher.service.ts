@@ -8,6 +8,9 @@ import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
+// Never persist/log external exception text: providers may echo credentials or private payloads.
+const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
+
 export interface NotificationDispatchResult {
   outboxId: string;
   recipientUserId: string;
@@ -38,7 +41,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           await this.recoverStrandedJobs();
           await this.retryFailedDispatches(5);
         } catch (err: any) {
-          this.logger.error(`Notification worker error: ${err.message}`);
+          this.logger.error('NOTIFICATION_WORKER_UNAVAILABLE');
         }
       }, 5000);
     }
@@ -80,7 +83,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           [record.id],
         );
       } catch (err: any) {
-        this.logger.error(`Failed to process notification outbox record ${record.id}: ${err.message}`, err.stack);
+        this.logger.error('NOTIFICATION_OUTBOX_UNAVAILABLE');
         await this.db.query(
           "UPDATE audit_outbox SET notification_status = 'FAILED', notification_processed_at = NOW() WHERE id = $1",
           [record.id],
@@ -249,12 +252,12 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
             status: finalStatus as any,
           });
         } catch (err: any) {
-          this.logger.warn(`Delivery failed for dispatch outbox=${record.id} channel=${channel}: ${err.message}`);
+          this.logger.warn(DELIVERY_FAILURE);
           await this.db.query(
             `UPDATE notification_dispatches 
              SET delivery_status = 'FAILED', retry_count = retry_count + 1, error_message = $1 
              WHERE outbox_id = $2 AND recipient_user_id = $3 AND channel = $4`,
-            [err.message, record.id, userId, channel],
+            [DELIVERY_FAILURE, record.id, userId, channel],
           );
 
           results.push({
@@ -262,7 +265,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
             recipientUserId: userId,
             channel,
             status: 'FAILED',
-            error: err.message,
+            error: DELIVERY_FAILURE,
           });
         }
       }
@@ -320,7 +323,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL,
                provider_response = $5
            WHERE id = $6`,
-          [newStatus, newRetryCount, err.message, String(backoffSec), JSON.stringify({ error: err.message, timestamp: new Date().toISOString() }), job.id],
+          [newStatus, newRetryCount, DELIVERY_FAILURE, String(backoffSec), JSON.stringify({ error: DELIVERY_FAILURE, timestamp: new Date().toISOString() }), job.id],
         );
       }
     }
@@ -382,14 +385,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       }
       const result = await this.smsProvider.sendOtp(phone, payload.message);
       if (!result || !result.success) {
-        throw new Error(result?.error || 'SMS provider delivery failed');
+        throw new Error(DELIVERY_FAILURE);
       }
-      this.logger.log(`[DISPATCH][SMS] Dispatched notification to ${phone} via ${result.provider}`);
+      this.logger.log('NOTIFICATION_SMS_ACCEPTED');
       const isSimulated = Boolean((result as any).simulated || result.provider === 'TestSmsProviderAdapter');
       return {
         status: isSimulated ? 'SIMULATED' : 'DELIVERED',
-        provider: result.provider,
-        messageId: result.messageId,
+        provider: 'SMS_PROVIDER',
         simulated: isSimulated,
       };
     }
@@ -408,16 +410,16 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           });
           clearTimeout(timeout);
           if (!response.ok) {
-            throw new Error(`Push gateway HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(DELIVERY_FAILURE);
           }
           return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
         } catch (err: any) {
           clearTimeout(timeout);
-          throw new Error(`Push gateway delivery failed: ${err.message}`);
+          throw new Error(DELIVERY_FAILURE);
         }
       }
       if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
-        this.logger.log(`[DISPATCH][PUSH] Delivering simulated push notification to user ${userId}: ${payload.message}`);
+        this.logger.log('NOTIFICATION_PUSH_SIMULATED');
         return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}`, simulated: true };
       }
       throw new Error('Push notification gateway is not configured or URL is invalid. Cannot deliver PUSH notification.');
@@ -437,16 +439,16 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           });
           clearTimeout(timeout);
           if (!response.ok) {
-            throw new Error(`Email gateway HTTP ${response.status}: ${response.statusText}`);
+            throw new Error(DELIVERY_FAILURE);
           }
           return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
         } catch (err: any) {
           clearTimeout(timeout);
-          throw new Error(`Email gateway delivery failed: ${err.message}`);
+          throw new Error(DELIVERY_FAILURE);
         }
       }
       if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
-        this.logger.log(`[DISPATCH][EMAIL] Delivering simulated email notification to user ${userId}: ${payload.message}`);
+        this.logger.log('NOTIFICATION_EMAIL_SIMULATED');
         return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}`, simulated: true };
       }
       throw new Error('Email notification gateway is not configured or URL is invalid. Cannot deliver EMAIL notification.');
@@ -495,7 +497,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL
            WHERE id = $5`,
-          [newStatus, nextRetry, err.message, String(backoffSec), job.id],
+          [newStatus, nextRetry, DELIVERY_FAILURE, String(backoffSec), job.id],
         );
       }
     }

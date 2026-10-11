@@ -68,19 +68,19 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
           provider: 'SparrowSMS',
         };
       } else {
-        this.logger.error(`Sparrow SMS API error: ${JSON.stringify(data)}`);
+        this.logger.error('SMS_PROVIDER_REJECTED');
         return {
           success: false,
           provider: 'SparrowSMS',
-          error: data.response || 'SMS Gateway error',
+          error: 'SMS_PROVIDER_REJECTED',
         };
       }
     } catch (err: any) {
-      this.logger.error(`Failed to send SMS via Sparrow SMS: ${err.message}`, err.stack);
+      this.logger.error('SMS_PROVIDER_UNAVAILABLE');
       return {
         success: false,
         provider: 'SparrowSMS',
-        error: err.message,
+        error: 'SMS_PROVIDER_UNAVAILABLE',
       };
     }
   }
