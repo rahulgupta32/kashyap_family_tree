@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/person.dart';
 import '../models/tree_node.dart';
@@ -172,12 +173,12 @@ class GenealogyApiService {
     }
   }
 
-  Future<String> verifyOtp(String otpSessionId, String code, {String platform = 'android'}) async {
+  Future<String> verifyOtp(String otpSessionId, String code, {String? platform}) async {
     final uri = Uri.parse('$baseUrl/auth/native/verify');
     final body = json.encode({
       'otpSessionId': otpSessionId, 'code': code,
       'deviceInfo': {'deviceId': 'mobile-${DateTime.now().microsecondsSinceEpoch}',
-        'platform': platform, 'appVersion': '1.0.0'},
+        'platform': platform ?? (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'), 'appVersion': '1.0.0'},
     });
     final response = await _send('POST', uri, body: body, authenticated: false);
     if (response.statusCode == 200 || response.statusCode == 201) {

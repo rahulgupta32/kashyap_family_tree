@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -22,6 +23,20 @@ http.Response jsonResponse(Object body, [int status = 200]) =>
 
 void main() {
   group('Native authentication HTTP contract (mock transport, not device acceptance)', () {
+    test('iOS sign-in reports the current native platform instead of Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final service = GenealogyApiService(sessionStore: MemorySessionStore(), chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
+        expect(request.url.path, '/auth/native/verify');
+        expect(jsonDecode(request.body)['deviceInfo']['platform'], 'ios');
+        return jsonResponse({'accessToken': 'ios-access', 'refreshToken': 'ios-refresh'});
+      }));
+      try {
+        expect(await service.verifyOtp('ios-challenge', '123456'), 'ios-access');
+      } finally {
+        service.dispose();
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
     test('OTP session ID and code use native endpoint; both tokens are stored', () async {
       final store = MemorySessionStore();
       final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
