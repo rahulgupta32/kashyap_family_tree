@@ -76,6 +76,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     });
+    this.observePoolErrors(this.pool, 'MAIN');
 
     try {
       const client = await this.pool.connect();
@@ -105,6 +106,15 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     this.pool = new pgAdapter.Pool() as unknown as Pool;
     this.isConnected = true;
     this.logger.log('In-process PostgreSQL SQL engine initialized.');
+  }
+
+  private observePoolErrors(pool: Pool, kind: 'MAIN' | 'JOURNAL'): void {
+    // pg-pool emits idle-client failures outside query promises. Without a
+    // listener a backend restart/termination becomes an uncaught process error.
+    pool.on('error', error => {
+      if (kind === 'MAIN') this.isConnected = false;
+      this.logger.error(`DATABASE_POOL_UNAVAILABLE pool=${kind} sqlstate=${diagnosticSqlstate(error)}`);
+    });
   }
 
   async onModuleDestroy() {
@@ -145,7 +155,10 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async journalQuery(text:string,params:any[]=[]):Promise<QueryResult> {
     if(!this.pool||this.isMemoryDb)throw new Error('Real PostgreSQL required for media write journal');
     // pg-pool deliberately makes password non-enumerable; spreading options loses it.
-    if(!this.journalPool)this.journalPool=new Pool({...this.pool.options,password:this.pool.options.password,max:2,connectionTimeoutMillis:5000,query_timeout:10000});
+    if(!this.journalPool) {
+      this.journalPool=new Pool({...this.pool.options,password:this.pool.options.password,max:2,connectionTimeoutMillis:5000,query_timeout:10000});
+      this.observePoolErrors(this.journalPool, 'JOURNAL');
+    }
     return this.journalPool.query(text,params);
   }
 
@@ -183,12 +196,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const start = Date.now();
     try {
       await this.query('SELECT 1');
+      this.isConnected = true;
       return {
         status: 'up',
         latencyMs: Date.now() - start,
         isMemoryDb: this.isMemoryDb,
       };
     } catch (err: any) {
+      this.isConnected = false;
       return {
         status: 'down',
         latencyMs: Date.now() - start,

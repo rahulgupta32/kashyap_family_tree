@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseService } from '../src/database/database.service';
+import { EventEmitter } from 'events';
 jest.mock('pg', () => ({ Pool: jest.fn() }));
 const secret = 'private-value-password-phone\nforged-sql-log';
 describe('Database operational metadata privacy', () => {
@@ -36,7 +37,7 @@ describe('Database operational metadata privacy', () => {
   it('keeps failed startup unready and omits infrastructure/password/server details', async () => {
     process.env.NODE_ENV = 'test'; delete process.env.USE_PG_MEM;
     process.env.DB_HOST = secret; process.env.DB_NAME = secret; process.env.DB_PASSWORD = secret;
-    (Pool as unknown as jest.Mock).mockImplementation(() => ({ connect: jest.fn().mockRejectedValue(Object.assign(new Error(secret), {code:'28P01'})) }));
+    (Pool as unknown as jest.Mock).mockImplementation(() => ({ on: jest.fn(), connect: jest.fn().mockRejectedValue(Object.assign(new Error(secret), {code:'28P01'})) }));
     const { db, log, error } = setup();
     await expect(db.onModuleInit()).rejects.toThrow(/^DATABASE_CONNECTION_UNAVAILABLE$/);
     expect(db.isReady()).toBe(false);
@@ -48,5 +49,20 @@ describe('Database operational metadata privacy', () => {
     await db.query('SELECT $1', [secret], client as any);
     expect(client.query).toHaveBeenCalledWith('SELECT $1',[secret]);
     expect(query).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled();
+  });
+  it.each(['MAIN', 'JOURNAL'])('handles idle %s errors with safe metadata and verified health recovery', async kind => {
+    const { db, query, error } = setup();
+    const pool = new EventEmitter();
+    (db as any).isConnected = true;
+    (db as any).observePoolErrors(pool, kind);
+    expect(() => pool.emit('error', Object.assign(new Error(secret), { code: '57P01', detail: secret }))).not.toThrow();
+    expect(error).toHaveBeenCalledWith(`DATABASE_POOL_UNAVAILABLE pool=${kind} sqlstate=57P01`);
+    expect(JSON.stringify(error.mock.calls)).not.toContain(secret);
+    expect(db.isReady()).toBe(kind === 'JOURNAL');
+    query.mockRejectedValueOnce(new Error(secret)).mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+    expect((await db.checkHealth()).status).toBe('down');
+    expect(db.isReady()).toBe(false);
+    expect((await db.checkHealth()).status).toBe('up');
+    expect(db.isReady()).toBe(true);
   });
 });
