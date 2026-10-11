@@ -17,6 +17,7 @@ class GenealogyApiService {
   ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   int _sessionGeneration = 0;
+  Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
 
@@ -58,25 +59,39 @@ class GenealogyApiService {
     });
 
   Future<void> _acceptSession(Map<String, dynamic> data) async {
+    final generation = _sessionGeneration;
     final access = data['accessToken'];
     final refresh = data['refreshToken'];
     if (access is! String || access.isEmpty || refresh is! String || refresh.isEmpty) {
       throw const FormatException('Invalid native authentication response');
     }
-    await _sessionStore.write(json.encode({'accessToken': access, 'refreshToken': refresh}));
-    _authToken = access;
-    _refreshToken = refresh;
+    await _serializeSessionStorage(() async {
+      if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
+      await _sessionStore.write(json.encode({'accessToken': access, 'refreshToken': refresh}));
+      if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
+      _authToken = access;
+      _refreshToken = refresh;
+    });
+  }
+
+  Future<void> _serializeSessionStorage(Future<void> Function() work) {
+    final pending = _sessionStorageWork.then((_) => work());
+    // Keep the queue usable after a failed write; the caller still sees failure.
+    _sessionStorageWork = pending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return pending;
   }
 
   Future<bool> restoreSession() async {
+    final generation = ++_sessionGeneration;
+    await _sessionStorageWork;
     final saved = await _sessionStore.read();
+    if (generation != _sessionGeneration) { throw StateError('Session changed during restore'); }
     if (saved == null) { return false; }
     try {
       final data = json.decode(saved);
       if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty) {
         throw const FormatException('Invalid saved session');
       }
-      _sessionGeneration++;
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
       return await _refreshSession();
@@ -87,11 +102,16 @@ class GenealogyApiService {
   }
 
   Future<void> _clearSession() async {
-    _sessionGeneration++;
+    final generation = ++_sessionGeneration;
     _authToken = null;
     _refreshToken = null;
-    try { await _sessionStore.clear(); }
-    finally { try { await chatOutbox.clear(); } finally { onSessionExpired?.call(); } }
+    try { await _serializeSessionStorage(() => _sessionStore.clear()); }
+    finally {
+      if (generation == _sessionGeneration) {
+        try { await chatOutbox.clear(); }
+        finally { if (generation == _sessionGeneration) { onSessionExpired?.call(); } }
+      }
+    }
   }
 
   Future<bool> _refreshSession() async {
@@ -155,14 +175,16 @@ class GenealogyApiService {
   }
 
   Future<void> logout() async {
+    final generation = _sessionGeneration;
     _chatOutbox?.stop();
     try {
       if (_refreshing != null) { await _refreshing; }
+      if (generation != _sessionGeneration) { throw StateError('Session changed during logout'); }
       final response = await _send('POST', Uri.parse('$baseUrl/auth/logout'),
         authenticated: false, body: json.encode({'refreshToken': _refreshToken}));
       if (response.statusCode != 200) { throw Exception('Logout failed (${response.statusCode})'); }
     } finally {
-      await _clearSession();
+      if (generation == _sessionGeneration) { await _clearSession(); }
     }
   }
 
@@ -188,6 +210,7 @@ class GenealogyApiService {
   }
 
   Future<String> verifyOtp(String otpSessionId, String code, {String? platform}) async {
+    final generation = ++_sessionGeneration;
     final uri = Uri.parse('$baseUrl/auth/native/verify');
     final body = json.encode({
       'otpSessionId': otpSessionId, 'code': code,
@@ -195,9 +218,9 @@ class GenealogyApiService {
         'platform': platform ?? (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'), 'appVersion': '1.0.0'},
     });
     final response = await _send('POST', uri, body: body, authenticated: false);
+    if (generation != _sessionGeneration) { throw StateError('Session changed during sign-in'); }
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = json.decode(response.body);
-      _sessionGeneration++;
       await _acceptSession(data as Map<String, dynamic>);
       return _authToken!;
     } else {
