@@ -689,7 +689,6 @@ export class AuthService {
       rotationResult = await this.sessionRepo.rotateSessionTransactional(tokenHash, {
         newRefreshTokenHash,
         expiresAt: newExpiresAt,
-        devicePlatform: 'web',
         ipAddress: clientIp,
         userAgent,
       }, async (result, client) => {

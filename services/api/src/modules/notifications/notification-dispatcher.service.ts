@@ -9,6 +9,7 @@ import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 import { notificationGatewayUrl } from './notification-gateway.policy';
+import { PushTokensService } from './push-tokens.service';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
@@ -34,6 +35,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     private readonly smsProvider?: ISmsProvider,
     private readonly inbox?: NotificationInboxService,
     private readonly follows?: NotificationFollowsService,
+    @Optional() private readonly pushTokens?: PushTokensService,
   ) {}
 
   onModuleInit() {
@@ -47,6 +49,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private async runWorkerCycle(): Promise<void> {
+    try { await this.pushTokens?.retireStale(); }
+    catch { this.logger.error('PUSH_TOKEN_RETENTION_UNAVAILABLE'); }
     try {
       await this.processOutboxBatch(20);
       await this.recoverStrandedJobs();

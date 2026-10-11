@@ -8,11 +8,13 @@ import { NotificationFollowsService } from './notification-follows.service';
 import { GenealogyModule } from '../genealogy/genealogy.module';
 import { NotificationBroadcastsService } from './notification-broadcasts.service';
 import { NotificationBroadcastsController } from './notification-broadcasts.controller';
+import { PushTokensController } from './push-tokens.controller';
+import { PushTokensService } from './push-tokens.service';
 
 @Module({
   imports: [DatabaseModule, GenealogyModule, forwardRef(() => AuthModule)],
-  controllers: [NotificationsController, NotificationBroadcastsController],
-  providers: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService, NotificationBroadcastsService],
+  controllers: [NotificationsController, NotificationBroadcastsController, PushTokensController],
+  providers: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService, NotificationBroadcastsService, PushTokensService],
   exports: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService],
 })
 export class NotificationsModule {}

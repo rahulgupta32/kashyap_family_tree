@@ -93,7 +93,7 @@ export class SessionRepository {
     newSessionData: {
       newRefreshTokenHash: string;
       expiresAt: Date;
-      devicePlatform: string;
+      devicePlatform?: string;
       deviceId?: string | null;
       deviceName?: string | null;
       ipAddress?: string | null;
