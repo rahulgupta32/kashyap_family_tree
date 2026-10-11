@@ -1,11 +1,12 @@
 import { NotificationDispatcherService } from '../src/modules/notifications/notification-dispatcher.service';
+import { SparrowSmsProviderAdapter } from '../src/modules/auth/sms/sparrow-sms-provider.adapter';
 import { DatabaseService } from '../src/database/database.service';
 import { assertDatabaseIsolation, createDisposableDatabase, DisposableDatabase } from './helpers/disposable-db';
 
 describe('Delivery preferences and revoked chat access (real PostgreSQL)', () => {
   let iso: DisposableDatabase, db: DatabaseService, dispatcher: NotificationDispatcherService;
   let sender: string, recipient: string, conversation: string, message: string;
-  const sms = { sendOtp: jest.fn(async (_phone: string, _message: string) => ({ success: true, provider: 'TestSmsProviderAdapter', simulated: true })) };
+  const sms = { sendOtp: jest.fn(), sendNotification: jest.fn(async (_phone: string, _message: string) => ({ success: true, provider: 'TestSmsProviderAdapter', simulated: true })) };
 
   beforeAll(async () => {
     iso = await createDisposableDatabase('delivery_policy');
@@ -23,7 +24,7 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
   }, 60000);
   afterAll(async () => { if (db) await db.onModuleDestroy(); if (iso) await iso.drop(); });
   beforeEach(async () => {
-    sms.sendOtp.mockClear();
+    sms.sendNotification.mockClear(); sms.sendOtp.mockClear();
     await db.query('UPDATE notification_preferences SET sms_enabled=true,workflow_enabled=true,chat_enabled=true,family_events_enabled=true WHERE user_id=$1', [recipient]);
     await db.query('UPDATE user_accounts SET is_suspended=false WHERE id=$1', [recipient]);
     await db.query('UPDATE chat_participants SET left_at=NULL WHERE conversation_id=$1 AND user_id=$2', [conversation, recipient]);
@@ -45,8 +46,9 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     const entry = await record();
     expect(await dispatcher.processRecord(entry)).toMatchObject([{status:'SIMULATED',channel:'SMS'}]);
     await dispatcher.processRecord(entry);
-    expect(sms.sendOtp).toHaveBeenCalledTimes(1);
-    expect(sms.sendOtp.mock.calls[0][1]).not.toContain('Private fixture');
+    expect(sms.sendNotification).toHaveBeenCalledTimes(1);
+    expect(sms.sendOtp).not.toHaveBeenCalled();
+    expect(sms.sendNotification.mock.calls[0][1]).not.toContain('Private fixture');
   });
   it.each([
     ['CHAT_MESSAGE_CREATED','chat_enabled'],
@@ -56,7 +58,7 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     // Column names come only from these fixed test cases.
     await db.query(`UPDATE notification_preferences SET ${column}=false WHERE user_id=$1`, [recipient]);
     expect(await dispatcher.processRecord(await record(action))).toEqual([]);
-    expect(sms.sendOtp).not.toHaveBeenCalled();
+    expect(sms.sendNotification).not.toHaveBeenCalled();
   });
   it.each(['block','leave','delete','role','suspend','category','channel'])('skips retry after %s', async reason => {
     const job = await failedJob();
@@ -68,7 +70,7 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     if(reason==='category')await db.query('UPDATE notification_preferences SET chat_enabled=false WHERE user_id=$1',[recipient]);
     if(reason==='channel')await db.query('UPDATE notification_preferences SET sms_enabled=false WHERE user_id=$1',[recipient]);
     await dispatcher.retryFailedDispatches();
-    expect(sms.sendOtp).not.toHaveBeenCalled();
+    expect(sms.sendNotification).not.toHaveBeenCalled();
     expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[job])).rows[0].delivery_status).toBe('SKIPPED');
   });
   it('applies the same permission check when recovering an expired lease',async()=>{
@@ -76,12 +78,12 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=NOW()-INTERVAL '1 minute' WHERE id=$1",[job]);
     await db.query('INSERT INTO chat_blocks(blocker_id,blocked_id) VALUES($1,$2)',[sender,recipient]);
     await dispatcher.recoverStrandedJobs();
-    expect(sms.sendOtp).not.toHaveBeenCalled();
+    expect(sms.sendNotification).not.toHaveBeenCalled();
     expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[job])).rows[0].delivery_status).toBe('SKIPPED');
   });
   it.each(['initial','retry','stranded'])('stores only redacted metadata after %s provider failure', async path => {
     const secret = 'fictional-private-phone-otp-provider-token\nforged-log';
-    sms.sendOtp.mockRejectedValueOnce(new Error(secret));
+    sms.sendNotification.mockRejectedValueOnce(new Error(secret));
     let job: string;
     if (path === 'initial') {
       const result = await dispatcher.processRecord(await record());
@@ -101,7 +103,45 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
       expect(stored.worker_id).toBeNull(); expect(stored.lease_expires_at).toBeNull(); expect(stored.next_retry_at).toBeTruthy();
     }
     if (path === 'retry') expect(stored.provider_response.error).toBe('NOTIFICATION_DELIVERY_UNAVAILABLE');
-    expect(sms.sendOtp).toHaveBeenCalledTimes(1);
+    expect(sms.sendNotification).toHaveBeenCalledTimes(1);
+    expect(sms.sendOtp).not.toHaveBeenCalled();
+  });
+
+  it.each(['accepted','rejected_then_retry'])('keeps actual SMS adapter formatting and durable %s outcomes separate from OTP', async path => {
+    const priorToken=process.env.SPARROW_SMS_TOKEN;
+    process.env.SPARROW_SMS_TOKEN='fictional-sms-provider-token';
+    const provider=new SparrowSmsProviderAdapter();
+    const otp=jest.spyOn(provider,'sendOtp');
+    const fetch=jest.spyOn(global,'fetch');
+    const accepted={ok:true,json:async()=>({response_code:200,message_id:'fictional-private-provider-receipt'})} as Response;
+    if(path==='accepted')fetch.mockResolvedValue(accepted);
+    else fetch.mockResolvedValueOnce({ok:false,json:async()=>({response:'fictional-private-provider-error'})} as Response).mockResolvedValue(accepted);
+    try {
+      const actual=new NotificationDispatcherService(db,provider);
+      const entry=await record();
+      expect(await actual.processRecord(entry)).toMatchObject([{status:path==='accepted'?'SENT':'FAILED',channel:'SMS'}]);
+      const job=(await db.query('SELECT * FROM notification_dispatches WHERE outbox_id=$1',[entry.id])).rows[0];
+      if(path==='rejected_then_retry') {
+        expect(job.error_message).toBe('NOTIFICATION_DELIVERY_UNAVAILABLE');
+        await db.query("UPDATE notification_dispatches SET next_retry_at=NOW()-INTERVAL '1 second' WHERE id=$1",[job.id]);
+        expect(await actual.retryFailedDispatches()).toBe(1);
+      }
+      for(const call of fetch.mock.calls) {
+        const form=new URLSearchParams(call[1]!.body as string);
+        expect(form.get('text')).toBe('नयाँ निजी सन्देश आएको छ। (You have a new private message)');
+        expect(form.get('text')).not.toContain('Private fixture');
+        expect(form.get('text')).not.toContain('verification code');
+      }
+      expect(otp).not.toHaveBeenCalled();
+      expect(fetch).toHaveBeenCalledTimes(path==='accepted'?1:2);
+      const stored=(await db.query('SELECT * FROM notification_dispatches WHERE id=$1',[job.id])).rows[0];
+      expect(stored.delivery_status).toBe('SENT');
+      expect(stored.provider_response).toMatchObject({status:'DELIVERED',provider:'SMS_PROVIDER'});
+      expect(JSON.stringify(stored.provider_response)).not.toContain('fictional-private-provider');
+    } finally {
+      otp.mockRestore(); fetch.mockRestore();
+      if(priorToken===undefined)delete process.env.SPARROW_SMS_TOKEN;else process.env.SPARROW_SMS_TOKEN=priorToken;
+    }
   });
 
 });

@@ -21,6 +21,14 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
   }
 
   async sendOtp(phoneNumber: string, otp: string): Promise<SmsSendResult> {
+    return this.sendMessage(phoneNumber, `Your Kashyap Adhikari Family Tree verification code is ${otp}. Valid for 5 minutes. Do not share.`);
+  }
+
+  async sendNotification(phoneNumber: string, message: string): Promise<SmsSendResult> {
+    return this.sendMessage(phoneNumber, message);
+  }
+
+  private async sendMessage(phoneNumber: string, messageText: string): Promise<SmsSendResult> {
     const token = process.env.SPARROW_SMS_TOKEN;
     const identity = process.env.SPARROW_SMS_IDENTITY || 'Kashyap';
 
@@ -40,8 +48,9 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
       };
     }
 
-    const messageText = `Your Kashyap Adhikari Family Tree verification code is ${otp}. Valid for 5 minutes. Do not share.`;
-
+    const controller = new AbortController();
+    // Include response-body consumption in the same bounded delivery attempt.
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const params = new URLSearchParams({
         token,
@@ -57,11 +66,12 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: params.toString(),
+        signal: controller.signal,
       });
 
       const data = (await response.json()) as any;
 
-      if (response.ok && data.response_code === 200) {
+      if (response.ok && data?.response_code === 200) {
         return {
           success: true,
           messageId: data.message_id || `sparrow_${Date.now()}`,
@@ -82,6 +92,8 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
         provider: 'SparrowSMS',
         error: 'SMS_PROVIDER_UNAVAILABLE',
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

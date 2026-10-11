@@ -23,6 +23,7 @@ export interface NotificationDispatchResult {
 export class NotificationDispatcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationDispatcherService.name);
   private workerInterval: NodeJS.Timeout | null = null;
+  private workerCycle: Promise<void> | null = null;
 
   constructor(
     private readonly db: DatabaseService,
@@ -34,24 +35,31 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   ) {}
 
   onModuleInit() {
-    if (process.env.NODE_ENV !== 'test') {
-      this.workerInterval = setInterval(async () => {
-        try {
-          await this.processOutboxBatch(20);
-          await this.recoverStrandedJobs();
-          await this.retryFailedDispatches(5);
-        } catch (err: any) {
-          this.logger.error('NOTIFICATION_WORKER_UNAVAILABLE');
-        }
+    if (process.env.NODE_ENV !== 'test' && !this.workerInterval) {
+      this.workerInterval = setInterval(() => {
+        // A slow provider must not create another cycle every five seconds.
+        if (this.workerCycle) return;
+        this.workerCycle = this.runWorkerCycle().finally(() => { this.workerCycle = null; });
       }, 5000);
     }
   }
 
-  onModuleDestroy() {
+  private async runWorkerCycle(): Promise<void> {
+    try {
+      await this.processOutboxBatch(20);
+      await this.recoverStrandedJobs();
+      await this.retryFailedDispatches(5);
+    } catch {
+      this.logger.error('NOTIFICATION_WORKER_UNAVAILABLE');
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
     if (this.workerInterval) {
       clearInterval(this.workerInterval);
       this.workerInterval = null;
     }
+    await this.workerCycle;
   }
 
   /**
@@ -383,7 +391,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if (!phone) {
         throw new Error(`User account ${userId} does not have a phone number for SMS delivery`);
       }
-      const result = await this.smsProvider.sendOtp(phone, payload.message);
+      const result = await this.smsProvider.sendNotification(phone, payload.message);
       if (!result || !result.success) {
         throw new Error(DELIVERY_FAILURE);
       }

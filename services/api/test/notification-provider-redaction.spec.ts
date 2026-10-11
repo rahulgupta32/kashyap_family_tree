@@ -14,7 +14,7 @@ describe('External notification metadata privacy', () => {
       if (sql.includes('RETURNING id')) return { rows: [{ id: 'dispatch' }] };
       return { rows: [] };
     });
-    const sms = { sendOtp: jest.fn() };
+    const sms = { sendNotification: jest.fn(), sendOtp: jest.fn() };
     const service = new NotificationDispatcherService({ query } as any, sms);
     const log = jest.spyOn((service as any).logger, 'log').mockImplementation(() => undefined);
     const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
@@ -22,7 +22,7 @@ describe('External notification metadata privacy', () => {
   }
   it('redacts initial failure results, durable errors and logs', async () => {
     const { query, sms, service, warn } = setup();
-    sms.sendOtp.mockRejectedValue(new Error(secret));
+    sms.sendNotification.mockRejectedValue(new Error(secret));
     const result = await service.processRecord({ id: 'outbox', actor_id: 'owner', action: payload.action });
     expect(result).toMatchObject([{ status: 'FAILED', error: failure }]);
     const update = query.mock.calls.find(call => call[0].includes("delivery_status = 'FAILED'"));
@@ -32,7 +32,7 @@ describe('External notification metadata privacy', () => {
   it.each(['retryFailedDispatches', 'recoverStrandedJobs'] as const)('%s retains retries without saving provider details', async method => {
     const { query, sms, service } = setup();
     query.mockResolvedValueOnce({ rows: [{ id: 'dispatch', channel: 'SMS', recipient_user_id: 'owner', payload, retry_count: 2 }] });
-    sms.sendOtp.mockResolvedValue({ success: false, provider: secret, error: secret });
+    sms.sendNotification.mockResolvedValue({ success: false, provider: secret, error: secret });
     expect(await service[method]()).toBe(0);
     const update = query.mock.calls.find(call => call[0].includes('retry_count = $2'));
     expect(update?.[1].slice(0, 4)).toEqual(['FAILED', 3, failure, '8']);
@@ -41,8 +41,9 @@ describe('External notification metadata privacy', () => {
   });
   it('omits recipient phones and untrusted success metadata', async () => {
     const { sms, service, log } = setup();
-    sms.sendOtp.mockResolvedValue({ success: true, provider: secret, messageId: secret });
+    sms.sendNotification.mockResolvedValue({ success: true, provider: secret, messageId: secret });
     expect(await (service as any).deliverNotification('SMS', 'owner', payload)).toEqual({ status: 'DELIVERED', provider: 'SMS_PROVIDER', simulated: false });
+    expect(sms.sendOtp).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith('NOTIFICATION_SMS_ACCEPTED');
     expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
   });
@@ -67,7 +68,7 @@ describe('External notification metadata privacy', () => {
     const fetch = jest.spyOn(global, 'fetch');
     if (mode === 'rejected') fetch.mockResolvedValue({ ok: false, json: async () => ({ response: secret, token: secret }) } as Response);
     else fetch.mockRejectedValue(new Error(secret));
-    const result = await adapter.sendOtp(secret, secret);
+    const result = await adapter.sendNotification(secret, secret);
     expect(result).toEqual({ success: false, provider: 'SparrowSMS', error: mode === 'rejected' ? 'SMS_PROVIDER_REJECTED' : 'SMS_PROVIDER_UNAVAILABLE' });
     expect(JSON.stringify([result, log.mock.calls])).not.toContain(secret);
   });
