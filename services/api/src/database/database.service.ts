@@ -2,6 +2,10 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/commo
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { newDb, IMemoryDb } from 'pg-mem';
 
+// Preserve useful failure classes without echoing server messages, SQL, values or stacks.
+const DIAGNOSTIC_SQLSTATES = new Set(['23505','23503','23502','23514','40001','40P01','57014','53300','57P01','08006','08001','28P01','42P01','42703','42501']);
+const diagnosticSqlstate = (error: any): string => DIAGNOSTIC_SQLSTATES.has(error?.code) ? error.code : 'UNKNOWN';
+
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
@@ -60,7 +64,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     const dbName = process.env.DB_NAME || 'kashyap_db';
 
-    this.logger.log(`Connecting to real PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
+    this.logger.log('DATABASE_CONNECTING');
     this.pool = new Pool({
       connectionString: dbUrl,
       host: dbHost,
@@ -75,17 +79,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const client = await this.pool.connect();
-      this.logger.log(`Connected to real PostgreSQL database successfully at ${dbHost}:${dbPort}/${dbName}.`);
+      this.logger.log('DATABASE_CONNECTED');
       client.release();
       this.isMemoryDb = false;
       this.isConnected = true;
     } catch (err: any) {
       this.isConnected = false;
-      this.logger.error(
-        `FATAL: Failed to connect to required PostgreSQL database at ${dbHost}:${dbPort}/${dbName}: ${err.message}. Automatic in-memory fallback is disabled.`,
-        err.stack,
-      );
-      throw new Error(`Database connection failed: ${err.message}`);
+      this.logger.error(`DATABASE_CONNECTION_UNAVAILABLE sqlstate=${diagnosticSqlstate(err)}`);
+      throw new Error('DATABASE_CONNECTION_UNAVAILABLE');
     }
   }
 
@@ -131,11 +132,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       const res = await this.pool.query<R>(text, params);
       const duration = Date.now() - start;
       if (duration > 100) {
-        this.logger.warn(`Slow query (${duration}ms): ${text.substring(0, 100)}...`);
+        this.logger.warn(`DATABASE_QUERY_SLOW durationMs=${duration}`);
       }
       return res;
     } catch (err: any) {
-      this.logger.error(`Database Query Error: ${err.message} | Query: ${text}`, err.stack);
+      this.logger.error(`DATABASE_QUERY_UNAVAILABLE sqlstate=${diagnosticSqlstate(err)}`);
       throw err;
     }
   }
@@ -192,7 +193,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         status: 'down',
         latencyMs: Date.now() - start,
         isMemoryDb: this.isMemoryDb,
-        error: err.message,
+        error: 'DATABASE_UNAVAILABLE',
       };
     }
   }
