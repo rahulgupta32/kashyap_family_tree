@@ -16,6 +16,7 @@ class GenealogyApiService {
   final ChatOutboxStore _chatOutboxStore;
   ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
+  int _sessionGeneration = 0;
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
 
@@ -29,6 +30,7 @@ class GenealogyApiService {
        _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore();
 
   void setAuthToken(String? token) {
+    _sessionGeneration++;
     _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
@@ -74,6 +76,7 @@ class GenealogyApiService {
       if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty) {
         throw const FormatException('Invalid saved session');
       }
+      _sessionGeneration++;
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
       return await _refreshSession();
@@ -84,6 +87,7 @@ class GenealogyApiService {
   }
 
   Future<void> _clearSession() async {
+    _sessionGeneration++;
     _authToken = null;
     _refreshToken = null;
     try { await _sessionStore.clear(); }
@@ -102,10 +106,12 @@ class GenealogyApiService {
   }
 
   Future<bool> _rotateSession() async {
+    final generation = _sessionGeneration;
     final response = await _client.post(Uri.parse('$baseUrl/auth/native/refresh'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'refreshToken': _refreshToken}),
     ).timeout(const Duration(seconds: 20));
+    if (generation != _sessionGeneration) { throw StateError('Session changed during refresh'); }
     if (response.statusCode == 401 || response.statusCode == 403) {
       await _clearSession();
       return false;
@@ -115,8 +121,14 @@ class GenealogyApiService {
     return true;
   }
 
-  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId}) async {
+  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId, int? boundSessionGeneration}) async {
+    void checkSession() {
+      if (boundSessionGeneration != null && _sessionGeneration != boundSessionGeneration) {
+        throw StateError('Push registration session changed');
+      }
+    }
     Future<http.Response> send() async {
+      checkSession();
       if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
       final request = http.Request(method, uri);
       request.headers.addAll(authenticated ? _headers : {'Content-Type': 'application/json'});
@@ -126,10 +138,12 @@ class GenealogyApiService {
     }
     final tokenUsed = _authToken;
     var response = await send();
+    checkSession();
     if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
     if (authenticated && response.statusCode == 401 && _refreshToken != null) {
       if (_authToken != tokenUsed || await _refreshSession()) { response = await send(); }
     }
+    checkSession();
     if (authenticated && response.statusCode == 401 && _authToken != null) { await _clearSession(); }
     if (authenticated && response.statusCode == 403) {
       try {
@@ -183,6 +197,7 @@ class GenealogyApiService {
     final response = await _send('POST', uri, body: body, authenticated: false);
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = json.decode(response.body);
+      _sessionGeneration++;
       await _acceptSession(data as Map<String, dynamic>);
       return _authToken!;
     } else {
@@ -200,6 +215,36 @@ class GenealogyApiService {
     }
     return decoded;
   }
+
+  // SDK permission and token acquisition are separate from this authenticated
+  // transport. Never persist or include provider credentials in error messages.
+  Future<dynamic> _pushRegistration(String method, {Map<String, String>? data}) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      throw StateError('Push registration requires a session');
+    }
+    final response = await _send(method, Uri.parse('$baseUrl/notifications/push-registration'),
+      body: data == null ? null : json.encode(data), boundSessionGeneration: _sessionGeneration);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Push registration failed (${response.statusCode})');
+    }
+    try {
+      return response.body.isEmpty ? null : json.decode(response.body);
+    } on FormatException {
+      throw const FormatException('Invalid push registration response');
+    }
+  }
+
+  Future<dynamic> registerPushToken(String token, {String? platform}) {
+    final resolved = platform ?? (defaultTargetPlatform == TargetPlatform.iOS ? 'IOS' : 'ANDROID');
+    if (!RegExp(r'^[A-Za-z0-9_:.-]{16,500}$').hasMatch(token) || !['ANDROID', 'IOS'].contains(resolved)) {
+      throw const FormatException('Invalid push registration');
+    }
+    return _pushRegistration('PUT', data: {'token': token, 'platform': resolved});
+  }
+
+  Future<dynamic> currentPushRegistration() => _pushRegistration('GET');
+
+  Future<dynamic> removePushRegistration() => _pushRegistration('DELETE');
 
   Future<dynamic> communityMedia(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
     final response=await _send(method,Uri.parse('$baseUrl/community$path'),body:data==null?null:json.encode(data),boundAccountId:owner);
