@@ -346,6 +346,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   }
 
   private async deliverNotification(channel: string, userId: string, payload: any): Promise<any> {
+    if (!['PUSH', 'SMS', 'EMAIL'].includes(channel)) throw new Error(DELIVERY_FAILURE);
     // Recheck at the last delivery boundary, including retries and stranded jobs.
     // A saved job is not continuing permission to contact a former participant.
     const current = (await this.db.query(`SELECT u.id,p.push_enabled,p.sms_enabled,p.email_enabled,
