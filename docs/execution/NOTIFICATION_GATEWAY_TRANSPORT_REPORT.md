@@ -12,9 +12,13 @@ Push and email gateways now reject redirect following. A redirected response is 
 
 The current adapters still treat an ordinary successful gateway response as acceptance under the existing contract. This batch does not prove receipt/device delivery or implement provider reconciliation, authentication, token registration or FCM/APNs integration. Gateway network egress controls and live provider contracts remain mandatory.
 
+Production now also forbids simulated PUSH/EMAIL delivery even when ALLOW_SIMULATED_NOTIFICATIONS=true. Missing gateways return the same fixed unavailable code; nonproduction opt-in simulation remains available. Invalid channels are validated before preferences so they cannot be mistaken for a deliberate member opt-out.
+
 ## Validation
 
 Nine direct assertions against the actual URL policy passed using Node 24 native TypeScript loading. Release assessment and workbook validators passed; all 260 requirements, 31 frozen NFR targets, 14 workbook sheets and 195 columns remain preserved. Whitespace validation passed. Added Jest cases cover URL policy, redirected responses, request redirect policy and unsupported channels. Full Jest/typecheck/build and exact-source CI results must be independently verified after publication; none are inferred from the recovered head. The initial frozen dependency install was interrupted; a retry uses a scratch store without altering the repository's Windows D: configuration.
+
+The frozen retry install completed. API typecheck/build, admin typecheck and all 359 unit cases passed after correcting unsupported-channel validation. The initial run 38154145725 failed one new assertion (358 passed): existing preference logic returned SKIPPED before invalid-channel validation. Correction `5a4e44b18b36e46097bcb221dcfe110333cbe6fd` validates first; failed initial runs remain historical failures. A real two-server HTTP exercise of the compiled dispatcher verifies both PUSH/EMAIL 307 requests never reach the redirected destination, and production plaintext HTTP never contacts its gateway. Two additional production-simulation cases are included in the subsequent source; final exact-head results are recorded in PR #5. Five workbook and three schema canonicalization regressions passed locally. The legacy validate_traceability.py remains Windows-path-bound and did not validate in this container; the maintained release/workbook validators above succeeded.
 
 ## Remaining production blockers
 

@@ -68,6 +68,16 @@ describe('External notification metadata privacy', () => {
     await expect((service as any).deliverNotification(channel, 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
     expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
   });
+  it.each(['PUSH', 'EMAIL'])('forbids production %s simulation even when opted in', async channel => {
+    const { service, log } = setup();
+    process.env.NODE_ENV = 'production';
+    process.env.ALLOW_SIMULATED_NOTIFICATIONS = 'true';
+    delete process.env[`${channel}_GATEWAY_URL`];
+    const fetch = jest.spyOn(global, 'fetch');
+    await expect((service as any).deliverNotification(channel, 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+  });
   it('never reports delivery for an unsupported channel', async () => {
     const { service } = setup();
     await expect((service as any).deliverNotification('UNKNOWN', 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);

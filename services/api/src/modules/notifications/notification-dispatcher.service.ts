@@ -435,11 +435,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           throw new Error(DELIVERY_FAILURE);
         }
       }
-      if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+      if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
         this.logger.log('NOTIFICATION_PUSH_SIMULATED');
         return { status: 'SIMULATED', provider: 'SIMULATED_PUSH_GATEWAY', messageId: `sim_push_${Date.now()}`, simulated: true };
       }
-      throw new Error('Push notification gateway is not configured or URL is invalid. Cannot deliver PUSH notification.');
+      throw new Error(DELIVERY_FAILURE);
     }
 
     if (channel === 'EMAIL') {
@@ -465,11 +465,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           throw new Error(DELIVERY_FAILURE);
         }
       }
-      if (process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
+      if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_SIMULATED_NOTIFICATIONS === 'true') {
         this.logger.log('NOTIFICATION_EMAIL_SIMULATED');
         return { status: 'SIMULATED', provider: 'SIMULATED_EMAIL_GATEWAY', messageId: `sim_email_${Date.now()}`, simulated: true };
       }
-      throw new Error('Email notification gateway is not configured or URL is invalid. Cannot deliver EMAIL notification.');
+      throw new Error(DELIVERY_FAILURE);
     }
     throw new Error(DELIVERY_FAILURE);
   }
