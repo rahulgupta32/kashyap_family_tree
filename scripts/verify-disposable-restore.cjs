@@ -1,6 +1,6 @@
 /* Logical restore rehearsal for generated fictional databases only. Never a production backup/PITR tool. */
 const { Pool } = require('../services/api/node_modules/pg');
-const { randomUUID, createHash } = require('crypto');
+const { randomUUID, randomBytes, createHash } = require('crypto');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -8,12 +8,15 @@ const assert = require('assert/strict');
 const { canonicalSchemaDefinition } = require('./restore-schema-canonicalization.cjs');
 const { AuditRepository, canonicalAuditJson } = require('../services/api/dist/database/repositories/audit.repository');
 const { AuditOutboxRepository } = require('../services/api/dist/database/repositories/audit-outbox.repository');
+const { sealPushToken, openPushToken } = require('../services/api/dist/modules/notifications/push-token.crypto');
+const { PushTokensService } = require('../services/api/dist/modules/notifications/push-tokens.service');
 
 const identifier = value => `"${value.replace(/"/g, '""')}"`;
 const digest = value => createHash('sha256').update(canonicalAuditJson(value)).digest('hex');
 const result = { kind: 'DISPOSABLE_FICTIONAL_LOGICAL_RESTORE', status: 'FAILED',
   productionAcceptance: false, pitrVerified: false, productionRpoVerified: false,
-  productionRtoVerified: false, startedAt: new Date().toISOString(), cleanup: 'NOT_STARTED' };
+  productionRtoVerified: false, productionPushKeyRecoveryVerified: false,
+  startedAt: new Date().toISOString(), cleanup: 'NOT_STARTED' };
 let stage = 'CONFIGURATION', admin, source, target, temporary;
 const created = [];
 
@@ -28,6 +31,18 @@ function adapter(pool) {
       finally { client.release(); }
     },
   };
+}
+
+// Fixture-only keys stay in process memory, never in database dumps or evidence.
+async function withFixturePushKeys(keys, callback) {
+  const saved = { active: process.env.PUSH_TOKEN_ACTIVE_KEY_ID, keys: process.env.PUSH_TOKEN_KEYS_JSON };
+  process.env.PUSH_TOKEN_ACTIVE_KEY_ID = 'restore_fixture';
+  process.env.PUSH_TOKEN_KEYS_JSON = JSON.stringify(keys);
+  try { return await callback(); }
+  finally {
+    if (saved.active === undefined) delete process.env.PUSH_TOKEN_ACTIVE_KEY_ID; else process.env.PUSH_TOKEN_ACTIVE_KEY_ID = saved.active;
+    if (saved.keys === undefined) delete process.env.PUSH_TOKEN_KEYS_JSON; else process.env.PUSH_TOKEN_KEYS_JSON = saved.keys;
+  }
 }
 
 async function manifest(pool) {
@@ -101,6 +116,18 @@ async function run() {
   const liveSession=(await source.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at) VALUES($1,$2,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour') RETURNING id", [userId, digest(randomUUID())])).rows[0].id;
   const endedFamily=randomUUID();
   await source.query("INSERT INTO user_sessions(user_id,refresh_token_hash,device_platform,expires_at,session_family_id,revoked_at,owner_revoked_at) VALUES($1,$2,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour',$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),($1,$4,'ANDROID',CURRENT_TIMESTAMP+INTERVAL '1 hour',$3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",[userId,digest(randomUUID()),endedFamily,digest(randomUUID())]);
+  const pushKeys={restore_fixture:randomBytes(32).toString('base64')};
+  const liveFamily=(await source.query('SELECT session_family_id FROM user_sessions WHERE id=$1',[liveSession])).rows[0].session_family_id;
+  const pushWitnesses=[];
+  for (const family of [liveFamily,endedFamily]) {
+    const id=randomUUID(),generation=randomUUID(),token='fictional-restore-'+randomBytes(48).toString('hex');
+    const context=JSON.stringify([id,userId,family,'ANDROID',generation]);
+    const envelope=await withFixturePushKeys(pushKeys,()=>sealPushToken(token,context));
+    await source.query(`INSERT INTO push_token_registrations(id,user_id,session_family_id,platform,token_hash,token_envelope,generation,expires_at)
+      VALUES($1,$2,$3,'ANDROID',$4,$5,$6,CURRENT_TIMESTAMP+INTERVAL '30 days')`,
+      [id,userId,family,createHash('sha256').update(token).digest('hex'),envelope,generation]);
+    pushWitnesses.push({id,generation,token,context,envelope});
+  }
   const sourceAdapter = adapter(source), audit = new AuditRepository(sourceAdapter), outbox = new AuditOutboxRepository(sourceAdapter);
   const processed = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: parent, actorId: userId, newValue: { fixture: 'Fictional restore evidence' } });
   await outbox.processOutboxEntry(processed.id, audit);
@@ -179,6 +206,28 @@ async function run() {
   assert.equal(familyRows.length,2);assert.ok(familyRows.every(row=>row.revoked_at&&row.owner_revoked_at));
   assert.equal((await target.query('SELECT revoked_at FROM user_sessions WHERE id=$1',[liveSession])).rows[0].revoked_at,null);
   result.retainedSessionFamilies='VERIFIED';
+  stage='VERIFY_RESTORED_PUSH_CREDENTIALS';
+  for (const witness of pushWitnesses) {
+    const registration=(await target.query('SELECT * FROM push_token_registrations WHERE id=$1',[witness.id])).rows[0];
+    assert.equal(registration.generation,witness.generation);
+    assert.equal(registration.token_envelope,witness.envelope);
+    await withFixturePushKeys(pushKeys,()=>{
+      assert.equal(openPushToken(registration.token_envelope,witness.context),witness.token);
+      assert.throws(()=>openPushToken(registration.token_envelope,'wrong-restored-owner'),/PUSH_TOKEN_DECRYPTION_UNAVAILABLE/);
+    });
+    await withFixturePushKeys({},()=>assert.throws(()=>openPushToken(registration.token_envelope,witness.context),/PUSH_TOKEN_DECRYPTION_UNAVAILABLE/));
+  }
+  await assert.rejects(target.query(fs.readFileSync(path.join(migrations,'056_push_token_registry.down.sql'),'utf8')),/PUSH_TOKEN_REGISTRY_DRAIN_REQUIRED/);
+  const restoredTokens=new PushTokensService(adapter(target),new AuditOutboxRepository(adapter(target)));
+  assert.deepEqual(await restoredTokens.invalidate(pushWitnesses[0].id,randomUUID()),{invalidated:false});
+  assert.deepEqual(await restoredTokens.retireStale(),{retired:1});
+  assert.equal((await target.query('SELECT count(*)::int AS count FROM push_token_registrations WHERE id=$1',[pushWitnesses[0].id])).rows[0].count,1);
+  assert.equal((await target.query('SELECT count(*)::int AS count FROM push_token_registrations WHERE id=$1',[pushWitnesses[1].id])).rows[0].count,0);
+  result.retainedEncryptedPushCredentials='VERIFIED_WITH_EPHEMERAL_FIXTURE_KEY';
+  result.missingPushKeyFailsClosed='VERIFIED';
+  result.restoredPushGenerationFence='VERIFIED';
+  result.restoredPushRetention='VERIFIED';
+  result.populatedPushRollbackProtection='VERIFIED';
   await targetAudit.appendAuditLog('UPDATE', 'persons', child, userId, 'SYSTEM', null, { fixture: 'Post-restore append' });
   assert.equal((await targetAudit.verifyIntegrity()).verifiedRecords, 2);
   result.status = 'PASSED'; result.checkedTables = before.records.length; result.migrations = files.length;
