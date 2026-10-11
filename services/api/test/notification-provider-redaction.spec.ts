@@ -61,6 +61,17 @@ describe('External notification metadata privacy', () => {
     expect(await (service as any).deliverNotification(channel, 'owner', payload)).toMatchObject({ status: 'SIMULATED', simulated: true });
     expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
   });
+  it.each(['PUSH', 'EMAIL'])('rejects %s redirects and forbids redirect following', async channel => {
+    const { service } = setup();
+    process.env[`${channel}_GATEWAY_URL`] = 'https://gateway.invalid/send';
+    const fetch = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, redirected: true } as Response);
+    await expect((service as any).deliverNotification(channel, 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
+    expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+  });
+  it('never reports delivery for an unsupported channel', async () => {
+    const { service } = setup();
+    await expect((service as any).deliverNotification('UNKNOWN', 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
+  });
   it.each(['rejected', 'thrown'])('redacts Sparrow %s responses', async mode => {
     process.env.SPARROW_SMS_TOKEN = secret;
     const adapter = new SparrowSmsProviderAdapter();

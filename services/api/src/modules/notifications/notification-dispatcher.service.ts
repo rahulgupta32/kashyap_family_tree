@@ -8,6 +8,7 @@ import { broadcastEligibility } from './broadcast-eligibility';
 import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
+import { notificationGatewayUrl } from './notification-gateway.policy';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
@@ -411,19 +412,20 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     }
 
     if (channel === 'PUSH') {
-      const pushGateway = process.env.PUSH_GATEWAY_URL || process.env.FCM_SERVER_KEY;
-      if (pushGateway && (pushGateway.startsWith('http://') || pushGateway.startsWith('https://'))) {
+      const pushGateway = notificationGatewayUrl(process.env.PUSH_GATEWAY_URL, process.env.NODE_ENV === 'production');
+      if (pushGateway) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         try {
           const response = await fetch(pushGateway, {
             method: 'POST',
+            redirect: 'error',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, payload }),
             signal: controller.signal,
           });
           clearTimeout(timeout);
-          if (!response.ok) {
+          if (!response.ok || response.redirected) {
             throw new Error(DELIVERY_FAILURE);
           }
           return { status: 'DELIVERED', provider: 'PUSH_GATEWAY', messageId: `push_${Date.now()}` };
@@ -440,19 +442,20 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     }
 
     if (channel === 'EMAIL') {
-      const emailGateway = process.env.EMAIL_GATEWAY_URL || process.env.SMTP_HOST;
-      if (emailGateway && (emailGateway.startsWith('http://') || emailGateway.startsWith('https://'))) {
+      const emailGateway = notificationGatewayUrl(process.env.EMAIL_GATEWAY_URL, process.env.NODE_ENV === 'production');
+      if (emailGateway) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         try {
           const response = await fetch(emailGateway, {
             method: 'POST',
+            redirect: 'error',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, payload }),
             signal: controller.signal,
           });
           clearTimeout(timeout);
-          if (!response.ok) {
+          if (!response.ok || response.redirected) {
             throw new Error(DELIVERY_FAILURE);
           }
           return { status: 'DELIVERED', provider: 'EMAIL_GATEWAY', messageId: `email_${Date.now()}` };
@@ -467,7 +470,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       }
       throw new Error('Email notification gateway is not configured or URL is invalid. Cannot deliver EMAIL notification.');
     }
-    return { status: 'DELIVERED', provider: `CUSTOM_${channel}_GATEWAY`, messageId: `${channel.toLowerCase()}_${Date.now()}` };
+    throw new Error(DELIVERY_FAILURE);
   }
 
   /**
