@@ -106,6 +106,8 @@ async function run() {
   await outbox.processOutboxEntry(processed.id, audit);
   const retained = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: child, actorId: userId, newValue: { fixture: 'Fictional retry evidence' } });
   await outbox.markFailed(retained.id, 'FICTIONAL_RESTORE_RETRY');
+  const notificationClaimId=randomUUID();
+  await source.query("UPDATE audit_outbox SET notification_status='PROCESSING',notification_claim_id=$2,notification_lease_expires_at=CURRENT_TIMESTAMP+INTERVAL '10 minutes' WHERE id=$1",[retained.id,notificationClaimId]);
   const exhausted = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: child, actorId: userId, newValue: { fixture: 'Fictional exhausted evidence' } });
   await source.query("UPDATE audit_outbox SET status='FAILED',retry_count=10 WHERE id=$1", [exhausted.id]);
   const recoveryId = randomUUID();
@@ -166,6 +168,9 @@ async function run() {
   await assert.rejects(target.query('INSERT INTO parent_links(parent_id,child_id) VALUES($1,$1)', [parent]));
   const retry = (await target.query('SELECT status,retry_count,next_attempt_at FROM audit_outbox WHERE id=$1', [retained.id])).rows[0];
   assert.equal(retry.status, 'FAILED'); assert.equal(retry.retry_count, 1); assert.ok(retry.next_attempt_at);
+  const notificationClaim=(await target.query('SELECT notification_status,notification_claim_id,notification_lease_expires_at FROM audit_outbox WHERE id=$1',[retained.id])).rows[0];
+  assert.equal(notificationClaim.notification_status,'PROCESSING');assert.equal(notificationClaim.notification_claim_id,notificationClaimId);assert.ok(notificationClaim.notification_lease_expires_at);
+  result.retainedNotificationClaims='VERIFIED';
   assert.equal((await target.query('SELECT outcome FROM audit_delivery_recovery_decisions WHERE request_id=$1', [recoveryId])).rows[0].outcome, 'FAILED');
   await assert.rejects(target.query('UPDATE audit_delivery_recovery_requests SET reason_code=reason_code'), /immutable/i);
   await assert.rejects(target.query('DELETE FROM audit_delivery_recovery_decisions'), /immutable/i);

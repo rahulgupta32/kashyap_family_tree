@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, Inject, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { SMS_PROVIDER, ISmsProvider } from '../auth/sms/sms-provider.interface';
 import { DatabaseService } from '../../database/database.service';
@@ -68,38 +69,43 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
    * Generates deduplicated, durable delivery jobs in notification_dispatches and executes delivery.
    */
   async processOutboxBatch(batchSize: number = 20): Promise<NotificationDispatchResult[]> {
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 50) {
+      throw new Error('Invalid notification batch size');
+    }
     const results: NotificationDispatchResult[] = [];
-
-    // Query independent notification_status, NEVER relying on audit drain status
-    const outboxRes = await this.db.query(
-      `SELECT * FROM audit_outbox 
-       WHERE notification_status = 'PENDING' OR (notification_status = 'FAILED'
-         AND notification_processed_at < NOW() - INTERVAL '30 seconds')
-       ORDER BY created_at ASC 
-       LIMIT $1 FOR UPDATE SKIP LOCKED`,
-      [batchSize],
-    );
-
-    for (const record of outboxRes.rows) {
+    // Claim one event just before processing; later batch entries cannot expire while waiting.
+    for (let index = 0; index < batchSize; index++) {
+      const claimId = randomUUID();
+      const claimed = await this.db.query(`WITH candidate AS (
+        SELECT id FROM audit_outbox WHERE notification_status='PENDING'
+          OR (notification_status='FAILED' AND (notification_processed_at IS NULL
+            OR notification_processed_at<CURRENT_TIMESTAMP-INTERVAL '30 seconds'))
+          OR (notification_status='PROCESSING' AND notification_lease_expires_at<=CURRENT_TIMESTAMP)
+        ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED
+      ) UPDATE audit_outbox o SET notification_status='PROCESSING',notification_claim_id=$1,
+          notification_lease_expires_at=CURRENT_TIMESTAMP+INTERVAL '2 minutes'
+        FROM candidate c WHERE o.id=c.id RETURNING o.*`, [claimId]);
+      const record = claimed.rows[0];
+      if (!record) break;
       try {
         const dispatches = await this.processRecord(record);
-        results.push(...dispatches);
-
-        // Update independent notification_status
-        await this.db.query(
-          "UPDATE audit_outbox SET notification_status = 'PROCESSED', notification_processed_at = NOW() WHERE id = $1",
-          [record.id],
-        );
-      } catch (err: any) {
+        if (await this.finishNotificationClaim(record.id, claimId, 'PROCESSED')) results.push(...dispatches);
+        else this.logger.warn('NOTIFICATION_CLAIM_OWNERSHIP_LOST');
+      } catch {
         this.logger.error('NOTIFICATION_OUTBOX_UNAVAILABLE');
-        await this.db.query(
-          "UPDATE audit_outbox SET notification_status = 'FAILED', notification_processed_at = NOW() WHERE id = $1",
-          [record.id],
-        );
+        // A lost acknowledgement must never undo a possibly committed completion or another owner's claim.
+        await this.finishNotificationClaim(record.id, claimId, 'FAILED');
       }
     }
-
     return results;
+  }
+
+  private async finishNotificationClaim(id: string, claimId: string, status: 'PROCESSED' | 'FAILED'): Promise<boolean> {
+    const updated = await this.db.query(`UPDATE audit_outbox SET notification_status=$3,
+      notification_processed_at=CURRENT_TIMESTAMP,notification_claim_id=NULL,notification_lease_expires_at=NULL
+      WHERE id=$1 AND notification_claim_id=$2 AND notification_status='PROCESSING'
+        AND notification_lease_expires_at>CURRENT_TIMESTAMP RETURNING id`, [id, claimId, status]);
+    return updated.rows.length === 1;
   }
 
   async processRecord(record: any): Promise<NotificationDispatchResult[]> {
