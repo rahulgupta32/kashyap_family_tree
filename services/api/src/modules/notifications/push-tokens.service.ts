@@ -124,13 +124,14 @@ export class PushTokensService {
   }
 
   /** Internal provider adapter only. A late invalid-token result cannot remove a newer generation. */
-  async invalidate(id: string, generation: string) {
-    return this.guarded(()=>this.db.transaction(async client=>{
+  async invalidate(id: string, generation: string, transactionClient?: PoolClient) {
+    const run = async (client: PoolClient) => {
       const row = (await client.query('DELETE FROM push_token_registrations WHERE id=$1 AND generation=$2 RETURNING id,user_id', [id,generation])).rows[0];
       if (row) await this.audit.recordAuditIntent({action:'PUSH_TOKEN_INVALIDATED',entityType:'push_token_registrations',
         entityId:row.id,actorId:row.user_id,actorRole:'SYSTEM',newValue:{reason:'PROVIDER_INVALID_TOKEN'}},client);
       return { invalidated:!!row };
-    }));
+    };
+    return this.guarded(()=>transactionClient ? run(transactionClient) : this.db.transaction(run));
   }
 
   /** Bounded retention cleanup, coordinated with refresh/revocation family locks. */

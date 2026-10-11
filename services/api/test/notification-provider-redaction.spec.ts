@@ -82,6 +82,23 @@ describe('External notification metadata privacy', () => {
     const { service } = setup();
     await expect((service as any).deliverNotification('UNKNOWN', 'owner', payload)).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
   });
+  it('rejects the legacy user-ID gateway in production even when configured',async()=>{
+    const {service}=setup();process.env.NODE_ENV='production';process.env.PUSH_GATEWAY_URL='https://gateway.invalid/send';delete process.env.PUSH_PROVIDER;
+    const fetch=jest.spyOn(global,'fetch');
+    await expect((service as any).deliverNotification('PUSH','owner',payload,'dispatch')).rejects.toThrow(/^NOTIFICATION_DELIVERY_UNAVAILABLE$/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('passes the saved dispatch identity to FCM and rechecks current audience before transmission',async()=>{
+    const {query}=setup();process.env.NODE_ENV='production';process.env.PUSH_PROVIDER='fcm';
+    const send=jest.fn(async(_user,_id,authorize)=>{
+      query.mockImplementation(async()=>({rows:[]}));expect(await authorize()).toBe(false);
+      return {status:'RECONCILIATION_REQUIRED',unresolvedDevices:1};
+    });
+    const service=new NotificationDispatcherService({query} as any,undefined,undefined,undefined,undefined,{send} as any);
+    expect(await (service as any).deliverNotification('PUSH','owner',payload,'saved-dispatch')).toMatchObject({status:'RECONCILIATION_REQUIRED'});
+    expect(send.mock.calls[0].slice(0,2)).toEqual(['owner','saved-dispatch']);
+    expect((service as any).deliveryStatus({status:'RECONCILIATION_REQUIRED'})).toBe('RECONCILIATION_REQUIRED');
+  });
   it.each(['rejected', 'thrown'])('redacts Sparrow %s responses', async mode => {
     process.env.SPARROW_SMS_TOKEN = secret;
     const adapter = new SparrowSmsProviderAdapter();

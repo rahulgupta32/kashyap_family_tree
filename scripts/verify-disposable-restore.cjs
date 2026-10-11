@@ -10,6 +10,7 @@ const { AuditRepository, canonicalAuditJson } = require('../services/api/dist/da
 const { AuditOutboxRepository } = require('../services/api/dist/database/repositories/audit-outbox.repository');
 const { sealPushToken, openPushToken } = require('../services/api/dist/modules/notifications/push-token.crypto');
 const { PushTokensService } = require('../services/api/dist/modules/notifications/push-tokens.service');
+const { PushDeliveryService } = require('../services/api/dist/modules/notifications/push-delivery.service');
 
 const identifier = value => `"${value.replace(/"/g, '""')}"`;
 const digest = value => createHash('sha256').update(canonicalAuditJson(value)).digest('hex');
@@ -128,6 +129,17 @@ async function run() {
       [id,userId,family,createHash('sha256').update(token).digest('hex'),envelope,generation]);
     pushWitnesses.push({id,generation,token,context,envelope});
   }
+  const pushDispatches=[],pushAttempts=[];
+  const receiptHash=digest('fictional-provider-receipt');
+  for (const observed of [true,false]) {
+    const dispatch=(await source.query("INSERT INTO notification_dispatches(recipient_user_id,channel,event_type,payload,delivery_status) VALUES($1,'PUSH','FICTIONAL_RESTORE','{}','RECONCILIATION_REQUIRED') RETURNING id",[userId])).rows[0].id;
+    const attempt=(await source.query('INSERT INTO push_delivery_attempts(dispatch_id,registration_id,token_generation) VALUES($1,$2,$3) RETURNING id',[dispatch,pushWitnesses[0].id,pushWitnesses[0].generation])).rows[0].id;
+    const claim=randomUUID();
+    await source.query("UPDATE push_delivery_attempts SET status='SENDING',claim_id=$2,lease_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 minute' WHERE id=$1",[attempt,claim]);
+    await source.query("UPDATE push_delivery_attempts SET status='UNKNOWN',completed_at=CURRENT_TIMESTAMP WHERE id=$1",[attempt]);
+    if(observed) await source.query("INSERT INTO push_provider_observations(attempt_id,claim_id,outcome,receipt_hash) VALUES($1,$2,'ACCEPTED',$3)",[attempt,claim,receiptHash]);
+    pushDispatches.push(dispatch);pushAttempts.push(attempt);
+  }
   const sourceAdapter = adapter(source), audit = new AuditRepository(sourceAdapter), outbox = new AuditOutboxRepository(sourceAdapter);
   const processed = await outbox.recordAuditIntent({ action: 'UPDATE', entityType: 'persons', entityId: parent, actorId: userId, newValue: { fixture: 'Fictional restore evidence' } });
   await outbox.processOutboxEntry(processed.id, audit);
@@ -228,6 +240,21 @@ async function run() {
   result.restoredPushGenerationFence='VERIFIED';
   result.restoredPushRetention='VERIFIED';
   result.populatedPushRollbackProtection='VERIFIED';
+  stage='VERIFY_RESTORED_PROVIDER_JOURNAL';
+  const restoredDelivery=new PushDeliveryService(adapter(target),new AuditOutboxRepository(adapter(target)),restoredTokens,
+    {send:async()=>{throw new Error('RESTORE_MUST_NOT_CONTACT_PROVIDER');}});
+  assert.deepEqual(await restoredDelivery.reconcileConfirmed(),{reconciled:1});
+  assert.equal((await target.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[pushDispatches[0]])).rows[0].delivery_status,'SENT');
+  assert.equal((await target.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[pushDispatches[1]])).rows[0].delivery_status,'RECONCILIATION_REQUIRED');
+  assert.equal((await target.query('SELECT receipt_hash FROM push_provider_observations WHERE attempt_id=$1',[pushAttempts[0]])).rows[0].receipt_hash,receiptHash);
+  await assert.rejects(target.query("UPDATE push_delivery_attempts SET status='PLANNED' WHERE id=$1",[pushAttempts[0]]),/PUSH_PROVIDER_EVIDENCE_IMMUTABLE/);
+  await assert.rejects(target.query('DELETE FROM push_provider_observations WHERE attempt_id=$1',[pushAttempts[0]]),/PUSH_PROVIDER_EVIDENCE_IMMUTABLE/);
+  await assert.rejects(target.query(fs.readFileSync(path.join(migrations,'057_push_provider_journal.down.sql'),'utf8')),/PUSH_PROVIDER_EVIDENCE_RETAINED/);
+  result.retainedProviderJournal='VERIFIED';
+  result.restoredProviderReconciliationWithoutResend='VERIFIED';
+  result.restoredUnobservedProviderHold='VERIFIED';
+  result.restoredProviderEvidenceImmutability='VERIFIED';
+  result.populatedProviderJournalRollbackProtection='VERIFIED';
   await targetAudit.appendAuditLog('UPDATE', 'persons', child, userId, 'SYSTEM', null, { fixture: 'Post-restore append' });
   assert.equal((await targetAudit.verifyIntegrity()).verifiedRecords, 2);
   result.status = 'PASSED'; result.checkedTables = before.records.length; result.migrations = files.length;

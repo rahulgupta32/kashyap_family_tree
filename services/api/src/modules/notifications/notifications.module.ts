@@ -10,11 +10,15 @@ import { NotificationBroadcastsService } from './notification-broadcasts.service
 import { NotificationBroadcastsController } from './notification-broadcasts.controller';
 import { PushTokensController } from './push-tokens.controller';
 import { PushTokensService } from './push-tokens.service';
+import { PushDeliveryService } from './push-delivery.service';
+import { FcmPushProvider } from './fcm-push.provider';
+import { PUSH_NOTIFICATION_PROVIDER } from './push-provider.interface';
 
 @Module({
   imports: [DatabaseModule, GenealogyModule, forwardRef(() => AuthModule)],
   controllers: [NotificationsController, NotificationBroadcastsController, PushTokensController],
-  providers: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService, NotificationBroadcastsService, PushTokensService],
+  providers: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService, NotificationBroadcastsService, PushTokensService,
+    PushDeliveryService, {provide:PUSH_NOTIFICATION_PROVIDER,useClass:FcmPushProvider}],
   exports: [NotificationDispatcherService, NotificationInboxService, NotificationFollowsService],
 })
 export class NotificationsModule {}

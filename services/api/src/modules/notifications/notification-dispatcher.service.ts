@@ -10,6 +10,7 @@ import { communityNoticeEligibility } from '../community/community-notice-eligib
 import { notificationCategoryEnabled } from './notification-policy';
 import { notificationGatewayUrl } from './notification-gateway.policy';
 import { PushTokensService } from './push-tokens.service';
+import { PushDeliveryService } from './push-delivery.service';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
@@ -18,7 +19,7 @@ export interface NotificationDispatchResult {
   outboxId: string;
   recipientUserId: string;
   channel: 'PUSH' | 'SMS' | 'EMAIL';
-  status: 'SENT' | 'FAILED' | 'SKIPPED' | 'SIMULATED';
+  status: 'SENT' | 'FAILED' | 'SKIPPED' | 'SIMULATED' | 'RECONCILIATION_REQUIRED';
   error?: string;
 }
 
@@ -36,6 +37,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     private readonly inbox?: NotificationInboxService,
     private readonly follows?: NotificationFollowsService,
     @Optional() private readonly pushTokens?: PushTokensService,
+    @Optional() private readonly pushDelivery?: PushDeliveryService,
   ) {}
 
   onModuleInit() {
@@ -51,6 +53,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   private async runWorkerCycle(): Promise<void> {
     try { await this.pushTokens?.retireStale(); }
     catch { this.logger.error('PUSH_TOKEN_RETENTION_UNAVAILABLE'); }
+    try { await this.pushDelivery?.reconcileConfirmed(); }
+    catch { this.logger.error('PUSH_PROVIDER_RECONCILIATION_UNAVAILABLE'); }
     try {
       await this.processOutboxBatch(20);
       await this.recoverStrandedJobs();
@@ -256,8 +260,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           const dispatchId = insRes.rows[0].id;
 
           // Perform delivery
-          const providerOutcome = await this.deliverNotification(channel, userId, payload);
-          const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
+          const providerOutcome = await this.deliverNotification(channel, userId, payload, dispatchId);
+          const finalStatus = this.deliveryStatus(providerOutcome);
 
           await this.db.query(
             "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2 WHERE id = $3",
@@ -323,8 +327,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     let retried = 0;
     for (const job of claimRes.rows) {
       try {
-        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
+        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
+        const finalStatus = this.deliveryStatus(providerOutcome);
         await this.db.query(
           `UPDATE notification_dispatches 
            SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
@@ -349,7 +353,11 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     return retried;
   }
 
-  private async deliverNotification(channel: string, userId: string, payload: any): Promise<any> {
+  private deliveryStatus(outcome: any): NotificationDispatchResult['status'] {
+    return outcome?.status==='RECONCILIATION_REQUIRED'?'RECONCILIATION_REQUIRED':outcome?.status==='SIMULATED'?'SIMULATED':outcome?.status==='SKIPPED'?'SKIPPED':'SENT';
+  }
+
+  private async deliverNotification(channel: string, userId: string, payload: any, dispatchId?: string, eligibilityOnly=false): Promise<any> {
     if (!['PUSH', 'SMS', 'EMAIL'].includes(channel)) throw new Error(DELIVERY_FAILURE);
     // Recheck at the last delivery boundary, including retries and stranded jobs.
     // A saved job is not continuing permission to contact a former participant.
@@ -394,6 +402,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         [payload.entityId, userId]);
       if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Audience membership revoked' };
     }
+    if (eligibilityOnly) return {status:'ELIGIBLE'};
     if (channel === 'SMS') {
       if (!this.smsProvider) {
         throw new Error('SMS provider is not configured. Cannot deliver SMS notification.');
@@ -417,6 +426,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     }
 
     if (channel === 'PUSH') {
+      if (process.env.PUSH_PROVIDER==='fcm') {
+        if (!this.pushDelivery || !dispatchId) throw new Error(DELIVERY_FAILURE);
+        return this.pushDelivery.send(userId,dispatchId,async()=>
+          (await this.deliverNotification('PUSH',userId,payload,dispatchId,true)).status==='ELIGIBLE');
+      }
+      // Unverified user-ID proxy acknowledgements are not production provider evidence.
+      if (process.env.NODE_ENV==='production') throw new Error(DELIVERY_FAILURE);
       const pushGateway = notificationGatewayUrl(process.env.PUSH_GATEWAY_URL, process.env.NODE_ENV === 'production');
       if (pushGateway) {
         const controller = new AbortController();
@@ -503,8 +519,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     let recovered = 0;
     for (const job of strandedRes.rows) {
       try {
-        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload);
-        const finalStatus = providerOutcome?.status === 'SIMULATED' ? 'SIMULATED' : providerOutcome?.status === 'SKIPPED' ? 'SKIPPED' : 'SENT';
+        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
+        const finalStatus = this.deliveryStatus(providerOutcome);
         await this.db.query(
           "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 WHERE id = $3",
           [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
