@@ -26,6 +26,11 @@ test('Central administrators can inspect redacted delivery backlog; branch revie
  const response=await page.request.get(`${API}/audit/delivery`,{headers:await headers(page)});
  expect(response.ok(),await response.text()).toBeTruthy();expect(response.headers()['cache-control']).toBe('no-store');
  const data=await response.json();expect(data.backlog.pending).toBeGreaterThan(0);expect(data.worker.scope).toBe('THIS_API_PROCESS');
+ expect(data.backlog.pushProvider.acceptanceOnly).toBe(true);expect(data.notificationWorker.scope).toBe('THIS_API_PROCESS');
+ const push=page.getByRole('region',{name:'पुश प्रदायक अवस्था (Push provider status)',exact:true});
+ await expect(push).toBeVisible();await expect(push.getByText('Provider acceptance does not confirm delivery to a device.',{exact:false})).toBeVisible();
+ await expect(push.getByText('Notification worker, this API process)',{exact:false})).toContainText('TEST_DISABLED');
+ for(const key of ['heldDispatches','expiredClaims','unknownDevices','rejectedDevices'])expect(data.backlog.pushProvider[key]).toBeGreaterThanOrEqual(0);
  for(const key of ['entity_id','actor_id','ip_address','user_agent','new_value','last_error'])expect(JSON.stringify(data)).not.toContain(key);
  await page.getByRole('button',{name:'अवस्था ताजा गर्नुहोस् (Refresh delivery status)',exact:true}).click();
  await expect(page.getByText('This API process)',{exact:false})).toContainText('TEST_DISABLED');
@@ -42,7 +47,32 @@ test('Delivery refresh clears old status and presents an unavailable response wi
  await page.getByRole('button',{name:'अवस्था ताजा गर्नुहोस् (Refresh delivery status)',exact:true}).click();
  await expect(page.getByRole('region',{name:'अडिट वितरण (Audit delivery)',exact:true}).getByRole('alert')).toContainText('Audit delivery status is unavailable');
  await expect(page.getByText('This API process)',{exact:false})).toHaveCount(0);
+ await expect(page.getByRole('region',{name:'पुश प्रदायक अवस्था (Push provider status)',exact:true})).toHaveCount(0);
  await expect(page.getByText('Private fictional upstream detail',{exact:false})).toHaveCount(0);
+});
+
+test('Push monitoring exposes held outcomes with keyboard refresh and clears resolved counts without resending',async({page})=>{
+ await login(page);const response=await page.request.get(`${API}/audit/delivery`,{headers:await headers(page)});expect(response.ok()).toBeTruthy();
+ const saved=await response.json();const current={...saved,backlog:{...saved.backlog,pushProvider:{...saved.backlog.pushProvider,heldDispatches:2,unknownDevices:1,expiredClaims:1}}};
+ await page.route(`${API}/audit/delivery`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(current)}));
+ await page.goto('/audit');const panel=page.getByRole('region',{name:'पुश प्रदायक अवस्था (Push provider status)',exact:true});
+ await expect(panel.getByRole('alert')).toContainText('Push outcomes require review');
+ const held=panel.getByText('समीक्षाका लागि रोकिएको (Held push dispatches)',{exact:true}).locator('..').locator('dd');await expect(held).toHaveText('2');
+ await expect(panel.getByRole('button')).toHaveCount(0);
+ current.backlog.pushProvider={...saved.backlog.pushProvider,heldDispatches:0,unknownDevices:0,expiredClaims:0,rejectedDevices:0};
+ const refresh=page.getByRole('button',{name:'अवस्था ताजा गर्नुहोस् (Refresh delivery status)',exact:true});await refresh.focus();await page.keyboard.press('Enter');
+ await expect(held).toHaveText('0');await expect(panel.getByRole('alert')).toHaveCount(0);
+});
+
+test('Malformed push monitoring responses do not show healthy zero counts or upstream failure details',async({page})=>{
+ await login(page);const response=await page.request.get(`${API}/audit/delivery`,{headers:await headers(page)});expect(response.ok()).toBeTruthy();const saved=await response.json();
+ await page.route(`${API}/audit/delivery`,route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({...saved,
+  backlog:{...saved.backlog,pushProvider:{acceptanceOnly:true,heldDispatches:'0'}},
+  notificationWorker:{...saved.notificationWorker,lastFailureCodes:['private-token-provider-detail']}})}));
+ await page.goto('/audit');const panel=page.getByRole('region',{name:'पुश प्रदायक अवस्था (Push provider status)',exact:true});
+ await expect(panel.getByRole('alert')).toContainText('Push status is unavailable');await expect(panel.locator('dd')).toHaveCount(0);
+ await expect(panel.getByText('Notification worker status is unavailable.',{exact:true})).toBeVisible();
+ await expect(page.getByText('private-token-provider-detail',{exact:false})).toHaveCount(0);
 });
 
 test('Recovery review exposes labelled controls, rejects unconfirmed actions and clears stale evidence',async({page})=>{

@@ -105,7 +105,41 @@ export class AuditOutboxRepository {
             WHERE outcome.new_value->>'operationId'=attempt.entity_id::text
               AND outcome.action IN ('OTP_REQUEST_OUTCOME','OTP_VERIFY_OUTCOME','LOGIN')
           )
-      ) SELECT backlog.*,unresolved.* FROM backlog CROSS JOIN unresolved`);
+      ), push_dispatches AS MATERIALIZED (
+        SELECT id,delivery_status,created_at FROM notification_dispatches
+        WHERE channel='PUSH' AND delivery_status IN ('PENDING','PROCESSING','FAILED','RECONCILIATION_REQUIRED')
+      ), push_devices AS (
+        SELECT a.created_at,a.lease_expires_at,
+          CASE WHEN a.status='UNKNOWN' THEN coalesce(o.outcome,'UNKNOWN') ELSE a.status END AS effective_status
+        FROM push_dispatches d JOIN push_delivery_attempts a ON a.dispatch_id=d.id
+        LEFT JOIN push_provider_observations o ON o.attempt_id=a.id AND o.claim_id=a.claim_id
+      ), push_dispatch_summary AS (
+        SELECT count(*) FILTER(WHERE delivery_status='PENDING')::int AS pending,
+          count(*) FILTER(WHERE delivery_status='PROCESSING')::int AS processing,
+          count(*) FILTER(WHERE delivery_status='FAILED')::int AS failed,
+          count(*) FILTER(WHERE delivery_status='RECONCILIATION_REQUIRED')::int AS held,
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-created_at))))
+            FILTER(WHERE delivery_status='RECONCILIATION_REQUIRED'),0)::double precision AS oldest_held_age
+        FROM push_dispatches
+      ), push_device_summary AS (
+        SELECT count(*) FILTER(WHERE effective_status='PLANNED')::int AS planned,
+          count(*) FILTER(WHERE effective_status='SENDING' AND lease_expires_at>CURRENT_TIMESTAMP)::int AS in_flight,
+          count(*) FILTER(WHERE effective_status='SENDING' AND lease_expires_at<=CURRENT_TIMESTAMP)::int AS expired,
+          count(*) FILTER(WHERE effective_status='UNKNOWN')::int AS unknown,
+          count(*) FILTER(WHERE effective_status='REJECTED')::int AS rejected,
+          count(*) FILTER(WHERE effective_status IN ('ACCEPTED','SKIPPED','INVALID_TOKEN'))::int AS confirmed,
+          coalesce(max(greatest(0,extract(epoch FROM(CURRENT_TIMESTAMP-created_at))))
+            FILTER(WHERE effective_status IN ('UNKNOWN','REJECTED') OR
+              (effective_status='SENDING' AND lease_expires_at<=CURRENT_TIMESTAMP)),0)::double precision AS oldest_unresolved_age
+        FROM push_devices
+      ) SELECT backlog.*,unresolved.*,jsonb_build_object(
+        'acceptanceOnly',true,'pendingDispatches',p.pending,'processingDispatches',p.processing,
+        'failedDispatches',p.failed,'heldDispatches',p.held,'oldestHeldDispatchAgeSeconds',p.oldest_held_age,
+        'plannedDevices',v.planned,'inFlightDevices',v.in_flight,'expiredClaims',v.expired,
+        'unknownDevices',v.unknown,'rejectedDevices',v.rejected,
+        'confirmedDevicesAwaitingReconciliation',v.confirmed,'oldestUnresolvedDeviceAgeSeconds',v.oldest_unresolved_age
+      ) AS "pushProvider" FROM backlog CROSS JOIN unresolved
+        CROSS JOIN push_dispatch_summary p CROSS JOIN push_device_summary v`);
     return result.rows[0];
   }
 

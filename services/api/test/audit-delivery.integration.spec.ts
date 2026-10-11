@@ -79,5 +79,36 @@ describe('Durable scheduled audit delivery (real PostgreSQL)',()=>{
   const down=fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/050_otp_evidence_lookup.down.sql'),'utf8');await db.query(down);
   expect((await outbox.findByEntityId(unresolved.entity_id))).toHaveLength(2);
  });
+ it('reports open push evidence accurately, excludes completed/non-push delivery, and preserves evidence on index rollback',async()=>{
+  const user=(await db.query("INSERT INTO user_accounts(phone_number) VALUES('+9779800000079') RETURNING id")).rows[0].id;
+  const ids:string[]=[],receiptHash='a'.repeat(64);
+  async function dispatch(status:string,channel='PUSH'){
+   const row=(await db.query(`INSERT INTO notification_dispatches(recipient_user_id,channel,event_type,payload,delivery_status,created_at)
+    VALUES($1,$2,'FICTIONAL_MONITOR',$3,$4,CURRENT_TIMESTAMP-INTERVAL '20 minutes') RETURNING id`,[user,channel,JSON.stringify({secret:'private-message'}),status])).rows[0];ids.push(row.id);return row.id;
+  }
+  async function device(parent:string,status:string,observation?:string,expired=false){
+   const row=(await db.query(`INSERT INTO push_delivery_attempts(dispatch_id,registration_id,token_generation,created_at)
+    VALUES($1,$2,$3,CURRENT_TIMESTAMP-INTERVAL '20 minutes') RETURNING id`,[parent,randomUUID(),randomUUID()])).rows[0];ids.push(row.id);
+   if(status==='PLANNED')return;
+   const claim=randomUUID();await db.query(`UPDATE push_delivery_attempts SET status='SENDING',claim_id=$2,
+    lease_expires_at=CURRENT_TIMESTAMP+make_interval(secs=>$3) WHERE id=$1`,[row.id,claim,expired?-60:120]);
+   if(status!=='SENDING')await db.query('UPDATE push_delivery_attempts SET status=$2,receipt_hash=$3,completed_at=CURRENT_TIMESTAMP WHERE id=$1',[row.id,status,status==='ACCEPTED'?receiptHash:null]);
+   if(observation)await db.query('INSERT INTO push_provider_observations(attempt_id,claim_id,outcome,receipt_hash) VALUES($1,$2,$3,$4)',[row.id,claim,observation,observation==='ACCEPTED'?receiptHash:null]);
+  }
+  const held=await dispatch('RECONCILIATION_REQUIRED'),pending=await dispatch('PENDING'),processing=await dispatch('PROCESSING'),failed=await dispatch('FAILED');
+  await device(held,'UNKNOWN');await device(held,'UNKNOWN','ACCEPTED');await device(held,'UNKNOWN','REJECTED');await device(held,'REJECTED');
+  await device(processing,'SENDING',undefined,true);await device(processing,'SENDING');await device(pending,'PLANNED');await device(failed,'ACCEPTED');
+  await device(await dispatch('SENT'),'UNKNOWN');await device(await dispatch('RECONCILIATION_REQUIRED','EMAIL'),'UNKNOWN');
+  const summary=(await outbox.getDeliverySummary()).pushProvider;
+  expect(summary).toMatchObject({acceptanceOnly:true,pendingDispatches:1,processingDispatches:1,failedDispatches:1,heldDispatches:1,
+   plannedDevices:1,inFlightDevices:1,expiredClaims:1,unknownDevices:1,rejectedDevices:2,confirmedDevicesAwaitingReconciliation:2});
+  expect(summary.oldestHeldDispatchAgeSeconds).toBeGreaterThanOrEqual(1200);expect(summary.oldestUnresolvedDeviceAgeSeconds).toBeGreaterThanOrEqual(1200);
+  const json=JSON.stringify(summary);for(const id of [user,...ids])expect(json).not.toContain(id);for(const text of ['private-message',receiptHash,'token_generation','registration_id','receipt_hash'])expect(json).not.toContain(text);
+  await db.query("UPDATE notification_dispatches SET delivery_status='SENT' WHERE id=ANY($1::uuid[])",[[held,pending,processing,failed]]);
+  const cleared=(await outbox.getDeliverySummary()).pushProvider;expect(cleared.heldDispatches).toBe(0);expect(cleared.unknownDevices).toBe(0);expect(cleared.expiredClaims).toBe(0);expect(cleared.oldestUnresolvedDeviceAgeSeconds).toBe(0);
+  const before=(await db.query('SELECT count(*)::int AS count FROM push_delivery_attempts')).rows[0].count;
+  const down=fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/058_push_operations_lookup.down.sql'),'utf8');await db.query(down);
+  expect((await db.query('SELECT count(*)::int AS count FROM push_delivery_attempts')).rows[0].count).toBe(before);expect((await outbox.getDeliverySummary()).pushProvider).toEqual(cleared);
+ });
 
 });

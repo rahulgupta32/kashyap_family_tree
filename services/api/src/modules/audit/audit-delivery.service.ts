@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { NotificationDispatcherService } from '../notifications/notification-dispatcher.service';
 import { MigrationService } from '../../database/migration.service';
 import { AuditRepository } from '../../database/repositories/audit.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
@@ -14,7 +15,8 @@ export class AuditDeliveryService implements OnModuleInit,OnModuleDestroy {
  private lastCompletedAt:string|null=null;
  private lastFailureAt:string|null=null;
  private lastResult:{processed:number;failed:number}|null=null;
- constructor(private readonly migrations:MigrationService,private readonly outbox:AuditOutboxRepository,private readonly audit:AuditRepository){}
+ constructor(private readonly migrations:MigrationService,private readonly outbox:AuditOutboxRepository,private readonly audit:AuditRepository,
+  @Optional() private readonly notifications?:NotificationDispatcherService){}
  async onModuleInit(){
   if(process.env.NODE_ENV==='test'){this.lifecycle='TEST_DISABLED';return;}
   await this.migrations.runMigrations();
@@ -39,7 +41,7 @@ export class AuditDeliveryService implements OnModuleInit,OnModuleDestroy {
  }
  async deliveryStatus(){
   const backlog=await this.outbox.getDeliverySummary();
-  return {backlog,worker:{scope:'THIS_API_PROCESS',lifecycle:this.lifecycle,inFlight:!!this.running,
+  return {backlog,notificationWorker:this.notifications?.workerStatus() || null,worker:{scope:'THIS_API_PROCESS',lifecycle:this.lifecycle,inFlight:!!this.running,
    intervalSeconds:5,batchSize:20,lastStartedAt:this.lastStartedAt,lastCompletedAt:this.lastCompletedAt,
    lastFailureAt:this.lastFailureAt,lastResult:this.lastResult},generatedAt:new Date().toISOString()};
  }

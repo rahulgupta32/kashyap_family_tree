@@ -11,6 +11,7 @@ import { notificationCategoryEnabled } from './notification-policy';
 import { notificationGatewayUrl } from './notification-gateway.policy';
 import { PushTokensService } from './push-tokens.service';
 import { PushDeliveryService } from './push-delivery.service';
+import { MigrationService } from '../../database/migration.service';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
@@ -28,6 +29,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
   private readonly logger = new Logger(NotificationDispatcherService.name);
   private workerInterval: NodeJS.Timeout | null = null;
   private workerCycle: Promise<void> | null = null;
+  private stopped = false;
+  private initialization?: Promise<void>;
+  private lifecycle: 'STARTING'|'RUNNING'|'TEST_DISABLED'|'STOPPED' = 'STARTING';
+  private lastStartedAt: string|null = null;
+  private lastCompletedAt: string|null = null;
+  private lastFailureAt: string|null = null;
+  private lastFailureCodes: string[] = [];
 
   constructor(
     private readonly db: DatabaseService,
@@ -38,38 +46,60 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
     private readonly follows?: NotificationFollowsService,
     @Optional() private readonly pushTokens?: PushTokensService,
     @Optional() private readonly pushDelivery?: PushDeliveryService,
+    @Optional() private readonly migrations?: MigrationService,
   ) {}
 
-  onModuleInit() {
-    if (process.env.NODE_ENV !== 'test' && !this.workerInterval) {
+  onModuleInit(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    if (process.env.NODE_ENV === 'test') {this.lifecycle='TEST_DISABLED';return Promise.resolve();}
+    if (this.initialization) return this.initialization;
+    this.initialization=(async()=>{
+      await this.migrations?.runMigrations();
+      if (this.stopped || this.workerInterval) return;
       this.workerInterval = setInterval(() => {
         // A slow provider must not create another cycle every five seconds.
-        if (this.workerCycle) return;
+        if (this.stopped || this.workerCycle) return;
         this.workerCycle = this.runWorkerCycle().finally(() => { this.workerCycle = null; });
       }, 5000);
-    }
+      this.workerInterval.unref();
+      this.lifecycle='RUNNING';
+    })();
+    return this.initialization;
   }
 
   private async runWorkerCycle(): Promise<void> {
+    this.lastStartedAt=new Date().toISOString();
+    const failures:string[]=[];
     try { await this.pushTokens?.retireStale(); }
-    catch { this.logger.error('PUSH_TOKEN_RETENTION_UNAVAILABLE'); }
+    catch { failures.push('PUSH_TOKEN_RETENTION_UNAVAILABLE');this.logger.error('PUSH_TOKEN_RETENTION_UNAVAILABLE'); }
     try { await this.pushDelivery?.reconcileConfirmed(); }
-    catch { this.logger.error('PUSH_PROVIDER_RECONCILIATION_UNAVAILABLE'); }
+    catch { failures.push('PUSH_PROVIDER_RECONCILIATION_UNAVAILABLE');this.logger.error('PUSH_PROVIDER_RECONCILIATION_UNAVAILABLE'); }
     try {
       await this.processOutboxBatch(20);
       await this.recoverStrandedJobs();
       await this.retryFailedDispatches(5);
     } catch {
+      failures.push('NOTIFICATION_WORKER_UNAVAILABLE');
       this.logger.error('NOTIFICATION_WORKER_UNAVAILABLE');
     }
+    this.lastFailureCodes=failures;
+    if (failures.length) this.lastFailureAt=new Date().toISOString();
+    else this.lastCompletedAt=new Date().toISOString();
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.stopped=true;this.lifecycle='STOPPED';
     if (this.workerInterval) {
       clearInterval(this.workerInterval);
       this.workerInterval = null;
     }
     await this.workerCycle;
+  }
+
+  workerStatus() {
+    return {scope:'THIS_API_PROCESS',lifecycle:this.lifecycle,inFlight:!!this.workerCycle,
+      intervalSeconds:5,outboxBatchSize:20,retryBatchSize:5,lastStartedAt:this.lastStartedAt,
+      lastCompletedAt:this.lastCompletedAt,lastFailureAt:this.lastFailureAt,lastFailureCodes:[...this.lastFailureCodes]};
   }
 
   /**

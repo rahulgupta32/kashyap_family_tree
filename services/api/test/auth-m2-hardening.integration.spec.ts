@@ -485,6 +485,9 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       const secret=decryptSecret(factor.pending_ciphertext,user.userId);
       const confirmed=await fetch(`${baseUrl}/auth/mfa/confirm`,{method:'POST',headers:{Authorization:`Bearer ${user.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({code:totp(secret,Math.floor(Date.now()/30000))})});expect(confirmed.status).toBe(201);
       const response=await call();expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toBe('no-store');const data:any=await response.json();expect(data.worker.scope).toBe('THIS_API_PROCESS');expect(data.worker.lifecycle).toBe('TEST_DISABLED');expect(data.backlog.pending).toBeGreaterThan(0);expect(data.backlog.unresolvedOtpAttempts).toBeGreaterThan(0);
+      expect(data.notificationWorker).toMatchObject({scope:'THIS_API_PROCESS',lifecycle:'TEST_DISABLED',inFlight:false,lastFailureCodes:[]});
+      expect(data.backlog.pushProvider).toMatchObject({acceptanceOnly:true});
+      for(const key of ['token_envelope','token_hash','receipt_hash','registration_id','token_generation'])expect(JSON.stringify(data)).not.toContain(key);
       for(const key of ['entity_id','actor_id','ip_address','user_agent','new_value','last_error'])expect(JSON.stringify(data)).not.toContain(key);
       const failing=jest.spyOn(auditOutboxRepo,'getDeliverySummary').mockRejectedValueOnce(new Error('Private connection string'));
       try{const failed=await call();expect(failed.status).toBe(503);expect(JSON.stringify(await failed.json())).not.toContain('Private connection');}finally{failing.mockRestore();}

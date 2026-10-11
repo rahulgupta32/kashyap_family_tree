@@ -6,13 +6,48 @@ import { useAuth } from '../context/auth-context';
 import { AuditRecoveryPanel } from './audit-recovery-panel';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+const pushMetrics = [
+  ['pendingDispatches','बाँकी पुश (Pending push dispatches)'],
+  ['processingDispatches','प्रक्रियामा (Processing push dispatches)'],
+  ['failedDispatches','असफल पुश (Failed push dispatches)'],
+  ['heldDispatches','समीक्षाका लागि रोकिएको (Held push dispatches)'],
+  ['plannedDevices','प्रतीक्षामा रहेका उपकरण (Planned devices)'],
+  ['inFlightDevices','प्रदायक अनुरोध जारी (In-flight device requests)'],
+  ['expiredClaims','म्याद सकिएका दाबी (Expired provider claims)'],
+  ['unknownDevices','नतिजा अनिश्चित (Unknown device outcomes)'],
+  ['rejectedDevices','प्रदायकले अस्वीकार गरेको (Rejected device requests)'],
+  ['confirmedDevicesAwaitingReconciliation','नतिजा मिलान बाँकी (Confirmed devices awaiting reconciliation)'],
+  ['oldestHeldDispatchAgeSeconds','पुरानो रोकिएको पुश उमेर, सेकेन्ड (Oldest held push age, seconds)'],
+  ['oldestUnresolvedDeviceAgeSeconds','पुरानो अनिर्णीत उपकरण उमेर, सेकेन्ड (Oldest unresolved device age, seconds)'],
+] as const;
+type PushSummary = {acceptanceOnly:true} & Record<typeof pushMetrics[number][0],number>;
+function pushSummary(value:unknown):PushSummary|null {
+  if (!value || typeof value!=='object') return null;
+  const data=value as Record<string,unknown>;
+  if (data.acceptanceOnly!==true || pushMetrics.some(([key])=>typeof data[key]!=='number' ||
+    !Number.isFinite(data[key]) || (data[key] as number)<0 ||
+    (!key.endsWith('Seconds') && !Number.isSafeInteger(data[key])))) return null;
+  return data as PushSummary;
+}
+interface NotificationWorkerStatus {scope:string;lifecycle:string;inFlight:boolean;lastCompletedAt:string|null;lastFailureAt:string|null;lastFailureCodes:string[]}
+function notificationWorker(value:unknown):NotificationWorkerStatus|null {
+  if (!value || typeof value!=='object') return null;
+  const data=value as Record<string,unknown>;
+  if (data.scope!=='THIS_API_PROCESS' || !['STARTING','RUNNING','TEST_DISABLED','STOPPED'].includes(data.lifecycle as string) ||
+    typeof data.inFlight!=='boolean' || !['lastCompletedAt','lastFailureAt'].every(key=>data[key]===null ||
+      (typeof data[key]==='string' && Number.isFinite(Date.parse(data[key] as string)))) ||
+    !Array.isArray(data.lastFailureCodes) || data.lastFailureCodes.length>3 || data.lastFailureCodes.some(code=>
+      !['PUSH_TOKEN_RETENTION_UNAVAILABLE','PUSH_PROVIDER_RECONCILIATION_UNAVAILABLE','NOTIFICATION_WORKER_UNAVAILABLE'].includes(code))) return null;
+  return data as unknown as NotificationWorkerStatus;
+}
 interface DeliveryStatus {
   backlog: { pending: number; due: number; delayed: number; failed: number; exhausted: number;
-    oldestPendingAgeSeconds: number; oldestDueAgeSeconds: number; unresolvedOtpAttempts: number };
+    oldestPendingAgeSeconds: number; oldestDueAgeSeconds: number; unresolvedOtpAttempts: number; pushProvider?:unknown };
   worker: { scope: string; lifecycle: string; inFlight: boolean; intervalSeconds: number; batchSize: number;
     lastStartedAt: string | null; lastCompletedAt: string | null; lastFailureAt: string | null;
     lastResult: { processed: number; failed: number } | null };
   generatedAt: string;
+  notificationWorker?:unknown;
 }
 
 export function AuditDeliveryPanel() {
@@ -47,6 +82,8 @@ export function AuditDeliveryPanel() {
     return () => { active.current?.abort(); };
   }, [load]);
   if (!allowed || isLoading || !accessToken) return null;
+  const push=pushSummary(data?.backlog.pushProvider);
+  const notification=notificationWorker(data?.notificationWorker);
   return <><section aria-labelledby="audit-delivery-heading" className="space-y-3 rounded border p-4">
     <h2 id="audit-delivery-heading" className="text-lg font-semibold">अडिट वितरण (Audit delivery)</h2>
     <button type="button" disabled={busy} onClick={() => void load()} className="rounded border p-2">
@@ -73,6 +110,24 @@ export function AuditDeliveryPanel() {
       {(data.backlog.exhausted > 0 || data.backlog.unresolvedOtpAttempts > 0) &&
         <p role="alert">समीक्षा आवश्यक छ। Review retained evidence through the approved incident process. Exhausted events are retained; automatic delivery has stopped. OTP attempts without a recorded outcome for ten minutes are shown for investigation.</p>}
       <p className="text-sm">These counts support investigation. Alert routing, fleet monitoring and governed recovery still require operational configuration.</p>
+      <section aria-labelledby="push-provider-heading" className="space-y-3 border-t pt-4">
+        <h3 id="push-provider-heading" className="text-lg font-semibold">पुश प्रदायक अवस्था (Push provider status)</h3>
+        {push ? <>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {pushMetrics.map(([key,label])=><div key={key}><dt>{label}</dt><dd className="text-xl font-semibold">{Math.floor(push[key])}</dd></div>)}
+          </dl>
+          {(push.heldDispatches>0 || push.expiredClaims>0 || push.unknownDevices>0 || push.rejectedDevices>0) &&
+            <p role="alert">पुश नतिजा समीक्षा आवश्यक छ। Push outcomes require review. Uncertain requests remain held; refreshing this view does not resend notifications.</p>}
+          <p>प्रदायक स्वीकृति उपकरणमा प्राप्त भएको प्रमाण होइन। Provider acceptance does not confirm delivery to a device.</p>
+        </> : <p role="alert">पुश अवस्था उपलब्ध छैन। Push status is unavailable; no healthy state is inferred.</p>}
+        {notification ? <>
+          <p>सूचना कार्यकर्ता, यो प्रक्रिया (Notification worker, this API process): {notification.lifecycle}{notification.inFlight?' · processing':''}.
+            {' '}Last completed notification cycle: {notification.lastCompletedAt || 'No completed cycle recorded'}.</p>
+          <p>Last failed notification cycle: {notification.lastFailureAt || 'None recorded'}.</p>
+          {!!notification.lastFailureCodes.length && <p role="alert">Notification cycle unavailable: {notification.lastFailureCodes.join(', ')}. Follow the approved incident process.</p>}
+        </> : <p>Notification worker status is unavailable.</p>}
+        <p className="text-sm">Counts cover open push dispatches across all API processes. Worker activity describes this process only. Incident routing and reviewed provider recovery still require operational configuration.</p>
+      </section>
     </>}
   </section><AuditRecoveryPanel key={user?.id} /></>;
 }
