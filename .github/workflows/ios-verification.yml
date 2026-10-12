@@ -1,0 +1,75 @@
+name: iOS native verification
+
+on:
+  push:
+    branches: [main, develop, 'feat/*']
+  pull_request:
+    branches: [main, develop, 'feat/*']
+
+permissions:
+  contents: read
+
+jobs:
+  ios-native:
+    name: iOS simulator startup, Keychain and unsigned device build
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Record native toolchain
+        run: |
+          mkdir -p test-results
+          flutter --version > test-results/ios-flutter-version.txt
+          xcodebuild -version > test-results/ios-xcode-version.txt
+          sw_vers > test-results/ios-macos-version.txt
+      - name: Bootstrap missing iOS source in isolation for review
+        run: |
+          if [ ! -f apps/mobile/ios/Runner.xcodeproj/project.pbxproj ]; then
+            flutter create --no-pub --platforms=ios --org=com.example --project-name=kashyap_mobile "$RUNNER_TEMP/kashyap-ios-scaffold"
+            cp -R "$RUNNER_TEMP/kashyap-ios-scaffold/ios" apps/mobile/ios
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          path = Path('apps/mobile/ios/Runner/Info.plist')
+          data = plistlib.loads(path.read_bytes())
+          data['CFBundleDisplayName'] = 'कश्यप अधिकारी वंशावली'
+          path.write_bytes(plistlib.dumps(data, sort_keys=False))
+          PY
+          git diff --exit-code -- apps/mobile/lib apps/mobile/android apps/mobile/pubspec.yaml
+          python3 scripts/ios-verification-evidence.py archive
+      - name: Install native dependencies
+        run: flutter pub get
+        working-directory: apps/mobile
+      - name: Compile iOS simulator app
+        run: |
+          set -o pipefail
+          flutter build ios --simulator --debug --dart-define=API_BASE_URL=https://api.invalid 2>&1 | tee ../../test-results/ios-simulator-build.log
+        working-directory: apps/mobile
+      - name: Verify startup and real simulator Keychain
+        run: bash scripts/run-ios-startup-verification.sh
+      - name: Compile unsigned iOS device app
+        run: |
+          set -o pipefail
+          flutter build ios --release --no-codesign --dart-define=API_BASE_URL=https://api.invalid 2>&1 | tee ../../test-results/ios-device-build.log
+        working-directory: apps/mobile
+      - name: Capture verified source and bounded evidence
+        run: |
+          python3 scripts/ios-verification-evidence.py archive
+          python3 scripts/ios-verification-evidence.py record
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-native-${{ github.run_id }}
+          path: test-results/ios-*
+          if-no-files-found: error
+          retention-days: 14
