@@ -26,7 +26,7 @@ describe('Notification delivery boundary', () => {
     const job = { id: 'job', channel: 'PUSH', recipient_user_id: 'recipient', payload: { action, entityId: 'entity' } };
     const query = jest.fn().mockResolvedValueOnce({ rows: [job] }).mockResolvedValueOnce({ rows });
     if (action === 'CHAT_MESSAGE_CREATED') query.mockResolvedValueOnce({ rows: [] });
-    query.mockResolvedValue({ rows: [] });
+    query.mockResolvedValue({ rows: [{ id: 'job' }] });
     const dispatcher = new NotificationDispatcherService({ query } as any);
     const gateway = jest.spyOn(global, 'fetch');
     try {

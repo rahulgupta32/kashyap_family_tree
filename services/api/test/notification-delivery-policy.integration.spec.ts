@@ -107,6 +107,57 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     expect(sms.sendOtp).not.toHaveBeenCalled();
   });
 
+  it.each(['initial','retry','stranded'])('preserves a concurrently reconciled push outcome after stale %s completion',async path=>{
+    const previous=process.env.PUSH_PROVIDER;process.env.PUSH_PROVIDER='fcm';
+    await db.query('UPDATE notification_preferences SET push_enabled=true,sms_enabled=false WHERE user_id=$1',[recipient]);
+    const confirmed={provider:'FCM',reconciled:true,acceptanceOnly:true};
+    const push={send:jest.fn(async(_userId:string,id:string)=>{
+      // Reconciliation may commit while a prior worker is still waiting to finish.
+      await db.query(`UPDATE notification_dispatches SET delivery_status='SENT',provider_response=$2,
+        worker_id=NULL,lease_expires_at=NULL WHERE id=$1`,[id,JSON.stringify(confirmed)]);
+      return {status:'RECONCILIATION_REQUIRED',unresolvedDevices:1};
+    })};
+    const worker=new NotificationDispatcherService(db,sms as any,undefined,undefined,undefined,push as any);
+    try {
+      const entry=await record();
+      let id:string;
+      if(path==='initial'){
+        expect(await worker.processRecord(entry)).toMatchObject([{channel:'PUSH',status:'SENT'}]);
+        id=(await db.query('SELECT id FROM notification_dispatches WHERE outbox_id=$1',[entry.id])).rows[0].id;
+      } else {
+        id=(await db.query(`INSERT INTO notification_dispatches(outbox_id,recipient_user_id,channel,event_type,payload,delivery_status,lease_expires_at)
+          VALUES($1,$2,'PUSH',$3,$4,$5,$6) RETURNING id`,[entry.id,recipient,entry.action,
+          JSON.stringify({action:entry.action,entityId:message,message:'Generic alert'}),
+          path==='retry'?'FAILED':'PROCESSING',path==='retry'?null:new Date(Date.now()-60000)])).rows[0].id;
+        expect(path==='retry'?await worker.retryFailedDispatches():await worker.recoverStrandedJobs()).toBe(0);
+      }
+      expect(push.send).toHaveBeenCalledTimes(1);
+      expect((await db.query('SELECT delivery_status,provider_response,worker_id,lease_expires_at FROM notification_dispatches WHERE id=$1',[id])).rows[0])
+        .toMatchObject({delivery_status:'SENT',provider_response:confirmed,worker_id:null,lease_expires_at:null});
+    } finally {if(previous===undefined)delete process.env.PUSH_PROVIDER;else process.env.PUSH_PROVIDER=previous;}
+  });
+
+  it.each(['retry','stranded'])('does not let a %s worker overwrite a replacement lease',async path=>{
+    const previous=process.env.PUSH_PROVIDER;process.env.PUSH_PROVIDER='fcm';
+    await db.query('UPDATE notification_preferences SET push_enabled=true,sms_enabled=false WHERE user_id=$1',[recipient]);
+    const entry=await record();
+    const job=(await db.query(`INSERT INTO notification_dispatches(outbox_id,recipient_user_id,channel,event_type,payload,delivery_status,lease_expires_at)
+      VALUES($1,$2,'PUSH',$3,$4,$5,$6) RETURNING id`,[entry.id,recipient,entry.action,
+      JSON.stringify({action:entry.action,entityId:message,message:'Generic alert'}),
+      path==='retry'?'FAILED':'PROCESSING',path==='retry'?null:new Date(Date.now()-60000)])).rows[0].id;
+    const push={send:jest.fn(async()=>{
+      await db.query("UPDATE notification_dispatches SET worker_id='replacement-worker',lease_expires_at=NOW()+INTERVAL '1 minute' WHERE id=$1",[job]);
+      return {status:'ACCEPTED',acceptedDevices:1};
+    })};
+    try {
+      const worker=new NotificationDispatcherService(db,sms as any,undefined,undefined,undefined,push as any);
+      expect(path==='retry'?await worker.retryFailedDispatches():await worker.recoverStrandedJobs()).toBe(0);
+      expect(push.send).toHaveBeenCalledTimes(1);
+      expect((await db.query('SELECT delivery_status,worker_id FROM notification_dispatches WHERE id=$1',[job])).rows[0])
+        .toMatchObject({delivery_status:'PROCESSING',worker_id:'replacement-worker'});
+    } finally {if(previous===undefined)delete process.env.PUSH_PROVIDER;else process.env.PUSH_PROVIDER=previous;}
+  });
+
   it.each(['accepted','rejected_then_retry'])('keeps actual SMS adapter formatting and durable %s outcomes separate from OTP', async path => {
     const priorToken=process.env.SPARROW_SMS_TOKEN;
     process.env.SPARROW_SMS_TOKEN='fictional-sms-provider-token';

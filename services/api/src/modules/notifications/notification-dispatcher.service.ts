@@ -293,32 +293,39 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           const providerOutcome = await this.deliverNotification(channel, userId, payload, dispatchId);
           const finalStatus = this.deliveryStatus(providerOutcome);
 
-          await this.db.query(
-            "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2 WHERE id = $3",
+          const finalized = await this.db.query(
+            `UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), provider_response = $2
+             WHERE id = $3 AND (channel <> 'PUSH' OR delivery_status NOT IN ('SENT','SKIPPED')) RETURNING delivery_status`,
             [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, dispatchId],
           );
+          const persistedStatus = finalized.rows[0]?.delivery_status ??
+            (await this.db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[dispatchId])).rows[0]?.delivery_status;
 
           results.push({
             outboxId: record.id,
             recipientUserId: userId,
             channel,
-            status: finalStatus as any,
+            status: (persistedStatus ?? finalStatus) as NotificationDispatchResult['status'],
           });
         } catch (err: any) {
           this.logger.warn(DELIVERY_FAILURE);
-          await this.db.query(
+          const finalized = await this.db.query(
             `UPDATE notification_dispatches 
              SET delivery_status = 'FAILED', retry_count = retry_count + 1, error_message = $1 
-             WHERE outbox_id = $2 AND recipient_user_id = $3 AND channel = $4`,
+             WHERE outbox_id = $2 AND recipient_user_id = $3 AND channel = $4
+               AND (channel <> 'PUSH' OR delivery_status NOT IN ('SENT','SKIPPED')) RETURNING delivery_status`,
             [DELIVERY_FAILURE, record.id, userId, channel],
           );
+          const persistedStatus = finalized.rows[0]?.delivery_status ??
+            (await this.db.query('SELECT delivery_status FROM notification_dispatches WHERE outbox_id=$1 AND recipient_user_id=$2 AND channel=$3',
+              [record.id,userId,channel])).rows[0]?.delivery_status;
 
           results.push({
             outboxId: record.id,
             recipientUserId: userId,
             channel,
-            status: 'FAILED',
-            error: DELIVERY_FAILURE,
+            status: (persistedStatus ?? 'FAILED') as NotificationDispatchResult['status'],
+            ...(persistedStatus === 'SENT' || persistedStatus === 'SKIPPED' ? {} : {error: DELIVERY_FAILURE}),
           });
         }
       }
@@ -359,13 +366,13 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
         const finalStatus = this.deliveryStatus(providerOutcome);
-        await this.db.query(
+        const finalized = await this.db.query(
           `UPDATE notification_dispatches 
            SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
-           WHERE id = $3`,
-          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
+           WHERE id = $3 AND worker_id = $4 AND delivery_status = 'PROCESSING' RETURNING id`,
+          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, this.workerId],
         );
-        retried++;
+        retried+=finalized.rows.length;
       } catch (err: any) {
         const newRetryCount = (job.retry_count || 0) + 1;
         const backoffSec = Math.min(Math.pow(2, newRetryCount), 300); // 2s, 4s, 8s, 16s... max 5m
@@ -375,8 +382,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL,
                provider_response = $5
-           WHERE id = $6`,
-          [newStatus, newRetryCount, DELIVERY_FAILURE, String(backoffSec), JSON.stringify({ error: DELIVERY_FAILURE, timestamp: new Date().toISOString() }), job.id],
+           WHERE id = $6 AND worker_id = $7 AND delivery_status = 'PROCESSING'`,
+          [newStatus, newRetryCount, DELIVERY_FAILURE, String(backoffSec), JSON.stringify({ error: DELIVERY_FAILURE, timestamp: new Date().toISOString() }), job.id, this.workerId],
         );
       }
     }
@@ -551,11 +558,12 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       try {
         const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
         const finalStatus = this.deliveryStatus(providerOutcome);
-        await this.db.query(
-          "UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 WHERE id = $3",
-          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id],
+        const finalized = await this.db.query(
+          `UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2
+           WHERE id = $3 AND worker_id = $4 AND delivery_status = 'PROCESSING' RETURNING id`,
+          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, this.workerId],
         );
-        recovered++;
+        recovered+=finalized.rows.length;
       } catch (err: any) {
         const nextRetry = (job.retry_count || 0) + 1;
         const backoffSec = Math.min(Math.pow(2, nextRetry), 300);
@@ -564,8 +572,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           `UPDATE notification_dispatches 
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL
-           WHERE id = $5`,
-          [newStatus, nextRetry, DELIVERY_FAILURE, String(backoffSec), job.id],
+           WHERE id = $5 AND worker_id = $6 AND delivery_status = 'PROCESSING'`,
+          [newStatus, nextRetry, DELIVERY_FAILURE, String(backoffSec), job.id, this.workerId],
         );
       }
     }
