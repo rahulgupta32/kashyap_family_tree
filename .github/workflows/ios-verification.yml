@@ -74,6 +74,8 @@ jobs:
               echo 'Tracked Podfile.lock did not change' > test-results/ios-podfile-lock-status.txt
             else
               echo 'Tracked Podfile.lock changed; candidate requires review and commit' > test-results/ios-podfile-lock-status.txt
+              echo 'Generated CocoaPods lockfile diff for review:'
+              git diff -- apps/mobile/ios/Podfile.lock
             fi
           else
             echo 'Podfile.lock is missing' > test-results/ios-podfile-lock-status.txt
