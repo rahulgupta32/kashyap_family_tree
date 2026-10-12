@@ -25,7 +25,7 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
   afterAll(async () => { if (db) await db.onModuleDestroy(); if (iso) await iso.drop(); });
   beforeEach(async () => {
     sms.sendNotification.mockClear(); sms.sendOtp.mockClear();
-    await db.query('UPDATE notification_preferences SET sms_enabled=true,workflow_enabled=true,chat_enabled=true,family_events_enabled=true WHERE user_id=$1', [recipient]);
+    await db.query('UPDATE notification_preferences SET push_enabled=false,sms_enabled=true,workflow_enabled=true,chat_enabled=true,family_events_enabled=true WHERE user_id=$1', [recipient]);
     await db.query('UPDATE user_accounts SET is_suspended=false WHERE id=$1', [recipient]);
     await db.query('UPDATE chat_participants SET left_at=NULL WHERE conversation_id=$1 AND user_id=$2', [conversation, recipient]);
     await db.query('UPDATE chat_messages SET deleted_at=NULL WHERE id=$1', [message]);
