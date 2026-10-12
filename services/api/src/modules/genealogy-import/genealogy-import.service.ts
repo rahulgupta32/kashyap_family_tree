@@ -9,7 +9,8 @@ import { validateTargetGraph } from './import-target-graph';
 import { validateImportPeers } from './import-peer-validation';
 import { sealImportContacts, openImportContacts } from './import-contact-storage';
 import { validateTargetFields } from './import-target-fields';
-const validatorVersion='staging-14-peer-evidence';
+import { reconcileSourceBranchHierarchy } from './import-branch-hierarchy';
+const validatorVersion='staging-15-peer-branches';
 const gates=['APPROVED_FIELD_MAPPING','ACCEPTED_SOURCE_EVIDENCE','BRANCH_AUTHORITY_SAMPLING','INDEPENDENT_PRIVACY_REVIEW','DUPLICATE_RECONCILIATION','TWO_ISOLATED_IMPORT_REHEARSALS','BACKUP_AND_ROLLBACK_REHEARSAL','PRODUCTION_WINDOW_APPROVAL','PROMOTION_WRITER_NOT_ENABLED'];
 @Injectable()
 export class GenealogyImportService {
@@ -66,7 +67,7 @@ export class GenealogyImportService {
   if(existing){if(existing.actor_id!==userId||existing.reason!==reason)throw new ConflictException('Request key already used for a different request');await this.evidence(tx,userId,id,'GENEALOGY_IMPORT_DRY_RUN_REPLAY',{runId:existing.id});return this.run(existing);}
   if(!row.payload)throw new ConflictException('Source payload erased; cannot revalidate');
   const payload=parseImportPayload(openImportContacts(row.payload,row.source_hash));if(importHash(payload)!==row.source_hash)throw new ConflictException('Source integrity check failed');
-  const issues=validateImport(payload);let mappedTargets=0,duplicates=0;
+  let issues=validateImport(payload);let mappedTargets=0,duplicates=0;
   // One statement observes a single target snapshot; a retained report never authorizes promotion.
   const checks=(await tx.query(`SELECT s->>'sourceId' AS source_id,t.id AS target_id,t.branch_id,t.is_archived,
    t.generation,t.gender,t.living_status,to_char(t.birth_date_ad,'YYYY-MM-DD') AS birth_date,to_char(t.death_date_ad,'YYYY-MM-DD') AS death_date,
@@ -81,7 +82,11 @@ export class GenealogyImportService {
    if(p.targetPersonId){if(!c.target_id)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NOT_FOUND'});else if(c.branch_id!==payload.branchId||c.is_archived)issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_INELIGIBLE'});else {mappedTargets++;issues.push(...validateTargetFields(p,c));}}
    if(Number(c.duplicates)>0){duplicates++;issues.push({entity:'PERSON',sourceId:p.sourceId,code:'TARGET_NAME_DUPLICATE_CANDIDATE'});}
   });
-  const peers=await validateImportPeers(tx,id,payload);issues.push(...peers.issues);
+  const peers=await validateImportPeers(tx,id,payload);
+  // Erased/over-limit peers cannot prove a reference resolved; keep all local dangling evidence.
+  if(!peers.issues.some(issue=>['PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED','PEER_BATCH_VALIDATION_LIMIT_REACHED'].includes(issue.code)))
+   issues=reconcileSourceBranchHierarchy(payload,peers.graphSources,issues);
+  issues.push(...peers.issues);
   issues.push(...await validateTargetGraph(tx,payload,peers.graphSources));
   const report:GenealogyImportReport={validatorVersion,sourceHash:row.source_hash,peerBatches:peers.peerBatches,persons:payload.persons.length,parentLinks:payload.parentLinks.length,mappedTargets,unmappedPersons:payload.persons.length-mappedTargets,duplicateCandidatePersons:duplicates,issues,validationPassed:issues.length===0,promotionAllowed:false,gates:[...gates]};
   const r=(await tx.query(`INSERT INTO genealogy_import_runs(batch_id,sequence,request_key,actor_id,reason,report)

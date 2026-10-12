@@ -75,7 +75,7 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const staged=await service.stage(admin.id,source({datasetKey:'COMBINED_GRAPH',persons,parentLinks:[link('back-1','end','bridge'),link('back-2','bridge','start')]}));
   const before=(await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows;
   const report=await service.dryRun(admin.id,staged.id,{sourceHash:staged.sourceHash,requestKey:randomUUID(),reason});
-  expect(report.report.validatorVersion).toBe('staging-14-peer-evidence');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
+  expect(report.report.validatorVersion).toBe('staging-15-peer-branches');expect(report.report.validationPassed).toBe(false);expect(report.report.promotionAllowed).toBe(false);expect(report.report.issues.map(i=>i.code)).toContain('COMBINED_TARGET_PARENT_CYCLE');
   expect((await db.query('SELECT parent_id,child_id FROM parent_links ORDER BY parent_id,child_id')).rows).toEqual(before);
   const forward=await service.stage(admin.id,source({datasetKey:'FORWARD_GRAPH',persons,parentLinks:[link('forward','start','end')]}));
   const valid=await service.dryRun(admin.id,forward.id,{sourceHash:forward.sourceHash,requestKey:randomUUID(),reason});expect(valid.report.issues.map(i=>i.code)).not.toContain('COMBINED_TARGET_PARENT_CYCLE');
@@ -205,6 +205,34 @@ describe('Durable genealogy staging and dry runs (real PostgreSQL/HTTP)',()=>{
   const corrected=await service.stage(admin.id,{...payload,residences:[{...residence,exactAddress:'Corrected fictional address'}]});expect(corrected.sourceHash).not.toBe(staged.sourceHash);expect((await service.detail(admin.id,staged.id)).payload.residences).toEqual([residence]);
   expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(before);expect((await db.query('SELECT * FROM branches ORDER BY id')).rows).toEqual(branchesBefore);
   await service.erase(admin.id,staged.id,{sourceHash:staged.sourceHash,reason});expect((await service.runs(admin.id,staged.id,{})).items[0].report).toEqual(checked.report);
+ });
+ it('reconciles split source-branch hierarchy and blocks a cycle across retained batches',async()=>{
+  const liveBranches=(await db.query('SELECT * FROM branches ORDER BY id')).rows;
+  const livePersons=(await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows;
+  const branch=(id:string,parentId:string)=>({sourceId:id,parentSourceId:parentId,nameNepali:`Private fictional ${id}`,status:'Unreviewed'});
+  const stageBranch=(id:string,parentId:string,index:number)=>service.stage(admin.id,source({datasetKey:'SPLIT_BRANCH_HIERARCHY',
+   persons:[{...person,sourceId:`BRANCH-PER-${index}`,nameNepali:`काल्पनिक शाखा व्यक्ति ${index}`,
+    sourceMetadata:index===1?{branchSourceId:parentId}:undefined}],branches:[branch(id,parentId)]}));
+  const first=await stageBranch('SOURCE-A','SOURCE-B',1),second=await stageBranch('SOURCE-B','SOURCE-C',2);
+  const check=()=>service.dryRun(admin.id,first.id,{sourceHash:first.sourceHash,requestKey:randomUUID(),reason});
+  const before=await check();
+  expect(before.report.issues).not.toContainEqual({entity:'BRANCH',sourceId:'SOURCE-A',code:'DANGLING_BRANCH_REFERENCE'});
+  expect(before.report.issues).not.toContainEqual({entity:'PERSON',sourceId:'BRANCH-PER-1',code:'DANGLING_BRANCH_REFERENCE'});
+  expect(before.report.issues.map(i=>i.code)).toContain('PEER_BRANCH_REFERENCE_RECONCILIATION_REQUIRED');
+  const third=await stageBranch('SOURCE-C','SOURCE-A',3);
+  const cycled=await check();
+  expect(cycled.report.issues).toContainEqual({entity:'BRANCH',sourceId:'SOURCE-A',code:'CROSS_BATCH_BRANCH_CYCLE'});
+  expect(cycled.report.issues.map(i=>i.code)).not.toContain('PEER_BRANCH_REFERENCE_RECONCILIATION_REQUIRED');
+  expect(cycled.report.promotionAllowed).toBe(false);expect(cycled.report.validationPassed).toBe(false);
+  expect(cycled.report.peerBatches?.map(p=>p.id).sort()).toEqual([second.id,third.id].sort());
+  expect(JSON.stringify(cycled.report)).not.toContain('Private fictional');
+  expect(JSON.stringify(cycled.report.issues)).not.toContain('SOURCE-B');
+  expect(JSON.stringify(cycled.report.issues)).not.toContain('SOURCE-C');
+  expect((await service.runs(admin.id,first.id,{})).items[1].report).toEqual(before.report);
+  expect((await db.query('SELECT * FROM branches ORDER BY id')).rows).toEqual(liveBranches);
+  expect((await db.query('SELECT id,updated_at FROM persons ORDER BY id')).rows).toEqual(livePersons);
+  await service.erase(admin.id,third.id,{sourceHash:third.sourceHash,reason});
+  const erased=await check();expect(erased.report.issues.map(i=>i.code)).toContain('PEER_SOURCE_ERASED_RECONCILIATION_REQUIRED');
  });
  it('encrypts private contact source records, restricts access and supports correction, replay and erasure',async()=>{
   const previous=process.env.IMPORT_CONTACTS_ENCRYPTION_KEY;process.env.IMPORT_CONTACTS_ENCRYPTION_KEY=Buffer.alloc(32,23).toString('base64');
