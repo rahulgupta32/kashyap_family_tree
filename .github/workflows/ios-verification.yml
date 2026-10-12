@@ -31,21 +31,17 @@ jobs:
           flutter --version > test-results/ios-flutter-version.txt
           xcodebuild -version > test-results/ios-xcode-version.txt
           sw_vers > test-results/ios-macos-version.txt
-      - name: Bootstrap missing iOS source in isolation for review
+      - name: Verify committed native project
         run: |
-          if [ ! -f apps/mobile/ios/Runner.xcodeproj/project.pbxproj ]; then
-            flutter create --no-pub --platforms=ios --org=com.example --project-name=kashyap_mobile "$RUNNER_TEMP/kashyap-ios-scaffold"
-            cp -R "$RUNNER_TEMP/kashyap-ios-scaffold/ios" apps/mobile/ios
-          fi
-          python3 - <<'PY'
+          git ls-files --error-unmatch apps/mobile/ios/Runner.xcodeproj/project.pbxproj
+          python3 - <<'PYIOS'
           from pathlib import Path
           import plistlib
-          path = Path('apps/mobile/ios/Runner/Info.plist')
-          data = plistlib.loads(path.read_bytes())
-          data['CFBundleDisplayName'] = 'कश्यप अधिकारी वंशावली'
-          path.write_bytes(plistlib.dumps(data, sort_keys=False))
-          PY
-          git diff --exit-code -- apps/mobile/lib apps/mobile/android apps/mobile/pubspec.yaml
+          info = plistlib.loads(Path('apps/mobile/ios/Runner/Info.plist').read_bytes())
+          assert info['CFBundleDisplayName'] == 'कश्यप अधिकारी वंशावली'
+          ats = info.get('NSAppTransportSecurity', {})
+          assert not any(ats.get(key) for key in ['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsInWebContent', 'NSAllowsArbitraryLoadsForMedia'])
+          PYIOS
           python3 scripts/ios-verification-evidence.py archive
       - name: Install native dependencies
         run: flutter pub get
@@ -56,6 +52,7 @@ jobs:
           flutter build ios --simulator --debug --dart-define=API_BASE_URL=https://api.invalid 2>&1 | tee ../../test-results/ios-simulator-build.log
         working-directory: apps/mobile
       - name: Verify startup and real simulator Keychain
+        timeout-minutes: 15
         run: bash scripts/run-ios-startup-verification.sh
       - name: Compile unsigned iOS device app
         run: |

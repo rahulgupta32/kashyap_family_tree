@@ -56,6 +56,8 @@ def record():
     for target in ['iphonesimulator', 'iphoneos']:
         if not (ROOT / f'apps/mobile/build/ios/{target}/Runner.app/Runner').is_file():
             raise RuntimeError(f'Missing compiled {target} application')
+    subprocess.check_call(['git', 'diff', '--exit-code', '--', 'apps/mobile/lib',
+                           'apps/mobile/android', 'apps/mobile/pubspec.yaml'], cwd=ROOT)
     if committed:
         subprocess.check_call(['git', 'diff', '--exit-code', '--', 'apps/mobile/ios'], cwd=ROOT)
     report = {
