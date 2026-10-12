@@ -73,17 +73,17 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
           OutlinedButton(onPressed:_busy?null:() async {
             setState(() { _busy=true; _pushStatus=null; });
             try { final enabled=await widget.onEnablePush!();
-              if(mounted)setState(()=>_pushStatus=enabled?'उपकरण सूचना सक्रिय भयो (Device notifications enabled)'
-                :'अनुमति वा APNs अझै उपलब्ध छैन (Permission or APNs unavailable yet)');
-            } catch (_) { if(mounted)setState(()=>_pushStatus='उपकरण सूचना उपलब्ध छैन (Device notifications unavailable)'); }
-            finally { if(mounted)setState(()=>_busy=false); }
+              if(mounted) { setState(()=>_pushStatus=enabled?'उपकरण सूचना सक्रिय भयो (Device notifications enabled)'
+                :'अनुमति वा APNs अझै उपलब्ध छैन (Permission or APNs unavailable yet)'); }
+            } catch (_) { if(mounted) { setState(()=>_pushStatus='उपकरण सूचना उपलब्ध छैन (Device notifications unavailable)'); } }
+            finally { if(mounted) { setState(()=>_busy=false); } }
           },child:const Text('उपकरण सूचना खोल्नुहोस् (Enable)')),
           if(widget.onDisablePush != null) OutlinedButton(onPressed:_busy?null:() async {
             setState(() { _busy=true; _pushStatus=null; });
             try { await widget.onDisablePush!();
-              if(mounted)setState(()=>_pushStatus='उपकरण सूचना बन्द भयो (Device notifications disabled)');
-            } catch (_) { if(mounted)setState(()=>_pushStatus='बन्द भएको पुष्टि हुन सकेन (Could not confirm removal)'); }
-            finally { if(mounted)setState(()=>_busy=false); }
+              if(mounted) { setState(()=>_pushStatus='उपकरण सूचना बन्द भयो (Device notifications disabled)'); }
+            } catch (_) { if(mounted) { setState(()=>_pushStatus='बन्द भएको पुष्टि हुन सकेन (Could not confirm removal)'); } }
+            finally { if(mounted) { setState(()=>_busy=false); } }
           },child:const Text('उपकरण सूचना बन्द गर्नुहोस् (Disable)')),
         ]),
         if(_pushStatus!=null)Text(_pushStatus!),
