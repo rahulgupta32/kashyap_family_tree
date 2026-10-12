@@ -147,7 +147,7 @@ class GenealogyApiService {
     final requestGeneration = boundSessionGeneration ?? (authenticated ? _sessionGeneration : null);
     void checkSession() {
       if (requestGeneration != null && _sessionGeneration != requestGeneration) {
-        throw StateError('Request session changed');
+        throw StateError('Session changed during request');
       }
     }
     Future<http.Response> send() async {
