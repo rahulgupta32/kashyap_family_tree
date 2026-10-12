@@ -142,9 +142,12 @@ class GenealogyApiService {
   }
 
   Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId, int? boundSessionGeneration}) async {
+    // Rotation preserves this generation; replacement sign-in, restore and
+    // clearing do not. Never replay an older user's request in a new session.
+    final requestGeneration = boundSessionGeneration ?? (authenticated ? _sessionGeneration : null);
     void checkSession() {
-      if (boundSessionGeneration != null && _sessionGeneration != boundSessionGeneration) {
-        throw StateError('Push registration session changed');
+      if (requestGeneration != null && _sessionGeneration != requestGeneration) {
+        throw StateError('Request session changed');
       }
     }
     Future<http.Response> send() async {
