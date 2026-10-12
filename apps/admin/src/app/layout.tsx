@@ -17,6 +17,9 @@ export default function RootLayout({
   return (
     <html lang="ne">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <a className="skip-to-content" href="#main-content">
+          मुख्य सामग्रीमा जानुहोस् (Skip to main content)
+        </a>
         <AuthProvider>
           <div className="flex min-h-screen">
             {/* Sidebar */}
@@ -31,7 +34,7 @@ export default function RootLayout({
                     <p className="text-xs text-slate-400">प्रशासनिक पोर्टल (Admin)</p>
                   </div>
                 </div>
-                <nav className="mt-6 space-y-1">
+                <nav aria-label="प्रशासन नेभिगेसन (Administration navigation)" className="mt-6 space-y-1">
                   <Link href="/" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">
                     ड्यासवोर्ड (Dashboard)
                   </Link>
@@ -82,7 +85,7 @@ export default function RootLayout({
             </aside>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col">
+            <main id="main-content" tabIndex={-1} className="flex-1 flex flex-col">
               <AdminHeader />
               <div className="p-8 flex-1 overflow-auto">
                 {children}

@@ -2,6 +2,17 @@ import { test, expect, request as requestFactory } from '@playwright/test';
 import { Role } from '@kashyap/contracts';
 import { API, login, headers } from './helpers/auth';
 
+test('A keyboard user can skip the administration navigation to the main landmark', async ({ page }) => {
+  await page.goto('/login');
+  const skip = page.getByRole('link', { name: 'मुख्य सामग्रीमा जानुहोस् (Skip to main content)' });
+  await expect(skip).toHaveAttribute('href', '#main-content');
+  await expect(page.getByRole('navigation', { name: 'प्रशासन नेभिगेसन (Administration navigation)' })).toBeVisible();
+  await skip.focus();
+  await expect(skip).toBeFocused();
+  await skip.press('Enter');
+  await expect(page.locator('main#main-content')).toBeFocused();
+});
+
 test('Keyboard sign-in has associated labels, announced errors and focus across phone, OTP and denied access', async ({ page }) => {
   await page.goto('/login');
   const phone = page.getByRole('textbox', { name: 'मोबाइल नम्बर (Mobile Number)', exact: true });

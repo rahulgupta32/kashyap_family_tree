@@ -63,6 +63,41 @@ jobs:
         run: |
           python3 scripts/ios-verification-evidence.py archive
           python3 scripts/ios-verification-evidence.py record
+      - name: Retain generated dependency lockfile candidates for review
+        if: always()
+        run: |
+          mkdir -p test-results
+          if [ -f apps/mobile/ios/Podfile.lock ]; then
+            cp apps/mobile/ios/Podfile.lock test-results/ios-podfile-lock-candidate.lock
+            git diff -- apps/mobile/ios/Podfile.lock > test-results/ios-podfile-lock-diff.patch
+            if git diff --quiet -- apps/mobile/ios/Podfile.lock; then
+              echo 'Tracked Podfile.lock did not change' > test-results/ios-podfile-lock-status.txt
+            else
+              echo 'Tracked Podfile.lock changed; candidate requires review and commit' > test-results/ios-podfile-lock-status.txt
+            fi
+          else
+            echo 'Podfile.lock is missing' > test-results/ios-podfile-lock-status.txt
+          fi
+          if [ -f apps/mobile/pubspec.lock ]; then
+            cp apps/mobile/pubspec.lock test-results/ios-pubspec-lock-candidate.lock
+            if git ls-files --error-unmatch apps/mobile/pubspec.lock > /dev/null 2>&1; then
+              git diff -- apps/mobile/pubspec.lock > test-results/ios-pubspec-lock-diff.patch
+              if git diff --quiet -- apps/mobile/pubspec.lock; then
+                echo 'Tracked pubspec.lock did not change' > test-results/ios-pubspec-lock-status.txt
+              else
+                echo 'Tracked pubspec.lock changed; candidate requires review and commit' > test-results/ios-pubspec-lock-status.txt
+              fi
+            else
+              if git diff --no-index -- /dev/null apps/mobile/pubspec.lock > test-results/ios-pubspec-lock-diff.patch; then
+                :
+              else
+                test "$?" -eq 1
+              fi
+              echo 'pubspec.lock is untracked or ignored; candidate requires review' > test-results/ios-pubspec-lock-status.txt
+            fi
+          else
+            echo 'pubspec.lock is missing' > test-results/ios-pubspec-lock-status.txt
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
