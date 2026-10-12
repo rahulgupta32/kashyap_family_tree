@@ -20,15 +20,19 @@ def git(*args):
 def native_sources():
     tracked = git('ls-files', '--', 'apps/mobile/ios').splitlines()
     extra = git('ls-files', '--others', '--exclude-standard', '--', 'apps/mobile/ios').splitlines()
+    if extra:
+        raise RuntimeError('Uncommitted iOS source is present')
+    subprocess.check_call(['git', 'diff', '--exit-code', 'HEAD', '--', 'apps/mobile/ios'], cwd=ROOT)
     files = []
-    for relative in sorted(set(tracked + extra)):
+    for relative in sorted(tracked):
         path = ROOT / relative
         if path.is_symlink():
             raise RuntimeError('Native source archive must not contain symlinks')
-        if path.is_file():
-            if not path.resolve().is_relative_to(ROOT / 'apps/mobile/ios'):
-                raise RuntimeError('Native source escaped the iOS directory')
-            files.append(relative)
+        if not path.is_file():
+            raise RuntimeError('Committed iOS source is missing')
+        if not path.resolve().is_relative_to(ROOT / 'apps/mobile/ios'):
+            raise RuntimeError('Native source escaped the iOS directory')
+        files.append(relative)
     if PROJECT not in files:
         raise RuntimeError('Missing iOS Xcode source project')
     return files
@@ -48,8 +52,10 @@ def record():
     source = os.environ['KASHYAP_SOURCE_HEAD_SHA']
     if git('rev-parse', 'HEAD') != source:
         raise RuntimeError('iOS checkout is not the requested source commit')
-    committed = subprocess.run(['git', 'ls-files', '--error-unmatch', PROJECT], cwd=ROOT,
-                               capture_output=True).returncode == 0
+    files = native_sources()
+    hashes = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in files}
+    if hashes != json.loads((RESULTS / 'ios-source-hashes.json').read_text()):
+        raise RuntimeError('Archived iOS source differs from verified source')
     startup = (RESULTS / 'ios-startup-test.log').read_text()
     if not re.search(r'All tests passed!|\b[1-9]\d* tests? passed\b', startup):
         raise RuntimeError('Simulator test success was not recorded')
@@ -58,14 +64,12 @@ def record():
             raise RuntimeError(f'Missing compiled {target} application')
     subprocess.check_call(['git', 'diff', '--exit-code', '--', 'apps/mobile/lib',
                            'apps/mobile/android', 'apps/mobile/pubspec.yaml'], cwd=ROOT)
-    if committed:
-        subprocess.check_call(['git', 'diff', '--exit-code', '--', 'apps/mobile/ios'], cwd=ROOT)
     report = {
         'kind': 'IOS_SIMULATOR_AND_UNSIGNED_DEVICE_BUILD',
         'status': 'PASSED',
         'sourceSha': source,
         'sourceTreeSha': git('rev-parse', 'HEAD^{tree}'),
-        'nativeSourceCommitted': committed,
+        'nativeSourceCommitted': True,
         'simulatorStartup': 'VERIFIED',
         'simulatorKeychainRoundTrip': 'VERIFIED_WITH_FICTIONAL_FIXTURE',
         'unsignedDeviceCompilation': 'VERIFIED',
@@ -75,7 +79,7 @@ def record():
         'liveBackendIosVerified': False,
         'apnsDeliveryVerified': False,
         'supportedDeviceMatrixVerified': False,
-        'nativeSourceHashes': json.loads((RESULTS / 'ios-source-hashes.json').read_text()),
+        'nativeSourceHashes': hashes,
     }
     (RESULTS / 'ios-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 
