@@ -6,6 +6,17 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show MemorySessionStore, jsonResponse;
 import 'chat_outbox_test.dart' show MemoryChatOutboxStore;
 
+class BlockingReadSessionStore extends MemorySessionStore {
+  final reading = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<String?> read() async {
+    reading.complete();
+    await release.future;
+    return value;
+  }
+}
+
 void main() {
   for (final status in [200, 401, 403]) {
     test('late $status response is discarded after session replacement without retry or MFA side effects', () async {
@@ -117,4 +128,74 @@ void main() {
     expect(store.value, isNull);
     expect(expired, 1);
   });
+  for (final status in [200, 401]) {
+    test('request started during pending sign-in cannot survive replacement activation ($status)', () async {
+      final signInArrived = Completer<void>();
+      final signInRelease = Completer<void>();
+      final requestArrived = Completer<void>();
+      final requestRelease = Completer<void>();
+      var signIns = 0;
+      var requests = 0;
+      final api = GenealogyApiService(sessionStore: MemorySessionStore(),
+        chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
+          if (request.url.path == '/auth/native/verify') {
+            final number = ++signIns;
+            if (number == 2) {
+              signInArrived.complete();
+              await signInRelease.future;
+            }
+            return jsonResponse({'accessToken': 'access-$number', 'refreshToken': 'refresh-$number'});
+          }
+          expect(request.url.path, '/profile/me');
+          expect(request.headers['Authorization'], 'Bearer access-1');
+          requests++;
+          requestArrived.complete();
+          await requestRelease.future;
+          return jsonResponse({'private': 'old-account-data'}, status);
+        }));
+      addTearDown(api.dispose);
+      await api.verifyOtp('first', '123456');
+      final replacement = api.verifyOtp('second', '123456');
+      await signInArrived.future;
+      final assertion = expectLater(api.requestJson('/profile/me'), throwsStateError);
+      await requestArrived.future;
+      signInRelease.complete();
+      expect(await replacement, 'access-2');
+      requestRelease.complete();
+      await assertion;
+      expect(api.authToken, 'access-2');
+      expect(requests, 1);
+    });
+  }
+
+  test('request started during persisted-session read cannot return prior-account data', () async {
+    final store = BlockingReadSessionStore()
+      ..value = jsonEncode({'accessToken': 'saved-access', 'refreshToken': 'saved-refresh'});
+    final requestArrived = Completer<void>();
+    final requestRelease = Completer<void>();
+    final api = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(),
+      client: MockClient((request) async {
+        if (request.url.path == '/auth/native/refresh') {
+          expect(jsonDecode(request.body)['refreshToken'], 'saved-refresh');
+          return jsonResponse({'accessToken': 'restored-access', 'refreshToken': 'restored-refresh'});
+        }
+        expect(request.headers['Authorization'], 'Bearer prior-access');
+        requestArrived.complete();
+        await requestRelease.future;
+        return jsonResponse({'private': 'prior-account-data'});
+      }));
+    addTearDown(api.dispose);
+    api.setAuthToken('prior-access');
+    final restore = api.restoreSession();
+    await store.reading.future;
+    final assertion = expectLater(api.requestJson('/profile/me'), throwsStateError);
+    await requestArrived.future;
+    store.release.complete();
+    expect(await restore, isTrue);
+    requestRelease.complete();
+    await assertion;
+    expect(api.authToken, 'restored-access');
+    expect(jsonDecode(store.value!)['refreshToken'], 'restored-refresh');
+  });
+
 }

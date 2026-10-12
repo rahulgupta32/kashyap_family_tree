@@ -58,7 +58,7 @@ class GenealogyApiService {
       if(value is! Map||value['id'] is! String){throw const FormatException('Invalid committed message response');}
     });
 
-  Future<void> _acceptSession(Map<String, dynamic> data) async {
+  Future<void> _acceptSession(Map<String, dynamic> data, {bool replacement = false}) async {
     final generation = _sessionGeneration;
     final access = data['accessToken'];
     final refresh = data['refreshToken'];
@@ -69,6 +69,9 @@ class GenealogyApiService {
       if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
       await _sessionStore.write(json.encode({'accessToken': access, 'refreshToken': refresh}));
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
+      // Requests may have begun with the prior access token while sign-in was
+      // pending. Activation is a second boundary, separate from token rotation.
+      if (replacement) { _sessionGeneration++; }
       _authToken = access;
       _refreshToken = refresh;
     });
@@ -92,6 +95,8 @@ class GenealogyApiService {
       if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty) {
         throw const FormatException('Invalid saved session');
       }
+      // Fence work begun during the asynchronous persisted-session read.
+      _sessionGeneration++;
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
       return await _refreshSession();
@@ -224,7 +229,7 @@ class GenealogyApiService {
     if (generation != _sessionGeneration) { throw StateError('Session changed during sign-in'); }
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = json.decode(response.body);
-      await _acceptSession(data as Map<String, dynamic>);
+      await _acceptSession(data as Map<String, dynamic>, replacement: true);
       return _authToken!;
     } else {
       throw Exception('OTP प्रमाणीकरण असफल भयो (${response.statusCode})');
