@@ -7,7 +7,9 @@ import 'person_search_screen.dart';
 
 class NotificationInboxScreen extends StatefulWidget {
   final GenealogyApiService apiService;
-  const NotificationInboxScreen({super.key, required this.apiService});
+  final Future<bool> Function()? onEnablePush;
+  final Future<void> Function()? onDisablePush;
+  const NotificationInboxScreen({super.key, required this.apiService, this.onEnablePush, this.onDisablePush});
   @override
   State<NotificationInboxScreen> createState() => _NotificationInboxScreenState();
 }
@@ -17,6 +19,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
   String? _cursor,_error;
   Map<String,dynamic>? _preferences;
   bool _loading=true,_busy=false;
+  String? _pushStatus;
 
   @override
   void initState(){super.initState();_load();}
@@ -64,6 +67,27 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       IconButton(tooltip:'Refresh notifications',onPressed:_busy?null:()=>_load(),icon:const Icon(Icons.refresh)),
     ]),body:RefreshIndicator(onRefresh:_load,child:ListView(padding:const EdgeInsets.all(16),children:[
       if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
+      if(widget.onEnablePush != null) ...[
+        const Text('उपकरण सूचना (Device notifications)'),
+        Wrap(spacing: 8, children: [
+          OutlinedButton(onPressed:_busy?null:() async {
+            setState(() { _busy=true; _pushStatus=null; });
+            try { final enabled=await widget.onEnablePush!();
+              if(mounted)setState(()=>_pushStatus=enabled?'उपकरण सूचना सक्रिय भयो (Device notifications enabled)'
+                :'अनुमति वा APNs अझै उपलब्ध छैन (Permission or APNs unavailable yet)');
+            } catch (_) { if(mounted)setState(()=>_pushStatus='उपकरण सूचना उपलब्ध छैन (Device notifications unavailable)'); }
+            finally { if(mounted)setState(()=>_busy=false); }
+          },child:const Text('उपकरण सूचना खोल्नुहोस् (Enable)')),
+          if(widget.onDisablePush != null) OutlinedButton(onPressed:_busy?null:() async {
+            setState(() { _busy=true; _pushStatus=null; });
+            try { await widget.onDisablePush!();
+              if(mounted)setState(()=>_pushStatus='उपकरण सूचना बन्द भयो (Device notifications disabled)');
+            } catch (_) { if(mounted)setState(()=>_pushStatus='बन्द भएको पुष्टि हुन सकेन (Could not confirm removal)'); }
+            finally { if(mounted)setState(()=>_busy=false); }
+          },child:const Text('उपकरण सूचना बन्द गर्नुहोस् (Disable)')),
+        ]),
+        if(_pushStatus!=null)Text(_pushStatus!),
+      ],
       if(_preferences!=null)ExpansionTile(title:const Text('सूचना प्राथमिकताहरू (Preferences)'),children:[
         for(final item in const <(String,String)>[
           ('inAppEnabled','इन एप सूचना (In app)'),('workflowEnabled','दाबी र संशोधन (Workflows)'),

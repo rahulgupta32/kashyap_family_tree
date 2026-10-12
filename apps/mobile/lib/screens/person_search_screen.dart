@@ -21,8 +21,11 @@ class PersonSearchScreen extends StatefulWidget {
   final GenealogyApiService apiService;
   final VoidCallback? onSignIn;
   final Future<void> Function()? onSignOut;
+  final Future<bool> Function()? onEnablePush;
+  final Future<void> Function()? onDisablePush;
 
-  const PersonSearchScreen({super.key, required this.apiService, this.onSignIn, this.onSignOut});
+  const PersonSearchScreen({super.key, required this.apiService, this.onSignIn, this.onSignOut,
+    this.onEnablePush, this.onDisablePush});
 
   @override
   State<PersonSearchScreen> createState() => _PersonSearchScreenState();
@@ -206,7 +209,8 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
             ListTile(leading: const Icon(Icons.chat), title: const Text('सन्देश (Messages)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(apiService: widget.apiService))); }),
             if (widget.apiService.authToken != null)
               ListTile(leading: const Icon(Icons.notifications), title: const Text('सूचनाहरू (Notifications)'), onTap: () {
-                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationInboxScreen(apiService: widget.apiService)));
+                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationInboxScreen(
+                  apiService: widget.apiService, onEnablePush: widget.onEnablePush, onDisablePush: widget.onDisablePush)));
               }),
             if (widget.apiService.authToken != null)
               ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('अनुसरण (Following)'), onTap: () {

@@ -43,6 +43,7 @@ class GenealogyApiService {
   }
 
   String? get authToken => _authToken;
+  int get pushSessionGeneration => _sessionGeneration;
 
   // This subject scopes encrypted local intent, not server authorization. Every
   // send still authenticates and checks current permissions in the API.
