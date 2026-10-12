@@ -6,6 +6,7 @@ import '../models/tree_node.dart';
 import 'session_store.dart';
 import 'chat_connection.dart';
 import 'chat_outbox.dart';
+import 'api_endpoint_config.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -22,13 +23,17 @@ class GenealogyApiService {
   void Function()? onMfaRequired;
 
   GenealogyApiService({
-    this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000'),
+    this.baseUrl = mobileApiBaseUrl,
     http.Client? client,
     SessionStore? sessionStore,
     ChatOutboxStore? chatOutboxStore,
   }) : _client = client ?? http.Client(),
        _sessionStore = sessionStore ?? SecureSessionStore(),
-       _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore();
+       _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore() {
+    if (!isUsableApiEndpoint(baseUrl)) {
+      throw const FormatException('Mobile API endpoint unavailable');
+    }
+  }
 
   void setAuthToken(String? token) {
     _sessionGeneration++;

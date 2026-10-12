@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/genealogy_api_service.dart';
+import 'services/api_endpoint_config.dart';
 import 'theme/app_theme.dart';
 import 'screens/person_search_screen.dart';
 import 'screens/sign_in_screen.dart';
@@ -7,6 +8,14 @@ import 'screens/authenticator_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!isUsableApiEndpoint(mobileApiBaseUrl)) {
+    runApp(const MaterialApp(home: Scaffold(body: Center(child: Padding(
+      padding: EdgeInsets.all(24),
+      child: Text('सेवा हाल उपलब्ध छैन। (Service unavailable.)',
+        textAlign: TextAlign.center),
+    )))));
+    return;
+  }
   runApp(const KashyapApp());
 }
 

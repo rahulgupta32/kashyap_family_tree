@@ -22,4 +22,6 @@ The macOS CI workflow verifies simulator compilation, a disposable simulator's r
 
 The iOS `com.example.kashyapMobile` bundle identifier and generated native icons are development placeholders. Production Apple/Google identifiers, signing ownership, provisioning, store assets, supported-device acceptance and distribution require their release gates. No unsigned CI build is a production release.
 
+Release startup requires an explicit HTTPS `API_BASE_URL` pointing to the approved API. The development emulator HTTP default and reserved placeholder hosts show a bilingual unavailable screen and cannot create an authenticated API client in release mode. Do not put provider credentials, tokens or other secrets in `--dart-define`; the URL is bundled with the app. Debug builds may still use the local emulator API.
+
 Native push SDK/permission/token lifecycle and actual Firebase/APNs delivery, full iOS live-backend and physical-device workflows, device accessibility, biometric/pinning policy and production acceptance remain open. Use an approved HTTPS API endpoint for deployment; the CI-only `https://api.invalid` endpoint prevents backend traffic during native compilation/startup verification.
