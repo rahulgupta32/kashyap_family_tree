@@ -14,6 +14,27 @@ Each batch has one bounded behavior or safety objective, explicit requirement/ed
 
 Run these streams in parallel when staffed: (A) finish partial functional workflows and bilingual UI; (B) native FCM/APNs SDK, token lifecycle, physical-device and provider recovery; (C) governed source/cultural/calendar approvals and import promotion with two rehearsals; (D) production telemetry, security/accessibility/load acceptance, managed secrets, backups/PITR and incident drills. Review the requirement ledger after each stream, not by assigning fractional credit to partial rows.
 
+## Twelve responsibility lanes and the critical path
+
+The lanes describe accountable work, not a claim that twelve engineers or the necessary external decision makers are available. Each lane must link its batch to frozen requirements, edge cases, negative controls and a reviewed acceptance record. Keep changes small enough to inspect and roll back.
+
+| Lane | Deliverable before production |
+| --- | --- |
+| 1. Integration and architecture | PR #4/#5 stacked review, migration order, compatibility and rollback plan; protect `main`. |
+| 2. Identity and privacy | Remaining authenticator, account recovery, session, access and privacy cases with independent security review. |
+| 3. Genealogy and search | Remaining tree/claim/duplicate/search workflows and realistic scale evidence. |
+| 4. Governed imports | Approved source mapping, resumable promotion, reconciliation and two isolated rehearsals. |
+| 5. Cultural and calendar | Authority-signed rules/content, versioned publication and full date/event behavior. |
+| 6. Community and chat | Remaining moderation, media, invitation and messaging behavior with authorization tests. |
+| 7. Android/mobile | SDK push lifecycle, bilingual flows, accessibility and physical-device acceptance. |
+| 8. iOS/mobile | APNs/FCM configuration, signing, permissions, lifecycle and physical-device acceptance. |
+| 9. Providers and recovery | Live SMS/email/push status, unknown-outcome reconciliation and evidence-preserving operations. |
+| 10. Reliability and observability | Durable fleet monitoring, alert routing, incident owners, failover and budget signals. |
+| 11. Performance and security | Exact NFR load/scale/network/accessibility targets and independent deployed security review. |
+| 12. Release and disaster recovery | Managed secrets/PITR, production-like restore with measured RPO/RTO, staging acceptance and signed go/no-go. |
+
+The immediate integration path is PR #4 review and merge to `develop`, then PR #5 retarget/full stacked review and integration merge to `develop`. After that, make further completion work in smaller PRs against `develop`, with an exact-head green matrix for every integration. This does not wait for all production gates, and it does not authorize a `main` merge. In the first two-week execution window, aim to clear these reviews, implement the native token/provider recovery slices and assign the missing external inputs. Treat this as a checkpoint, not a promised date: no reviewer, credentials or devices means the dependent acceptance cannot close.
+
 Jyphra must provide named decision makers and incident owners, approved real data and cultural references, production hosting and provider accounts, Apple/Google identity/signing access, device coverage and security/acceptance reviewers. Engineering can prepare interfaces and fictional rehearsals before those arrive but cannot declare real acceptance without them.
 
 ## Current checkpoint and planning range
