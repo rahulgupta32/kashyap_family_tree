@@ -20,6 +20,10 @@ Added eight router mock-source regressions and eight widget/mock-HTTP regression
 
 Local frozen release assessment and genealogy workbook validators passed: all 260 requirements, 31 frozen NFR targets, 14 workbook sheets/195 columns and OPEN approvals remain preserved. Whitespace and source review passed. Flutter/Dart are unavailable in the editing container, so no local analyze/widget/device success is claimed. Automatic exact-source CI must execute the new regressions; record actual run IDs/conclusions in `docs/development-control/CURRENT_STATE.md` and source-bound PR #5 comments. Running workflows are PENDING.
 
+## Source-bound focused CI evidence
+
+Published source `b515d59709e46487a51ac0d59dd9738efc9efecd`, tree `a6b360d7eaa6f90f5324effe4c27f6d0d136021a`. PR CI run `38469796590` Flutter job `115545621196` completed SUCCESS. Its retrieved logs explicitly show clean analysis and all 16 new router/widget cases passing. This verifies the mock-source/current-HTTP authorization flow, restoration and MFA gating at that source. Full platform and native workflow conclusions remain PENDING at the checkpoint observation. Subsequent documentation-only checkpoint source needs its own CI status and is not relabelled verified by this older job.
+
 ## Remaining gates and next boundary
 
 Real configured Firebase/APNs foreground/background/terminated behavior, live provider/physical-device acceptance, supported device/accessibility/security/load, native signing/approved identities and full release gates remain OPEN. iOS launch reliability remains an independently recorded limitation. Durable failed-opt-out deletion reconciliation is a separate next batch; this routing work does not close it. Stop after recording this source's CI handoff. No merge/deployment.

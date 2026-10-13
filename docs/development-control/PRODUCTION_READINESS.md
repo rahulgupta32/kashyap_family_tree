@@ -8,7 +8,7 @@ Required remaining gates:
 
 - Complete and independently accept remaining functional workflows, governed imports/transformation/reconciliation/rehearsals and approved initial data.
 - Named privacy/source/cultural/calendar/release approvals; no invented administrators, approvals, production credentials or cultural rules.
-- Native provider event routing and durable failed-opt-out reconciliation; real configured FCM/APNs, delivery/token lifecycle/reconciliation, signing/approved app IDs and physical-device/support-matrix acceptance.
+- Native provider event routing is implemented at `b515d59709e46487a51ac0d59dd9738efc9efecd` with CI acceptance still PENDING; durable failed-opt-out reconciliation remains unimplemented; real configured FCM/APNs, delivery/token lifecycle/reconciliation, signing/approved app IDs and physical-device/support-matrix acceptance.
 - iOS CI launch reliability: failed PR run 38456236256 remains visible despite same-source push success 38456225526.
 - Security review, bilingual accessibility, full supported-device acceptance and full API/realtime/registered-user load targets.
 - Governed recovery, named monitoring/alert ownership and routing, durable worker fleet operations, staging/rollback and production disaster recovery/PITR/RPO/RTO rehearsals.

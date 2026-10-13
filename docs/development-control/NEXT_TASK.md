@@ -1,6 +1,8 @@
 # Next bounded task
 
-Status: SELECTED, implementation not started.
+Status: IMPLEMENTED and published at `b515d59709e46487a51ac0d59dd9738efc9efecd`; VERIFICATION PENDING.
+
+Immediate next action: inspect actual automatic runs recorded in `CURRENT_STATE.md` and the final checkpoint commit's independently triggered CI. Implementation-source Flutter job 115545621196 already passed clean analysis and all 16 new router/widget cases (logs inspected). Inspect the remaining native/platform results and retained failure evidence; the full workflows remain pending. Fix demonstrated failures only. Append exact-source conclusions to PR #5; do not create documentation-only commits just to chase pending CI. Stop this batch after evidence closure.
 
 Native generic provider events → authenticated notification inbox.
 
