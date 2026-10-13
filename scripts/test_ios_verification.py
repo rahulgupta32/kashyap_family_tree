@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -24,6 +25,20 @@ evidence = module('ios_evidence', 'ios-verification-evidence.py')
 
 
 class BoundedRunnerTests(unittest.TestCase):
+    def test_darwin_dead_group_permission_race_is_not_a_failure(self):
+        process = Mock(pid=12345)
+        with patch.object(runner.os, 'killpg', side_effect=PermissionError), \
+             patch.object(runner, 'live_group_members', return_value=[]):
+            runner.stop_group(process)
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_live_group_permission_denial_is_not_silently_accepted(self):
+        process = Mock(pid=12345)
+        with patch.object(runner.os, 'killpg', side_effect=PermissionError), \
+             patch.object(runner, 'live_group_members', return_value=[12346]):
+            with self.assertRaisesRegex(RuntimeError, 'live process group'):
+                runner.stop_group(process)
+
     def test_runtime_selection_is_order_independent_and_skips_unavailable(self):
         runtimes = [{'identifier': 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
                      'version': '18.5', 'isAvailable': True},

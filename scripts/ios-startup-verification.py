@@ -21,12 +21,25 @@ class PhaseFailure(RuntimeError):
         self.timed_out = timed_out
 
 
+def live_group_members(group):
+    # Darwin may return EPERM rather than ESRCH for a group containing only
+    # exited/zombie processes. Never treat a live denied group as cleaned up.
+    listing = subprocess.check_output(['ps', '-axo', 'pid,pgid,stat'], text=True, timeout=5)
+    return [int(fields[0]) for line in listing.splitlines()[1:]
+            if len(fields := line.split()) == 3 and fields[1] == str(group)
+            and not fields[2].startswith('Z')]
+
+
 def stop_group(process):
     # Kill descendants even when the launcher has already exited.
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(process.pid, sig)
         except ProcessLookupError:
+            break
+        except PermissionError:
+            if live_group_members(process.pid):
+                raise RuntimeError('Phase cleanup denied for a live process group')
             break
         if sig == signal.SIGTERM:
             try:
@@ -119,7 +132,7 @@ def diagnostics(simulator):
     for name, command, timeout in commands:
         try:
             run_phase(name, command, timeout, echo_output=False)
-        except (PhaseFailure, OSError):
+        except (PhaseFailure, OSError, RuntimeError):
             pass  # Diagnostics must never replace the original failure.
 
 
@@ -172,7 +185,7 @@ def main():
             for phase, command in [('simulator-shutdown', ['xcrun', 'simctl', 'shutdown', simulator])]:
                 try:
                     run_phase(phase, command, 20)
-                except (PhaseFailure, OSError):
+                except (PhaseFailure, OSError, RuntimeError):
                     pass
         save_report(report)
     return 0 if report['status'] == 'PASSED' else 1
