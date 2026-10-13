@@ -26,6 +26,8 @@ Local validation passed: pinned pnpm 9.15.9 frozen installation, shared package 
 
 Publication checkpoint: inspect the exact SHA of the commit containing this report, then its automatic PR CI and native runs. Their actual results and retained evidence are recorded in PR #5; do not infer success from publication. If a check fails, inspect its exact phase and correct only the demonstrated issue. Next unblocked work after verification: generic authenticated native push event/inbox routing, official broadcast viewing and failed-opt-out reconciliation. External credentials/authority approvals remain blocked prerequisites.
 
+First published implementation `3b15bf8c9bece58daba612a8dbc68a9bf4cbd405` matched checked local tree `109545f2f11cc10b34f8afa31db8e9a9027339dd`. PR CI `38428186499` stopped Flutter analysis on two `prefer_const_constructors` findings at tree guidance line 152; the widget suite did not execute. Promote the constant declaration to the outer guidance widget. This is a lint-only correction, with no native configuration or policy change. This failed run is retained and cannot be called a fully green checkpoint. Other first-source jobs and native PR run `38428186512` must be evaluated individually; corrected-source automatic runs require their own evidence.
+
 ## Remaining release work
 
 All 260 frozen final acceptance records remain open. The conservative requirement assessment retains 102 bounded completed implementations, 133 partial, 13 missing dedicated NFR evidence and 12 external gates. This batch does not reclassify or waive them.

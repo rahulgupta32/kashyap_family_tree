@@ -149,7 +149,7 @@ class _ReadOnlyTreeScreenState extends State<ReadOnlyTreeScreen> {
                 ],
               )))
             : Column(children: [
-                Flexible(child: SingleChildScrollView(child: const Padding(padding: EdgeInsets.all(12), child: Text(
+                const Flexible(child: SingleChildScrollView(child: Padding(padding: EdgeInsets.all(12), child: Text(
                   'थप नातेदार हेर्न व्यक्ति केन्द्रमा राख्नुहोस्। प्रत्येक पटक दुई पुस्तासम्म लोड हुन्छ। (Focus a person to explore more relatives. Each view loads up to two generations.)',
                 )))),
                 Expanded(flex: 4, child: _listView
