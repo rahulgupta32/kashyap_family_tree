@@ -74,7 +74,7 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
             setState(() { _busy=true; _pushStatus=null; });
             try { final enabled=await widget.onEnablePush!();
               if(mounted) { setState(()=>_pushStatus=enabled?'उपकरण सूचना सक्रिय भयो (Device notifications enabled)'
-                :'अनुमति वा APNs अझै उपलब्ध छैन (Permission or APNs unavailable yet)'); }
+                :'अहिले सक्रिय भएन। उपकरणको अनुमति जाँच गर्नुहोस् वा पछि फेरि प्रयास गर्नुहोस्। (Not enabled yet. Check device permission or try again later.)'); }
             } catch (_) { if(mounted) { setState(()=>_pushStatus='उपकरण सूचना उपलब्ध छैन (Device notifications unavailable)'); } }
             finally { if(mounted) { setState(()=>_busy=false); } }
           },child:const Text('उपकरण सूचना खोल्नुहोस् (Enable)')),

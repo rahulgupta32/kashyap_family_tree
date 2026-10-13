@@ -19,6 +19,7 @@ class NativePushLifecycle {
   bool _closed = false;
   int _enabling = 0;
   int? _stoppedGeneration;
+  int? _pendingActivationGeneration;
   Future<void> _writes = Future<void>.value();
   Future<void> _sourceWork = Future<void>.value();
 
@@ -54,9 +55,15 @@ class NativePushLifecycle {
     final epoch = ++_epoch, generation = api.pushSessionGeneration;
     await _writes;
     if (!_current(epoch, generation)) { return false; }
+    // An explicit opt-in may still be waiting for APNs or a confirmed PUT.
+    // This intent belongs only to the session that requested it.
+    if (_pendingActivationGeneration == generation) {
+      return _activate(epoch, generation, requestPermission: false);
+    }
     final response = await api.currentPushRegistration();
     if (!_current(epoch, generation)) { return false; }
     if (response is! Map || response['registration'] == null) {
+      _pendingActivationGeneration = null;
       _enabled = false;
       await _cancelChanges();
       await _withSource<void>(() async {
@@ -64,6 +71,7 @@ class NativePushLifecycle {
       });
       return false;
     }
+    _pendingActivationGeneration = generation;
     return _activate(epoch, generation, requestPermission: false);
   }
 
@@ -72,6 +80,7 @@ class NativePushLifecycle {
     if (api.authToken == null) { throw StateError('Sign in to enable push'); }
     _stoppedGeneration = null; // Only a new explicit opt-in can undo this stop.
     final epoch = ++_epoch, generation = api.pushSessionGeneration;
+    _pendingActivationGeneration = generation;
     _enabling++;
     try { return await _activate(epoch, generation, requestPermission: true); }
     finally { _enabling--; }
@@ -85,22 +94,39 @@ class NativePushLifecycle {
       return false;
     }
     if (!_current(epoch, generation)) { return false; }
+    _enabled = false;
+    await _cancelChanges();
+    if (!_current(epoch, generation)) { return false; }
+    // Subscribe before acquisition/registration: rotation can arrive during
+    // either await. Buffer the newest value until the first PUT is confirmed.
+    String? rotated;
+    _changes = source.tokenChanges.listen((next) {
+      if (!_current(epoch, generation)) { return; }
+      rotated = next;
+      if (_enabled) { unawaited(_handleRefresh(next, epoch, generation)); }
+    }, onError: (Object _) { /* Retry on foreground reconciliation. */ });
     final token = await _withSource<String?>(() async =>
       _current(epoch, generation) ? await source.currentToken() : null);
     if (!_current(epoch, generation)) { return false; }
     if (token == null) { return false; } // APNs may not be ready yet.
+    final stillAllowed = await _withSource<bool>(() async =>
+      _current(epoch, generation) && await source.permissionGranted());
+    if (!stillAllowed) {
+      if (_current(epoch, generation)) { await disable(); }
+      return false;
+    }
+    final currentToken = rotated ?? token;
     await _serialize<void>(() async {
-      if (_current(epoch, generation)) { await api.registerPushToken(token); }
+      if (_current(epoch, generation)) { await api.registerPushToken(currentToken); }
     });
     if (!_current(epoch, generation)) { return false; }
-    await _cancelChanges();
-    if (!_current(epoch, generation)) { return false; }
+    _pendingActivationGeneration = null;
     _enabled = true;
-    _changes = source.tokenChanges.listen((next) {
-      if (!_enabled || !_current(epoch, generation)) { return; }
-      unawaited(_handleRefresh(next, epoch, generation));
-    }, onError: (Object _) { /* Retry on foreground reconciliation. */ });
-    return true;
+    final latest = rotated;
+    if (latest != null && latest != currentToken) {
+      await _handleRefresh(latest, epoch, generation);
+    }
+    return _enabled && _current(epoch, generation);
   }
 
   Future<void> _handleRefresh(String next, int epoch, int generation) async {
@@ -124,6 +150,7 @@ class NativePushLifecycle {
   Future<void> disable() async {
     final epoch = ++_epoch, generation = api.pushSessionGeneration;
     _stoppedGeneration = generation;
+    _pendingActivationGeneration = null;
     _enabled = false;
     await _cancelChanges();
     // A pending PUT must finish before DELETE, or it could restore a disabled
@@ -142,6 +169,7 @@ class NativePushLifecycle {
   Future<void> signOut() async {
     final epoch = ++_epoch;
     _stoppedGeneration = api.pushSessionGeneration;
+    _pendingActivationGeneration = null;
     _enabled = false;
     await _cancelChanges();
     try {
@@ -154,6 +182,7 @@ class NativePushLifecycle {
   Future<void> close() async {
     if (_closed) { return; }
     _closed = true;
+    _pendingActivationGeneration = null;
     final epoch = ++_epoch;
     _enabled = false;
     await _cancelChanges();
