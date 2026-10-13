@@ -46,9 +46,14 @@ Future<void> listView(WidgetTester tester) async {
 }
 
 Future<void> tapNode(WidgetTester tester, String key) async {
-  await tester.scrollUntilVisible(find.byKey(ValueKey(key)), 180,
+  final control = find.byKey(ValueKey(key));
+  await tester.scrollUntilVisible(control, 180,
     scrollable: find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)).first);
-  await tester.tap(find.byKey(ValueKey(key)));
+  // ensureVisible can jump the scroll position without laying out the next
+  // frame. Complete that layout before deriving the control's tap position.
+  await tester.pumpAndSettle();
+  expect(control.hitTestable(), findsOneWidget);
+  await tester.tap(control);
   await tester.pumpAndSettle();
 }
 
