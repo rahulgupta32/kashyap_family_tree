@@ -22,13 +22,18 @@ def evidence():
     log = '\n'.join('IOS_TEST ' + marker for marker in connection.MARKERS)
     log += '\nAll tests passed.\nIOS_DRIVER RESULT_VERIFIED\n'
     report = {'mode': connection.MODE, 'status': 'PASSED', 'vmUrlValidated': True,
-              'consoleProcessJoined': True, 'phases': [
+              'ownedProcessesJoined': True, 'bodyMarkers': connection.MARKERS.copy(), 'phases': [
                   {'phase': name, 'status': 'PASSED', 'exitCode': 0}
                   for name in connection.REQUIRED_PHASES]}
     return log, report
 
 
 class ExplicitConnectionTests(unittest.TestCase):
+    def test_body_evidence_excludes_other_processes_and_prelaunch_messages(self):
+        data = [{'processID': 123, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST APP_VERIFIED'},
+                {'processID': 456, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST KEYCHAIN_VERIFIED'},
+                {'processID': 123, 'timestamp': '1900-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST CLEANUP_VERIFIED'}]
+        self.assertEqual(connection.owned_messages(json.dumps(data), 123, 0), ['flutter: IOS_TEST APP_VERIFIED'])
     def test_unified_snapshot_cannot_supply_another_process_service(self):
         entries = [{'processID': 123, 'timestamp': '2026-01-01T00:00:01+00:00',
                     'eventMessage': 'The Dart VM service is listening on ' + URL}]
@@ -43,7 +48,7 @@ class ExplicitConnectionTests(unittest.TestCase):
     def test_discovery_uses_only_the_launched_pid_when_console_misses_announcement(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(connection, 'RESULTS', Path(tmp)):
             path = Path(tmp) / 'console.log'; path.write_text('fixture.example: 123\n')
-            capture = Mock(path=path, error=None, started_at=0); capture.process.poll.return_value = None
+            capture = Mock(path=path, error=None, started_at=0); capture.process.poll.return_value = 0
             result = subprocess.CompletedProcess([], 0,
                 json.dumps([{'processID': 456, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'The Dart VM service is listening on http://127.0.0.1:43003/othernonce=/'},
                             {'processID': 123, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'The Dart VM service is listening on ' + URL}]), '')
@@ -105,10 +110,13 @@ class ExplicitConnectionTests(unittest.TestCase):
         for marker in connection.MARKERS + ['IOS_DRIVER RESULT_VERIFIED', 'All tests passed.']:
             with self.subTest(marker=marker), self.assertRaises(RuntimeError):
                 connection.validate_evidence(log.replace(marker, ''), report)
-        for field in ['vmUrlValidated', 'consoleProcessJoined']:
+        for field in ['vmUrlValidated', 'ownedProcessesJoined']:
             changed = copy.deepcopy(report); changed[field] = False
             with self.subTest(field=field), self.assertRaises(RuntimeError):
                 connection.validate_evidence(log, changed)
+        changed = copy.deepcopy(report); changed['bodyMarkers'] = []
+        with self.assertRaises(RuntimeError):
+            connection.validate_evidence(log, changed)
         for i in range(len(report['phases'])):
             changed = copy.deepcopy(report); changed['phases'][i]['exitCode'] = 7
             with self.subTest(phase=i), self.assertRaises(RuntimeError):
@@ -128,7 +136,11 @@ class ExplicitConnectionTests(unittest.TestCase):
                 failure = connection.ConnectionFailure(name, exit_code=7) if name in ['test-driver', 'app-terminate'] else None
                 connection.record_phase(report, name, time.monotonic(), failure)
                 if failure: raise failure
-            launch = [sys.executable, '-c', f'import time;print("The Dart VM service is listening on {URL}",flush=True);time.sleep(30)']
+                if name == 'test-launch':
+                    c = captured(command, root / 'test-results/ios-test-launch.log')
+                    c.wait(3, name)
+                    return c
+            launch = [sys.executable, '-c', f'print("fixture.example: 123\\nThe Dart VM service is listening on {URL}",flush=True)']
             with patch.object(connection, 'ROOT', root), patch.object(connection, 'RESULTS', root / 'test-results'), \
                  patch.object(connection, 'command_phase', side_effect=phase), patch.object(connection, 'Capture', side_effect=captured), \
                  patch.object(connection, 'launch_command', return_value=launch) as launcher:
@@ -136,8 +148,8 @@ class ExplicitConnectionTests(unittest.TestCase):
                     connection.run(SIMULATOR)
             self.assertEqual(error.exception.phase, 'test-driver')
             self.assertEqual(launcher.call_count, 1)
-            self.assertEqual([name for name, _ in commands], ['test-build', 'test-install', 'test-driver', 'app-terminate'])
-            self.assertIn('--use-existing-app=' + URL, commands[2][1])
+            self.assertEqual([name for name, _ in commands], ['test-build', 'test-install', 'test-launch', 'test-driver', 'app-terminate'])
+            self.assertIn('--use-existing-app=' + URL, commands[3][1])
             report = json.loads((root / 'test-results/ios-vm-connection.json').read_text())
             self.assertEqual(report['status'], 'FAILED')
             self.assertEqual(report['failurePhase'], 'test-driver')

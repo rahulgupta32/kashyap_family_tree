@@ -15,7 +15,7 @@ RESULTS = ROOT / 'test-results'
 MODE = 'EXPLICIT_AUTHENTICATED_LOOPBACK_VM'
 MARKERS = ['TEST_DISCOVERED', 'KEYCHAIN_CLEAR', 'KEYCHAIN_WRITE', 'KEYCHAIN_READ',
            'KEYCHAIN_DELETE', 'KEYCHAIN_VERIFIED', 'APP_PUMP', 'APP_VERIFIED', 'CLEANUP_VERIFIED']
-REQUIRED_PHASES = ['test-build', 'test-install', 'vm-discovery', 'test-driver', 'app-terminate']
+REQUIRED_PHASES = ['test-build', 'test-install', 'test-launch', 'vm-discovery', 'test-driver', 'test-evidence', 'app-terminate']
 OUTPUT_LOCK = threading.Lock()
 
 
@@ -52,7 +52,8 @@ def vm_service_url(log):
 
 def validate_evidence(log, report):
     if (report.get('status') != 'PASSED' or report.get('mode') != MODE or
-            report.get('vmUrlValidated') is not True or report.get('consoleProcessJoined') is not True):
+            report.get('vmUrlValidated') is not True or report.get('ownedProcessesJoined') is not True or
+            report.get('bodyMarkers') != MARKERS):
         raise RuntimeError('Explicit VM connection evidence is incomplete')
     phases = report.get('phases', [])
     if [p.get('phase') for p in phases] != REQUIRED_PHASES or any(
@@ -145,12 +146,14 @@ def command_phase(report, name, command, timeout, echo=False):
                 record_phase(report, name, started, failure)
                 raise failure from error
         record_phase(report, name, started, failure)
+    return capture
 
 
-def snapshot_url(stdout, pid, since):
+def owned_messages(stdout, pid, since):
     entries = json.loads(stdout)
     if not isinstance(entries, list):
         raise RuntimeError('Invalid simulator log snapshot')
+    messages = []
     for entry in entries:
         if (isinstance(entry, dict) and entry.get('processID') == pid and
                 isinstance(entry.get('eventMessage'), str)):
@@ -160,9 +163,15 @@ def snapshot_url(stdout, pid, since):
                     continue
             except (ValueError, TypeError):
                 continue
-            value = vm_service_url(entry['eventMessage'])
-            if value:
-                return value
+            messages.append(entry['eventMessage'])
+    return messages
+
+
+def snapshot_url(stdout, pid, since):
+    for message in owned_messages(stdout, pid, since):
+        value = vm_service_url(message)
+        if value:
+            return value
     return None
 
 
@@ -175,12 +184,12 @@ def discover(capture, timeout, simulator=None, bundle=None):
         value = vm_service_url(log)
         if value:
             return value
-        # A one-time announcement may reach unified logging without the attached console.
-        # Match only this launch's PID, never an earlier Runner's service address.
+        # The short launcher has returned its PID; read the retained announcement for
+        # that PID after this launch began, never an earlier Runner's address.
         pid = re.search(r'^' + re.escape(bundle) + r': ([1-9]\d*)\s*$', log, re.MULTILINE) if bundle else None
         if pid and simulator:
             try:
-                result = subprocess.run(['xcrun', 'simctl', 'spawn', simulator, 'log', 'show', '--last', '1m',
+                result = subprocess.run(['xcrun', 'simctl', 'spawn', simulator, 'log', 'show', '--last', '5m',
                     '--style', 'json', '--predicate',
                     'process == "Runner" AND eventMessage CONTAINS "The Dart VM service is listening on"'],
                     capture_output=True, text=True, timeout=max(0.01, min(5, deadline - time.monotonic())))
@@ -202,7 +211,7 @@ def discover(capture, timeout, simulator=None, bundle=None):
 
 
 def launch_command(simulator, bundle):
-    return ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, bundle,
+    return ['xcrun', 'simctl', 'launch', '--terminate-running-process', simulator, bundle,
             '--enable-dart-profiling', '--disable-vm-service-publication', '--enable-checked-mode',
             '--verify-entry-points', '--start-paused']
 
@@ -212,7 +221,7 @@ def run(simulator):
         raise RuntimeError('Invalid disposable simulator identifier')
     RESULTS.mkdir(exist_ok=True)
     report = {'mode': MODE, 'status': 'RUNNING', 'phases': [],
-              'vmUrlValidated': False, 'consoleProcessJoined': False}
+              'vmUrlValidated': False, 'ownedProcessesJoined': False, 'bodyMarkers': []}
     console, bundle, failure = None, None, None
     try:
         command_phase(report, 'test-build', ['flutter', 'build', 'ios', '--simulator', '--debug', '--no-pub',
@@ -225,7 +234,12 @@ def run(simulator):
         if not isinstance(bundle, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{1,200}', bundle):
             raise RuntimeError('Invalid compiled fixture bundle identifier')
         command_phase(report, 'test-install', ['xcrun', 'simctl', 'install', simulator, str(app)], 30)
-        console = Capture(launch_command(simulator, bundle), RESULTS / 'ios-test-launch.log', echo=True)
+        console = command_phase(report, 'test-launch', launch_command(simulator, bundle), 30)
+        match = re.search(r'^' + re.escape(bundle) + r': ([1-9]\d*)\s*$',
+                          console.path.read_text(errors='replace'), re.MULTILINE)
+        if not match:
+            raise ConnectionFailure('test-launch')
+        pid = int(match.group(1))
         started = time.monotonic()
         try:
             uri = discover(console, 60, simulator, bundle)
@@ -237,10 +251,19 @@ def run(simulator):
             raise scoped from error
         record_phase(report, 'vm-discovery', started)
         report['vmUrlValidated'] = True
-        # Supported by the pinned Flutter tool. URI comes solely from this launch's console.
+        # Supported by the pinned Flutter tool. URI is fenced to this launch's PID/time.
         command_phase(report, 'test-driver', ['flutter', 'drive', '-d', simulator, '--no-pub',
             '--target=integration_test/ios_startup_test.dart', '--driver=test_driver/ios_startup_driver.dart',
             '--timeout=180', '--use-existing-app=' + uri], 180, echo=True)
+        snapshot = command_phase(report, 'test-evidence', ['xcrun', 'simctl', 'spawn', simulator,
+            'log', 'show', '--last', '5m', '--style', 'json', '--predicate',
+            'process == "Runner" AND eventMessage CONTAINS "IOS_TEST"'], 10)
+        messages = owned_messages(snapshot.path.read_text(), pid, console.started_at)
+        report['bodyMarkers'] = [marker for marker in MARKERS if any('IOS_TEST ' + marker in m for m in messages)]
+        for marker in report['bodyMarkers']:
+            emit(('IOS_TEST ' + marker + '\n').encode())
+        if report['bodyMarkers'] != MARKERS:
+            raise ConnectionFailure('test-evidence')
     except (ConnectionFailure, RuntimeError, OSError, ValueError) as error:
         failure = error
     finally:
@@ -248,7 +271,7 @@ def run(simulator):
             try:
                 command_phase(report, 'app-terminate', ['xcrun', 'simctl', 'terminate', simulator, bundle], 15)
                 console.stop()
-                report['consoleProcessJoined'] = True
+                report['ownedProcessesJoined'] = True
             except (ConnectionFailure, RuntimeError, OSError) as error:
                 failure = failure or error
                 try:
