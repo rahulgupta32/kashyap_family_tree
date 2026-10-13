@@ -53,10 +53,10 @@ describe('Privileged push investigation (real PostgreSQL, no provider transmissi
       const claim = randomUUID();
       await db.query(`UPDATE push_delivery_attempts SET status='SENDING',claim_id=$2,
         lease_expires_at=clock_timestamp()+$3::interval WHERE id=$1`, [id, claim, expired ? '-1 minute' : '1 minute']);
-      if (status !== 'SENDING') await db.query(`UPDATE push_delivery_attempts SET status=$2,
-        receipt_hash=CASE WHEN $2='ACCEPTED' THEN $3 ELSE NULL END,completed_at=clock_timestamp() WHERE id=$1`, [id, status, 'a'.repeat(64)]);
+      if (status !== 'SENDING') await db.query(`UPDATE push_delivery_attempts SET status=$2::varchar,
+        receipt_hash=CASE WHEN $2::varchar='ACCEPTED' THEN $3::text ELSE NULL END,completed_at=clock_timestamp() WHERE id=$1`, [id, status, 'a'.repeat(64)]);
       if (outcome) await db.query(`INSERT INTO push_provider_observations(attempt_id,claim_id,outcome,receipt_hash)
-        VALUES($1,$2,$3,CASE WHEN $3='ACCEPTED' THEN $4 ELSE NULL END)`, [id, claim, outcome, 'b'.repeat(64)]);
+        VALUES($1,$2,$3::varchar,CASE WHEN $3::varchar='ACCEPTED' THEN $4::text ELSE NULL END)`, [id, claim, outcome, 'b'.repeat(64)]);
     }
     return id;
   }
