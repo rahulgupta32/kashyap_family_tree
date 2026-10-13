@@ -14,7 +14,7 @@ import { assertDatabaseIsolation, createDisposableDatabase, DisposableDatabase }
 
 describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
  let iso:DisposableDatabase,app:INestApplication,db:DatabaseService,dispatcher:NotificationDispatcherService,inbox:NotificationInboxService;
- let owner:{id:string;token:string},other:{id:string;token:string};
+ let owner:{id:string;token:string;personId:string},other:{id:string;token:string;personId:string};
  const auth=(u:{token:string})=>`Bearer ${u.token}`;
  const event=async(action:string,recipient:string,entityType='PROFILE_CLAIM',entityId=randomUUID())=>{
   return (await db.query(`INSERT INTO audit_outbox(action,entity_type,entity_id,actor_id,status,notification_status)
@@ -28,11 +28,13 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   inbox=module.get(NotificationInboxService);await assertDatabaseIsolation(db,iso.dbName);
   async function member(phone:string){
    const user=await module.get(UserRepository).findOrCreateByPhone(phone);
+   const person=(await db.query("INSERT INTO persons(gender,living_status,generation,birth_year_bs,is_claimed,claimed_user_id) VALUES('MALE','LIVING',3,2040,TRUE,$1) RETURNING id",[user.id])).rows[0];
+   await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[user.id,person.id]);
    const session=await module.get(SessionRepository).createSession({userId:user.id,refreshTokenHash:randomUUID(),devicePlatform:'WEB',
      ipAddress:'127.0.0.1',userAgent:'inbox-fixture',expiresAt:new Date(Date.now()+3600000)});
    const token=module.get(JwtService).sign({sub:user.id,sid:session.id,phoneNumber:phone,tokenType:'access'},
      {secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM});
-   return {id:user.id,token};
+   return {id:user.id,token,personId:person.id};
   }
   owner=await member('+9779847391111');other=await member('+9779847391112');
   await db.query("INSERT INTO user_roles(user_id,role) VALUES($1,'VERIFIED_MEMBER'),($2,'VERIFIED_MEMBER')",[owner.id,other.id]);
@@ -102,13 +104,34 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   await db.query('UPDATE chat_participants SET left_at=NOW() WHERE conversation_id=$1 AND user_id=$2',[conversation,owner.id]);
   expect((await inbox.list(owner.id)).items.some(n=>n.id===notice!.id)).toBe(false);
  });
+ it('hides queued direct notices and unread counts when either current profile becomes protected or unlinked',async()=>{
+  const conversation=(await db.query("INSERT INTO chat_conversations(conversation_type,is_group,created_by,title) VALUES('DIRECT',false,$1,'Fictional protected notice') RETURNING id",[other.id])).rows[0].id;
+  await db.query('INSERT INTO chat_participants(conversation_id,user_id) VALUES($1,$2),($1,$3)',[conversation,owner.id,other.id]);
+  const message=(await db.query("INSERT INTO chat_messages(conversation_id,sender_id,message_text) VALUES($1,$2,'Fictional message') RETURNING id",[conversation,other.id])).rows[0].id;
+  await dispatcher.processRecord(await event('CHAT_MESSAGE_CREATED',other.id,'chat_message',message));
+  const visible=await inbox.list(owner.id);const notice=visible.items.find(n=>n.category==='CHAT');expect(notice).toBeDefined();
+  for(const participant of [owner,other]){
+   await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[participant.personId]);
+   try{
+    const hidden=(await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(owner)).expect(200)).body;
+    expect(hidden.items.some((n:any)=>n.id===notice!.id)).toBe(false);expect(hidden.unreadCount).toBe(visible.unreadCount-1);
+    await request(app.getHttpServer()).post(`/notifications/${notice!.id}/read`).set('Authorization',auth(owner)).expect(404);
+    await request(app.getHttpServer()).post(`/notifications/${notice!.id}/unread`).set('Authorization',auth(owner)).expect(404);
+    await inbox.markAllRead(owner.id);
+    expect((await db.query('SELECT read_at FROM notification_inbox WHERE id=$1',[notice!.id])).rows[0].read_at).toBeNull();
+   }finally{await db.query('UPDATE persons SET is_minor_protected=FALSE WHERE id=$1',[participant.personId]);}
+  }
+  await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1',[other.id]);
+  try{expect((await inbox.list(owner.id)).items.some(n=>n.id===notice!.id)).toBe(false);}
+  finally{await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[other.id,other.personId]);}
+  expect((await inbox.list(owner.id)).items.some(n=>n.id===notice!.id)).toBe(true);
+ });
 
  it('limits follows to authorized targets, deduplicates overlapping scopes and stops future fanout after unfollow',async()=>{
   const branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('NOTIF_A','काल्पनिक क','Fictional A') RETURNING id")).rows[0].id;
   const outside=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('NOTIF_B','काल्पनिक ख','Fictional B') RETURNING id")).rows[0].id;
   async function person(userId:string,firstName:string){
-    const id=(await db.query(`INSERT INTO persons(branch_id,generation,gender,living_status,birth_year_bs,is_claimed,claimed_user_id)
-      VALUES($1,3,'MALE','LIVING',2040,true,$2) RETURNING id`,[branch,userId])).rows[0].id;
+    const id=(await db.query('UPDATE persons SET branch_id=$1 WHERE claimed_user_id=$2 RETURNING id',[branch,userId])).rows[0].id;
     await db.query(`INSERT INTO person_names(person_id,language,first_name,last_name,full_name,is_primary)
       VALUES($1,'en',$2,'Adhikari',$3,true)`,[id,firstName,`${firstName} Adhikari`]);
     await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[userId,id]);return id;

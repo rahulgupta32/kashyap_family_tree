@@ -2,7 +2,7 @@
 
 This file records executable progress so work can resume without a conversation transcript.
 
-Latest recovery: see [2026-10-10 verification recovery](SESSION_RECOVERY_VERIFICATION_2026-10-10.md). The checkpoints below are historical; their pending CI statements are superseded by that report where explicitly verified.
+Latest recovery: see [2026-10-13 completion recovery](RESUMED_COMPLETION_2026-10-13.md). Remote HEAD `ec816621b13a9285a3ee0b4177da928035b08353` was clean and preserved. General PR run `38422846237`, PR-native iOS `38422846316` and formerly pending push-native iOS `38422836382` all succeeded. The source-bound retained native report and lock candidates were inspected. Active next batch: native tree progressive traversal and symmetric current direct-chat eligibility; its new checks must be recorded after completion. Branch `feat/application-completion`, PR #5, no merge/deployment. The checkpoints below are historical; their pending statements are superseded only where explicitly verified in later reports.
 
 ## Source and preservation
 

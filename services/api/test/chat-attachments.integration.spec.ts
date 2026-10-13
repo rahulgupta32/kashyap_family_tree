@@ -114,4 +114,20 @@ describe('Chat private attachments and durable retry integrity (real PostgreSQL)
   await files.writeFile(asset.storage_path,'altered');await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(author)).expect(503);
   await db.query("UPDATE media_assets SET storage_path='/etc/passwd' WHERE id=$1",[asset.id]);await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(author)).expect(404);
  });
+ it('revokes original and derivative direct attachments after current minor protection changes',async()=>{
+  const sent=await app.get(ChatAttachmentsService).send(direct,author,payload());
+  const endpoint=`/chat/conversations/${direct}/messages/${sent.id}/attachment`;
+  await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(reader)).expect(200);
+  const before=(await db.query('SELECT count(*)::int AS count FROM media_assets')).rows[0].count;
+  await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[reader.personId]);
+  try{
+   for(const viewer of [reader,author]){
+    await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(viewer)).expect(403);
+    await request(app.getHttpServer()).get(endpoint+'?variant=display').set('Authorization',auth(viewer)).expect(403);
+    await request(app.getHttpServer()).post(`/chat/conversations/${direct}/attachments`).set('Authorization',auth(viewer)).send(payload()).expect(403);
+   }
+   expect((await db.query('SELECT count(*)::int AS count FROM media_assets')).rows[0].count).toBe(before);
+  }finally{await db.query('UPDATE persons SET is_minor_protected=FALSE WHERE id=$1',[reader.personId]);}
+  await request(app.getHttpServer()).get(endpoint).set('Authorization',auth(reader)).expect(200);
+ });
 });

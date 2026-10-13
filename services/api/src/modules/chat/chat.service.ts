@@ -6,6 +6,7 @@ import { PoolClient } from 'pg';
 import { GenealogyService } from '../genealogy/genealogy.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { allowedFields, branchAccess, canModerate, globalAdmin, member, textField, uuid } from '../community/community-policy';
+import { directParticipantsEligible, eligibleDirectConversationIds } from './direct-chat-safety';
 
 @Injectable()
 export class ChatService {
@@ -20,16 +21,19 @@ export class ChatService {
      AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN'))) `+(client?' FOR UPDATE OF c':''),[id,user.id],client);
   const row=result.rows[0];if(!row)throw new NotFoundException('Conversation not found');
   branchAccess(user,row.branch_id);
+  if(row.conversation_type==='DIRECT'&&!await directParticipantsEligible(this.db,id,client))throw new ForbiddenException('Direct conversation is unavailable');
   return row;
  }
  async list(user:AuthenticatedUser) {
   member(user);
-  return (await this.db.query(`SELECT c.id,c.title,c.conversation_type AS type,c.branch_id AS "branchId",c.updated_at AS "updatedAt",c.version,p.group_role AS "myRole",c.description,
+  const rows=(await this.db.query(`SELECT c.id,c.title,c.conversation_type AS type,c.branch_id AS "branchId",c.updated_at AS "updatedAt",c.version,p.group_role AS "myRole",c.description,
    p.left_at IS NULL AND p.id IS NOT NULL AS "isParticipant",
    (SELECT count(*)::int FROM chat_messages m WHERE m.conversation_id=c.id AND m.deleted_at IS NULL AND m.sender_id<>$1 AND m.sequence>greatest(coalesce(p.last_read_sequence,0),coalesce(p.history_from_sequence,0))) AS "unreadCount"
    FROM chat_conversations c LEFT JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=$1
    WHERE (p.id IS NOT NULL AND p.left_at IS NULL AND p.removed_at IS NULL OR c.conversation_type='FAMILY_BRANCH' AND c.branch_id=ANY($2::uuid[]) AND p.removed_at IS NULL)
      AND ($3 OR c.branch_id IS NULL OR c.branch_id=ANY($2::uuid[])) ORDER BY c.updated_at DESC,c.id LIMIT 100`,[user.id,user.branchIds,globalAdmin(user)])).rows;
+  const eligibleDirectIds=new Set(await eligibleDirectConversationIds(this.db,user.id,rows.filter(row=>row.type==='DIRECT').map(row=>row.id)));
+  return rows.filter(row=>row.type!=='DIRECT'||eligibleDirectIds.has(row.id));
  }
  async create(user:AuthenticatedUser,body:any) {
   allowedFields(body,['type','personId','branchId','title','description','memberPersonIds']);member(user);
@@ -46,6 +50,7 @@ export class ChatService {
    return this.db.transaction(async client=>{
     // Same pair always uses one conversation even across simultaneous requests.
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`chat:${key}`]);
+    if(!await directParticipantsEligible(this.db,pair,client))throw new ForbiddenException('Direct conversation is unavailable');
     if((await client.query('SELECT 1 FROM chat_blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1)',pair)).rows.length)throw new ForbiddenException('Direct messaging is blocked');
     let row=(await client.query('SELECT * FROM chat_conversations WHERE direct_key=$1',[key])).rows[0];
     const created=!row;

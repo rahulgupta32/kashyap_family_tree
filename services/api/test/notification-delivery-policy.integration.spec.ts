@@ -6,6 +6,7 @@ import { assertDatabaseIsolation, createDisposableDatabase, DisposableDatabase }
 describe('Delivery preferences and revoked chat access (real PostgreSQL)', () => {
   let iso: DisposableDatabase, db: DatabaseService, dispatcher: NotificationDispatcherService;
   let sender: string, recipient: string, conversation: string, message: string;
+  const profiles=new Map<string,string>();
   const sms = { sendOtp: jest.fn(), sendNotification: jest.fn(async (_phone: string, _message: string) => ({ success: true, provider: 'TestSmsProviderAdapter', simulated: true })) };
 
   beforeAll(async () => {
@@ -16,6 +17,10 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     dispatcher = new NotificationDispatcherService(db, sms as any);
     sender = (await db.query("INSERT INTO user_accounts(phone_number) VALUES('+9779847312221') RETURNING id")).rows[0].id;
     recipient = (await db.query("INSERT INTO user_accounts(phone_number) VALUES('+9779847312222') RETURNING id")).rows[0].id;
+    for(const account of [sender,recipient]){
+      const person=(await db.query("INSERT INTO persons(gender,living_status,generation,birth_year_bs,is_claimed,claimed_user_id) VALUES('MALE','LIVING',3,2040,TRUE,$1) RETURNING id",[account])).rows[0].id;
+      profiles.set(account,person);await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[account,person]);
+    }
     await db.query("INSERT INTO user_roles(user_id,role) VALUES($1,'VERIFIED_MEMBER'),($2,'VERIFIED_MEMBER')", [sender, recipient]);
     await db.query('INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled) VALUES($1,false,true,false)', [recipient]);
     conversation = (await db.query("INSERT INTO chat_conversations(conversation_type,is_group,created_by) VALUES('DIRECT',false,$1) RETURNING id", [sender])).rows[0].id;
@@ -32,6 +37,11 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     await db.query('DELETE FROM chat_blocks');
     await db.query('DELETE FROM notification_dispatches');
     await db.query("INSERT INTO user_roles(user_id,role) SELECT $1,'VERIFIED_MEMBER' WHERE NOT EXISTS(SELECT 1 FROM user_roles WHERE user_id=$1 AND role='VERIFIED_MEMBER')", [recipient]);
+    for(const account of [sender,recipient]){
+      await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[account,profiles.get(account)]);
+      await db.query('UPDATE persons SET birth_year_bs=2040,is_minor_protected=FALSE,is_archived=FALSE WHERE id=$1',[profiles.get(account)]);
+      await db.query("INSERT INTO user_roles(user_id,role) SELECT $1,'VERIFIED_MEMBER' WHERE NOT EXISTS(SELECT 1 FROM user_roles WHERE user_id=$1 AND role='VERIFIED_MEMBER')", [account]);
+    }
   });
   async function record(action = 'CHAT_MESSAGE_CREATED') {
     return (await db.query(`INSERT INTO audit_outbox(action,entity_type,entity_id,actor_id)
@@ -49,6 +59,30 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     expect(sms.sendNotification).toHaveBeenCalledTimes(1);
     expect(sms.sendOtp).not.toHaveBeenCalled();
     expect(sms.sendNotification.mock.calls[0][1]).not.toContain('Private fixture');
+  });
+  it.each(['sender','recipient'])('suppresses initial scheduling when the %s becomes a protected minor',async participant=>{
+    const account=participant==='sender'?sender:recipient;
+    await db.query('UPDATE persons SET birth_year_bs=2080 WHERE id=$1',[profiles.get(account)]);
+    expect(await dispatcher.processRecord(await record())).toEqual([]);
+    expect(sms.sendNotification).not.toHaveBeenCalled();
+    expect((await db.query('SELECT id FROM notification_dispatches WHERE recipient_user_id=$1',[recipient])).rows).toHaveLength(0);
+  });
+  it.each(['sender-minor','recipient-protected','sender-role','recipient-unlinked','recipient-archived'])('skips saved direct provider retries after %s',async reason=>{
+    const job=await failedJob();
+    if(reason==='sender-minor')await db.query('UPDATE persons SET birth_year_bs=2080 WHERE id=$1',[profiles.get(sender)]);
+    if(reason==='recipient-protected')await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[profiles.get(recipient)]);
+    if(reason==='sender-role')await db.query('DELETE FROM user_roles WHERE user_id=$1',[sender]);
+    if(reason==='recipient-unlinked')await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1',[recipient]);
+    if(reason==='recipient-archived')await db.query('UPDATE persons SET is_archived=TRUE WHERE id=$1',[profiles.get(recipient)]);
+    await dispatcher.retryFailedDispatches();expect(sms.sendNotification).not.toHaveBeenCalled();
+    expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[job])).rows[0].delivery_status).toBe('SKIPPED');
+  });
+  it('suppresses an expired direct delivery lease after current age protection changes',async()=>{
+    const job=await failedJob();
+    await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=NOW()-INTERVAL '1 minute' WHERE id=$1",[job]);
+    await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[profiles.get(sender)]);
+    await dispatcher.recoverStrandedJobs();expect(sms.sendNotification).not.toHaveBeenCalled();
+    expect((await db.query('SELECT delivery_status FROM notification_dispatches WHERE id=$1',[job])).rows[0].delivery_status).toBe('SKIPPED');
   });
   it.each([
     ['CHAT_MESSAGE_CREATED','chat_enabled'],

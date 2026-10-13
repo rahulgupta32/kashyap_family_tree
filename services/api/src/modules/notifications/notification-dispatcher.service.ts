@@ -12,6 +12,7 @@ import { notificationGatewayUrl } from './notification-gateway.policy';
 import { PushTokensService } from './push-tokens.service';
 import { PushDeliveryService } from './push-delivery.service';
 import { MigrationService } from '../../database/migration.service';
+import { directParticipantsEligible } from '../chat/direct-chat-safety';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
@@ -211,7 +212,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       recipientUserIds.push(...recipients.rows.map(r => r.user_id));
     } else if (action === 'CHAT_MESSAGE_CREATED' && isUuid(record.entity_id)) {
       // Resolve current recipients from membership; notification text never contains private message content.
-      const recipients = await this.db.query(`SELECT p.user_id FROM chat_messages m
+      const recipients = await this.db.query(`SELECT p.user_id,c.id AS conversation_id,c.conversation_type FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
         JOIN chat_participants p ON p.conversation_id=c.id AND p.left_at IS NULL
         JOIN user_accounts u ON u.id=p.user_id AND u.is_active=true AND u.is_suspended=false AND u.deleted_at IS NULL
@@ -220,7 +221,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
             AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
           AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=p.user_id AND b.blocked_id=m.sender_id)
             OR (b.blocker_id=m.sender_id AND b.blocked_id=p.user_id))`, [record.entity_id]);
-      recipientUserIds.push(...recipients.rows.map(r => r.user_id));
+      if(recipients.rows[0]?.conversation_type!=='DIRECT'||await directParticipantsEligible(this.db,recipients.rows[0].conversation_id))recipientUserIds.push(...recipients.rows.map(r => r.user_id));
     } else if (action === 'USER_ACCOUNT_DELETED_GENEALOGY_PRESERVED') {
       return [];
     } else if (record.actor_id) {
@@ -422,7 +423,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if(!eligible.rows.length)return {status:'SKIPPED',reason:'Event access or revision revoked'};
     }
     if (payload.action === 'CHAT_MESSAGE_CREATED') {
-      const eligible = await this.db.query(`SELECT 1 FROM chat_messages m
+      const eligible = await this.db.query(`SELECT c.id AS conversation_id,c.conversation_type FROM chat_messages m
         JOIN chat_conversations c ON c.id=m.conversation_id
         JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=$2 AND p.left_at IS NULL
         WHERE m.id=$1 AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence AND m.sender_id<>$2
@@ -431,6 +432,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
           AND NOT EXISTS(SELECT 1 FROM chat_blocks b WHERE (b.blocker_id=$2 AND b.blocked_id=m.sender_id)
             OR (b.blocker_id=m.sender_id AND b.blocked_id=$2))`, [payload.entityId, userId]);
       if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Chat access revoked' };
+      if(eligible.rows[0].conversation_type==='DIRECT'&&!await directParticipantsEligible(this.db,eligible.rows[0].conversation_id))return {status:'SKIPPED',reason:'Chat access revoked'};
     }
     if (payload.action === 'NOTIFICATION_BROADCAST_CREATED') {
       const eligible = await this.db.query(`SELECT 1 FROM notification_broadcast_recipients r

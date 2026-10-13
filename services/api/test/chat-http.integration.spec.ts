@@ -111,6 +111,58 @@ describe('Chat persistent membership, messages and receipts (real PostgreSQL)',(
   try{await expect(chat.create(author,{type:'DIRECT',personId:reader.personId})).rejects.toThrow('unavailable for direct chat');}
   finally{await db.query('UPDATE persons SET birth_year_bs=2040 WHERE id=$1',[reader.personId]);}
  });
+ it.each(['minor','uncertain','protected','unlinked'])('rejects a %s creator who selects an adult target without committing a conversation',async reason=>{
+  const before=(await db.query('SELECT count(*)::int AS count FROM chat_conversations')).rows[0].count;
+  if(reason==='minor')await db.query('UPDATE persons SET birth_year_bs=2080 WHERE id=$1',[author.personId]);
+  if(reason==='uncertain')await db.query('UPDATE persons SET birth_year_bs=NULL WHERE id=$1',[author.personId]);
+  if(reason==='protected')await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[author.personId]);
+  if(reason==='unlinked')await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1',[author.id]);
+  try{
+   await request(app.getHttpServer()).post('/chat/conversations').set('Authorization',auth(author)).send({type:'DIRECT',personId:outsider.personId}).expect(403);
+   expect((await db.query('SELECT count(*)::int AS count FROM chat_conversations')).rows[0].count).toBe(before);
+  }finally{
+   await db.query('UPDATE persons SET birth_year_bs=2040,is_minor_protected=FALSE WHERE id=$1',[author.personId]);
+   await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[author.id,author.personId]);
+  }
+ });
+ it.each(['minor','uncertain','protected','unlinked','archived','claim','role'])('revokes current direct history, list and sends after a participant becomes %s',async reason=>{
+  const conversation=(await chat.create(author,{type:'DIRECT',personId:outsider.personId})).id;
+  const sent=await chat.send(conversation,author,{content:'Fictional current adult conversation',clientMessageId:randomUUID()});
+  expect((await chat.list(author)).some(c=>c.id===conversation)).toBe(true);
+  if(reason==='minor')await db.query('UPDATE persons SET birth_year_bs=2080 WHERE id=$1',[outsider.personId]);
+  if(reason==='uncertain')await db.query('UPDATE persons SET birth_year_bs=NULL WHERE id=$1',[outsider.personId]);
+  if(reason==='protected')await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[outsider.personId]);
+  if(reason==='unlinked')await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1',[outsider.id]);
+  if(reason==='archived')await db.query('UPDATE persons SET is_archived=TRUE WHERE id=$1',[outsider.personId]);
+  if(reason==='claim')await db.query('UPDATE persons SET is_claimed=FALSE,claimed_user_id=NULL WHERE id=$1',[outsider.personId]);
+  if(reason==='role')await db.query('DELETE FROM user_roles WHERE user_id=$1',[outsider.id]);
+  try{
+   await request(app.getHttpServer()).get(`/chat/conversations/${conversation}/messages`).set('Authorization',auth(author)).expect(403);
+   await request(app.getHttpServer()).get(`/chat/conversations/${conversation}`).set('Authorization',auth(author)).expect(403);
+   await request(app.getHttpServer()).post(`/chat/conversations/${conversation}/messages`).set('Authorization',auth(author)).send({content:'Must not commit',clientMessageId:randomUUID()}).expect(403);
+   await request(app.getHttpServer()).post(`/chat/conversations/${conversation}/delivered`).set('Authorization',auth(author)).send({messageIds:[sent.id]}).expect(403);
+   expect((await request(app.getHttpServer()).get('/chat/conversations').set('Authorization',auth(author)).expect(200)).body.some((c:any)=>c.id===conversation)).toBe(false);
+   expect((await db.query('SELECT id FROM chat_messages WHERE conversation_id=$1 AND message_text=$2',[conversation,'Must not commit'])).rows).toHaveLength(0);
+   if(reason!=='role')await request(app.getHttpServer()).post(`/chat/conversations/${conversation}/messages`).set('Authorization',auth(outsider)).send({content:'Must not commit',clientMessageId:randomUUID()}).expect(403);
+  }finally{
+   await db.query('UPDATE persons SET birth_year_bs=2040,is_minor_protected=FALSE,is_archived=FALSE,is_claimed=TRUE,claimed_user_id=$2 WHERE id=$1',[outsider.personId,outsider.id]);
+   await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[outsider.id,outsider.personId]);
+   await app.get(UserRepository).assignRole(outsider.id,Role.BRANCH_ADMIN,otherBranch);
+  }
+  expect((await chat.messages(conversation,author)).some(m=>m.id===sent.id)).toBe(true);
+ });
+ it('closes an authenticated direct socket on the next poll after age protection changes',async()=>{
+  const conversation=(await chat.create(author,{type:'DIRECT',personId:outsider.personId})).id;
+  const ws=new WebSocket(`ws://127.0.0.1:${(app.getHttpServer().address() as any).port}/chat/socket`,{origin:'http://127.0.0.1:3002'});
+  try{
+   await new Promise<void>((resolve,reject)=>{ws.once('open',resolve);ws.once('error',reject);});
+   const snapshot=new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Direct snapshot not received')),8000);ws.on('message',data=>{const frame=JSON.parse(data.toString());if(frame.type==='authenticated')ws.send(JSON.stringify({type:'subscribe',conversationId:conversation}));if(frame.type==='snapshot'){clearTimeout(timer);resolve();}});});
+   ws.send(JSON.stringify({type:'auth',token:author.token}));await snapshot;
+   const closed=new Promise<number>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Protected direct socket remained open')),8000);ws.once('close',code=>{clearTimeout(timer);resolve(code);});});
+   await db.query('UPDATE persons SET is_minor_protected=TRUE WHERE id=$1',[outsider.personId]);
+   expect(await closed).toBe(4403);
+  }finally{ws.terminate();await db.query('UPDATE persons SET is_minor_protected=FALSE WHERE id=$1',[outsider.personId]);}
+ },20000);
  it('deduplicates persisted retries across a newly authenticated device session',async()=>{
   const body={content:'Fictional restored offline intent',clientMessageId:randomUUID()};
   const first=(await request(app.getHttpServer()).post(`/chat/conversations/${group}/messages`).set('Authorization',auth(reader)).send(body).expect(201)).body;

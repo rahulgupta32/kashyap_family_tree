@@ -5,6 +5,7 @@ import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { notificationCategoryEnabled } from './notification-policy';
 
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
+import { eligibleDirectConversationIds } from '../chat/direct-chat-safety';
 
 type Category = 'WORKFLOW' | 'CHAT' | 'EVENT' | 'BROADCAST';
 type Preference = 'inAppEnabled' | 'workflowEnabled' | 'chatEnabled' | 'familyEventsEnabled';
@@ -55,7 +56,7 @@ export class NotificationInboxService {
 
   // Chat notices are rechecked at read time, so leaving a group, a block,
   // or deleting a message revokes even a previously queued notice.
-  private readonly visible = `(
+  private visible(directIdsParameter: string) { return `(
     (n.action <> 'COMMUNITY_POST_MODERATED' OR EXISTS(SELECT 1 FROM audit_outbox o
       JOIN community_posts p ON p.id::text=o.entity_id JOIN user_accounts u ON u.id=n.recipient_user_id
       WHERE o.id=n.outbox_id AND ${communityNoticeEligibility()})) AND
@@ -74,13 +75,14 @@ export class NotificationInboxService {
         AND p.user_id=n.recipient_user_id AND p.left_at IS NULL
       JOIN chat_conversations c ON c.id=m.conversation_id
       WHERE m.id=n.chat_message_id AND m.deleted_at IS NULL AND m.sequence>p.history_from_sequence
+        AND (c.conversation_type<>'DIRECT' OR c.id=ANY(${directIdsParameter}::uuid[]))
         AND EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id=n.recipient_user_id
           AND r.role NOT IN ('GUEST','REGISTERED_USER')
           AND (c.branch_id IS NULL OR r.branch_id=c.branch_id OR r.role IN ('SUPER_ADMIN','CENTRAL_ADMIN')))
         AND NOT EXISTS (SELECT 1 FROM chat_blocks b WHERE
           (b.blocker_id=n.recipient_user_id AND b.blocked_id=m.sender_id)
           OR (b.blocker_id=m.sender_id AND b.blocked_id=n.recipient_user_id))
-    )))`;
+    )))`; }
 
   async list(userId: string, limitRaw?: string, cursor?: string) {
     const number = limitRaw === undefined ? 30 : Number(limitRaw);
@@ -93,41 +95,45 @@ export class NotificationInboxService {
         throw new BadRequestException('Invalid notification cursor');
       before = [new Date(parts[0]).toISOString(), parts[1]];
     }
+    const directIds = await eligibleDirectConversationIds(this.db,userId);
     const rows = await this.db.query(`SELECT n.id,n.category,n.action,n.message,n.destination,n.created_at,n.read_at
       FROM notification_inbox n JOIN user_accounts u ON u.id=n.recipient_user_id
       WHERE n.recipient_user_id=$1 AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL
-      AND ${this.visible} AND ($2::timestamptz IS NULL OR (n.created_at,n.id)<($2::timestamptz,$3::uuid))
-      ORDER BY n.created_at DESC,n.id DESC LIMIT $4`,[userId,before?.[0]??null,before?.[1]??null,number+1]);
+      AND ${this.visible('$5')} AND ($2::timestamptz IS NULL OR (n.created_at,n.id)<($2::timestamptz,$3::uuid))
+      ORDER BY n.created_at DESC,n.id DESC LIMIT $4`,[userId,before?.[0]??null,before?.[1]??null,number+1,directIds]);
     const items = rows.rows.slice(0,number).map(r=>({id:r.id,category:r.category,action:r.action,
       message:r.message,destination:r.destination,createdAt:r.created_at,readAt:r.read_at}));
     const last = rows.rows[number-1];
     const count = await this.db.query(`SELECT count(*)::int AS count FROM notification_inbox n
       JOIN user_accounts u ON u.id=n.recipient_user_id WHERE n.recipient_user_id=$1
       AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL
-      AND n.read_at IS NULL AND ${this.visible}`,[userId]);
+      AND n.read_at IS NULL AND ${this.visible('$2')}`,[userId,directIds]);
     return {items,unreadCount:count.rows[0].count,
       nextCursor:rows.rows.length>number ? `${new Date(last.created_at).toISOString()}|${last.id}` : null};
   }
 
   async markRead(userId:string,id:string) {
     if (!/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id)) throw new NotFoundException();
+    const directIds=await eligibleDirectConversationIds(this.db,userId);
     const updated=await this.db.query(`UPDATE notification_inbox n SET read_at=COALESCE(read_at,NOW())
-      WHERE n.id=$1 AND n.recipient_user_id=$2 AND ${this.visible} RETURNING n.id,n.read_at`,[id,userId]);
+      WHERE n.id=$1 AND n.recipient_user_id=$2 AND ${this.visible('$3')} RETURNING n.id,n.read_at`,[id,userId,directIds]);
     if(!updated.rows.length)throw new NotFoundException();
     return {id:updated.rows[0].id,readAt:updated.rows[0].read_at};
   }
 
   async markUnread(userId:string,id:string) {
     if (!/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(id)) throw new NotFoundException();
+    const directIds=await eligibleDirectConversationIds(this.db,userId);
     const updated=await this.db.query(`UPDATE notification_inbox n SET read_at=NULL
-      WHERE n.id=$1 AND n.recipient_user_id=$2 AND ${this.visible} RETURNING n.id`,[id,userId]);
+      WHERE n.id=$1 AND n.recipient_user_id=$2 AND ${this.visible('$3')} RETURNING n.id`,[id,userId,directIds]);
     if(!updated.rows.length)throw new NotFoundException();
     return {id:updated.rows[0].id,readAt:null};
   }
 
   async markAllRead(userId:string) {
+    const directIds=await eligibleDirectConversationIds(this.db,userId);
     const result=await this.db.query(`UPDATE notification_inbox n SET read_at=NOW()
-      WHERE n.recipient_user_id=$1 AND n.read_at IS NULL AND ${this.visible}`,[userId]);
+      WHERE n.recipient_user_id=$1 AND n.read_at IS NULL AND ${this.visible('$2')}`,[userId,directIds]);
     return {updated:result.rowCount};
   }
 
