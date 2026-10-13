@@ -80,7 +80,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (_push != null) { unawaited(_push!.close()); }
+    if (_push != null) { unawaited(_push!.close().then<void>((_) {}, onError: (Object _) {})); }
     _apiService.onSessionExpired = null;
     _apiService.onMfaRequired = null;
     if (widget.apiService == null) { _apiService.dispose(); }

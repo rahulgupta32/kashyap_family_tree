@@ -11,6 +11,7 @@ class FakePushSource implements PushTokenSource {
   final changes = StreamController<String>.broadcast(sync: true);
   String? token = 'fictional-provider-token-123';
   bool allowed = true;
+  bool running = false;
   int permissionRequests = 0, stops = 0;
   Future<String?> Function()? readToken;
 
@@ -20,11 +21,15 @@ class FakePushSource implements PushTokenSource {
     return allowed;
   }
   @override
-  Future<String?> currentToken() => readToken == null ? Future.value(token) : readToken!();
+  Future<String?> currentToken() async {
+    final value = readToken == null ? token : await readToken!();
+    running = true; // Models auto-init being enabled after delayed SDK work.
+    return value;
+  }
   @override
   Stream<String> get tokenChanges => changes.stream;
   @override
-  Future<void> stop() async { stops++; }
+  Future<void> stop() async { stops++; running = false; }
 }
 
 void main() {
@@ -78,6 +83,96 @@ void main() {
     service.setAuthToken('second');
     pending.complete('fictional-provider-token-123');
     expect(await enabling, false);
+    expect(requests, 0);
+  });
+
+  for (final operation in ['signOut', 'disable', 'close']) {
+    test('$operation drains delayed SDK activation before stopping it', () async {
+      final source = FakePushSource();
+      final entered = Completer<void>(), token = Completer<String?>();
+      source.readToken = () { entered.complete(); return token.future; };
+      final methods = <String>[];
+      final service = api(MockClient((request) async {
+        methods.add(request.method);
+        return jsonResponse({'success': true});
+      }))..setAuthToken('first');
+      final lifecycle = NativePushLifecycle(service, source);
+      addTearDown(() async { await lifecycle.close(); await source.changes.close(); service.dispose(); });
+      final enabling = lifecycle.enable();
+      await entered.future;
+      var stopped = false;
+      final stopping = (operation == 'signOut' ? lifecycle.signOut()
+        : operation == 'disable' ? lifecycle.disable() : lifecycle.close())
+        .then((_) => stopped = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(await lifecycle.resumeExisting(), false);
+      expect(stopped, false);
+      expect(source.stops, 0);
+      token.complete('fictional-provider-token-123');
+      expect(await enabling, false);
+      await stopping;
+      expect(source.running, false);
+      expect(source.stops, 1);
+      expect(methods, operation == 'disable' ? ['DELETE'] : isEmpty);
+      source.changes.add('fictional-provider-token-456');
+      await Future<void>.delayed(Duration.zero);
+      expect(methods, operation == 'disable' ? ['DELETE'] : isEmpty);
+    });
+  }
+
+  test('failed registration deletion still shuts down the SDK', () async {
+    final source = FakePushSource();
+    final service = api(MockClient((request) async => request.method == 'DELETE'
+      ? jsonResponse({'message': 'Unavailable'}, 503)
+      : jsonResponse({'registration': {'id': 'opaque'}})))..setAuthToken('first');
+    final lifecycle = NativePushLifecycle(service, source);
+    addTearDown(() async { await lifecycle.close(); await source.changes.close(); service.dispose(); });
+    expect(await lifecycle.enable(), true);
+    expect(source.running, true);
+    await expectLater(lifecycle.disable(), throwsA(isA<StateError>()));
+    expect(source.running, false);
+    expect(source.stops, 1);
+    expect(await lifecycle.resumeExisting(), false);
+  });
+
+  test('new explicit session activation supersedes queued old-session shutdown', () async {
+    final source = FakePushSource();
+    final entered = Completer<void>(), token = Completer<String?>();
+    source.readToken = () { entered.complete(); return token.future; };
+    final calls = <String>[];
+    final service = api(MockClient((request) async {
+      calls.add('${request.method}:${request.headers['Authorization']}');
+      return jsonResponse({'registration': {'id': 'opaque'}});
+    }))..setAuthToken('first');
+    final lifecycle = NativePushLifecycle(service, source);
+    addTearDown(() async { await lifecycle.close(); await source.changes.close(); service.dispose(); });
+    final oldEnable = lifecycle.enable();
+    await entered.future;
+    final oldStop = lifecycle.signOut();
+    service.setAuthToken('second');
+    final newEnable = lifecycle.enable();
+    source.readToken = null;
+    token.complete('fictional-provider-token-123');
+    expect(await oldEnable, false);
+    await oldStop;
+    expect(await newEnable, true);
+    expect(source.running, true);
+    expect(source.stops, 0);
+    expect(calls, ['PUT:Bearer second']);
+  });
+
+  test('closed lifecycle cannot restart permission or token acquisition', () async {
+    final source = FakePushSource();
+    var requests = 0;
+    final service = api(MockClient((_) async { requests++; return jsonResponse({}); }))..setAuthToken('first');
+    final lifecycle = NativePushLifecycle(service, source);
+    addTearDown(() async { await source.changes.close(); service.dispose(); });
+    await lifecycle.close();
+    await lifecycle.close();
+    expect(await lifecycle.resumeExisting(), false);
+    await expectLater(lifecycle.enable(), throwsStateError);
+    expect(source.permissionRequests, 0);
+    expect(source.stops, 1);
     expect(requests, 0);
   });
 
