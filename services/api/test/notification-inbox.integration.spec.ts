@@ -50,6 +50,7 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   await dispatcher.processRecord(record);
   const ownerPage=(await request(app.getHttpServer()).get('/notifications').set('Authorization',auth(owner)).expect(200)).body;
   expect(ownerPage.items).toHaveLength(1);expect(ownerPage.unreadCount).toBe(1);
+  expect(ownerPage.items[0]).not.toHaveProperty('broadcastId');
   expect(JSON.stringify(ownerPage)).not.toContain(record.entity_id); // no private claim IDs or evidence
   const id=ownerPage.items[0].id;
   await request(app.getHttpServer()).post(`/notifications/${id}/read`).set('Authorization',auth(other)).expect(404);
@@ -95,6 +96,7 @@ describe('Private durable notification inbox (real PostgreSQL and HTTP)',()=>{
   await dispatcher.processRecord(await event('CHAT_MESSAGE_CREATED',other.id,'chat_message',message));
   const page=(await inbox.list(owner.id)).items;
   const notice=page.find(n=>n.category==='CHAT');expect(notice).toBeDefined();
+  expect(notice).not.toHaveProperty('broadcastId');
   expect(JSON.stringify(page)).not.toContain('PRIVATE EVIDENCE');
   expect(JSON.stringify(page)).not.toContain(message);
   await db.query('INSERT INTO chat_blocks(blocker_id,blocked_id) VALUES($1,$2)',[owner.id,other.id]);

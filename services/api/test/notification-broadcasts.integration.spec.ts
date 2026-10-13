@@ -78,13 +78,54 @@ describe('Governed broadcast notices (disposable PostgreSQL and HTTP)', () => {
     expect(ids).not.toContain(memberB.id);
     expect(JSON.stringify(rows.rows)).not.toContain(payload.body);
     const inbox=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberA)).expect(200)).body;
-    expect(inbox.items.find((n:any)=>n.action==='NOTIFICATION_BROADCAST_CREATED')).toMatchObject({destination:'/broadcasts',category:'BROADCAST'});
+    expect(inbox.items.find((n:any)=>n.action==='NOTIFICATION_BROADCAST_CREATED')).toMatchObject({destination:'/broadcasts',category:'BROADCAST',broadcastId:created.id});
+    expect(inbox.items[0].id).not.toBe(created.id);
     const detail=(await request(app.getHttpServer()).get(`/notifications/broadcasts/${created.id}`)
       .set('Authorization',header(memberA)).expect(200)).body;
     expect(detail.body).toBe(payload.body);
     await request(app.getHttpServer()).get(`/notifications/broadcasts/${created.id}`).set('Authorization',header(memberB)).expect(404);
     await request(app.getHttpServer()).get('/notifications/broadcasts').set('Authorization',header(memberB)).expect(200)
       .then(res=>expect(res.body).toHaveLength(0));
+  });
+
+  it('routes an authenticated inbox notice to its exact source after it leaves the latest fifty broadcasts',async()=>{
+    const payload={requestId:randomUUID(),title:'Fictional older exact-source notice',body:'Fictional retained source body',scope:'BRANCH',branchId:branchA};
+    const created=(await send(branchAdmin,payload).expect(201)).body;
+    await db.query("UPDATE notification_broadcasts SET created_at=NOW()-INTERVAL '1 day' WHERE id=$1",[created.id]);
+    const record=(await db.query('SELECT * FROM audit_outbox WHERE entity_type=$1 AND entity_id=$2',['NOTIFICATION_BROADCAST',created.id])).rows[0];
+    await dispatcher.processRecord(record);
+    const newer=(await db.query(`INSERT INTO notification_broadcasts(created_by_user_id,request_id,title,body,scope,branch_id)
+      SELECT $1,uuid_generate_v4(),'Fictional newer notice '||sequence,'Fictional newer body','BRANCH',$2
+      FROM generate_series(1,50) sequence RETURNING id`,[admin.id,branchA])).rows;
+    await db.query('INSERT INTO notification_broadcast_recipients(broadcast_id,user_id) SELECT unnest($1::uuid[]),$2',[newer.map(row=>row.id),memberA.id]);
+    const latest=(await request(app.getHttpServer()).get('/notifications/broadcasts').set('Authorization',header(memberA)).expect(200)).body;
+    expect(latest).toHaveLength(50);expect(latest.some((notice:any)=>notice.id===created.id)).toBe(false);
+    await request(app.getHttpServer()).get('/notifications').expect(401);
+    const page=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberA)).expect(200)).body;
+    const notice=page.items.find((item:any)=>item.broadcastId===created.id);expect(notice).toMatchObject({category:'BROADCAST',destination:'/broadcasts'});
+    const source=(await request(app.getHttpServer()).get(`/notifications/broadcasts/${notice.broadcastId}`).set('Authorization',header(memberA)).expect(200)).body;
+    expect(source).toMatchObject({id:created.id,title:payload.title,body:payload.body});
+    await request(app.getHttpServer()).get(`/notifications/broadcasts/${notice.broadcastId}`).set('Authorization',header(memberB)).expect(404);
+    const outsiders=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberB)).expect(200)).body;
+    expect(JSON.stringify(outsiders)).not.toContain(created.id);
+  });
+
+  it('withdraws the exact inbox source ID and detail when current branch eligibility changes',async()=>{
+    const created=(await send(admin,{requestId:randomUUID(),title:'Fictional branch B exact source',body:'Fictional scoped body',scope:'BRANCH',branchId:branchB}).expect(201)).body;
+    const record=(await db.query('SELECT * FROM audit_outbox WHERE entity_type=$1 AND entity_id=$2',['NOTIFICATION_BROADCAST',created.id])).rows[0];await dispatcher.processRecord(record);
+    const page=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberB)).expect(200)).body;
+    const notice=page.items.find((item:any)=>item.broadcastId===created.id);expect(notice).toBeDefined();
+    await db.query('UPDATE user_roles SET branch_id=$2 WHERE user_id=$1 AND role=$3',[memberB.id,branchA,'VERIFIED_MEMBER']);
+    await db.query('UPDATE persons SET branch_id=$2 WHERE id=(SELECT person_id FROM user_accounts WHERE id=$1)',[memberB.id,branchA]);
+    try{
+      const hidden=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberB)).expect(200)).body;
+      expect(hidden.items.some((item:any)=>item.id===notice.id)).toBe(false);expect(JSON.stringify(hidden)).not.toContain(created.id);
+      await request(app.getHttpServer()).get(`/notifications/broadcasts/${notice.broadcastId}`).set('Authorization',header(memberB)).expect(404);
+      await request(app.getHttpServer()).post(`/notifications/${notice.id}/read`).set('Authorization',header(memberB)).expect(404);
+    }finally{
+      await db.query('UPDATE user_roles SET branch_id=$2 WHERE user_id=$1 AND role=$3',[memberB.id,branchB,'VERIFIED_MEMBER']);
+      await db.query('UPDATE persons SET branch_id=$2 WHERE id=(SELECT person_id FROM user_accounts WHERE id=$1)',[memberB.id,branchB]);
+    }
   });
 
   it('limits generations to the current branch authority and withdraws old inbox/detail access on role revocation',async()=>{
@@ -95,11 +136,12 @@ describe('Governed broadcast notices (disposable PostgreSQL and HTTP)', () => {
     const record=(await db.query('SELECT * FROM audit_outbox WHERE entity_id=$1',[created.id])).rows[0];
     await dispatcher.processRecord(record);
     const page=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberA)).expect(200)).body;
-    const notice=page.items.find((n:any)=>n.action==='NOTIFICATION_BROADCAST_CREATED');
-    expect(notice).toBeTruthy();
+    const notice=page.items.find((n:any)=>n.broadcastId===created.id);
+    expect(notice).toBeTruthy();expect(notice.broadcastId).toBe(created.id);
     await db.query('DELETE FROM user_roles WHERE user_id=$1 AND role=$2',[memberA.id,'VERIFIED_MEMBER']);
     await request(app.getHttpServer()).get(`/notifications/broadcasts/${created.id}`).set('Authorization',header(memberA)).expect(403);
-    expect((await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberA)).expect(200)).body.items).toEqual([]);
+    const hidden=(await request(app.getHttpServer()).get('/notifications').set('Authorization',header(memberA)).expect(200)).body;
+    expect(hidden.items).toEqual([]);expect(JSON.stringify(hidden)).not.toContain(created.id);
     await request(app.getHttpServer()).post(`/notifications/${notice.id}/read`).set('Authorization',header(memberA)).expect(404);
     expect((await request(app.getHttpServer()).get(`/notifications/broadcasts/${created.id}`)
       .set('Authorization',header(branchAdmin)).expect(200)).body.title).toBe(generated.title);

@@ -4,10 +4,124 @@ import 'package:http/testing.dart';
 import 'package:kashyap_mobile/screens/follow_manager_screen.dart';
 import 'package:kashyap_mobile/screens/notification_inbox_screen.dart';
 import 'package:kashyap_mobile/screens/person_search_screen.dart';
+import 'package:kashyap_mobile/screens/official_notices_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 
 void main() {
+  testWidgets('Mocked inbox forwards authenticated broadcast locator to fresh detail request', (tester) async {
+    const broadcastId = 'b273ab63-11f7-45da-bd31-dcdeef9d8e34';
+    final paths = <String>[];
+    final service = GenealogyApiService(client: MockClient((request) async {
+      paths.add(request.url.path);
+      if (request.url.path == '/notifications/preferences') {
+        return jsonResponse({'inAppEnabled':true,'workflowEnabled':true,'chatEnabled':true,'familyEventsEnabled':true});
+      }
+      if (request.url.path == '/notifications') {
+        return jsonResponse({'items':[{'id':'notice-1','message':'Exact official notice is available',
+          'destination':'/broadcasts','broadcastId':broadcastId,'createdAt':'2026-10-13T00:00:00Z','readAt':null}], 'nextCursor':null});
+      }
+      if (request.url.path == '/notifications/notice-1/read') { return jsonResponse({'id':'notice-1'}); }
+      if (request.url.path == '/notifications/broadcasts') { return jsonResponse([]); }
+      if (request.url.path == '/notifications/broadcasts/$broadcastId') {
+        return jsonResponse({'id':broadcastId,'title':'Exact official title','body':'Authorized exact notice body',
+          'createdAt':'2026-10-13T00:00:00Z'});
+      }
+      return jsonResponse({'message':'Unexpected request'},404);
+    }))..setAuthToken('inbox-session');
+    addTearDown(service.dispose);
+    addTearDown(() async { await tester.pumpWidget(const SizedBox.shrink()); await tester.pump(); });
+    await tester.pumpWidget(MaterialApp(home: NotificationInboxScreen(apiService:service)));
+    await tester.pumpAndSettle();
+    final notice = find.text('Exact official notice is available');
+    await tester.scrollUntilVisible(notice, 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    expect(notice.hitTestable(), findsOneWidget);
+    await tester.tap(notice.hitTestable());
+    await tester.pumpAndSettle();
+    expect(tester.widget<OfficialNoticesScreen>(find.byType(OfficialNoticesScreen)).initialNoticeId, broadcastId);
+    expect(paths, contains('/notifications/broadcasts/$broadcastId'));
+    expect(find.text('Authorized exact notice body'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('Mocked authenticated drawer opens official notices independently of inbox preferences', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+    final paths = <String>[];
+    final service = GenealogyApiService(client: MockClient((request) async {
+      paths.add(request.url.path);
+      if (request.url.path == '/genealogy/search') { return jsonResponse({'items':[], 'total':0,'page':1,'limit':20}); }
+      if (request.url.path == '/notifications/broadcasts') { return jsonResponse([]); }
+      return jsonResponse({'message':'Unexpected request'},404);
+    }))..setAuthToken('drawer-session');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: PersonSearchScreen(apiService:service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    final destination = find.text('प्रशासनिक सूचनाहरू (Official notices)');
+    final drawerScroll = find.descendant(of: find.byType(Drawer), matching: find.byType(Scrollable));
+    await tester.scrollUntilVisible(destination, 200, scrollable: drawerScroll.first);
+    await tester.pumpAndSettle();
+    expect(destination.hitTestable(), findsOneWidget);
+    await tester.tap(destination.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(OfficialNoticesScreen), findsOneWidget);
+    expect(paths, ['/genealogy/search', '/notifications/broadcasts']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('Mocked public drawer does not expose official notices', (tester) async {
+    final service = GenealogyApiService(client: MockClient((request) async => jsonResponse({'items':[], 'total':0,'page':1,'limit':20})));
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: PersonSearchScreen(apiService:service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('प्रशासनिक सूचनाहरू (Official notices)'), findsNothing);
+  });
+
+  testWidgets('Mocked official inbox notice opens authorized notice destination after read', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+    final paths = <String>[];
+    final service = GenealogyApiService(client: MockClient((request) async {
+      paths.add(request.url.path);
+      expect(request.headers['Authorization'], 'Bearer inbox-session');
+      if (request.url.path == '/notifications/preferences') {
+        return jsonResponse({'inAppEnabled':true,'workflowEnabled':true,'chatEnabled':true,'familyEventsEnabled':true});
+      }
+      if (request.url.path == '/notifications') {
+        return jsonResponse({'items':[{'id':'notice-1','message':'Official notice is available',
+          'destination':'/broadcasts','createdAt':'2026-10-13T00:00:00Z','readAt':null}], 'nextCursor':null});
+      }
+      if (request.url.path == '/notifications/notice-1/read') { return jsonResponse({'id':'notice-1'}); }
+      if (request.url.path == '/notifications/broadcasts') { return jsonResponse([]); }
+      return jsonResponse({'message':'Unexpected request'},404);
+    }))..setAuthToken('inbox-session');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: NotificationInboxScreen(apiService:service)));
+    await tester.pumpAndSettle();
+    final notice = find.text('Official notice is available');
+    await tester.scrollUntilVisible(notice, 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    expect(notice.hitTestable(), findsOneWidget);
+    await tester.tap(notice.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(OfficialNoticesScreen), findsOneWidget);
+    expect(paths.indexOf('/notifications/notice-1/read'), lessThan(paths.indexOf('/notifications/broadcasts')));
+    expect(find.textContaining('No official notices available'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('Mocked inbox workflow opens a person picker after marking the notice read', (tester) async {
     var readRequests = 0;
     final service = GenealogyApiService(client: MockClient((request) async {

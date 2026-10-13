@@ -96,13 +96,20 @@ export class NotificationInboxService {
       before = [new Date(parts[0]).toISOString(), parts[1]];
     }
     const directIds = await eligibleDirectConversationIds(this.db,userId);
-    const rows = await this.db.query(`SELECT n.id,n.category,n.action,n.message,n.destination,n.created_at,n.read_at
+    const rows = await this.db.query(`SELECT n.id,n.category,n.action,n.message,n.destination,n.created_at,n.read_at,
+      CASE WHEN n.category='BROADCAST' AND n.action='NOTIFICATION_BROADCAST_CREATED' THEN (
+        SELECT b.id FROM audit_outbox o JOIN notification_broadcasts b ON b.id::text=o.entity_id
+        JOIN notification_broadcast_recipients r ON r.broadcast_id=b.id AND r.user_id=n.recipient_user_id
+        WHERE o.id=n.outbox_id AND o.action='NOTIFICATION_BROADCAST_CREATED' AND o.entity_type='NOTIFICATION_BROADCAST'
+          AND ${broadcastEligibility()}
+      ) END AS broadcast_id
       FROM notification_inbox n JOIN user_accounts u ON u.id=n.recipient_user_id
       WHERE n.recipient_user_id=$1 AND u.is_active=TRUE AND u.is_suspended=FALSE AND u.deleted_at IS NULL
       AND ${this.visible('$5')} AND ($2::timestamptz IS NULL OR (n.created_at,n.id)<($2::timestamptz,$3::uuid))
       ORDER BY n.created_at DESC,n.id DESC LIMIT $4`,[userId,before?.[0]??null,before?.[1]??null,number+1,directIds]);
     const items = rows.rows.slice(0,number).map(r=>({id:r.id,category:r.category,action:r.action,
-      message:r.message,destination:r.destination,createdAt:r.created_at,readAt:r.read_at}));
+      message:r.message,destination:r.destination,createdAt:r.created_at,readAt:r.read_at,
+      ...(r.category==='BROADCAST'&&r.broadcast_id ? {broadcastId:r.broadcast_id} : {})}));
     const last = rows.rows[number-1];
     const count = await this.db.query(`SELECT count(*)::int AS count FROM notification_inbox n
       JOIN user_accounts u ON u.id=n.recipient_user_id WHERE n.recipient_user_id=$1

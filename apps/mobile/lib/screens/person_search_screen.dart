@@ -14,6 +14,7 @@ import 'cultural_content_screen.dart';
 import 'chat_screen.dart';
 import 'household_map_screen.dart';
 import 'notification_inbox_screen.dart';
+import 'official_notices_screen.dart';
 import 'follow_manager_screen.dart';
 import 'authenticator_screen.dart';
 
@@ -215,6 +216,10 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
             if (widget.apiService.authToken != null)
               ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('अनुसरण (Following)'), onTap: () {
                 Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => FollowManagerScreen(apiService: widget.apiService)));
+              }),
+            if (widget.apiService.authToken != null)
+              ListTile(leading: const Icon(Icons.campaign), title: const Text('प्रशासनिक सूचनाहरू (Official notices)'), onTap: () {
+                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => OfficialNoticesScreen(apiService: widget.apiService)));
               }),
             ListTile(
               leading: const Icon(Icons.calendar_month, color: Colors.deepOrange),

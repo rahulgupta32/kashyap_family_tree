@@ -4,6 +4,7 @@ import 'chat_screen.dart';
 import 'community_screen.dart';
 import 'calendar_events_screen.dart';
 import 'person_search_screen.dart';
+import 'official_notices_screen.dart';
 
 class NotificationInboxScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -44,6 +45,8 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       if(target=='/community'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CommunityScreen(apiService:widget.apiService)));}
       else if(target=='/chat'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>ChatScreen(apiService:widget.apiService)));}
       else if(target=='/calendar'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));}
+      else if(target=='/broadcasts'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>OfficialNoticesScreen(
+        apiService:widget.apiService, initialNoticeId:notice['broadcastId'] is String?notice['broadcastId'] as String:null)));}
       else if(target=='/claims'||target=='/change-requests'){
         // Notifications intentionally omit private person IDs. Let the member
         // select an authorized person before opening a governed workflow.
