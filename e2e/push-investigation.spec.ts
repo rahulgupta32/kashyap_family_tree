@@ -17,7 +17,11 @@ const refresh = (page: Page) => panel(page).getByRole('button', { name: 'पु�
 const inspect = (page: Page, id = first) => panel(page).getByRole('button', { name: `Inspect push dispatch ${id}`, exact: true });
 
 test('Actual investigation API requires verified MFA and branch reviewers cannot see the panel', async ({ page, browser }) => {
-  await login(page); await page.goto('/audit');
+  await login(page);
+  // Page restoration rotates credentials. Wait for the panel's current-session denial before reading the token.
+  const denied = page.waitForResponse(response => response.url() === `${API}/audit/delivery/pushes` &&
+    response.request().method() === 'GET' && response.status() === 403);
+  await page.goto('/audit'); await denied;
   expect((await page.request.get(`${API}/audit/delivery/pushes`, { headers: await headers(page) })).status()).toBe(403);
   await expect(panel(page).getByRole('alert')).toContainText('Push investigation is unavailable');
   await expect(inspect(page)).toHaveCount(0);
