@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, Header, Query, UseGuards, ServiceUnavailableException } from '@nestjs/common';
 import { AuditRecoveryService } from './audit-recovery.service';
+import { PushInvestigationService } from './push-investigation.service';
 import { AuditDeliveryService } from './audit-delivery.service';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuditService } from './audit.service';
@@ -11,7 +12,12 @@ import { AuditRepository } from '../../database/repositories/audit.repository';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 @ApiTags('Audit Logs') @ApiBearerAuth() @Controller('audit') @UseGuards(JwtAuthGuard, RolesGuard)
 export class AuditController {
- constructor(private readonly audit:AuditService, private readonly records:AuditRepository,private readonly delivery:AuditDeliveryService,private readonly recovery:AuditRecoveryService){}
+ constructor(private readonly audit:AuditService, private readonly records:AuditRepository,private readonly delivery:AuditDeliveryService,private readonly recovery:AuditRecoveryService,
+  private readonly pushes:PushInvestigationService){}
+ @Get('delivery/pushes') @Roles(Role.SUPER_ADMIN) @Header('Cache-Control','no-store')
+ pushList(@CurrentUser() user:AuthenticatedUser,@Query() q:Record<string,unknown>){return this.pushes.list(user,q);}
+ @Get('delivery/pushes/:id') @Roles(Role.SUPER_ADMIN) @Header('Cache-Control','no-store')
+ pushDetail(@CurrentUser() user:AuthenticatedUser,@Param('id') id:string){return this.pushes.detail(user,id);}
  @Get('delivery/recovery') @Roles(Role.SUPER_ADMIN) @Header('Cache-Control','no-store')
  recoveryList(@CurrentUser() user:AuthenticatedUser){return this.recovery.list(user);}
  @Post('delivery/:id/recovery') @Roles(Role.SUPER_ADMIN) @Header('Cache-Control','no-store')

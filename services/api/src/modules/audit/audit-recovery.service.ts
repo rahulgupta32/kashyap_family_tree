@@ -4,7 +4,7 @@ import { DatabaseService } from '../../database/database.service';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { AuditRepository } from '../../database/repositories/audit.repository';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
-import { privilegedSessionExpired } from '../auth/privileged-session.policy';
+import { requireOperationalReview } from '../auth/operational-review-access';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 @Injectable()
@@ -14,19 +14,8 @@ export class AuditRecoveryService {
   if(typeof value!=='string'||!uuid.test(value))throw new BadRequestException('Invalid recovery identifier');
   return value.toLowerCase();
  }
- private async authorized(tx:any,user:AuthenticatedUser){
-  await tx.query("SELECT pg_advisory_xact_lock(hashtext('authenticator:' || $1::text))",[user.id]);
-  const account=(await tx.query('SELECT * FROM user_accounts WHERE id=$1 FOR SHARE',[user.id])).rows[0];
-  const session=(await tx.query('SELECT * FROM user_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE',[user.sessionId,user.id])).rows[0];
-  const roles=(await tx.query('SELECT role FROM user_roles WHERE user_id=$1 FOR SHARE',[user.id])).rows.map((r:any)=>r.role);
-  const factor=(await tx.query('SELECT generation,enabled_at FROM account_authenticators WHERE user_id=$1 FOR SHARE',[user.id])).rows[0];
-  if(!account?.is_active||account.is_suspended||account.deleted_at||!session||session.revoked_at||new Date(session.expires_at).getTime()<=Date.now()
-   ||!roles.includes(Role.SUPER_ADMIN)||privilegedSessionExpired(roles,session.authenticated_at))throw new ForbiddenException('Current Super Admin authority and fresh authentication required');
-  // This sensitive recovery operation requires MFA even for non-production fixtures.
-  if(!factor?.enabled_at||!session.mfa_verified_at||session.mfa_generation!==factor.generation)throw new ForbiddenException('Current authenticator verification required');
- }
  private async transaction<T>(user:AuthenticatedUser,work:(tx:any)=>Promise<T>):Promise<T>{
-  try{return await this.db.transaction(async tx=>{await this.authorized(tx,user);return work(tx);});}
+  try{return await this.db.transaction(async tx=>{await requireOperationalReview(tx,user);return work(tx);});}
   catch(error){if(error instanceof HttpException)throw error;throw new ServiceUnavailableException({message:'Recovery result is unconfirmed. Refresh before retrying.',messageNepali:'पुनः प्रयासको नतिजा पुष्टि भएको छैन। अवस्था ताजा गरी पुनः जाँच गर्नुहोस्।'});}
  }
  async list(user:AuthenticatedUser){

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Role } from '@kashyap/contracts';
 import { useAuth } from '../context/auth-context';
 import { AuditRecoveryPanel } from './audit-recovery-panel';
+import { PushInvestigationPanel } from './push-investigation-panel';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
 const pushMetrics = [
@@ -129,5 +130,5 @@ export function AuditDeliveryPanel() {
         <p className="text-sm">Counts cover open push dispatches across all API processes. Worker activity describes this process only. Incident routing and reviewed provider recovery still require operational configuration.</p>
       </section>
     </>}
-  </section><AuditRecoveryPanel key={user?.id} /></>;
+  </section><PushInvestigationPanel key={`push-${user?.id}`} /><AuditRecoveryPanel key={user?.id} /></>;
 }
