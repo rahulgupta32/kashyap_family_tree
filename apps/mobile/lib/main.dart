@@ -4,6 +4,8 @@ import 'services/genealogy_api_service.dart';
 import 'services/api_endpoint_config.dart';
 import 'services/firebase_push_source.dart';
 import 'services/native_push_lifecycle.dart';
+import 'services/native_push_inbox_router.dart';
+import 'screens/native_push_inbox_entry.dart';
 import 'theme/app_theme.dart';
 import 'screens/person_search_screen.dart';
 import 'screens/sign_in_screen.dart';
@@ -25,7 +27,8 @@ void main() {
 class KashyapApp extends StatefulWidget {
   final String? initialToken;
   final GenealogyApiService? apiService;
-  const KashyapApp({super.key, this.initialToken, this.apiService});
+  final PushInboxEventSource? pushInboxSource;
+  const KashyapApp({super.key, this.initialToken, this.apiService, this.pushInboxSource});
 
   @override
   State<KashyapApp> createState() => _KashyapAppState();
@@ -34,6 +37,7 @@ class KashyapApp extends StatefulWidget {
 class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   late final GenealogyApiService _apiService;
   NativePushLifecycle? _push;
+  NativePushInboxRouter? _pushInbox;
   bool _loading = true;
   bool _browsePublic = false;
   int _sessionEpoch = 0;
@@ -43,7 +47,10 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _apiService = widget.apiService ?? GenealogyApiService();
-    if (firebasePushConfigured) { _push = NativePushLifecycle(_apiService, FirebasePushSource()); }
+    final firebaseSource = firebasePushConfigured ? FirebasePushSource() : null;
+    if (firebaseSource != null) { _push = NativePushLifecycle(_apiService, firebaseSource); }
+    final inboxSource = widget.pushInboxSource ?? firebaseSource;
+    if (inboxSource != null) { _pushInbox = NativePushInboxRouter(_apiService, inboxSource); }
     _apiService.onSessionExpired = () {
       if (_push != null) { unawaited(_push!.signOut().then<void>((_) {}, onError: (Object _) {})); }
       if (mounted) { setState(() { _browsePublic = false; _sessionEpoch++; }); }
@@ -55,6 +62,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
       _apiService.setAuthToken(widget.initialToken);
       _loading = false;
       _resumePush();
+      _startInboxEvents();
     } else {
       _restoreSession();
     }
@@ -63,7 +71,11 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   Future<void> _restoreSession() async {
     try { if (await _apiService.restoreSession()) { _resumePush(); } }
     catch (_) { _apiService.setAuthToken(null); }
-    if (mounted) { setState(() => _loading = false); }
+    if (mounted) { setState(() => _loading = false); _startInboxEvents(); }
+  }
+
+  void _startInboxEvents() {
+    if (_pushInbox != null) { unawaited(_pushInbox!.start()); }
   }
 
   void _resumePush() {
@@ -81,6 +93,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_push != null) { unawaited(_push!.close().then<void>((_) {}, onError: (Object _) {})); }
+    if (_pushInbox != null) { unawaited(_pushInbox!.close().then<void>((_) {}, onError: (Object _) {})); }
     _apiService.onSessionExpired = null;
     _apiService.onMfaRequired = null;
     if (widget.apiService == null) { _apiService.dispose(); }
@@ -97,13 +110,17 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
       home: _loading ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : _apiService.authToken != null || _browsePublic
           ? (_apiService.authToken != null
-              ? AuthenticatorScreen(apiService: _apiService, child: () => _personSearch())
+              ? AuthenticatorScreen(apiService: _apiService, child: () => _authenticatedSearch())
               : _personSearch())
           : SignInScreen(apiService: _apiService,
               onSignedIn: () { setState(() { _browsePublic = false; _sessionEpoch++; }); _resumePush(); },
               onBrowsePublic: () => setState(() => _browsePublic = true)),
     );
   }
+
+  Widget _authenticatedSearch() => _pushInbox == null ? _personSearch()
+    : NativePushInboxEntry(apiService: _apiService, router: _pushInbox!,
+        onEnablePush: _push?.enable, onDisablePush: _push?.disable, child: _personSearch());
 
   Widget _personSearch() => PersonSearchScreen(apiService: _apiService,
               onSignIn: () => setState(() => _browsePublic = false),

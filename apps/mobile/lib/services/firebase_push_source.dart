@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
 import 'native_push_lifecycle.dart';
+import 'native_push_inbox_router.dart';
 
 // These are Firebase app identifiers, not server credentials. They must match
 // the approved native bundle/application IDs before enabling push on a device.
@@ -16,7 +17,7 @@ bool get firebasePushConfigured => !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) &&
     _apiKey.isNotEmpty && _appId.isNotEmpty && _senderId.isNotEmpty && _projectId.isNotEmpty;
 
-class FirebasePushSource implements PushTokenSource {
+class FirebasePushSource implements PushTokenSource, PushInboxEventSource {
   Future<void>? _initialization;
 
   Future<void> _initialize() async {
@@ -52,6 +53,19 @@ class FirebasePushSource implements PushTokenSource {
 
   @override
   Stream<String> get tokenChanges => FirebaseMessaging.instance.onTokenRefresh;
+
+  @override
+  Future<bool> initialOpen() async {
+    await _initialize();
+    return await FirebaseMessaging.instance.getInitialMessage() != null;
+  }
+
+  // Strip data, title, body and any identifiers at the SDK boundary.
+  @override
+  Stream<void> get opened => FirebaseMessaging.onMessageOpenedApp.map<void>((_) {});
+
+  @override
+  Stream<void> get foreground => FirebaseMessaging.onMessage.map<void>((_) {});
 
   @override
   Future<void> stop() async {
