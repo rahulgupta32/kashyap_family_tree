@@ -29,6 +29,22 @@ def evidence():
 
 
 class ExplicitConnectionTests(unittest.TestCase):
+    def test_snapshot_json_is_separate_from_real_stderr_and_nonzero_exit_is_not_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(connection, 'ROOT', Path(tmp)), patch.object(connection, 'RESULTS', Path(tmp)):
+            (Path(tmp) / 'apps/mobile').mkdir(parents=True)
+            data = [{'processID': 123, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST APP_VERIFIED'}]
+            code = f'import sys,json;print("getpwuid_r diagnostic",file=sys.stderr);print(json.dumps({data!r}))'
+            report = {'phases': []}
+            stdout = connection.snapshot_phase(report, 'test-evidence', [sys.executable, '-c', code], 3)
+            self.assertEqual(connection.owned_messages(stdout, 123, 0), ['flutter: IOS_TEST APP_VERIFIED'])
+            self.assertIn('getpwuid_r', (Path(tmp) / 'ios-test-evidence-stderr.log').read_text())
+            self.assertEqual(report['phases'][0]['status'], 'PASSED')
+            report = {'phases': []}
+            with self.assertRaises(connection.ConnectionFailure):
+                connection.snapshot_phase(report, 'test-evidence', [sys.executable, '-c', code + ';raise SystemExit(7)'], 3)
+            self.assertEqual(report['phases'][0]['status'], 'FAILED')
+            self.assertEqual(report['phases'][0]['exitCode'], 7)
+
     def test_body_evidence_excludes_other_processes_and_prelaunch_messages(self):
         data = [{'processID': 123, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST APP_VERIFIED'},
                 {'processID': 456, 'timestamp': '2026-01-01T00:00:01+00:00', 'eventMessage': 'flutter: IOS_TEST KEYCHAIN_VERIFIED'},

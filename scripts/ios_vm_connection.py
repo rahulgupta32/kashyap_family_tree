@@ -149,6 +149,33 @@ def command_phase(report, name, command, timeout, echo=False):
     return capture
 
 
+def snapshot_phase(report, name, command, timeout):
+    """Keep log's UID/diagnostic stderr separate from its machine-readable JSON."""
+    started, failure = time.monotonic(), None
+    emit(f'IOS_CONNECTION {name} START deadline={timeout}s\n'.encode())
+    try:
+        result = subprocess.run(command, cwd=ROOT / 'apps/mobile', capture_output=True,
+                                text=True, timeout=timeout)
+        (RESULTS / f'ios-{name}.log').write_text(result.stdout)
+        (RESULTS / f'ios-{name}-stderr.log').write_text(result.stderr)
+        if result.returncode != 0:
+            raise ConnectionFailure(name, exit_code=result.returncode)
+        return result.stdout
+    except subprocess.TimeoutExpired as error:
+        failure = ConnectionFailure(name, True)
+        for suffix, data in [('', error.stdout), ('-stderr', error.stderr)]:
+            (RESULTS / f'ios-{name}{suffix}.log').write_text(
+                data.decode(errors='replace') if isinstance(data, bytes) else data or '')
+        raise failure from error
+    except (ConnectionFailure, RuntimeError, OSError) as error:
+        failure = error if isinstance(error, ConnectionFailure) else ConnectionFailure(name)
+        if failure is error:
+            raise
+        raise failure from error
+    finally:
+        record_phase(report, name, started, failure)
+
+
 def owned_messages(stdout, pid, since):
     entries = json.loads(stdout)
     if not isinstance(entries, list):
@@ -255,10 +282,10 @@ def run(simulator):
         command_phase(report, 'test-driver', ['flutter', 'drive', '-d', simulator, '--no-pub',
             '--target=integration_test/ios_startup_test.dart', '--driver=test_driver/ios_startup_driver.dart',
             '--timeout=180', '--use-existing-app=' + uri], 180, echo=True)
-        snapshot = command_phase(report, 'test-evidence', ['xcrun', 'simctl', 'spawn', simulator,
+        snapshot = snapshot_phase(report, 'test-evidence', ['xcrun', 'simctl', 'spawn', simulator,
             'log', 'show', '--last', '5m', '--style', 'json', '--predicate',
             'process == "Runner" AND eventMessage CONTAINS "IOS_TEST"'], 10)
-        messages = owned_messages(snapshot.path.read_text(), pid, console.started_at)
+        messages = owned_messages(snapshot, pid, console.started_at)
         report['bodyMarkers'] = [marker for marker in MARKERS if any('IOS_TEST ' + marker in m for m in messages)]
         for marker in report['bodyMarkers']:
             emit(('IOS_TEST ' + marker + '\n').encode())
