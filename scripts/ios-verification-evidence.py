@@ -86,7 +86,8 @@ def record():
         'supportedDeviceMatrixVerified': False,
         'nativeSourceHashes': hashes,
         'dependencyLockHashes': {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest()
-                                for p in ['apps/mobile/pubspec.lock', 'apps/mobile/ios/Podfile.lock']},
+                                for p in ['apps/mobile/pubspec.lock', 'apps/mobile/ios/Podfile.lock'] +
+                                [p for p in files if p.endswith('/Package.resolved')]},
         'simulatorPhases': phases,
     }
     (RESULTS / 'ios-verification.json').write_text(json.dumps(report, indent=2) + '\n')

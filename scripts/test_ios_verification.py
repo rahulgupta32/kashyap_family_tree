@@ -25,15 +25,20 @@ evidence = module('ios_evidence', 'ios-verification-evidence.py')
 
 class BoundedRunnerTests(unittest.TestCase):
     def test_runtime_selection_is_order_independent_and_skips_unavailable(self):
-        runtimes = [{'identifier': f'com.apple.CoreSimulator.SimRuntime.iOS-{n}-0',
-                     'version': f'{n}.0', 'isAvailable': n != 99} for n in (18, 26, 99)]
+        runtimes = [{'identifier': 'com.apple.CoreSimulator.SimRuntime.iOS-18-5',
+                     'version': '18.5', 'isAvailable': True},
+                    {'identifier': 'com.apple.CoreSimulator.SimRuntime.iOS-26-2',
+                     'version': '26.2', 'isAvailable': True}]
         devices = {r['identifier']: [{'name': 'iPhone 16 Pro', 'udid': 'fixture',
-                    'isAvailable': True, 'deviceTypeIdentifier': 'phone'}] for r in runtimes}
-        expected = (runtimes[1]['identifier'], 'phone')
+                    'isAvailable': True, 'deviceTypeIdentifier': 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro'}] for r in runtimes}
+        expected = (runtimes[0]['identifier'], 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro')
         self.assertEqual(runner.select_device({'runtimes': runtimes, 'devices': devices}), expected)
         self.assertEqual(runner.select_device({'runtimes': list(reversed(runtimes)), 'devices': devices}), expected)
         with self.assertRaises(RuntimeError):
             runner.select_device({'runtimes': runtimes, 'devices': {}})
+        runtimes[0]['isAvailable'] = False
+        with self.assertRaisesRegex(RuntimeError, 'Pinned iOS'):
+            runner.select_device({'runtimes': runtimes, 'devices': devices})
 
     def test_timeout_classification_does_not_blame_app_before_discovery(self):
         failure = runner.PhaseFailure('startup-test', True)

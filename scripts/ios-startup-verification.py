@@ -36,7 +36,7 @@ def stop_group(process):
     process.wait(timeout=5)
 
 
-def run_phase(name, command, timeout, cwd=ROOT, report=None):
+def run_phase(name, command, timeout, cwd=ROOT, report=None, echo_output=True):
     RESULTS.mkdir(exist_ok=True)
     path = RESULTS / f'ios-{name}.log'
     started = time.monotonic()
@@ -48,8 +48,10 @@ def run_phase(name, command, timeout, cwd=ROOT, report=None):
         heartbeat = started
         try:
             while process.poll() is None:
-                sys.stdout.buffer.write(reader.read())
-                sys.stdout.flush()
+                data = reader.read()
+                if echo_output:
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.flush()
                 now = time.monotonic()
                 if now - started >= timeout:
                     timed_out = True
@@ -60,8 +62,10 @@ def run_phase(name, command, timeout, cwd=ROOT, report=None):
                 time.sleep(0.25)
         finally:
             stop_group(process)
-            sys.stdout.buffer.write(reader.read())
-            sys.stdout.flush()
+            data = reader.read()
+            if echo_output:
+                sys.stdout.buffer.write(data)
+                sys.stdout.flush()
     outcome = {'phase': name, 'status': 'TIMEOUT' if timed_out else
                ('PASSED' if process.returncode == 0 else 'FAILED'),
                'exitCode': process.returncode, 'deadlineSeconds': timeout,
@@ -76,15 +80,15 @@ def run_phase(name, command, timeout, cwd=ROOT, report=None):
 
 
 def select_device(inventory):
-    runtimes = [r for r in inventory['runtimes'] if r.get('isAvailable') and
-                r['identifier'].startswith('com.apple.CoreSimulator.SimRuntime.iOS-')]
-    for runtime in sorted(runtimes, key=lambda r: tuple(map(int, re.findall(r'\d+', r['version']))), reverse=True):
-        phones = [d for d in inventory['devices'].get(runtime['identifier'], [])
-                  if d.get('isAvailable') and d['name'].startswith('iPhone')]
-        if phones:
-            device = sorted(phones, key=lambda d: (d['name'], d['udid']))[0]
-            return runtime['identifier'], device['deviceTypeIdentifier']
-    raise RuntimeError('No available iPhone runtime/device pair')
+    # Keep the verified smoke-test matrix stable across hosted image updates.
+    runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-18-5'
+    device_type = 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro'
+    if not any(r['identifier'] == runtime and r.get('isAvailable') for r in inventory['runtimes']):
+        raise RuntimeError('Pinned iOS 18.5 runtime is unavailable; review the test matrix')
+    if not any(d.get('isAvailable') and d.get('deviceTypeIdentifier') == device_type
+               for d in inventory['devices'].get(runtime, [])):
+        raise RuntimeError('Pinned iPhone 16 Pro device type is unavailable')
+    return runtime, device_type
 
 
 def classify_failure(failure, log):
@@ -114,7 +118,7 @@ def diagnostics(simulator):
                       str(RESULTS / 'ios-failure.png')], 15)]
     for name, command, timeout in commands:
         try:
-            run_phase(name, command, timeout)
+            run_phase(name, command, timeout, echo_output=False)
         except (PhaseFailure, OSError):
             pass  # Diagnostics must never replace the original failure.
 
@@ -128,7 +132,7 @@ def main():
     try:
         if source != os.environ.get('KASHYAP_SOURCE_HEAD_SHA'):
             raise RuntimeError('Simulator checkout differs from requested source')
-        inventory = json.loads(run_phase('simulators', ['xcrun', 'simctl', 'list', '--json'], 30, report=report))
+        inventory = json.loads(run_phase('simulators', ['xcrun', 'simctl', 'list', '--json'], 30, report=report, echo_output=False))
         runtime, device_type = select_device(inventory)
         report.update(runtime=runtime, deviceType=device_type)
         name = 'Kashyap-CI-' + os.environ.get('GITHUB_RUN_ID', 'local')
@@ -140,10 +144,11 @@ def main():
         (RESULTS / 'ios-simulator-id.txt').write_text(simulator + '\n')
         run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
         run_phase('simulator-bootstatus', ['xcrun', 'simctl', 'bootstatus', simulator, '-b'], 180, report=report)
-        run_phase('simulator-ready', ['xcrun', 'simctl', 'spawn', simulator, 'launchctl', 'print', 'system'], 30, report=report)
-        discovered = json.loads(run_phase('flutter-devices', ['flutter', 'devices', '--machine'], 60, report=report))
-        if not any(d['id'] == simulator for d in discovered):
-            raise RuntimeError('Booted simulator is absent from Flutter device discovery')
+        run_phase('simulator-ready', ['xcrun', 'simctl', 'spawn', simulator, 'launchctl', 'getenv', 'SIMULATOR_UDID'], 30, report=report)
+        discovered = json.loads(run_phase('simulator-state', ['xcrun', 'simctl', 'list', 'devices', 'booted', '--json'], 30, report=report))
+        if not any(d['udid'] == simulator and d['state'] == 'Booted'
+                   for values in discovered['devices'].values() for d in values):
+            raise RuntimeError('Created simulator is absent from booted-device inventory')
         log = run_phase('startup-test', ['flutter', 'test', 'integration_test/ios_startup_test.dart',
                         '-d', simulator, '--no-pub', '--timeout', '120s', '--verbose',
                         '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
