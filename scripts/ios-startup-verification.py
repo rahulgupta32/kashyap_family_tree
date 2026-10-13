@@ -135,19 +135,20 @@ def main():
         inventory = json.loads(run_phase('simulators', ['xcrun', 'simctl', 'list', '--json'], 30, report=report, echo_output=False))
         runtime, device_type = select_device(inventory)
         report.update(runtime=runtime, deviceType=device_type)
-        name = 'Kashyap-CI-' + os.environ.get('GITHUB_RUN_ID', 'local')
-        simulator = run_phase('simulator-create', ['xcrun', 'simctl', 'create', name,
-                              device_type, runtime], 60, report=report).strip()
+        # The hosted runner itself is disposable. Its pre-created simulator is
+        # the fixture used by prior green runs; a fresh device adds a second
+        # cold OS provisioning workload after compilation on the small VM.
+        device = sorted((d for d in inventory['devices'][runtime]
+                         if d.get('isAvailable') and d.get('deviceTypeIdentifier') == device_type),
+                        key=lambda d: d['udid'])[0]
+        simulator = device['udid']
         if not re.fullmatch(r'[0-9A-Fa-f-]{36}', simulator):
             raise RuntimeError('Unexpected simulator identifier')
         report['simulatorId'] = simulator
         (RESULTS / 'ios-simulator-id.txt').write_text(simulator + '\n')
-        run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
+        if device['state'] != 'Booted':
+            run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
         run_phase('simulator-bootstatus', ['xcrun', 'simctl', 'bootstatus', simulator, '-b'], 180, report=report)
-        discovered = json.loads(run_phase('simulator-state', ['xcrun', 'simctl', 'list', 'devices', 'booted', '--json'], 30, report=report))
-        if not any(d['udid'] == simulator and d['state'] == 'Booted'
-                   for values in discovered['devices'].values() for d in values):
-            raise RuntimeError('Created simulator is absent from booted-device inventory')
         log = run_phase('startup-test', ['flutter', 'test', 'integration_test/ios_startup_test.dart',
                         '-d', simulator, '--no-pub', '--timeout', '5m', '--verbose',
                         '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
@@ -168,8 +169,7 @@ def main():
         diagnostics(simulator)
     finally:
         if simulator:
-            for phase, command in [('simulator-shutdown', ['xcrun', 'simctl', 'shutdown', simulator]),
-                                   ('simulator-delete', ['xcrun', 'simctl', 'delete', simulator])]:
+            for phase, command in [('simulator-shutdown', ['xcrun', 'simctl', 'shutdown', simulator])]:
                 try:
                     run_phase(phase, command, 20)
                 except (PhaseFailure, OSError):
