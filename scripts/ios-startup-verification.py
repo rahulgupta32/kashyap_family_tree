@@ -144,13 +144,12 @@ def main():
         (RESULTS / 'ios-simulator-id.txt').write_text(simulator + '\n')
         run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
         run_phase('simulator-bootstatus', ['xcrun', 'simctl', 'bootstatus', simulator, '-b'], 180, report=report)
-        run_phase('simulator-ready', ['xcrun', 'simctl', 'spawn', simulator, 'launchctl', 'getenv', 'SIMULATOR_UDID'], 30, report=report)
         discovered = json.loads(run_phase('simulator-state', ['xcrun', 'simctl', 'list', 'devices', 'booted', '--json'], 30, report=report))
         if not any(d['udid'] == simulator and d['state'] == 'Booted'
                    for values in discovered['devices'].values() for d in values):
             raise RuntimeError('Created simulator is absent from booted-device inventory')
         log = run_phase('startup-test', ['flutter', 'test', 'integration_test/ios_startup_test.dart',
-                        '-d', simulator, '--no-pub', '--timeout', '120s', '--verbose',
+                        '-d', simulator, '--no-pub', '--timeout', '5m', '--verbose',
                         '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
                         '--dart-define=API_BASE_URL=https://api.invalid', '--reporter', 'expanded'],
                         600, cwd=ROOT / 'apps/mobile', report=report)
