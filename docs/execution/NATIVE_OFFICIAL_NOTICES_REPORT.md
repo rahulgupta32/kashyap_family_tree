@@ -22,6 +22,16 @@ The authenticated inbox adds the locator only for BROADCAST rows whose immutable
 
 Previous batch `45f9a88f5388ab1c0c0550d58554eb13a473a11b` is fully CI verified: all six general jobs in `38451399101` and native iOS `38451399076` succeeded. Logs confirm 419 unit, 540 general integration, 61 browser, 131 Flutter and two Android/live-API cases, plus storage/scanner/search/restore/build/audit gates. This previous-source evidence is preserved, not presented as verification of the new viewer or locator projection.
 
+## Interrupted-run recovery and demonstrated Android fixture correction
+
+Recovered published source `02dd4cc8166371f209244069bc83b6a6efcaaaf1`, tree `c7870882874009bd339b8cf047e60313b4c66126`. The primary checkout was clean. All eight retained announcement implementation/test files in the separate notices checkout match the committed bytes; its report is an earlier version. That checkout remains untouched. No implementation was duplicated.
+
+PR CI `38454312065` passed five jobs: Flutter analysis and all 153 mocked native tests; platform typechecking/builds/audit, 419 unit, 542 general PostgreSQL/Redis and 61 browser cases; private storage (all ten cases skipped in the general suite pass here); live scanner; fictional search benchmark. The downloaded restore artifact `11840874710` matches recorded ZIP SHA-256 `519cd508f9477d605d348932bdd10267b02ec79a62b9205a3ad3849574080361` and reports PASSED, 82 tables/59 migrations, no schema/record mismatch, retained audit/provider/session protections and successful cleanup. Production acceptance/PITR/RPO/RTO remain false.
+
+Android failed in the existing M4 workflow fixture after real OTP sign-in and encrypted session persistence: `drawer` called `press` for Profile Privacy, which called `tester.element` before the lazily built drawer row existed (`StateError: No element`, original lines 77/94/141). Adding the notice entry moved this row outside the initial viewport. The separate authenticator device scenario passed. The correction scrolls the drawer's own Scrollable until its labelled row is built, settles layout, then uses the unchanged hit-testable real-tap helper. It preserves every existing business assertion and production behavior; no emulator, dependency, native or workflow configuration changes. This failed run remains historical failure, never a full pass.
+
+Resumed local API TypeScript and 22 focused direct-safety/notification regressions, release/workbook validators and whitespace checks passed. The correction's automatic exact-source Flutter/Android/platform/iOS CI is required before closing the batch. Source-bound final results are recorded in PR #5 to preserve the verified head without starting documentation-only build runs. Inspect those comments when resuming; do not infer success from this report or publication.
+
 ## Remaining limits
 
 Legacy inbox responses without a locator provide the list destination only. The latest-50 list does not expose older history browsing, even though authorized exact-origin details remain accessible. Real handset notification tap, foreground/background/terminated delivery, Firebase/APNs configuration, live provider acceptance, production monitoring/recovery, security/accessibility/load acceptance and the remaining frozen release gates stay open. No final acceptance closure, merge or deployment is implied.

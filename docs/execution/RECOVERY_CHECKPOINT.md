@@ -2,6 +2,12 @@
 
 This file records executable progress so work can resume without a conversation transcript.
 
+## Announcement recovery — Android drawer fixture correction
+
+Recovered announcement implementation at `02dd4cc8166371f209244069bc83b6a6efcaaaf1`, tree `c7870882874009bd339b8cf047e60313b4c66126`. Main checkout clean; retained notices worktree preserved and its implementation matches the committed source. PR CI `38454312065` passed Flutter (153), platform (419 unit/542 PostgreSQL+Redis/61 browser), storage, scanner and benchmark jobs; restore artifact `11840874710` independently digest/result checked. Android's M4 fixture failed before Profile Privacy: its lazy drawer item had no Element when the press helper tried `ensureVisible`. Native authenticator scenario passed. Corrected only the drawer fixture to scroll/build/settle its scoped row before the existing real hit-testable tap. No production, native, simulator, dependency or workflow settings changed. See `NATIVE_OFFICIAL_NOTICES_REPORT.md` for the failure and retained evidence.
+
+Exact next action: inspect this correction commit's automatic exact-source PR CI and native iOS results; investigate only demonstrated failures. Final source-bound evidence belongs in PR #5 comments/body so closing the batch does not trigger a documentation-only rebuild. Last fully verified checkpoint remains `45f9a88f5388ab1c0c0550d58554eb13a473a11b` until the corrected batch passes all required jobs. After verification, stop this batch. Recommended next task: generic native provider tap/foreground routing and durable failed-opt-out reconciliation. All frozen acceptance and external production gates remain open. No merge/deployment.
+
 ## Current completion checkpoint
 
 Last fully verified commit: `45f9a88f5388ab1c0c0550d58554eb13a473a11b`, tree `2d415ebebc2e47c469245e8676617e34aa72bfb7`. PR CI `38451399101` succeeded in all six jobs: 419 unit, 540 general PostgreSQL/Redis, 61 browser, 131 Flutter and two Android/live-API cases, plus storage/scanner/search/restore/build/audit validators. PR-native iOS `38451399076` succeeded (startup, real fictional Keychain round-trip, unsigned device compilation and source integrity). Earlier const/scroll fixture failures remain historical failures and are superseded only by these source-bound successes. No native dependency or simulator changes were made.

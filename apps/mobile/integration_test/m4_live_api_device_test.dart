@@ -91,7 +91,14 @@ Future<void> back(WidgetTester tester) async {
 Future<void> drawer(WidgetTester tester, String label) async {
   await press(tester, find.byTooltip('Open navigation menu'));
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
-  await press(tester, find.text(label));
+  // Drawer rows are built lazily. Adding a destination can put an existing
+  // action outside the viewport before it has an Element to ensureVisible.
+  final menu = find.byType(Drawer);
+  final item = find.descendant(of: menu, matching: find.text(label));
+  await tester.scrollUntilVisible(item, 200,
+    scrollable: find.descendant(of: menu, matching: find.byType(Scrollable)));
+  await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
+  await press(tester, item);
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
 }
 
