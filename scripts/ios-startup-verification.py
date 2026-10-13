@@ -1,0 +1,178 @@
+"""Bound each native phase, retain diagnostics, and never retry a failing app test."""
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS = ROOT / 'test-results'
+MARKERS = ['TEST_DISCOVERED', 'KEYCHAIN_CLEAR', 'KEYCHAIN_WRITE', 'KEYCHAIN_READ',
+           'KEYCHAIN_DELETE', 'KEYCHAIN_VERIFIED', 'APP_PUMP', 'APP_VERIFIED', 'CLEANUP_VERIFIED']
+
+
+class PhaseFailure(RuntimeError):
+    def __init__(self, phase, timed_out=False):
+        super().__init__(phase)
+        self.phase = phase
+        self.timed_out = timed_out
+
+
+def stop_group(process):
+    # Kill descendants even when the launcher has already exited.
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            break
+        if sig == signal.SIGTERM:
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
+    process.wait(timeout=5)
+
+
+def run_phase(name, command, timeout, cwd=ROOT, report=None):
+    RESULTS.mkdir(exist_ok=True)
+    path = RESULTS / f'ios-{name}.log'
+    started = time.monotonic()
+    print(f'IOS_PHASE {name} START deadline={timeout}s', flush=True)
+    with path.open('wb') as output, path.open('rb') as reader:
+        process = subprocess.Popen(command, cwd=cwd, stdout=output,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+        timed_out = False
+        heartbeat = started
+        try:
+            while process.poll() is None:
+                sys.stdout.buffer.write(reader.read())
+                sys.stdout.flush()
+                now = time.monotonic()
+                if now - started >= timeout:
+                    timed_out = True
+                    break
+                if now - heartbeat >= 30:
+                    print(f'IOS_PHASE {name} RUNNING elapsed={int(now-started)}s', flush=True)
+                    heartbeat = now
+                time.sleep(0.25)
+        finally:
+            stop_group(process)
+            sys.stdout.buffer.write(reader.read())
+            sys.stdout.flush()
+    outcome = {'phase': name, 'status': 'TIMEOUT' if timed_out else
+               ('PASSED' if process.returncode == 0 else 'FAILED'),
+               'exitCode': process.returncode, 'deadlineSeconds': timeout,
+               'elapsedSeconds': round(time.monotonic() - started, 2)}
+    if report is not None:
+        report['phases'].append(outcome)
+        save_report(report)
+    print(f'IOS_PHASE {name} {outcome["status"]}', flush=True)
+    if timed_out or process.returncode != 0:
+        raise PhaseFailure(name, timed_out)
+    return path.read_text(errors='replace')
+
+
+def select_device(inventory):
+    runtimes = [r for r in inventory['runtimes'] if r.get('isAvailable') and
+                r['identifier'].startswith('com.apple.CoreSimulator.SimRuntime.iOS-')]
+    for runtime in sorted(runtimes, key=lambda r: tuple(map(int, re.findall(r'\d+', r['version']))), reverse=True):
+        phones = [d for d in inventory['devices'].get(runtime['identifier'], [])
+                  if d.get('isAvailable') and d['name'].startswith('iPhone')]
+        if phones:
+            device = sorted(phones, key=lambda d: (d['name'], d['udid']))[0]
+            return runtime['identifier'], device['deviceTypeIdentifier']
+    raise RuntimeError('No available iPhone runtime/device pair')
+
+
+def classify_failure(failure, log):
+    if failure.phase != 'startup-test':
+        return 'SIMULATOR_INFRASTRUCTURE_' + ('TIMEOUT' if failure.timed_out else 'FAILURE')
+    if not failure.timed_out:
+        return 'TEST_COMMAND_FAILED_REVIEW_LOG'
+    if 'IOS_TEST TEST_DISCOVERED' not in log:
+        return 'TEST_DISCOVERY_OR_BUILD_INSTALL_LAUNCH_TIMEOUT'
+    if 'IOS_TEST CLEANUP_VERIFIED' in log:
+        return 'TEST_RUNNER_TEARDOWN_TIMEOUT'
+    return 'APPLICATION_OR_PLUGIN_TIMEOUT'
+
+
+def save_report(report):
+    (RESULTS / 'ios-startup-phases.json').write_text(json.dumps(report, indent=2) + '\n')
+
+
+def diagnostics(simulator):
+    commands = [('diagnostic-devices', ['xcrun', 'simctl', 'list', '--json'], 15),
+                ('diagnostic-processes', ['ps', '-axo', 'pid,ppid,state,etime,comm'], 10)]
+    if simulator:
+        commands += [('diagnostic-app-log', ['xcrun', 'simctl', 'spawn', simulator,
+                     'log', 'show', '--last', '10m', '--style', 'compact', '--predicate',
+                     'process == "Runner" OR process == "debugserver" OR process == "SpringBoard"'], 20),
+                     ('diagnostic-screenshot', ['xcrun', 'simctl', 'io', simulator, 'screenshot',
+                      str(RESULTS / 'ios-failure.png')], 15)]
+    for name, command, timeout in commands:
+        try:
+            run_phase(name, command, timeout)
+        except (PhaseFailure, OSError):
+            pass  # Diagnostics must never replace the original failure.
+
+
+def main():
+    RESULTS.mkdir(exist_ok=True)
+    source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    report = {'sourceSha': source, 'status': 'RUNNING', 'phases': [], 'productionAcceptance': False}
+    save_report(report)
+    simulator = None
+    try:
+        if source != os.environ.get('KASHYAP_SOURCE_HEAD_SHA'):
+            raise RuntimeError('Simulator checkout differs from requested source')
+        inventory = json.loads(run_phase('simulators', ['xcrun', 'simctl', 'list', '--json'], 30, report=report))
+        runtime, device_type = select_device(inventory)
+        report.update(runtime=runtime, deviceType=device_type)
+        name = 'Kashyap-CI-' + os.environ.get('GITHUB_RUN_ID', 'local')
+        simulator = run_phase('simulator-create', ['xcrun', 'simctl', 'create', name,
+                              device_type, runtime], 60, report=report).strip()
+        if not re.fullmatch(r'[0-9A-Fa-f-]{36}', simulator):
+            raise RuntimeError('Unexpected simulator identifier')
+        report['simulatorId'] = simulator
+        (RESULTS / 'ios-simulator-id.txt').write_text(simulator + '\n')
+        run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
+        run_phase('simulator-bootstatus', ['xcrun', 'simctl', 'bootstatus', simulator, '-b'], 180, report=report)
+        run_phase('simulator-ready', ['xcrun', 'simctl', 'spawn', simulator, 'launchctl', 'print', 'system'], 30, report=report)
+        discovered = json.loads(run_phase('flutter-devices', ['flutter', 'devices', '--machine'], 60, report=report))
+        if not any(d['id'] == simulator for d in discovered):
+            raise RuntimeError('Booted simulator is absent from Flutter device discovery')
+        log = run_phase('startup-test', ['flutter', 'test', 'integration_test/ios_startup_test.dart',
+                        '-d', simulator, '--no-pub', '--timeout', '120s', '--verbose',
+                        '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
+                        '--dart-define=API_BASE_URL=https://api.invalid', '--reporter', 'expanded'],
+                        600, cwd=ROOT / 'apps/mobile', report=report)
+        if 'All tests passed!' not in log or any(f'IOS_TEST {m}' not in log for m in MARKERS):
+            raise RuntimeError('Test exit was successful without complete discovery/Keychain/app/cleanup evidence')
+        report['status'] = 'PASSED'
+    except (PhaseFailure, RuntimeError, OSError, ValueError) as failure:
+        report['status'] = 'FAILED'
+        log_path = RESULTS / 'ios-startup-test.log'
+        log = log_path.read_text(errors='replace') if log_path.exists() else ''
+        report['classification'] = (classify_failure(failure, log) if isinstance(failure, PhaseFailure)
+                                    else 'VERIFICATION_SETUP_OR_EVIDENCE_FAILURE')
+        report['lastTestMarker'] = next((m for m in reversed(MARKERS) if f'IOS_TEST {m}' in log), None)
+        save_report(report)
+        print(f'IOS_FAILURE {report["classification"]}: {failure}', flush=True)
+        diagnostics(simulator)
+    finally:
+        if simulator:
+            for phase, command in [('simulator-shutdown', ['xcrun', 'simctl', 'shutdown', simulator]),
+                                   ('simulator-delete', ['xcrun', 'simctl', 'delete', simulator])]:
+                try:
+                    run_phase(phase, command, 20)
+                except (PhaseFailure, OSError):
+                    pass
+        save_report(report)
+    return 0 if report['status'] == 'PASSED' else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
