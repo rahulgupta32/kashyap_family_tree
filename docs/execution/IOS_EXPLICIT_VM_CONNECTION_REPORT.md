@@ -1,0 +1,25 @@
+# Bounded explicit iOS test connection
+
+Continues `fe3704580278d76bb0f890b72814928b26e3cd1c` on `feat/application-completion`, PR #5. Its general CI and push-native verification remain bound to that source; its two PR-native discovery failures are preserved.
+
+## Demonstrated failure
+
+PR-native run 38394063578 attempts 1 and 2 passed simulator and unsigned device compilation but timed out before any test-body marker. Downloaded artifacts 11811922298 and 11821217836 match their GitHub digests and committed native files/locks. Their diagnostics show the launched app and authenticated Dart VM service listening while Flutter waits for the service address. The verbose trace starts Flutter's unified-log stream after launching the app; the one-time announcement can already be in the retained log. The exact same source passed automatic push-native run 38394056770, whose complete Keychain/app/cleanup evidence was independently verified. No app/Keychain failure was demonstrated by either PR timeout.
+
+## Correction
+
+The existing supervisor retains its pinned pre-created iPhone 16 Pro/iOS 18.5 fixture, boot checks, 600-second outer startup deadline, process-group cleanup, diagnostics and source guards. Its startup child now builds the same test target, installs it once and launches it once with a captured console. The disposable test isolate starts paused. The helper accepts an authenticated loopback VM URL from this launch only. If the console misses the announcement, a bounded unified-log snapshot must match the PID returned by this launch and a timezone-aware event timestamp after launch began. Remote, unauthenticated, credential-bearing, query/fragment and malformed service URLs are rejected. VM authentication remains enabled; no service address is supplied by a caller or production configuration.
+
+`flutter drive --use-existing-app` connects directly to that verified URL. The supported pinned integration driver reads the real integration binding's result and emits a verification marker only through its successful-result callback. The supervisor requires that callback, actual driver success, all nine existing test-body markers, every successful connection phase and joined console cleanup. A failed command or incomplete evidence cannot be accepted because success text appears in a log. The test app is terminated after the driver; the outer supervisor still joins/kills owned commands and shuts down its simulator. There is no second launch, test replay or automatic app-test retry.
+
+The existing test assertions are unchanged: real disposable Keychain clear/write/read/delete, signed-out bilingual UI, cleanup, no configured Firebase and zero backend requests. Disabling native test-result reporting is scoped to the disposable test build, matching Flutter's integration runner behavior; results are collected through the supported driver instead of XCTest. App functionality, dependencies, locks, native identifiers/project files and simulator configuration are unchanged.
+
+Native evidence additionally archives and hashes seven committed verification inputs: workflow, wrapper, supervisor, connection helper, evidence collector, unchanged test target and host driver. The collector rejects untracked/modified/missing/symlinked inputs and requires the successful connection report before issuing a PASSED report. The 44-file native archive and four dependency-lock evidence remain in place.
+
+## Verification and limits
+
+Local host regression controls exercise strict loopback/auth URL validation, wrong-PID/old/naive-timestamp rejection, fresh-console ownership, discovery timeout and joining, actual nonzero driver exits with misleading success text, missing body markers/phases, one-shot orchestration with failure retention across cleanup failure, outer process-group deadline enforcement and tracked verification-input guards. Local release/workbook and whitespace checks also run. Real macOS/native execution, Flutter analysis and exact-source artifact results are recorded in PR #5 after completion; local Python controls do not establish native success.
+
+This corrects the observed connection procedure; one passing hosted run does not establish that every native CI infrastructure failure is eliminated. Signing, physical/supported-device acceptance, live backend/FCM/APNs, accessibility/security/load, provider recovery/monitoring, approved imports and production PITR/RPO/RTO remain open. All 260 final acceptance rows remain OPEN. No merge or deployment.
+
+Pinned primary-source references: [Flutter 3.47.5 drive connection option](https://github.com/flutter/flutter/blob/3.47.5/packages/flutter_tools/lib/src/commands/drive.dart), [existing-app connection implementation](https://github.com/flutter/flutter/blob/3.47.5/packages/flutter_tools/lib/src/drive/drive_service.dart), [integration driver's success callback](https://github.com/flutter/flutter/blob/3.47.5/packages/integration_test/lib/integration_test_driver.dart), [native-result reporting and test binding](https://github.com/flutter/flutter/blob/3.47.5/packages/integration_test/lib/integration_test.dart).

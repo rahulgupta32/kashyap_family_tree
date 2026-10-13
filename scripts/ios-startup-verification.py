@@ -7,11 +7,10 @@ import signal
 import subprocess
 import sys
 import time
+from ios_vm_connection import MARKERS, validate_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / 'test-results'
-MARKERS = ['TEST_DISCOVERED', 'KEYCHAIN_CLEAR', 'KEYCHAIN_WRITE', 'KEYCHAIN_READ',
-           'KEYCHAIN_DELETE', 'KEYCHAIN_VERIFIED', 'APP_PUMP', 'APP_VERIFIED', 'CLEANUP_VERIFIED']
 
 
 class PhaseFailure(RuntimeError):
@@ -104,9 +103,11 @@ def select_device(inventory):
     return runtime, device_type
 
 
-def classify_failure(failure, log):
+def classify_failure(failure, log, connection=None):
     if failure.phase != 'startup-test':
         return 'SIMULATOR_INFRASTRUCTURE_' + ('TIMEOUT' if failure.timed_out else 'FAILURE')
+    if connection and connection.get('failurePhase') == 'vm-discovery':
+        return 'TEST_VM_CONNECTION_DISCOVERY_FAILURE'
     if not failure.timed_out:
         return 'TEST_COMMAND_FAILED_REVIEW_LOG'
     if 'IOS_TEST TEST_DISCOVERED' not in log:
@@ -162,19 +163,19 @@ def main():
         if device['state'] != 'Booted':
             run_phase('simulator-boot', ['xcrun', 'simctl', 'boot', simulator], 60, report=report)
         run_phase('simulator-bootstatus', ['xcrun', 'simctl', 'bootstatus', simulator, '-b'], 180, report=report)
-        log = run_phase('startup-test', ['flutter', 'test', 'integration_test/ios_startup_test.dart',
-                        '-d', simulator, '--no-pub', '--timeout', '5m', '--verbose',
-                        '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
-                        '--dart-define=API_BASE_URL=https://api.invalid', '--reporter', 'expanded'],
+        log = run_phase('startup-test', [sys.executable, str(ROOT / 'scripts/ios_vm_connection.py'), simulator],
                         600, cwd=ROOT / 'apps/mobile', report=report)
-        if 'All tests passed!' not in log or any(f'IOS_TEST {m}' not in log for m in MARKERS):
-            raise RuntimeError('Test exit was successful without complete discovery/Keychain/app/cleanup evidence')
+        connection = json.loads((RESULTS / 'ios-vm-connection.json').read_text())
+        validate_evidence(log, connection)
+        report['connectionMode'] = connection['mode']
         report['status'] = 'PASSED'
     except (PhaseFailure, RuntimeError, OSError, ValueError) as failure:
         report['status'] = 'FAILED'
         log_path = RESULTS / 'ios-startup-test.log'
         log = log_path.read_text(errors='replace') if log_path.exists() else ''
-        report['classification'] = (classify_failure(failure, log) if isinstance(failure, PhaseFailure)
+        connection_path = RESULTS / 'ios-vm-connection.json'
+        connection = json.loads(connection_path.read_text()) if connection_path.exists() else None
+        report['classification'] = (classify_failure(failure, log, connection) if isinstance(failure, PhaseFailure)
                                     else 'VERIFICATION_SETUP_OR_EVIDENCE_FAILURE')
         report['lastTestMarker'] = next((m for m in reversed(MARKERS) if f'IOS_TEST {m}' in log), None)
         save_report(report)

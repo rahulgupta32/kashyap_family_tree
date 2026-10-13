@@ -3,15 +3,19 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 from pathlib import Path
 import subprocess
 import tarfile
+from ios_vm_connection import validate_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / 'test-results'
 PROJECT = 'apps/mobile/ios/Runner.xcodeproj/project.pbxproj'
+INPUTS = ['.github/workflows/ios-verification.yml', 'scripts/ios-startup-verification.py',
+          'scripts/ios_vm_connection.py', 'scripts/ios-verification-evidence.py',
+          'scripts/run-ios-startup-verification.sh', 'apps/mobile/integration_test/ios_startup_test.dart',
+          'apps/mobile/test_driver/ios_startup_driver.dart']
 
 
 def git(*args):
@@ -47,6 +51,20 @@ def archive():
         for relative in files:
             archive_file.add(ROOT / relative, arcname=relative, recursive=False)
     (RESULTS / 'ios-source-hashes.json').write_text(json.dumps(hashes, indent=2) + '\n')
+    inputs = input_hashes()
+    with tarfile.open(RESULTS / 'ios-verification-inputs.tar.gz', 'w:gz') as archive_file:
+        for relative in INPUTS:
+            archive_file.add(ROOT / relative, arcname=relative, recursive=False)
+    (RESULTS / 'ios-verification-input-hashes.json').write_text(json.dumps(inputs, indent=2) + '\n')
+
+
+def input_hashes():
+    subprocess.check_call(['git', 'ls-files', '--error-unmatch', '--', *INPUTS], cwd=ROOT,
+                          stdout=subprocess.DEVNULL)
+    subprocess.check_call(['git', 'diff', '--exit-code', 'HEAD', '--', *INPUTS], cwd=ROOT)
+    if any((ROOT / p).is_symlink() or not (ROOT / p).is_file() for p in INPUTS):
+        raise RuntimeError('Verification input is missing or is a symlink')
+    return {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in INPUTS}
 
 
 def record():
@@ -57,18 +75,21 @@ def record():
     hashes = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in files}
     if hashes != json.loads((RESULTS / 'ios-source-hashes.json').read_text()):
         raise RuntimeError('Archived iOS source differs from verified source')
+    inputs = input_hashes()
+    if inputs != json.loads((RESULTS / 'ios-verification-input-hashes.json').read_text()):
+        raise RuntimeError('Archived verification inputs differ from verified source')
     startup = (RESULTS / 'ios-startup-test.log').read_text()
     phases = json.loads((RESULTS / 'ios-startup-phases.json').read_text())
     if phases['status'] != 'PASSED' or phases['sourceSha'] != source:
         raise RuntimeError('Bounded simulator verification did not pass for this source')
-    if not re.search(r'All tests passed!|\b[1-9]\d* tests? passed\b', startup):
-        raise RuntimeError('Simulator test success was not recorded')
+    connection = json.loads((RESULTS / 'ios-vm-connection.json').read_text())
+    validate_evidence(startup, connection)
     for target in ['iphonesimulator', 'iphoneos']:
         if not (ROOT / f'apps/mobile/build/ios/{target}/Runner.app/Runner').is_file():
             raise RuntimeError(f'Missing compiled {target} application')
     subprocess.check_call(['git', 'diff', '--exit-code', '--', 'apps/mobile/lib',
                            'apps/mobile/integration_test', 'apps/mobile/pubspec.yaml',
-                           'apps/mobile/pubspec.lock'], cwd=ROOT)
+                           'apps/mobile/pubspec.lock', 'apps/mobile/test_driver'], cwd=ROOT)
     report = {
         'kind': 'IOS_SIMULATOR_AND_UNSIGNED_DEVICE_BUILD',
         'status': 'PASSED',
@@ -89,6 +110,8 @@ def record():
                                 for p in ['apps/mobile/pubspec.lock', 'apps/mobile/ios/Podfile.lock'] +
                                 [p for p in files if p.endswith('/Package.resolved')]},
         'simulatorPhases': phases,
+        'simulatorConnection': connection,
+        'verificationInputHashes': inputs,
     }
     (RESULTS / 'ios-verification.json').write_text(json.dumps(report, indent=2) + '\n')
 
