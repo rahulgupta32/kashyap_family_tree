@@ -85,7 +85,7 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_untracked_modified_and_missing_native_source_are_rejected(self):
         previous = evidence.ROOT
         with tempfile.TemporaryDirectory() as tmp:
-            evidence.ROOT = Path(tmp)
+            evidence.ROOT = Path(tmp).resolve()
             root = evidence.ROOT
             project = root / evidence.PROJECT
             project.parent.mkdir(parents=True)

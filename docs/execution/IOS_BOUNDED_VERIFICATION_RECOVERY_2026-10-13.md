@@ -24,6 +24,8 @@ Local verification: five regression tests (runtime order/unavailability, honest 
 
 ## Remaining batch gates
 
+First published checkpoint `5cca348540c0516eecf3cb109aa9c030614d7975`: iOS run `38371695794` failed before dependency installation/native execution because the test fixture used macOS `/var` rather than resolved `/private/var`; production containment checking was not changed. General CI `38371695837` detected an invalid named `pumpAndSettle` timeout argument in the new integration test. Correct both fixture canonicalization and the positional Flutter API call before proceeding; neither failed run is native success evidence.
+
 Push this checked checkpoint before another long native run. Inspect exact-commit iOS outcome and post-tool native status; review/commit any required generated dependency files, then verify the resulting exact committed source. Record actual CI/run/artifact evidence here and in PR #5. Do not hide dependency/source drift to obtain a green report.
 
 Production signing, approved IDs/icons, physical-device/live-backend/push acceptance, provider credentials, supported device matrix and wider production acceptance remain open. This batch does not close those gates or the frozen 260 final acceptance records.

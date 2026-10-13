@@ -46,7 +46,8 @@ void main() {
     try {
       debugPrint('IOS_TEST APP_PUMP');
       await tester.pumpWidget(KashyapApp(apiService: api));
-      await tester.pumpAndSettle(timeout: const Duration(seconds: 30));
+      await tester.pumpAndSettle(const Duration(milliseconds: 100),
+        EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
       expect(find.byType(SignInScreen), findsOneWidget);
       expect(find.text('कश्यप अधिकारी वंशावली'), findsOneWidget);
       expect(find.text('फोन नम्बर (Phone number)'), findsOneWidget);
