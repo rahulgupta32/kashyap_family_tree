@@ -48,4 +48,42 @@ describe('Calendar creation retry contract',()=>{
     await expect(f.service.createEvent(user,{...payload,creationKey:key} as any)).rejects.toThrow('Concurrent change');
     expect(f.db.transaction).toHaveBeenCalledTimes(3);
   });
+  it('a permanent close prevents replaying creation with the old key',async()=>{
+    const payload={title:'Original'},f=replay(calendarCreateFingerprint(payload));
+    f.query.mockImplementation(async(sql:string)=>({rows:sql.includes('INSERT INTO calendar_create_receipts')?[]:
+      sql.includes('SELECT payload_hash')?[{payload_hash:calendarCreateFingerprint(payload),event_id:null,abandoned:true}]:[]}));
+    await expect(f.service.createEvent(user,{...payload,creationKey:key} as any)).rejects.toThrow('permanently closed');
+    expect(f.validate).not.toHaveBeenCalled();
+  });
+  function resolution(rows:any[],inserted=false){
+    const query=jest.fn(async(sql:string)=>({rows:sql.includes('INSERT INTO calendar_create_receipts')?(inserted?[{creation_key:key}]:[]):
+      sql.includes('SELECT payload_hash')?rows:sql.includes('SELECT id FROM calendar_events')?[{id:'owned-event'}]:[]}));
+    const db={transaction:jest.fn(async(run:any)=>run({query}))};
+    const service=new CalendarService(db as any,{recordCreationClosure:jest.fn().mockResolvedValue({})} as any,{} as any,{} as any);
+    jest.spyOn(service as any,'actor').mockResolvedValue({});
+    return {service,query,db};
+  }
+  it('reserves a permanent terminal close after current-account authorization',async()=>{
+    const f=resolution([],true);
+    await expect(f.service.resolveCreation(user,{creationKey:key} as any)).resolves.toEqual({outcome:'ABANDONED'});
+    expect(f.query).toHaveBeenCalledWith(expect.stringContaining('TRUE'),[user,key,calendarCreateFingerprint({})]);
+    expect(f.query.mock.calls.some(([sql])=>sql.includes('INSERT INTO calendar_events'))).toBe(false);
+  });
+  it('recovers an owned committed ID with a key-only request and rejects conflicting full payloads',async()=>{
+    const f=resolution([{payload_hash:calendarCreateFingerprint({title:'Original'}),event_id:'owned-event',abandoned:false}]);
+    await expect(f.service.resolveCreation(user,{creationKey:key} as any)).resolves.toEqual({outcome:'CREATED',eventId:'owned-event'});
+    await expect(f.service.resolveCreation(user,{creationKey:key,title:'Different'} as any)).rejects.toThrow('another payload');
+    await expect(f.service.resolveCreation(user,{} as any)).rejects.toThrow('creation key');
+  });
+  it('repeats terminal resolution without work and bounds resolution serialization retries',async()=>{
+    const f=resolution([{payload_hash:calendarCreateFingerprint({}),abandoned:true}]);
+    f.db.transaction.mockRejectedValueOnce(Object.assign(new Error('serialization'),{code:'40001'}));
+    await expect(f.service.resolveCreation(user,{creationKey:key} as any)).resolves.toEqual({outcome:'ABANDONED'});
+    expect(f.db.transaction).toHaveBeenCalledTimes(2);
+    await expect(f.service.resolveCreation(user,{creationKey:key,title:'Original full intent'})).resolves.toEqual({outcome:'ABANDONED'});
+    f.db.transaction.mockReset().mockRejectedValue(Object.assign(new Error('deadlock'),{code:'40P01'}));
+    await expect(f.service.resolveCreation(user,{creationKey:key} as any)).rejects.toThrow('Concurrent change');
+    expect(f.db.transaction).toHaveBeenCalledTimes(3);
+  });
+
 });

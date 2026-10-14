@@ -6,7 +6,7 @@ import { isValidBsDate } from '@kashyap/localization';
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
-import { CreateCalendarEventDto, CalendarEventDetailDto, CalendarEventRsvpDto, EventAudienceScope, ErrorCode, Role, EventType } from '@kashyap/contracts';
+import { CreateCalendarEventDto, ResolveCalendarCreationDto, CalendarCreationResolutionDto, CalendarEventDetailDto, CalendarEventRsvpDto, EventAudienceScope, ErrorCode, Role, EventType } from '@kashyap/contracts';
 import { CalendarDeliveryService } from './calendar-delivery.service';
 import { eventVisibility, recurrenceVisibility } from './calendar-eligibility';
 import { allowedFields, textField, uuid } from '../community/community-policy';
@@ -157,9 +157,10 @@ export class CalendarService {
         const receipt=(await client.query(`INSERT INTO calendar_create_receipts(account_id,operation,creation_key,payload_hash)
           VALUES($1,'CREATE_EVENT',$2,$3) ON CONFLICT DO NOTHING RETURNING creation_key`,[userId,creationKey,fingerprint])).rows[0];
         if(!receipt){
-          const saved=(await client.query(`SELECT payload_hash,event_id FROM calendar_create_receipts
+          const saved=(await client.query(`SELECT payload_hash,event_id,abandoned FROM calendar_create_receipts
             WHERE account_id=$1 AND operation='CREATE_EVENT' AND creation_key=$2`,[userId,creationKey])).rows[0];
           if(!saved||saved.payload_hash!==fingerprint)throw new ConflictException('Creation key already used with another payload');
+          if(saved.abandoned)throw new ConflictException('Creation attempt is permanently closed');
           const event=(await client.query('SELECT * FROM calendar_events WHERE id=$1 AND host_user_id=$2',[saved.event_id,userId])).rows[0];
           if(!event)throw new ConflictException('Creation receipt unavailable');
           return this.detail(event,userId,client);
@@ -189,6 +190,39 @@ export class CalendarService {
       if(creationKey&&attempt<2&&error instanceof ConflictException&&error.message==='Concurrent change; reload and preview again')continue;
       throw error;
     }}
+  }
+  async resolveCreation(userId:string,dto:ResolveCalendarCreationDto):Promise<CalendarCreationResolutionDto>{
+    if(!dto||typeof dto!=='object'||Array.isArray(dto))throw new BadRequestException('Calendar event body required');
+    const {creationKey,...payload}=dto;
+    uuid(creationKey,'creation key');allowedFields(payload,keys);
+    const fingerprint=calendarCreateFingerprint(payload);
+    const keyOnly=Object.keys(payload).length===0;
+    for(let attempt=0;;attempt++){
+      try{return await this.selectionTransaction(async client=>{
+        // Account ownership is authoritative even after original scope membership
+        // is lost. Resolution exposes only the owned result ID, never a roster.
+        await this.actor(userId,client);
+        const inserted=(await client.query(`INSERT INTO calendar_create_receipts(account_id,operation,creation_key,payload_hash,abandoned)
+          VALUES($1,'CREATE_EVENT',$2,$3,TRUE) ON CONFLICT DO NOTHING RETURNING creation_key`,[userId,creationKey,fingerprint])).rows[0];
+        if(inserted){
+          await this.delivery.recordCreationClosure(userId,creationKey,client);
+          return {outcome:'ABANDONED'} as const;
+        }
+        const receipt=(await client.query(`SELECT payload_hash,event_id,abandoned FROM calendar_create_receipts
+          WHERE account_id=$1 AND operation='CREATE_EVENT' AND creation_key=$2`,[userId,creationKey])).rows[0];
+        if(!receipt)throw new ConflictException('Creation receipt unavailable');
+        // A key-only close may not have the original fingerprint; its terminal
+        // no-event outcome remains recoverable with the original full intent.
+        if(receipt.abandoned)return {outcome:'ABANDONED'} as const;
+        if(!keyOnly&&receipt.payload_hash!==fingerprint)throw new ConflictException('Creation key already used with another payload');
+        const owned=(await client.query('SELECT id FROM calendar_events WHERE id=$1 AND host_user_id=$2',[receipt.event_id,userId])).rows[0];
+        if(!owned)throw new ConflictException('Creation receipt unavailable');
+        return {outcome:'CREATED',eventId:owned.id} as const;
+      });}catch(error:any){
+        if(attempt<2&&error instanceof ConflictException&&error.message==='Concurrent change; reload and preview again')continue;
+        throw error;
+      }
+    }
   }
   private async manageable(e:any,userId:string,client?:any){
     if(e.host_user_id===userId)return true;

@@ -10,6 +10,10 @@ import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 import { CalendarEventDetailDto, EventAudienceScope, GenealogyAudienceSelection } from '@kashyap/contracts';
 
+const calendarApiBase=process.env.NEXT_PUBLIC_API_URL||'http://127.0.0.1:3000';
+const pendingCreateStorageKey='kashyap_calendar_pending_create';
+type PendingCreate={creationKey:string;payload?:any};
+
 const label=(key: keyof typeof calendarManagement.en)=>`${calendarManagement.ne[key]} (${calendarManagement.en[key]})`;
 
 const initialCalendarForm=()=>({
@@ -27,9 +31,15 @@ const initialCalendarForm=()=>({
 
 export default function CalendarAdminPage() {
   const { accessToken, user, isLoading: sessionLoading } = useAuth();
+  const authorityKey=user?.roles?.slice().sort().join(',');
   const [events, setEvents] = useState<CalendarEventDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pendingCreate,setPendingCreate]=useState<PendingCreate|null>(null);
+  const pendingCreateRef=useRef<PendingCreate|null>(null);
+  const createBusyRef=useRef<object|null>(null);
+  const ownerScope=JSON.stringify([user?.id,authorityKey]);
+  const ownerScopeRef=useRef(ownerScope);ownerScopeRef.current=ownerScope;
   const [formData, setFormData] = useState(initialCalendarForm);
   const [branches,setBranches] = useState<any[]>([]);
   const [dateMode, setDateMode] = useState<'BS'|'AD'>('BS');
@@ -42,7 +52,6 @@ export default function CalendarAdminPage() {
   const [derivedEnabled,setDerivedEnabled]=useState(false);
   const [selection,setSelection]=useState<GenealogyAudienceSelection|undefined>();
   const [derivedPreview,setDerivedPreview]=useState<any>(null);
-  const authorityKey=user?.roles?.slice().sort().join(',');
   const requestScope=JSON.stringify([user?.id,authorityKey,accessToken]);
   const requestScopeRef=useRef(requestScope);requestScopeRef.current=requestScope;
   const eventListSequence=useRef(0);
@@ -59,10 +68,21 @@ export default function CalendarAdminPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useLayoutEffect(()=>{
+    pendingCreateRef.current=null;setPendingCreate(null);createBusyRef.current=null;
     setShowCreateModal(false);setFormData(initialCalendarForm());setDateMode('BS');setStartsAt('');setReminder(false);setSearch('');
     setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);
     setEvents([]);setEditing(null);setEditTitle('');setCancelReason('');setHistory([]);setMessage(null);setActionLoading(false);setRsvpPending(null);
-  },[user?.id,authorityKey]);
+    if(sessionLoading)return;
+    try {
+      const saved=sessionStorage.getItem(pendingCreateStorageKey);
+      if(saved && user?.id){
+        const value=JSON.parse(saved);
+        if(value.owner===user.id && value.server===calendarApiBase && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value.creationKey)){
+          const pending={creationKey:value.creationKey};pendingCreateRef.current=pending;setPendingCreate(pending);
+        }else sessionStorage.removeItem(pendingCreateStorageKey);
+      }else if(!user?.id)sessionStorage.removeItem(pendingCreateStorageKey);
+    }catch { /* Storage failure blocks submission below; no private payload is stored. */ }
+  },[user?.id,authorityKey,sessionLoading]);
 
   useEffect(() => {
     loadEvents();
@@ -85,13 +105,29 @@ export default function CalendarAdminPage() {
     }
   }
 
+  function rememberCreate(pending:PendingCreate){
+    if(!user?.id)throw new Error('Active account required');
+    // Only recovery metadata is stored. Private titles/audiences stay in memory.
+    sessionStorage.setItem(pendingCreateStorageKey,JSON.stringify({owner:user.id,server:calendarApiBase,creationKey:pending.creationKey}));
+  }
+  async function finishCreate(text:string){
+    // Clear storage first: failure retains the original key for safe recovery.
+    sessionStorage.removeItem(pendingCreateStorageKey);
+    pendingCreateRef.current=null;setPendingCreate(null);
+    setDerivedPreview(null);setDerivedEnabled(false);setSelection(undefined);
+    setMessage({type:'success',text});setShowCreateModal(false);setInvitees([]);setCandidates([]);setPreviewKey(null);setStartsAt('');setReminder(false);setDateMode('BS');setFormData(initialCalendarForm());
+    await loadEvents();
+  }
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!accessToken) return;
-    setActionLoading(true);
-    setMessage(null);
+    if(!accessToken||!user?.id||sessionLoading||createBusyRef.current)return;
+    const task={};createBusyRef.current=task;
+    setActionLoading(true);setMessage(null);
     try {
-      const payload: any = {
+      let payload:any=pendingCreateRef.current?.payload;
+      if(pendingCreateRef.current&&!payload)throw new Error('Recover or close the pending creation before starting again');
+      if(!payload){
+        payload = {
         title: formData.title,
         description: formData.description || undefined,
         eventType: formData.eventType,
@@ -125,18 +161,37 @@ export default function CalendarAdminPage() {
       if (dateMode === 'BS' && formData.solarDate) {
         payload.solarDate = formData.solarDate;
       }
-      await ApiClient.createCalendarEvent(accessToken, payload);
+        const pending={creationKey:crypto.randomUUID(),payload:JSON.parse(JSON.stringify(payload))};
+        pendingCreateRef.current=pending;setPendingCreate(pending);
+      }
+      const pending=pendingCreateRef.current!;
+      rememberCreate(pending);
+      const result=await ApiClient.createCalendarEvent(accessToken,{...pending.payload,creationKey:pending.creationKey});
       if(requestScopeRef.current!==requestScope)return;
-      setDerivedPreview(null);setDerivedEnabled(false);setSelection(undefined);
-      setMessage({ type: 'success', text: 'वार्षिक कार्यक्रम सफलतापूर्वक सिर्जना भयो ।' });
-      setShowCreateModal(false);setInvitees([]);setCandidates([]);setPreviewKey(null);setStartsAt('');setReminder(false);setDateMode('BS');
-      setFormData(initialCalendarForm());
-      await loadEvents();
-    } catch (err: any) {
-      if(requestScopeRef.current!==requestScope)return;setDerivedPreview(null);setPreviewKey(null);
-      setMessage({ type: 'error', text: err.message });
-    } finally {
-      if(requestScopeRef.current===requestScope)setActionLoading(false);
+      if(!result||typeof result.id!=='string')throw new Error('Unconfirmed creation');
+      await finishCreate('कार्यक्रम सुरक्षित गरियो (Event saved)');
+    }catch(err:any){
+      if(requestScopeRef.current!==requestScope)return;
+      if(!pendingCreateRef.current){setDerivedPreview(null);setPreviewKey(null);}
+      setMessage({type:'error',text:pendingCreateRef.current?'पुष्टि भएन; उही कार्यक्रम पुनः प्रयास वा जाँच गर्नुहोस्। (Not confirmed; retry or recover the same creation.)':err.message});
+    }finally{
+      if(createBusyRef.current===task){createBusyRef.current=null;if(ownerScopeRef.current===ownerScope)setActionLoading(false);}
+    }
+  }
+  async function resolvePendingCreate(){
+    const pending=pendingCreateRef.current;
+    if(!pending||!accessToken||!user?.id||sessionLoading||createBusyRef.current)return;
+    const task={};createBusyRef.current=task;setActionLoading(true);setMessage(null);
+    try{
+      rememberCreate(pending);
+      const result=await ApiClient.calendarRequest(accessToken,'events/creation-resolution','POST',{...pending.payload,creationKey:pending.creationKey});
+      if(requestScopeRef.current!==requestScope)return;
+      if(!result||!['CREATED','ABANDONED'].includes(result.outcome)||(result.outcome==='CREATED'&&typeof result.eventId!=='string'))throw new Error('Unconfirmed resolution');
+      await finishCreate(result.outcome==='CREATED'?'पहिले सुरक्षित कार्यक्रम भेटियो (Existing event recovered)':'कार्यक्रम बनेको छैन; अब नयाँ सुरु गर्न सक्नुहुन्छ (No event created; you can start again)');
+    }catch{
+      if(requestScopeRef.current===requestScope)setMessage({type:'error',text:'पुष्टि भएन; बाँकी सिर्जना कायम छ। (Resolution not confirmed; pending creation retained.)'});
+    }finally{
+      if(createBusyRef.current===task){createBusyRef.current=null;if(ownerScopeRef.current===ownerScope)setActionLoading(false);}
     }
   }
 
@@ -280,7 +335,7 @@ export default function CalendarAdminPage() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <form onSubmit={handleCreate} aria-label="Create event" role="dialog" aria-modal="true" className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-slate-100">
-            <fieldset disabled={actionLoading} className="space-y-4">
+            <fieldset disabled={actionLoading||!!pendingCreate} className="space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-lg font-bold text-slate-900">नयाँ क्यालेन्डर कार्यक्रम</h3>
               <button type="button" onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
@@ -409,23 +464,26 @@ export default function CalendarAdminPage() {
               <p role="status">{label('count')}: {invitees.length}</p>
             </fieldset>}
             {derivedPreview&&<section aria-label="Genealogy recipient preview" className="border p-3 space-y-2"><p role="status">आमन्त्रित खाताहरू (Recipient accounts): {derivedPreview.recipientCount}</p><p>म्याद (Expires): {new Date(derivedPreview.expiresAt).toLocaleString()}</p><button type="button" onClick={()=>setDerivedPreview(null)}>फेरि पूर्वावलोकन (Preview again)</button>{derivedPreview.recipients.map((r:any)=><p key={r.userId}>{r.name}</p>)}</section>}
+            </fieldset>
+            {pendingCreate&&<p role="status">बाँकी सिर्जना सुरक्षित रूपमा जाँच्नुहोस्। (Recover the pending creation before starting another event.)</p>}
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+              {pendingCreate&&<button type="button" disabled={actionLoading} onClick={resolvePendingCreate}>बाँकी सिर्जना जाँच वा बन्द (Recover or close pending creation)</button>}
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
+                disabled={actionLoading}
                 className="px-4 py-2 text-xs text-slate-500 hover:text-slate-700"
               >
                 रद्द गर्नुहोस्
               </button>
               <button
                 type="submit"
-                disabled={actionLoading||(derivedEnabled&&(!selection||derivedPreview?.recipientCount===0))}
+                disabled={actionLoading||!!(pendingCreate&&!pendingCreate.payload)||(!pendingCreate&&derivedEnabled&&(!selection||derivedPreview?.recipientCount===0))}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
               >
-                {derivedEnabled?(derivedPreview?label('confirm'):label('preview')):invitees.length ? (previewKey === JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId}) ? label('confirm') : label('preview')) : 'सिर्जना गर्नुहोस् (Save)'}
+                {pendingCreate?'पुनः प्रयास (Retry creation)':derivedEnabled?(derivedPreview?label('confirm'):label('preview')):invitees.length ? (previewKey === JSON.stringify({ids:invitees,scope:formData.audienceScope,branch:formData.branchId}) ? label('confirm') : label('preview')) : 'सिर्जना गर्नुहोस् (Save)'}
               </button>
             </div>
-            </fieldset>
           </form>
         </div>
       )}

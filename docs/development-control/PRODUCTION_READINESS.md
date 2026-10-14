@@ -4,6 +4,8 @@ Latest recovered source `995a52107db47af930255e53459178cd9a259216`: CI3860474850
 
 Recovery of0e26e628: Fast38609751149 failed one Flutter fixture (clean analysis,231 passed); full Flutter job confirmed the same omitted chat-store dependency. Current correction injects the in-memory store and adds its cleanup assertion. Fast backend independently passed434 unit cases and shared/API/admin typechecks. Corrected-source full/native/Flutter acceptance remains pending; no release gate closed.
 
+Current meaningful batch adds permanent account-bound close/recover resolution and admin keyed retries/recovery metadata; source verification is pending. Parent119f987 Fast38611278852/full38611288843/native38611288848 independently SUCCESS; all232 Flutter cases/analysis and all six platform jobs passed. New local439 unit cases and API/admin checks pass; new PostgreSQL/Flutter/browser/full/native acceptance remains unverified. Closure does not cancel an existing event, and no individual frozen acceptance is closed.
+
 Status: NOT READY; no merge into main, public deployment or store submission authorized.
 
 Authoritative current audit: `REQUIREMENTS_MATRIX.md`/CSV, independent `EDGE_CASE_MATRIX.csv`, unscored `BASELINE_CONTROL_MATRIX.csv`, `RELEASE_CHECKLIST.md`, `EXTERNAL_HANDOFF.md` and `docs/operations/PRODUCTION_RUNBOOK.md`. All applicable frozen/supplemental requirements remain mandatory; no arbitrary completion percentage. See `DECISION_LOG.md` for adopted master execution instructions.

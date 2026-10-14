@@ -34,6 +34,10 @@ export interface CreateCalendarEventDto {
   invitedUserIds?: string[];
 }
 
+/** Full original payload verifies its fingerprint; key-only recovery exposes only an owned result ID. */
+export type ResolveCalendarCreationDto = Partial<CreateCalendarEventDto> & {creationKey:string};
+export type CalendarCreationResolutionDto = {outcome:'CREATED';eventId:string}|{outcome:'ABANDONED'};
+
 export interface CalendarEventDetailDto {
   recurrenceRuleId?: string | null;
   recurrenceYear?: number | null;

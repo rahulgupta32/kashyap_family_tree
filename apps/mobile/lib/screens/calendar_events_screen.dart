@@ -19,12 +19,14 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
   @override
   GenealogyApiService get calendarApi => widget.apiService;
   int _epoch = 0;
+  bool _resolvingCreate = false;
   DialogRoute<dynamic>? _activeDialog;
   VoidCallback? _clearDialogDraft;
 
   @override
   void clearCalendarSession() {
     _epoch++;
+    _resolvingCreate = false;
     _events = [];
     _savingRsvps.clear();
     _blockedEdits.clear();
@@ -95,6 +97,21 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
     return null;
   }
 
+  Future<bool> _resolvePendingCreate() async {
+    if (!checkCalendarSession() || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate) return false;
+    setState(() => _resolvingCreate = true);
+    try {
+      final outcome = await widget.apiService.resolveCalendarCreate();
+      if (!checkCalendarSession()) return false;
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(calendarLabels[outcome == 'CREATED' ? 'createRecovered' : 'createClosed']!))); }
+      await _loadEvents();
+      return checkCalendarSession();
+    } catch (_) {
+      if (mounted && checkCalendarSession()) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(calendarLabels['createFailed']!))); }
+      return false;
+    } finally { if (checkCalendarSession()) { setState(() => _resolvingCreate = false); } }
+  }
+
   Future<void> _create() async {
     if (!checkCalendarSession() || _activeDialog != null) return;
     if (widget.apiService.hasPendingCalendarCreate) {
@@ -147,6 +164,15 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ])),
         actions: [
+          if(submitted) TextButton(onPressed:busy ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            update(() => busy = true);
+            final resolved = await _resolvePendingCreate();
+            if(dialogContext.mounted && checkCalendarSession()) {
+              if(resolved) { Navigator.pop(dialogContext); }
+              else { update(() => busy = false); }
+            }
+          },child:Text(calendarLabels['resolveCreate']!)),
           TextButton(onPressed: busy ? null : () {if(dialogContext.mounted && checkCalendarSession() && !busy && _activeDialog?.isCurrent == true) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
           TextButton(onPressed: busy ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
@@ -175,7 +201,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       _activeDialog = route;
       await Navigator.of(context).push(route);
       await route.completed;
-    } finally {_activeDialog = null; _clearDialogDraft=null; title.dispose(); description.dispose(); location.dispose();}
+    } finally {_activeDialog = null; _clearDialogDraft=null; title.dispose(); description.dispose(); location.dispose(); if(checkCalendarSession()) { setState(() {}); }}
   }
 
   Future<void> _manage(Map event, {bool cancel = false}) async {
@@ -251,6 +277,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           IconButton(tooltip: 'Calendar day month agenda', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarPeriodScreen(api: widget.apiService))); }, icon: const Icon(Icons.calendar_month)),
           IconButton(tooltip: 'Browse all calendar events', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarBrowseScreen(api: widget.apiService))); }, icon: const Icon(Icons.list_alt)),
           IconButton(tooltip: 'वार्षिक सम्झना (Annual reminders)', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService))); }, icon: const Icon(Icons.event_repeat)),
+          IconButton(tooltip: calendarLabels['resolveCreate'], onPressed: !calendarSessionCurrent || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate ? null : () { _resolvePendingCreate(); }, icon: const Icon(Icons.fact_check)),
           IconButton(tooltip: widget.apiService.hasPendingCalendarCreate ? 'बाँकी सिर्जना पुनः प्रयास (Retry pending creation)' : calendarLabels['create'], onPressed: !calendarSessionCurrent ? null : _create, icon: const Icon(Icons.add)),
           IconButton(onPressed: !calendarSessionCurrent ? null : _loadEvents, icon: const Icon(Icons.refresh)),
         ],

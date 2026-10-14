@@ -2,6 +2,9 @@ import { CalendarService, validateGregorianInstant } from '../src/modules/calend
 import { notificationCategoryEnabled } from '../src/modules/notifications/notification-policy';
 
 describe('Explicit Gregorian event scheduling',()=>{
+  it('keeps unused creation closure audit-only across notification channels',()=>{
+    expect(notificationCategoryEnabled('CALENDAR_CREATE_ABANDONED',{})).toBe(false);
+  });
   it('preserves an explicitly supplied offset as a UTC instant without converting Tithi',()=>{
     expect(validateGregorianInstant('2026-10-02T16:00:00+05:45')).toBe('2026-10-02T10:15:00.000Z');
   });

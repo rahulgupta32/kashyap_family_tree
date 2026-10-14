@@ -119,6 +119,62 @@ describe('Versioned events, private invitations and durable reminder scheduling 
     const fs=require('fs'),path=require('path');
     await expect(db.transaction(async client=>{await client.query(fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/059_calendar_create_receipts.down.sql'),'utf8'));})).rejects.toThrow('CALENDAR_CREATE_RECEIPTS_RETAINED');
   });
+  it('closes a rejected unused key permanently without any event or delivery effects',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID(),title:''};
+    await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(dto).expect(400);
+    const before=(await db.query('SELECT count(*)::int AS n FROM calendar_events')).rows[0].n;
+    await request(app.getHttpServer()).post('/calendar/events/creation-resolution').send(dto).expect(401);
+    const close=await request(app.getHttpServer()).post('/calendar/events/creation-resolution').set(auth(host)).send(dto).expect(201);
+    expect(close.headers['cache-control']).toBe('private, no-store');expect(close.body).toEqual({outcome:'ABANDONED'});
+    expect(await calendar.resolveCreation(host.id,dto)).toEqual({outcome:'ABANDONED'});
+    await expect(calendar.createEvent(host.id,dto)).rejects.toThrow('permanently closed');
+    expect((await db.query('SELECT count(*)::int AS n FROM calendar_events')).rows[0].n).toBe(before);
+    const row=(await db.query('SELECT * FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[host.id,dto.creationKey])).rows[0];
+    expect(row).toMatchObject({abandoned:true,event_id:null});
+    expect((await db.query("SELECT * FROM audit_outbox WHERE entity_id=$1 AND actor_id=$2 AND action='CALENDAR_CREATE_ABANDONED'",[dto.creationKey,host.id])).rows).toHaveLength(1);
+    await expect(db.query('UPDATE calendar_create_receipts SET abandoned=FALSE WHERE account_id=$1 AND creation_key=$2',[host.id,dto.creationKey])).rejects.toThrow('immutable');
+    await expect(db.query('DELETE FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[host.id,dto.creationKey])).rejects.toThrow('immutable');
+  });
+  it('recovers an already committed event without modifying its content, invitations or notices',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID()};const created=await calendar.createEvent(host.id,dto);
+    expect(await calendar.resolveCreation(host.id,{creationKey:dto.creationKey} as any)).toEqual({outcome:'CREATED',eventId:created.id});
+    expect(await calendar.resolveCreation(host.id,dto)).toEqual({outcome:'CREATED',eventId:created.id});
+    await expect(calendar.resolveCreation(host.id,{...dto,title:'different'})).rejects.toThrow('another payload');
+    expect((await db.query('SELECT * FROM calendar_event_revisions WHERE event_id=$1',[created.id])).rows).toHaveLength(1);
+    expect((await db.query("SELECT * FROM audit_outbox WHERE entity_id=$1 AND action='CALENDAR_EVENT_CREATED'",[created.id])).rows).toHaveLength(1);
+    await db.query('UPDATE user_accounts SET is_suspended=TRUE WHERE id=$1',[host.id]);
+    try{await expect(calendar.resolveCreation(host.id,dto)).rejects.toThrow('Active account');}
+    finally{await db.query('UPDATE user_accounts SET is_suspended=FALSE WHERE id=$1',[host.id]);}
+    const isolated=await calendar.resolveCreation(other.id,{creationKey:dto.creationKey} as any);expect(isolated).toEqual({outcome:'ABANDONED'});
+    expect((await calendar.createEvent(host.id,dto)).id).toBe(created.id);
+  });
+  it('serializes resolution against an in-flight create so no event can appear after ABANDONED',async()=>{
+    for(let n=0;n<4;n++){
+      const dto={...scheduled(),creationKey:randomUUID()};
+      const [created,resolved]=await Promise.allSettled([calendar.createEvent(host.id,dto),calendar.resolveCreation(host.id,dto)]);
+      expect(resolved.status).toBe('fulfilled');if(resolved.status!=='fulfilled')throw new Error('resolution failed');
+      if(resolved.value.outcome==='CREATED'){
+        expect(created.status).toBe('fulfilled');if(created.status==='fulfilled')expect(created.value.id).toBe(resolved.value.eventId);
+      }else{
+        expect(created.status).toBe('rejected');await expect(calendar.createEvent(host.id,dto)).rejects.toThrow('permanently closed');
+      }
+      const receipt=(await db.query('SELECT * FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[host.id,dto.creationKey])).rows[0];
+      expect(Boolean(receipt.event_id)).toBe(!receipt.abandoned);
+    }
+  });
+  it('rolls back an uncommitted close and preserves abandoned evidence on downgrade',async()=>{
+    const key=randomUUID();
+    const failure=jest.spyOn(delivery,'recordCreationClosure').mockRejectedValueOnce(new Error('Injected closure audit failure'));
+    try{await expect(calendar.resolveCreation(host.id,{creationKey:key})).rejects.toThrow('Injected');}finally{failure.mockRestore();}
+    expect((await db.query('SELECT * FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[host.id,key])).rows).toHaveLength(0);
+    await expect(db.transaction(async client=>{
+      await client.query("INSERT INTO calendar_create_receipts(account_id,operation,creation_key,payload_hash,abandoned) VALUES($1,'CREATE_EVENT',$2,$3,TRUE)",[host.id,key,'a'.repeat(64)]);
+      throw new Error('Injected close rollback');
+    })).rejects.toThrow('Injected');
+    const created=await calendar.createEvent(host.id,{...scheduled(),creationKey:key});expect(created.id).toBeTruthy();
+    const fs=require('fs'),path=require('path');
+    await expect(db.transaction(async client=>{await client.query(fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/060_calendar_create_resolution.down.sql'),'utf8'));})).rejects.toThrow('CALENDAR_ABANDONED_KEYS_RETAINED');
+  });
   it('restricts editing, rejects stale concurrent revisions and preserves full event history',async()=>{
     await request(app.getHttpServer()).patch(`/calendar/events/${event.id}`).set(auth(guest)).send({version:1,title:'Unauthorized'}).expect(403);
     const edits=await Promise.all(['First edit','Second edit'].map(title=>request(app.getHttpServer()).patch(`/calendar/events/${event.id}`).set(auth(host)).send({version:1,title})));

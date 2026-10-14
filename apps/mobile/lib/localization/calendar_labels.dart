@@ -1,5 +1,8 @@
 const calendarLabels = {
   'required': 'शीर्षक र मिति आवश्यक छ (Title and date are required)',
+  'resolveCreate': 'बाँकी सिर्जना जाँच वा बन्द गर्नुहोस् (Recover or close pending creation)',
+  'createRecovered': 'पहिले सुरक्षित कार्यक्रम भेटियो। (The existing event was recovered.)',
+  'createClosed': 'कार्यक्रम बनेको छैन; अब नयाँ सुरु गर्न सक्नुहुन्छ। (No event was created; you can start again.)',
   'createFailed': 'कार्यक्रम सुरक्षित भएको पुष्टि भएन। उही कार्यक्रम पुनः प्रयास गर्न सुरक्षित थिच्नुहोस् वा पात्रोको + प्रयोग गर्नुहोस्। (Saving was not confirmed. Retry the same event with Save or the calendar + button.)',
   'audienceExpired': 'छानिएको समूहको म्याद सकियो। फेरि समूह छान्नुहोस् वा स्पष्ट रूपमा हटाउनुहोस्। (Selected audience expired. Choose it again or explicitly clear it.)',
   'create': 'नयाँ कार्यक्रम (Create event)',

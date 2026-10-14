@@ -361,11 +361,42 @@ class GenealogyApiService {
       });
       if (generation != _sessionGeneration) { throw StateError('Session changed'); }
       if (result is! Map || result['id'] is! String) { throw const FormatException('Invalid creation acknowledgement'); }
-      // Keep the receipt if clearing durable storage fails; replay is safe.
-      _pendingCalendarCreate = null;
-      try { await _persistCalendarCreate(generation); }
-      catch (_) { if (generation == _sessionGeneration) { _pendingCalendarCreate = pending; } rethrow; }
+      await _confirmCalendarCreate(pending, generation);
       return result;
+    } finally { _calendarCreateBusy = false; }
+  }
+
+  Future<void> _confirmCalendarCreate(Map<String,dynamic> pending, int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null || _pendingCalendarCreate?['key'] != pending['key']) {
+      throw StateError('Session changed');
+    }
+    // Keep memory pending during the write: a queued/concurrent credential
+    // refresh must not drop an intent whose durable cleanup is unconfirmed.
+    if (_refreshToken != null) {
+      await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending:_pushRemovalPending, includeCalendar:false)));
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+    }
+    _pendingCalendarCreate = null;
+  });
+
+  Future<String> resolveCalendarCreate() async {
+    if (_authToken == null || _calendarCreateBusy || _pendingCalendarCreate == null) { throw StateError('Calendar resolution unavailable'); }
+    final generation = _sessionGeneration;
+    final pending = _pendingCalendarCreate!;
+    _calendarCreateBusy = true;
+    try {
+      await _persistCalendarCreate(generation);
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      final result = await requestJson('/calendar/events/creation-resolution', method:'POST', boundAccountId:pending['owner'] as String?, data:{
+        ...(pending['body'] as Map<String,dynamic>), 'creationKey':pending['key'],
+      });
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      if (result is! Map || !['CREATED','ABANDONED'].contains(result['outcome']) ||
+          (result['outcome'] == 'CREATED' && result['eventId'] is! String)) {
+        throw const FormatException('Invalid resolution acknowledgement');
+      }
+      await _confirmCalendarCreate(pending, generation);
+      return result['outcome'] as String;
     } finally { _calendarCreateBusy = false; }
   }
 

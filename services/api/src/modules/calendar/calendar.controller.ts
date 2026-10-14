@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   CreateCalendarEventDto,
+  ResolveCalendarCreationDto,
   CalendarEventDetailDto,
   CalendarEventRsvpDto,
   EventAudienceScope,
@@ -32,6 +33,12 @@ export class CalendarController {
     @Body() dto: CreateCalendarEventDto,
   ): Promise<CalendarEventDetailDto> {
     return this.calendarService.createEvent(user.id, dto);
+  }
+
+  @Post('events/creation-resolution')
+  @Header('Cache-Control','private, no-store')
+  resolveCreation(@CurrentUser() user:AuthenticatedUser,@Body() dto:ResolveCalendarCreationDto){
+    return this.calendarService.resolveCreation(user.id,dto);
   }
 
   @Get('invitees')

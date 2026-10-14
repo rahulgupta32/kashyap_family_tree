@@ -18,6 +18,12 @@ export class CalendarDeliveryService implements OnModuleInit, OnModuleDestroy {
   }
   onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
 
+  async recordCreationClosure(actorId:string,creationKey:string,client:any){
+    // Closure is audit evidence only; no event recipients or notifications exist.
+    return this.audit.recordAuditIntent({action:'CALENDAR_CREATE_ABANDONED',entityType:'CALENDAR_CREATE_RECEIPT',
+      entityId:creationKey,actorId,newValue:{outcome:'ABANDONED'}},client);
+  }
+
   async recordNotice(event:any,action:string,actorId:string,client:any,onlyUser?:string){
     const record=await this.audit.recordAuditIntent({action,entityType:'CALENDAR_EVENT',entityId:event.id,actorId,
       newValue:{eventVersion:event.version,lifecycleState:event.lifecycle_state}},client);
