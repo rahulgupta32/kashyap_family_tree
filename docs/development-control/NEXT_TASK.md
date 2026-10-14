@@ -1,5 +1,7 @@
 # Next execution
 
+Current correction: the invalid persisted retry-state Flutter fixture now supplies an in-memory chat outbox and asserts its cleanup. Parent0e26e628 Fast38609751149 and full Flutter job116009765298 failed that one host-only plugin call; clean analysis/231 other cases and434 backend unit cases are independently verified. Inspect the correction's automatic runs from PR #5 first; require clean analysis/all232 cases. No production session cleanup was changed.
+
 Current bounded implementation: calendar creation retry identity and transactional receipts. See CURRENT_STATE and `docs/execution/CALENDAR_CREATE_IDEMPOTENCY_REPORT.md`. The recovered parent `995a52107db47af930255e53459178cd9a259216` is independently verified by successful CI38604748504/iOS38604748496; those runs do not verify the new source.
 
 1. Fetch actual latest HEAD and PR #5, preserve newer work, retrieve its exact-source fast/full/iOS results from the PR handoff. No manual duplicate full reruns. Require clean Flutter analysis, all old and nine new Flutter regressions, five new API unit cases and six new PostgreSQL cases in delivery/audience suites; platform/native checks remain mandatory.

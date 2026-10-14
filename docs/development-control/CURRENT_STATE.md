@@ -1,5 +1,14 @@
 # Current development state
 
+## Retry restoration fixture correction — new-source verification pending
+
+Recovered actual remote HEAD `0e26e628dee58685087e414aac14f65d278fa20a`, tree `c4dab517ef941dc7b5de4a3736f58b4b06cb21ed`; checkout clean and PR #5 draft/open on existing base. Fast38609751149 FAILED. Inspected Flutter job116009844897: analysis clean,231 cases passed, one new `restoration refuses pending state belonging to another account or server` failed with MissingPluginException for secure-storage delete. Full CI Flutter job116009765298 has the same independently inspected failure; full38609761447 and native38609761328 were still IN PROGRESS at recovery. Do not infer their final conclusions. Fast backend job116009845293 SUCCESS: shared/API/admin typechecks and all434 unit cases passed; its logs were inspected.
+
+Cause: the invalid-state fixture supplied an in-memory credential store but omitted the chat-outbox store. Correct production session cleanup clears both, so the host-only test reached the actual native plugin without a device. Correction supplies the existing MemoryChatOutboxStore and additionally asserts that it was cleared in both owner/server rejection variants. Original rejection/no-send/session-clearing assertions remain; no production behavior, timeouts, dependencies, native configuration or security checks changed.
+
+Local matrix/release/workbook/whitespace validation PASS. Flutter unavailable locally; corrected fixture and full232-case Flutter result require exact-source automatic CI. The current meaningful correction SHA/tree and run identifiers are recorded in PR #5; no documentation-only CI loop. Original failure retained in CI_FAILURES.md. No new feature started on the known failing frontend. After verification, resume safe pending-create rejection resolution/admin key adoption from NEXT_TASK. All production/frozen acceptance gates remain OPEN; no merge/deploy.
+
+
 ## Calendar create retry safety — implementation, exact-source CI pending
 
 Recovered remote/PR HEAD `995a52107db47af930255e53459178cd9a259216` with a clean active checkout; PR #5 remains draft/open/unmerged on its existing M4 base. GitHub independently returned **SUCCESS** for Main CI **38604748504** and iOS **38604748496** at that exact commit. These conclusions supersede the older pending statements below, without crediting them to this new implementation.

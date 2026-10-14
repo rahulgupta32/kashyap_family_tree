@@ -8,6 +8,7 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'package:kashyap_mobile/screens/calendar_events_screen.dart';
 import 'package:kashyap_mobile/localization/calendar_labels.dart';
 import 'native_session_test.dart' show MemorySessionStore, jsonResponse;
+import 'chat_outbox_test.dart' show MemoryChatOutboxStore;
 import 'calendar_composition_test.dart' show tapButton, createDialog, chooseDate, titleKey;
 
 String token(String owner) => '${base64Url.encode(utf8.encode('{}'))}.${base64Url.encode(utf8.encode(jsonEncode({'sub':owner})))}.signature';
@@ -91,8 +92,9 @@ void main() {
   for(final mismatch in ['owner','server']) {
    final store=MemorySessionStore()..value=jsonEncode({'accessToken':token('owner'),'refreshToken':'refresh',
     'pendingCalendarCreate':{'owner':mismatch=='owner'?'another':'owner','server':mismatch=='server'?'another-server':'https://calendar.example.test','key':'00000000-0000-4000-8000-000000000001','body':draft()}});
-   final api=GenealogyApiService(baseUrl:'https://calendar.example.test',sessionStore:store,client:MockClient((_)async=>throw StateError('must not send')));addTearDown(api.dispose);
-   expect(await api.restoreSession(),isFalse);expect(api.hasPendingCalendarCreate,isFalse);expect(store.value,isNull);
+   final outbox=MemoryChatOutboxStore()..value='[]';
+   final api=GenealogyApiService(baseUrl:'https://calendar.example.test',sessionStore:store,chatOutboxStore:outbox,client:MockClient((_)async=>throw StateError('must not send')));addTearDown(api.dispose);
+   expect(await api.restoreSession(),isFalse);expect(api.hasPendingCalendarCreate,isFalse);expect(store.value,isNull);expect(outbox.value,isNull);
   }
  });
  testWidgets('closing a failed create and reopening resolves its original identity before a new draft',(tester)async {

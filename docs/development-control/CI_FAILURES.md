@@ -4,6 +4,7 @@ Every conclusion belongs to its recorded SHA and run, not to the current branch 
 
 | Source SHA | Run | Observed conclusion / demonstrated phase | Follow-up / supersession |
 |---|---:|---|---|
+| `0e26e628dee58685087e414aac14f65d278fa20a` | Fast38609751149 / full Flutter job116009765298 | Fast FAILED; full Flutter FAILED: analysis clean,231 passed/one failed; invalid pending-state fixture called native chat secure-storage delete on host | Supply MemoryChatOutboxStore and assert cleanup, preserving production behavior and all rejection checks; correction exact-source CI pending. Full38609761447/native38609761328 still in progress at recovery |
 | `94e3189f50b83c384ef18213c497378668b705a2` | 38456236256 PR iOS | FAILED, pre-body simulator test-launch deadline; unsigned device compilation passed | Same source push iOS 38456225526 SUCCESS, retained source-bound closure in PR. Reliability gate remains open; failed check is not relabelled |
 | `b515d59709e46487a51ac0d59dd9738efc9efecd` | 38469789349 push iOS | FAILED at bounded `test-launch`; no driver/body success | Later checkpoint `b7ec666...` native runs passed; no simulator/source change was used as a speculative fix |
 | `b515d59709e46487a51ac0d59dd9738efc9efecd` | 38469796673 PR iOS | FAILED at `test-evidence` after driver `RESULT_VERIFIED` and `All tests passed` | Evidence failure remains a failed workflow, not accepted solely from driver output; later checkpoint native verification passed |

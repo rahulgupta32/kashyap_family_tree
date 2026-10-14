@@ -24,3 +24,9 @@ The ordinary dialog freezes its fields after first submission. Save retries the 
 - Parent 995a52107db47af930255e53459178cd9a259216 has independently retrieved successful CI38604748504 and native38604748496. New source inherits no green result. Exact SHA/tree/automatic run IDs and actual statuses are recorded in PR #5 after publication.
 
 No merge/deployment or release acceptance. Physical secure-storage durability, device/signing/live providers, distributed operational recovery, remaining functional/NFR/privacy approvals and all 260 final acceptance records stay open.
+
+## Host-only restoration fixture correction
+
+At source0e26e628, Fast38609751149/job116009844897 and full Flutter job116009765298 independently failed one invalid-persisted-state case: MissingPluginException on chat-outbox secure delete during correct session cleanup. Flutter analysis was clean and231 other tests passed. Backend fast job116009845293 independently passed46 suites/434 cases plus shared/API/admin typechecks. Full38609761447/native38609761328 were still running at observation.
+
+The correction supplies the existing MemoryChatOutboxStore only to that host fixture, seeds its record and additionally asserts deletion for both owner/server mismatches. No production code or original assertion changed. Local frozen validators/whitespace pass; local Flutter remains unavailable. Correction's exact SHA/tree/automatic runs are recorded in PR #5; require all232 Flutter cases and final platform/native conclusions before claiming verification.
