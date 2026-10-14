@@ -1,10 +1,10 @@
 # Current development state
 
-## Current correction — calendar refresh test setup, verification pending
+## Current correction — calendar refresh through the user action, verification pending
 
 Verified source `6089424e080635a126e8205aa362781ec0d01f1e`, tree `b467a6ac537fed194d232390520aa12bc011787c`. Fast38567628940 and full PR CI38567633814 FAILED in Flutter test execution: clean analysis,201 tests passed, one new `same session access rotation keeps loaded events and controls available` case timed out after10minutes. Exact jobs115864375104/115864286112 logs independently inspected. All other14 calendar and5 session observer cases passed. Full platform/private storage/ClamAV/scale jobs succeeded; native38567633757 was still PENDING at this observation. Do not credit their outcomes to the corrected source.
 
-Small fixture-only correction: run OTP credential setup through `tester.runAsync`, as the later authenticated probe already does, so asynchronous credential persistence/HTTP setup is outside WidgetTester FakeAsync. Production session guard and all privacy/rotation assertions remain unchanged. No timeout increase, test skip, lint suppression or manual full rerun. New-source Flutter success remains unproven until automatic checks finish. Resolve this commit's exact identity from Git and read the source-bound PR #5 handoff.
+Fixture-only refinement: flush initial serialized-storage setup with a pump, then trigger the401/refresh/retry through the real calendar refresh button under the widget clock. This removes the artificial probe and cross-zone future bridge. Assert already-loaded private event, unchanged session generation, exactly one token refresh/three calendar reads, and usable controls. Production session guard and privacy/rotation assertions remain unchanged. Earlier intermediate fixture source `4ac9287a40128b7b8ae1592aae273e819555325e` Fast38569438391/full38569448557/native38569448598 remain independently PENDING at this observation; do not infer a failure or success. No timeout increase, test skip, lint suppression or manual full rerun. New-source Flutter success remains unproven until automatic checks finish. Resolve this commit's exact identity from Git and read the source-bound PR #5 handoff.
 
 Next: inspect new automatic fast/full/native checks, confirm all202 Flutter cases and every selected/full job. On demonstrated failures inspect exact evidence; otherwise finish this recovery boundary before ordinary calendar composition. All production/frozen acceptance gates remain OPEN; no merge/deploy/store submission.
 

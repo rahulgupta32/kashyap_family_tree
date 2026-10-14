@@ -220,18 +220,28 @@ void main() {
   });
 
   testWidgets('same session access rotation keeps loaded events and controls available', (tester) async {
+    var calendarReads = 0;
+    var refreshes = 0;
     final api = GenealogyApiService(sessionStore: MemorySessionStore(), chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
       if(request.url.path == '/auth/native/verify') return jsonResponse({'accessToken':'old-access','refreshToken':'old-refresh'});
-      if(request.url.path == '/auth/native/refresh') return jsonResponse({'accessToken':'new-access','refreshToken':'new-refresh'});
-      if(request.url.path == '/probe') return request.headers['Authorization'] == 'Bearer old-access' ? jsonResponse({},401) : jsonResponse({});
+      if(request.url.path == '/auth/native/refresh') {
+        refreshes++;
+        return jsonResponse({'accessToken':'new-access','refreshToken':'new-refresh'});
+      }
+      expect(request.url.path, '/calendar/events');
+      calendarReads++;
+      if (calendarReads == 2) return jsonResponse({}, 401);
       return jsonResponse([event()]);
     })); addTearDown(api.dispose);
-    // Complete asynchronous credential setup outside the widget FakeAsync zone.
-    await tester.runAsync(() => api.verifyOtp('challenge','123456'));
+    // Flush initial serialized-storage setup before awaiting authentication.
+    await tester.pump();
+    await api.verifyOtp('challenge','123456');
     await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService:api))); await tester.pumpAndSettle();
     final generation = api.pushSessionGeneration;
-    await tester.runAsync(() => api.requestJson('/probe')); await tester.pumpAndSettle();
+    expect(find.text('Private fictional invitation'), findsOneWidget);
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.refresh)); await tester.pumpAndSettle();
     expect(api.authToken,'new-access'); expect(api.pushSessionGeneration,generation);
+    expect(refreshes, 1); expect(calendarReads, 3);
     expect(find.text('Private fictional invitation'), findsOneWidget); expect(find.text(calendarSessionChanged), findsNothing);
     expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton,Icons.add)).onPressed,isNotNull);
   });
