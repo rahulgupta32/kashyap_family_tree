@@ -25,3 +25,7 @@ Relevant retained reports: `docs/execution/IOS_EXPLICIT_VM_CONNECTION_REPORT.md`
 ## Local toolchain limitation
 
 The master-audit container pnpm wrapper is11.25.0 and refused the repository's pinned >=9.15.9<10 engine. The rejected commands did not validate a frozen install. API/shared TypeScript and the10 media signing-key regressions were instead executed directly against cached dependency tooling; they passed. No lock/engine/security relaxation was made. New GitHub jobs must install using pinned pnpm9.15.9 and record actual conclusions. Flutter remains unavailable locally.
+
+## Master calendar lifecycle correction
+
+Source `e8010f30038c1a806a8db29817e7f753705aa31c` Fast run38567069054 FAILED and full PR CI38567076178 has demonstrated Flutter Analyze failure: `use_build_context_synchronously` at calendar_events_screen.dart79/170. The private-session helper checked mounted at runtime, but Flutter analyzer requires an explicit mounted guard at each post-await context use. Add `mounted &&` at only those RSVP/manage error-message sites; do not disable the lint or change semantics/tests/security guards. Widget execution was not reached. Fast TypeScript/backend job115862457229 passed429 units and admin/API/shared checks; frozen planner/matrix validators passed. Other full/native jobs remain independent and must be inspected separately. Corrected-source execution is pending until its automatic runs finish.

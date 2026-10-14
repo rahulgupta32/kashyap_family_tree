@@ -75,7 +75,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       if (!checkCalendarSession()) return;
       await _loadEvents();
     } catch (error) {
-      if (checkCalendarSession()) {
+      if (mounted && checkCalendarSession()) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
@@ -167,7 +167,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
         data: {'version': event['version'], (cancel ? 'reason' : 'title'): result});
       await _loadEvents();
-    } catch(e) {if(checkCalendarSession()) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));}
+    } catch(e) {if(mounted && checkCalendarSession()) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));}
   }
 
   @override

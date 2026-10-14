@@ -1,5 +1,13 @@
 # Current development state
 
+## Current correction — explicit mounted checks, verification pending
+
+Master implementation source `e8010f30038c1a806a8db29817e7f753705aa31c`, tree `22b6f75d4a5274d3c08fd2727ddca46493e4bb5b`, was published with reviewed byte equality and a clean tree. Fast38567069054 failed2 Flutter analyzer findings before widget execution; full PR38567076178 Flutter failed the same analyzer stage. Exact sites: calendar_events_screen.dart79/170, post-await RSVP/manage error-message context. This correction adds explicit mounted checks at those sites while retaining the stronger session guard; lint/tests/provider/native configuration are unchanged.
+
+Verified master-source evidence: Fast planner/matrix/frozen validators succeeded; shared/API/admin TypeScript and429 unit tests succeeded in job115862457229. Full/native CI38567076178/38567076330 remain independent; never credit pending jobs. Detailed operational handoff publication was blocked by automatic review; reduced public ownership summaries were approved and full documents provided privately. Source handoff: https://github.com/rahulgupta32/kashyap_family_tree/pull/5#issuecomment-6168782307 .
+
+Current corrected source is this meaningful commit, resolved from Git; its exact SHA/tree/run IDs and actual conclusions belong in PR #5. Next: inspect corrected automatic fast/full/native source; require clean Flutter analysis and all new regressions. Fix demonstrated failures only. Ordinary calendar composition is staged as the next compatible scope after focused checks pass; do not proceed on a known failing frontend. No merge/deploy/store approval, all frozen acceptance/release gates OPEN.
+
 ## Master completion milestone — additive audit, calendar privacy and production controls
 
 Authority: user adopted the attached Master Development Prompt on 2026-10-14. Continue compatible recoverable milestones without an artificial one-task stop; keep frozen scope/approvals/security intact and let slow CI finish independently. See `DECISION_LOG.md`.
