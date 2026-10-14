@@ -131,7 +131,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           TextButton(onPressed: busy ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
             final picked=await Navigator.of(dialogContext).push<Map<String,dynamic>>(MaterialPageRoute(builder:(_)=>CalendarAudiencePicker(api:widget.apiService)));
-            if(dialogContext.mounted && checkCalendarSession())update(()=>audience=picked);
+            if(dialogContext.mounted && checkCalendarSession() && picked != null)update(()=>audience=picked);
           },child:const Text('आमन्त्रित समूह छान्नुहोस् (Choose invitation audience)')),
           if(audience!=null)...[
             Text('आमन्त्रित खाताहरू (Recipient accounts): ${audience!['recipientCount']}'),
@@ -149,7 +149,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
             if(selected == null) {update(() => error = calendarLabels['required']); return;}
             if(audience!=null){
               final expiry=DateTime.tryParse(audience!['expiresAt'] as String);
-              if(expiry==null||!expiry.isAfter(DateTime.now())){update((){audience=null;error='म्याद सकियो, समूह फेरि छान्नुहोस् (Preview expired; choose the audience again)';});return;}
+              if(expiry==null||!expiry.isAfter(DateTime.now())){update(()=>error=calendarLabels['audienceExpired']);return;}
             }
             update(() {busy = true; error = null;});
             try {
@@ -162,7 +162,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
               if(!checkCalendarSession()) return;
               if(dialogContext.mounted) Navigator.pop(dialogContext);
               await _loadEvents();
-            } catch(e) {if(dialogContext.mounted && checkCalendarSession()) update(() {busy = false; error = e.toString(); audience=null;});}
+            } catch(_) {if(dialogContext.mounted && checkCalendarSession()) update(() {busy = false; error = calendarLabels['createFailed'];});}
           }, child: Text(calendarLabels['save']!)),
         ],
       )));
