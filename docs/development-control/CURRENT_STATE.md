@@ -1,5 +1,13 @@
 # Current development state
 
+## Current correction — calendar refresh test setup, verification pending
+
+Verified source `6089424e080635a126e8205aa362781ec0d01f1e`, tree `b467a6ac537fed194d232390520aa12bc011787c`. Fast38567628940 and full PR CI38567633814 FAILED in Flutter test execution: clean analysis,201 tests passed, one new `same session access rotation keeps loaded events and controls available` case timed out after10minutes. Exact jobs115864375104/115864286112 logs independently inspected. All other14 calendar and5 session observer cases passed. Full platform/private storage/ClamAV/scale jobs succeeded; native38567633757 was still PENDING at this observation. Do not credit their outcomes to the corrected source.
+
+Small fixture-only correction: run OTP credential setup through `tester.runAsync`, as the later authenticated probe already does, so asynchronous credential persistence/HTTP setup is outside WidgetTester FakeAsync. Production session guard and all privacy/rotation assertions remain unchanged. No timeout increase, test skip, lint suppression or manual full rerun. New-source Flutter success remains unproven until automatic checks finish. Resolve this commit's exact identity from Git and read the source-bound PR #5 handoff.
+
+Next: inspect new automatic fast/full/native checks, confirm all202 Flutter cases and every selected/full job. On demonstrated failures inspect exact evidence; otherwise finish this recovery boundary before ordinary calendar composition. All production/frozen acceptance gates remain OPEN; no merge/deploy/store submission.
+
 ## Current correction — explicit mounted checks, verification pending
 
 Master implementation source `e8010f30038c1a806a8db29817e7f753705aa31c`, tree `22b6f75d4a5274d3c08fd2727ddca46493e4bb5b`, was published with reviewed byte equality and a clean tree. Fast38567069054 failed2 Flutter analyzer findings before widget execution; full PR38567076178 Flutter failed the same analyzer stage. Exact sites: calendar_events_screen.dart79/170, post-await RSVP/manage error-message context. This correction adds explicit mounted checks at those sites while retaining the stronger session guard; lint/tests/provider/native configuration are unchanged.

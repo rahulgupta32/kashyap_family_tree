@@ -226,7 +226,8 @@ void main() {
       if(request.url.path == '/probe') return request.headers['Authorization'] == 'Bearer old-access' ? jsonResponse({},401) : jsonResponse({});
       return jsonResponse([event()]);
     })); addTearDown(api.dispose);
-    await api.verifyOtp('challenge','123456');
+    // Complete asynchronous credential setup outside the widget FakeAsync zone.
+    await tester.runAsync(() => api.verifyOtp('challenge','123456'));
     await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService:api))); await tester.pumpAndSettle();
     final generation = api.pushSessionGeneration;
     await tester.runAsync(() => api.requestJson('/probe')); await tester.pumpAndSettle();
