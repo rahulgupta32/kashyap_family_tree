@@ -30,15 +30,15 @@ void main() {
     testWidgets('create $failure retains invitation scope and hides raw server errors on explicit retry', (tester) async {
       final bodies = <Map<String, dynamic>>[];
       final api = GenealogyApiService(client: MockClient((request) async {
-        if (request.url.path == '/genealogy/branches') return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]);
-        if (request.url.path == '/calendar/events/preview') return jsonResponse({
+        if (request.url.path == '/genealogy/branches') { return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]); }
+        if (request.url.path == '/calendar/events/preview') { return jsonResponse({
           'previewId':'preview-1','selection':selection,'recipientCount':1,
           'expiresAt':DateTime.now().add(const Duration(minutes:10)).toIso8601String(),
           'recipients':[{'name':'Fictional recipient'}],
-        });
+        }); }
         if (request.method == 'POST') {
           bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
-          if (failure == 'network') throw StateError('sensitive diagnostic fixture');
+          if (failure == 'network') { throw StateError('sensitive diagnostic fixture'); }
           return jsonResponse({'message':'sensitive diagnostic fixture'}, int.parse(failure));
         }
         return jsonResponse([]);
@@ -67,9 +67,9 @@ void main() {
   testWidgets('cancelling replacement audience selection retains the previous private preview', (tester) async {
     Map<String,dynamic>? submitted;
     final api=GenealogyApiService(client:MockClient((request) async {
-      if(request.url.path=='/genealogy/branches') return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]);
-      if(request.url.path=='/calendar/events/preview') return jsonResponse({'previewId':'preview-1','selection':selection,'recipientCount':1,
-        'expiresAt':DateTime.now().add(const Duration(minutes:10)).toIso8601String(),'recipients':[{'name':'Fictional recipient'}]});
+      if(request.url.path=='/genealogy/branches') { return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]); }
+      if(request.url.path=='/calendar/events/preview') { return jsonResponse({'previewId':'preview-1','selection':selection,'recipientCount':1,
+        'expiresAt':DateTime.now().add(const Duration(minutes:10)).toIso8601String(),'recipients':[{'name':'Fictional recipient'}]}); }
       if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({},201);}
       return jsonResponse([]);
     }))..setAuthToken('fixture');addTearDown(api.dispose);

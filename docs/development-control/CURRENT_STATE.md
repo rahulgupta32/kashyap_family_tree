@@ -1,5 +1,11 @@
 # Current development state
 
+## Current correction — create privacy test fixture blocks
+
+Privacy source `ce0f1e9aa4e088273575b5a63d55ffbd25bba60d`, tree `9c738a3fd49b6cc99abc61c6c6dafa612f02f6dc`, failed Fast38604295628 at two analyzer curly-brace findings in multiline mocked preview-return statements (job115991218739 logs inspected, sites34/71). No new privacy widget executed. Added explicit blocks in the fixtures; production behavior, every assertion, timeout and analyzer rules remain unchanged. Failure retained in CI_FAILURES. Full38604311219/native38604311215 remain independent; no new source inherits old outcomes.
+
+Resolve this correction SHA/tree from Git and PR handoff; inspect automatic Fast/full/native source checks, require all223 widgets and clean analysis. Fix demonstrated failures only. Current whole application remains NOT READY; next meaningful task after focused verification is transaction-bound creation idempotency/durable native retry identity. No merge/deploy/store submission.
+
 ## Current privacy correction — preserve ordinary event audience
 
 Recovered composition source `941c56ea4a7f9c8b3438b9f6dd7a2029bb97f515`, tree `38435b542210a898c4b467fc5a99b2c8ce10ccae`, is published with reviewed/local tree equality and local source preserved on recovery/local-ordinary-composition. Fast38603176427 SUCCESS; Flutter job115987435732 logs independently inspected: clean analysis and218tests passed, including all16 new composition cases. Full38603186103 Flutter/storage/ClamAV/scale jobs SUCCESS; platform/Android and native38603186047 still PENDING at this observation. These older results do not verify this correction. Handoff https://github.com/rahulgupta32/kashyap_family_tree/pull/5#issuecomment-6173833003 .

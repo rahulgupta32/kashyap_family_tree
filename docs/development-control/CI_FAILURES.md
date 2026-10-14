@@ -44,3 +44,8 @@ Intermediate4ac9287 Fast38569438391/full38569448557 FAILED at the same10minute r
 ## Recovered current-source native launch failure
 
 Source `b62f6c93b0d3ed2ced22762dea8a8a6b7eb76bed`: full general CI38570262065 SUCCESS, all six jobs inspected. Native38570262152 FAILED; job115873297042 log/steps inspected. Simulator bootstatus, simulator compilation, fixture build/install and unsigned device compilation succeeded; `test-launch` exceeded its existing30second deadline. No test-body success is credited. Artifact11896814505 retained with recorded ZIP SHA256 a8107e0006536cefa00342f2a71c6ed521f6b9bb2c6f03de1a114d168dd5423e, contents not independently inspected in this recovery. Do not infer a Keychain/application assertion failure or change simulator configuration without artifact evidence. The recovered ordinary composition code is independent of this pre-body infrastructure failure; its automatic exact-source native workflow must still be inspected.
+
+
+## Native create privacy fixture analyzer correction
+
+Source `ce0f1e9aa4e088273575b5a63d55ffbd25bba60d`: Fast38604295628 FAILED; Flutter job115991218739 log inspected. Analyze reports curly_braces_in_flow_control_structures at calendar_create_privacy_test.dart34/71, the multiline mocked preview return statements. Widgets did not execute. Correction adds explicit blocks in those test fixture branches; production code, assertions, timeouts and lint rules unchanged. New-source execution remains PENDING. Full38604311219/native38604311215 are independently pending until their actual conclusions are retrieved.
