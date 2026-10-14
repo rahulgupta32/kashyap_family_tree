@@ -50,8 +50,16 @@ class NativePushLifecycle {
 
   Future<bool> resumeExisting() async {
     if (_closed || api.authToken == null) { return false; }
-    if (_stoppedGeneration == api.pushSessionGeneration) { return false; }
     if (_enabling > 0) { return false; }
+    if (api.pushRemovalPending && _pendingActivationGeneration != api.pushSessionGeneration) {
+      final epoch = ++_epoch, generation = api.pushSessionGeneration;
+      _stoppedGeneration = generation;
+      _enabled = false;
+      await _cancelChanges();
+      await _serialize<void>(() => _removeRegistration(epoch, generation));
+      return false;
+    }
+    if (_stoppedGeneration == api.pushSessionGeneration) { return false; }
     final epoch = ++_epoch, generation = api.pushSessionGeneration;
     await _writes;
     if (!_current(epoch, generation)) { return false; }
@@ -117,7 +125,16 @@ class NativePushLifecycle {
     }
     final currentToken = rotated ?? token;
     await _serialize<void>(() async {
-      if (_current(epoch, generation)) { await api.registerPushToken(currentToken); }
+      if (_current(epoch, generation)) {
+        final result = await api.registerPushToken(currentToken);
+        if (_current(epoch, generation) && api.pushRemovalPending) {
+          final registration = result is Map ? result['registration'] : null;
+          if (registration is! Map || registration['id'] is! String || (registration['id'] as String).isEmpty) {
+            throw StateError('Push activation could not be confirmed');
+          }
+          await api.confirmPushRemoval(generation); // Only after explicit opt-in PUT confirmation.
+        }
+      }
     });
     if (!_current(epoch, generation)) { return false; }
     _pendingActivationGeneration = null;
@@ -155,15 +172,30 @@ class NativePushLifecycle {
     await _cancelChanges();
     // A pending PUT must finish before DELETE, or it could restore a disabled
     // registration. A newer activation supersedes this deletion.
-    await _serialize<void>(() async {
+    await _serialize<void>(() => _removeRegistration(epoch, generation));
+  }
+
+  Future<void> _removeRegistration(int epoch, int generation) async {
+    if (!_current(epoch, generation)) { return; }
+    try {
+      // Persist before HTTP so a killed process can retry the idempotent DELETE.
+      // If secure storage is unavailable, still attempt server removal instead
+      // of prolonging delivery. Keep the in-memory intent until both the server
+      // acknowledgement and a subsequent storage write have been confirmed.
+      try { await api.rememberPushRemoval(generation); }
+      catch (_) { /* The fixed storage failure must not block a safe DELETE. */ }
       if (!_current(epoch, generation)) { return; }
-      try { await api.removePushRegistration(); }
-      finally {
-        await _withSource<void>(() async {
-          if (_current(epoch, generation)) { await source.stop(); }
-        });
+      final result = await api.removePushRegistration();
+      if (!_current(epoch, generation)) { return; }
+      if (result is! Map || result['success'] != true) {
+        throw StateError('Push removal could not be confirmed');
       }
-    });
+      await api.confirmPushRemoval(generation);
+    } finally {
+      await _withSource<void>(() async {
+        if (_current(epoch, generation)) { await source.stop(); }
+      });
+    }
   }
 
   Future<void> signOut() async {

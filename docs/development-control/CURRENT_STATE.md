@@ -1,5 +1,32 @@
 # Current development state
 
+## Current bounded batch — durable failed native push opt-out
+
+New implementation source identity: the commit containing this section (resolve `git log -1 --format=%H -- docs/development-control/CURRENT_STATE.md` after fetching the branch). Published exact SHA/tree, automatic run IDs and observed conclusions are also appended to PR #5's source-bound handoff; do not create documentation-only commits just to chase that commit's CI.
+
+Recovery HEAD: `b7ec666cbd1aae9262dd1bb38d1f42619237671f`, tree `c28c3adbcb50ce96024d8dbbdaeba18d0abf293f`; local tree clean and remote/PR checked. No newer remote commit or uncommitted active-checkout source was overwritten. PR #5 remains draft/open/unmerged on its existing M4 base.
+
+Completed bounded implementation: secure session-bound pending-removal marker, preservation through refresh/restoration, idempotent failed-opt-out retry before push reacquisition, confirmed durable acknowledgement, explicit re-enable supersession and generation/serialized-write fencing. Added 13 focused mock regressions and updated one existing lifecycle expectation to require reconciliation. Report: `docs/execution/NATIVE_PUSH_OPT_OUT_RECOVERY_REPORT.md`.
+
+Local frozen assessment/workbook/whitespace checks PASS. Flutter/Dart unavailable locally: new analyze/widget/platform/native verification is PENDING until its automatic exact-source results are inspected. No earlier green result is credited to this new implementation.
+
+Closed prior routing batch at the exact recovery HEAD:
+
+| Source | Run | Actual conclusion |
+|---|---:|---|
+| `b7ec666cbd1aae9262dd1bb38d1f42619237671f` | PR CI 38470234155 | SUCCESS, all six jobs inspected |
+| Same source | PR iOS 38470234134 | SUCCESS, startup/Keychain/evidence and unsigned device compilation |
+| Same source | push CI 38470226640 | SUCCESS |
+| Same source | push iOS 38470226429 | SUCCESS |
+
+Inspected platform logs: 419 unit, 542 general PostgreSQL/Redis, 61 browser and successful fictional restore. Dedicated storage covers ten cases skipped in the general suite. Prior routing Flutter evidence: clean analysis/169 tests including all 16 routing regressions. Inspected checkpoint iOS job 115547109771 includes real Keychain markers, successful driver, evidence collection and cleanup. Closure: https://github.com/rahulgupta32/kashyap_family_tree/pull/5#issuecomment-6167764383 .
+
+Preserved earlier failures at `b515d59709e46487a51ac0d59dd9738efc9efecd`: push iOS 38469789349 failed the bounded test-launch phase; PR iOS 38469796673 reached driver success but failed test-evidence collection. Native launch/evidence reliability remains OPEN; no simulator change or manual rerun was made.
+
+Next action: fetch actual latest HEAD/PR, inspect this commit's exact-source automatic Flutter/platform/native jobs and any failure evidence. Confirm all 13 new regressions and the updated lifecycle case executed. Fix demonstrated failures only and record closure in PR #5. Then stop at this batch boundary. Next workflow candidate is listed in `NEXT_TASK.md`; do not combine it with opt-out reconciliation. All 260 final acceptance rows and production gates remain OPEN; no main merge/deployment.
+
+The sections below are historical observations; pending statements are superseded only by the exact-source closure above and subsequent source-bound PR evidence.
+
 ## Current bounded batch — published; CI verification pending
 
 Implementation source: `b515d59709e46487a51ac0d59dd9738efc9efecd`.

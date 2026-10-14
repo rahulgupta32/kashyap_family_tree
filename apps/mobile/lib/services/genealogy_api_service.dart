@@ -18,6 +18,7 @@ class GenealogyApiService {
   ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   int _sessionGeneration = 0;
+  bool _pushRemovalPending = false;
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
@@ -40,10 +41,46 @@ class GenealogyApiService {
     _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
+    _pushRemovalPending = false;
   }
 
   String? get authToken => _authToken;
   int get pushSessionGeneration => _sessionGeneration;
+  bool get pushRemovalPending => _pushRemovalPending;
+
+  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending}) => {
+    'accessToken': access, 'refreshToken': refresh,
+    if (removalPending) 'pushRemovalPending': true,
+  };
+
+  /// The flag shares the secure credential record and its serialized writes.
+  /// Rotation retains it; accepting a replacement native session clears it.
+  Future<void> rememberPushRemoval(int generation) {
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    _pushRemovalPending = true; // Stop reconciliation even if storage fails.
+    return _persistPushRemoval(true, generation);
+  }
+
+  Future<void> confirmPushRemoval(int generation) => _persistPushRemoval(false, generation);
+
+  Future<void> _persistPushRemoval(bool pending, int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    // Injected bearer-only sessions have no restorable credential record.
+    // Do not overwrite secure storage with a non-restorable token pair.
+    if (_refreshToken != null) {
+      try {
+        await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending: pending)));
+      } catch (_) { throw StateError('Push preference storage unavailable'); }
+    }
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    _pushRemovalPending = pending; // Clearing requires a confirmed durable write.
+  });
 
   // This subject scopes encrypted local intent, not server authorization. Every
   // send still authenticates and checks current permissions in the API.
@@ -73,11 +110,12 @@ class GenealogyApiService {
     }
     await _serializeSessionStorage(() async {
       if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
-      await _sessionStore.write(json.encode({'accessToken': access, 'refreshToken': refresh}));
+      await _sessionStore.write(json.encode(_storedSession(access, refresh,
+        removalPending: !replacement && _pushRemovalPending)));
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
       // Requests may have begun with the prior access token while sign-in was
       // pending. Activation is a second boundary, separate from token rotation.
-      if (replacement) { _sessionGeneration++; }
+      if (replacement) { _sessionGeneration++; _pushRemovalPending = false; }
       _authToken = access;
       _refreshToken = refresh;
     });
@@ -98,13 +136,15 @@ class GenealogyApiService {
     if (saved == null) { return false; }
     try {
       final data = json.decode(saved);
-      if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty) {
+      if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty ||
+          (data.containsKey('pushRemovalPending') && data['pushRemovalPending'] is! bool)) {
         throw const FormatException('Invalid saved session');
       }
       // Fence work begun during the asynchronous persisted-session read.
       _sessionGeneration++;
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
+      _pushRemovalPending = data['pushRemovalPending'] == true;
       return await _refreshSession();
     } on FormatException {
       await _clearSession();
@@ -116,6 +156,7 @@ class GenealogyApiService {
     final generation = ++_sessionGeneration;
     _authToken = null;
     _refreshToken = null;
+    _pushRemovalPending = false;
     try { await _serializeSessionStorage(() => _sessionStore.clear()); }
     finally {
       if (generation == _sessionGeneration) {

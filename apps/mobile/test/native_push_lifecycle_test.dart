@@ -286,7 +286,10 @@ void main() {
     await expectLater(lifecycle.disable(), throwsA(isA<StateError>()));
     expect(source.running, false);
     expect(source.stops, 1);
-    expect(await lifecycle.resumeExisting(), false);
+    expect(service.pushRemovalPending, true);
+    await expectLater(lifecycle.resumeExisting(), throwsStateError);
+    expect(source.stops, 2);
+    expect(source.permissionRequests, 1);
   });
 
   test('new explicit session activation supersedes queued old-session shutdown', () async {
