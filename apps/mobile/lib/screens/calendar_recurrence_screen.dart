@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'calendar_session_guard.dart';
 import '../services/genealogy_api_service.dart';
 
 class CalendarRecurrenceScreen extends StatefulWidget {
@@ -10,7 +10,15 @@ class CalendarRecurrenceScreen extends StatefulWidget {
   State<CalendarRecurrenceScreen> createState() => _CalendarRecurrenceScreenState();
 }
 
-class _CalendarRecurrenceScreenState extends State<CalendarRecurrenceScreen> {
+class _CalendarRecurrenceScreenState extends State<CalendarRecurrenceScreen> with CalendarSessionGuard<CalendarRecurrenceScreen> {
+  @override
+  GenealogyApiService get calendarApi => widget.api;
+  @override
+  void clearCalendarSession() {
+    _expired=true; _items=[]; _next=null; _preview=null;
+    _reference.clear(); _reason.clear(); _time.clear(); _year.clear();
+    _consent=false; _policy=null; _busy=false; _error=calendarSessionChanged;
+  }
   final _reference = TextEditingController();
   final _reason = TextEditingController();
   final _time = TextEditingController(text: '09:00');
@@ -19,7 +27,6 @@ class _CalendarRecurrenceScreenState extends State<CalendarRecurrenceScreen> {
   bool _busy = false, _queue = false, _consent = false, _expired = false;
   List<dynamic> _items = [];
   Map? _preview;
-  Timer? _sessionWatch;
 
   @override
   void initState() {
@@ -27,26 +34,11 @@ class _CalendarRecurrenceScreenState extends State<CalendarRecurrenceScreen> {
     _owner = widget.api.chatAccountId;
     final nepal = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 45));
     _year.text = '${nepal.year + 1}';
-    _sessionWatch = Timer.periodic(const Duration(milliseconds: 500), (_) => _current());
     _run(() => _load());
   }
-  bool _current() {
-    if (!mounted) return false;
-    if (_expired) return false;
-    if (_owner == null || widget.api.chatAccountId != _owner) {
-      setState(() {
-        _expired = true; _items = []; _next = null; _preview = null;
-        _reference.clear(); _reason.clear(); _time.clear(); _year.clear();
-        _consent = false; _policy = null; _busy = false;
-        _error = 'खाता बदलियो। फेरि खोल्नुहोस् (Session changed; reopen this screen)';
-      });
-      return false;
-    }
-    return true;
-  }
+  bool _current() => checkCalendarSession();
   @override
   void dispose() {
-    _sessionWatch?.cancel();
     for (final c in [_reference, _reason, _time, _year]) { c.dispose(); }
     super.dispose();
   }
@@ -85,7 +77,7 @@ class _CalendarRecurrenceScreenState extends State<CalendarRecurrenceScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('वार्षिक निजी सम्झना (Annual reminders)')),
-    body: ListView(padding: const EdgeInsets.all(16), children: [
+    body: !calendarSessionCurrent ? const Center(child: Text(calendarSessionChanged)) : ListView(padding: const EdgeInsets.all(16), children: [
       const Text('स्वतन्त्र स्वीकृति पछि मूल कार्यक्रमको अर्को वर्षदेखि निजी सम्झना। तिथि तथा सांस्कृतिक नियम उपलब्ध छैनन्। (Private reminders start the year after the source event, after independent approval. Cultural recurrence is unavailable.)'),
       if (_error != null) Text(_error!, key: const ValueKey('recurrence-error'), style: const TextStyle(color: Colors.red)),
       if (_busy) const LinearProgressIndicator(),

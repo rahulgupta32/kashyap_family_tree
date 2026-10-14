@@ -2,9 +2,10 @@ name: iOS native verification
 
 on:
   push:
-    branches: [main, develop, 'feat/*']
+    branches: [main, develop]
   pull_request:
     branches: [main, develop, 'feat/*']
+  workflow_dispatch:
 
 permissions:
   contents: read

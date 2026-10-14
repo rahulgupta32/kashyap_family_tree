@@ -1,4 +1,5 @@
 import { uuid } from '../community/community-policy';
+import { getMediaHmacSecret } from '../../common/utils/media-hmac.config';
 import { ImageDerivativesService } from '../../media/image-derivatives.service';
 import { ImageProcessorService, validateImageCrop } from '../../media/image-processor.service';
 import {
@@ -79,7 +80,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly images?: ImageDerivativesService,
     @Optional() private readonly processor: ImageProcessorService = new ImageProcessorService(),
   ) {
-    this.hmacSecret = process.env.MEDIA_HMAC_SECRET || 'kashyap_secure_media_hmac_secret_key_minimum_32_chars';
+    this.hmacSecret = getMediaHmacSecret();
 
   }
 

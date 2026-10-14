@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, 'feat/*']
+    branches: [main, develop]
   pull_request:
     branches: [main, develop, 'feat/*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -91,6 +95,12 @@ jobs:
       - name: Verify checked out source
         run: python3 scripts/verify_ci_checkout.py
 
+      - name: Test conservative fast validation planning
+        run: python3 -m unittest discover -s scripts -p 'test_fast_ci.py'
+      - name: Validate frozen requirements readiness matrix
+        run: |
+          python3 scripts/validate_requirements_matrix.py
+          python3 scripts/test_requirements_matrix.py
       - name: Validate complete release implementation assessment
         run: python3 scripts/validate_release_assessment.py
 
@@ -280,7 +290,6 @@ jobs:
 
   android-live-api:
     name: Android emulator with live NestJS and PostgreSQL
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

@@ -18,6 +18,8 @@ class GenealogyApiService {
   ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
   int _sessionGeneration = 0;
+  final ValueNotifier<int> _sessionChanges = ValueNotifier<int>(0);
+  bool _disposed = false;
   bool _pushRemovalPending = false;
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
@@ -36,8 +38,14 @@ class GenealogyApiService {
     }
   }
 
+  int _advanceSessionGeneration() {
+    final generation = ++_sessionGeneration;
+    if (!_disposed) { _sessionChanges.value = generation; }
+    return generation;
+  }
+
   void setAuthToken(String? token) {
-    _sessionGeneration++;
+    _advanceSessionGeneration();
     _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
@@ -46,6 +54,7 @@ class GenealogyApiService {
 
   String? get authToken => _authToken;
   int get pushSessionGeneration => _sessionGeneration;
+  Listenable get sessionChanges => _sessionChanges;
   bool get pushRemovalPending => _pushRemovalPending;
 
   Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending}) => {
@@ -115,7 +124,7 @@ class GenealogyApiService {
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
       // Requests may have begun with the prior access token while sign-in was
       // pending. Activation is a second boundary, separate from token rotation.
-      if (replacement) { _sessionGeneration++; _pushRemovalPending = false; }
+      if (replacement) { _advanceSessionGeneration(); _pushRemovalPending = false; }
       _authToken = access;
       _refreshToken = refresh;
     });
@@ -129,7 +138,7 @@ class GenealogyApiService {
   }
 
   Future<bool> restoreSession() async {
-    final generation = ++_sessionGeneration;
+    final generation = _advanceSessionGeneration();
     await _sessionStorageWork;
     final saved = await _sessionStore.read();
     if (generation != _sessionGeneration) { throw StateError('Session changed during restore'); }
@@ -141,7 +150,7 @@ class GenealogyApiService {
         throw const FormatException('Invalid saved session');
       }
       // Fence work begun during the asynchronous persisted-session read.
-      _sessionGeneration++;
+      _advanceSessionGeneration();
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
       _pushRemovalPending = data['pushRemovalPending'] == true;
@@ -153,7 +162,7 @@ class GenealogyApiService {
   }
 
   Future<void> _clearSession() async {
-    final generation = ++_sessionGeneration;
+    final generation = _advanceSessionGeneration();
     _authToken = null;
     _refreshToken = null;
     _pushRemovalPending = false;
@@ -243,7 +252,14 @@ class GenealogyApiService {
     }
   }
 
-  void dispose() { _chatOutbox?.dispose(); _client.close(); }
+  void dispose() {
+    if (_disposed) { return; }
+    _disposed = true;
+    _advanceSessionGeneration(); // Fence requests without notifying unmounting widgets.
+    _sessionChanges.dispose();
+    _chatOutbox?.dispose();
+    _client.close();
+  }
 
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
@@ -265,7 +281,7 @@ class GenealogyApiService {
   }
 
   Future<String> verifyOtp(String otpSessionId, String code, {String? platform}) async {
-    final generation = ++_sessionGeneration;
+    final generation = _advanceSessionGeneration();
     final uri = Uri.parse('$baseUrl/auth/native/verify');
     final body = json.encode({
       'otpSessionId': otpSessionId, 'code': code,

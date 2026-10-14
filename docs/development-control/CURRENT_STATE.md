@@ -1,5 +1,31 @@
 # Current development state
 
+## Master completion milestone — additive audit, calendar privacy and production controls
+
+Authority: user adopted the attached Master Development Prompt on 2026-10-14. Continue compatible recoverable milestones without an artificial one-task stop; keep frozen scope/approvals/security intact and let slow CI finish independently. See `DECISION_LOG.md`.
+
+Current source identity is this meaningful commit: resolve `git log -1 --format=%H -- docs/development-control/CURRENT_STATE.md` after fetching actual integration HEAD. Published exact SHA/tree/run IDs and each observed result are appended to PR #5. Do not create documentation-only rebuild loops. Branch `feat/application-completion`, PR #5 draft/open on existing M4 base; no merge/deploy/store authorization. No submitted reviews/inline threads at recovery.
+
+Recovery checkpoint `c80433c6079033f39d97bc9555990d8a65047b34`, tree `7174a54ebf80e7ed246aa5b55bb5f65938d50903`, is now fully green in all four workflows: PR CI38560862785, PR native38560862836, push CI38560855763, push native38560855873. All six PR jobs/native steps inspected. Flutter182 cases/clean analysis, real fictional Android/API and simulator Keychain/unsigned build passed. Source-bound closure: https://github.com/rahulgupta32/kashyap_family_tree/pull/5#issuecomment-6168256666 .
+
+Retained evidence independently checked: restore11893145089 ZIP digest4b07ff2ffe0cf13e1b68da4bff6790fd4d20a320ab009757db534e0f72b333d4, PASSED82tables/59migrations; native11892472658 ZIP digest62eb507e2805cfc8bef6b0cfbcb69b1f1d4030317c6b528798041481f9a1c44b, exact SHA/tree, 44 native archive files +7 verification input bytes/hash matches and all9 body markers. Production/PITR/RPO/RTO/signed/physical/APNs acceptance remain false. Earlier native failures remain indexed in `CI_FAILURES.md`.
+
+Completed current engineering work (new-source CI PENDING):
+
+- Full additive requirement/edge-case matrix:260 mandatory FR/NFR rows, independently260 cases,2924 unscored supplemental source/ADR records. Exact frozen texts,31 NFR targets, layer paths/status, related tests/evidence limits, privacy/dependencies/blockers and remaining acceptance are preserved. No individual signed closure is invented; no arbitrary percentages. Existing ledgers remain byte-identical.
+- All7 requested control files now exist, with supporting CSV/review evidence and public release ownership handoff and private detailed operational documents. Infrastructural/signing/provider/owner gaps are explicit rather than represented as configured.
+- Native calendar session isolation across events/browse/period/audience/recurrence: synchronously expire cached private state/drafts/previews on session replacement/service swap, reject stale responses/actions and keep same-family refresh stable. Ordinary period/browse toolbar access is available. Added15 widget +5 session-observer regressions.
+- Two-level CI: fast affected checks on feature pushes, full mandatory unchanged PR suites and main/develop/dispatch acceptance; redundant full feature-push copies removed. Planner is conservative for unknown/first/incomplete diffs, source mismatches fail. Android remains mandatory in every full acceptance trigger.
+- Production media HMAC selector rejects absent/short/known fixture/whitespace credentials; actual service signer and key bindings have10 passing local regressions. Managed random provisioning and independent security acceptance remain open.
+
+Local validation PASS:20 fast-planner regressions,10 matrix negative integrity cases, frozen matrix/release/workbook/whitespace checks, cached-tool shared compilation/API TypeScript and10 production HMAC cases. Pnpm wrapper11.25.0 rejected the pinned engine; no frozen install/lock mutation/security waiver was claimed. Flutter unavailable locally; all new mock widget/analyzer/native/platform evidence awaits exact-source GitHub jobs. Native/source locks were not changed.
+
+Parallel file ownership was reviewed before one authoritative publication: matrix/validator, calendar routes/tests, CI/planner, operations handoff; root owned service/key/control integration. Older worktrees/recovery branches remain untouched. No artifact cache/dependency symlink is committed.
+
+Immediate next action: inspect this actual HEAD's Fast developer validation, CI and native workflows. Require all selected fast checks, full six-job CI, native success and all new regressions; fix demonstrated failures only. While slow full/native acceptance remains independent, proceed only with compatible reviewed work that does not rely on an unverified failure. Candidate next native ordinary-event detail/composition scope is in `NEXT_TASK.md`. Full RG-01..12 readiness remains NOT READY in `RELEASE_CHECKLIST.md`, with public gate ownership in `EXTERNAL_HANDOFF.md` and detailed operational documents provided privately.
+
+The sections below are historical snapshots; their pending statements are superseded only by the exact-source closure above or later PR evidence.
+
 ## Current bounded batch — durable failed native push opt-out
 
 New implementation source identity: the commit containing this section (resolve `git log -1 --format=%H -- docs/development-control/CURRENT_STATE.md` after fetching the branch). Published exact SHA/tree, automatic run IDs and observed conclusions are also appended to PR #5's source-bound handoff; do not create documentation-only commits just to chase that commit's CI.

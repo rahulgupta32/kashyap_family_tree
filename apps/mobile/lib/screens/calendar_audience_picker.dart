@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'calendar_session_guard.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -9,7 +10,14 @@ class CalendarAudiencePicker extends StatefulWidget {
   State<CalendarAudiencePicker> createState() => _CalendarAudiencePickerState();
 }
 
-class _CalendarAudiencePickerState extends State<CalendarAudiencePicker> {
+class _CalendarAudiencePickerState extends State<CalendarAudiencePicker> with CalendarSessionGuard<CalendarAudiencePicker> {
+  @override
+  GenealogyApiService get calendarApi => widget.api;
+  @override
+  void clearCalendarSession() {
+    _epoch++; _generation.clear(); _query.clear(); _branch=null; _ancestor=null;
+    _branches=[]; _roots=[]; _preview=null; _busy=false; _error=calendarSessionChanged;
+  }
   final _generation = TextEditingController();
   final _query = TextEditingController();
   String _type = 'BRANCH';
@@ -28,17 +36,19 @@ class _CalendarAudiencePickerState extends State<CalendarAudiencePicker> {
   void dispose() { _epoch++; _generation.dispose(); _query.dispose(); super.dispose(); }
 
   void _change(VoidCallback change) {
+    if (!checkCalendarSession()) return;
     _epoch++;
     setState(() {change(); _preview = null; _error = null; _busy = false;});
   }
   Future<void> _loadBranches() async {
+    if (!checkCalendarSession()) return;
     final epoch = ++_epoch;
     setState(() => _busy = true);
     try {
       final result = await widget.api.requestJson('/genealogy/branches');
-      if (mounted && epoch == _epoch) setState(() => _branches = result as List);
-    } catch (e) { if (mounted && epoch == _epoch) setState(() => _error = e.toString()); }
-    finally { if (mounted && epoch == _epoch) setState(() => _busy = false); }
+      if (epoch == _epoch && checkCalendarSession()) setState(() => _branches = result as List);
+    } catch (e) { if (epoch == _epoch && checkCalendarSession()) setState(() => _error = e.toString()); }
+    finally { if (epoch == _epoch && checkCalendarSession()) setState(() => _busy = false); }
   }
   Map<String, dynamic>? _selection() {
     if (_type == 'DESCENDANTS') return _ancestor == null ? null : {'type': _type, 'ancestorPersonId': _ancestor!.id};
@@ -51,33 +61,34 @@ class _CalendarAudiencePickerState extends State<CalendarAudiencePicker> {
     return {'type': _type, 'branchId': _branch};
   }
   Future<void> _search() async {
-    final epoch = ++_epoch, token = widget.api.authToken;
+    if (!checkCalendarSession()) return;
+    final epoch = ++_epoch;
     setState(() {_busy = true; _error = null; _roots = [];});
     try {
       final roots = await widget.api.searchPersons(query: _query.text.trim());
-      if (mounted && epoch == _epoch && token == widget.api.authToken) setState(() => _roots = roots);
-    } catch(e) {if (mounted && epoch == _epoch) setState(() => _error = e.toString());}
-    finally {if (mounted && epoch == _epoch) setState(() => _busy = false);}
+      if (epoch == _epoch && checkCalendarSession()) setState(() => _roots = roots);
+    } catch(e) {if (epoch == _epoch && checkCalendarSession()) setState(() => _error = e.toString());}
+    finally {if (epoch == _epoch && checkCalendarSession()) setState(() => _busy = false);}
   }
   Future<void> _resolve() async {
+    if (!checkCalendarSession()) return;
     final selection = _selection();
     if (selection == null) {setState(() => _error = 'समूह छान्नुहोस् (Choose a valid audience)'); return;}
-    final epoch = ++_epoch, token = widget.api.authToken;
+    final epoch = ++_epoch;
     setState(() {_busy = true; _error = null; _preview = null;});
     try {
       final result = await widget.api.requestJson('/calendar/events/preview', method: 'POST', data: {
         'audienceScope': 'INVITED_ONLY', 'audienceSelection': selection,
       });
-      if (!mounted || epoch != _epoch) return;
-      if (token != widget.api.authToken) {setState(() => _error = 'सत्र परिवर्तन भयो, फेरि पूर्वावलोकन गर्नुहोस् (Session changed; preview again)'); return;}
+      if (epoch != _epoch || !checkCalendarSession()) return;
       setState(() => _preview = Map<String, dynamic>.from(result as Map));
-    } catch(e) {if (mounted && epoch == _epoch) setState(() => _error = e.toString());}
-    finally {if (mounted && epoch == _epoch) setState(() => _busy = false);}
+    } catch(e) {if (epoch == _epoch && checkCalendarSession()) setState(() => _error = e.toString());}
+    finally {if (epoch == _epoch && checkCalendarSession()) setState(() => _busy = false);}
   }
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('आमन्त्रित समूह (Invitation audience)')),
-    body: SingleChildScrollView(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    body: !calendarSessionCurrent ? const Center(child: Text(calendarSessionChanged)) : SingleChildScrollView(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       DropdownButtonFormField<String>(initialValue: _type, decoration: const InputDecoration(labelText: 'छनोट विधि (Selection method)'),
         items: const [DropdownMenuItem(value: 'BRANCH', child: Text('शाखा (Branch)')), DropdownMenuItem(value: 'GENERATION', child: Text('पुस्ता (Generation)')),
           DropdownMenuItem(value: 'DESCENDANTS', child: Text('वंशज (Descendants)'))],
@@ -107,6 +118,7 @@ class _CalendarAudiencePickerState extends State<CalendarAudiencePicker> {
         Text('म्याद (Expires): ${_preview!['expiresAt']}'),
         for (final recipient in _preview!['recipients'] as List) Text(recipient['name'] as String),
         ElevatedButton(onPressed: _busy || _preview!['recipientCount'] == 0 ? null : () {
+          if (!checkCalendarSession()) return;
           final expires = DateTime.tryParse(_preview!['expiresAt'] as String);
           if (expires == null || !expires.isAfter(DateTime.now())) {setState(() {_preview = null; _error = 'म्याद सकियो, फेरि पूर्वावलोकन गर्नुहोस् (Preview expired; preview again)';}); return;}
           Navigator.pop(context, {'audienceSelection': _preview!['selection'], 'audiencePreviewId': _preview!['previewId'], 'expiresAt': _preview!['expiresAt'], 'recipientCount': _preview!['recipientCount']});
