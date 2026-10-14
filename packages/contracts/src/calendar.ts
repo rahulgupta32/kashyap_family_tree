@@ -10,6 +10,8 @@ export type GenealogyAudienceSelection =
   | { type: 'DESCENDANTS'; ancestorPersonId: string };
 
 export interface CreateCalendarEventDto {
+  /** Optional UUID retry identity, scoped to the authenticated account and create operation. */
+  creationKey?: string;
   audienceSelection?: GenealogyAudienceSelection;
   audiencePreviewId?: string;
   startsAt?: string | null;

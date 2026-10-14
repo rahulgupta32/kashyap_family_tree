@@ -50,7 +50,7 @@ void main(){
   expect(submitted,containsPair('title','Fictional community meeting'));expect(submitted,containsPair('eventType','COMMUNITY_MEETING'));
   expect(submitted,containsPair('description','Organizers approved these details.'));expect(submitted,containsPair('location','Fictional hall'));
   expect(submitted!['audienceScope'],'COMMUNITY');expect(submitted!['reminderOffsets'],isEmpty);expect(DateTime.parse(submitted!['startsAt'] as String).isUtc,isTrue);
-  expect(submitted!.keys.toSet(),{'title','description','location','eventType','audienceScope','startsAt','reminderOffsets'});
+  expect(submitted!.keys.toSet(),{'title','description','location','eventType','audienceScope','startsAt','reminderOffsets','creationKey'});
   expect(find.byType(AlertDialog),findsNothing);expect(find.text('Organizers approved these details.'),findsOneWidget);
   expect(find.text('${calendarLabels['location']}: Fictional hall'),findsOneWidget);
  });
@@ -58,7 +58,7 @@ void main(){
  testWidgets('default general event normalizes empty optional fields',(tester)async{
   Map<String,dynamic>? submitted;
   final api=GenealogyApiService(client:MockClient((request)async{
-   if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({},201);}return jsonResponse([]);
+   if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({'id':'event-1'},201);}return jsonResponse([]);
   }))..setAuthToken('mock-access');addTearDown(api.dispose);
   await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await createDialog(tester);
   await tester.enterText(find.byKey(titleKey),'General fixture');await tester.enterText(find.byKey(descriptionKey),'   ');await tester.enterText(find.byKey(locationKey),'  ');
@@ -199,7 +199,7 @@ void main(){
   final save=tester.widget<TextButton>(find.widgetWithText(TextButton,calendarLabels['save']!)).onPressed!;
   save();save();await tester.pump();expect(writes,1);
   expect(tester.widget<TextField>(find.byKey(descriptionKey)).enabled,isFalse);
-  pending.complete(jsonResponse({},201));await tester.pumpAndSettle();expect(writes,1);expect(find.byType(AlertDialog),findsNothing);
+  pending.complete(jsonResponse({'id':'event-1'},201));await tester.pumpAndSettle();expect(writes,1);expect(find.byType(AlertDialog),findsNothing);
  });
 
  testWidgets('dismissed ordinary edit save callback cannot submit or pop another route',(tester)async{

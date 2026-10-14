@@ -74,6 +74,14 @@ describe('Verified genealogy audience previews and atomic send snapshots (Postgr
   try{await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(event({previewId:expired})).expect(409);}
   finally{clock.mockRestore();}
  });
+ it('replays a consumed genealogy preview without consuming or notifying twice',async()=>{
+  const p=await preview();const body={...event(p),creationKey:randomUUID()};
+  const first=(await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(body).expect(201)).body;
+  const retry=(await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(body).expect(201)).body;
+  expect(retry.id).toBe(first.id);
+  expect((await db.query('SELECT * FROM calendar_event_revisions WHERE event_id=$1',[first.id])).rows).toHaveLength(1);
+  expect((await db.query('SELECT event_id FROM calendar_audience_previews WHERE id=$1',[p.previewId])).rows[0].event_id).toBe(first.id);
+ });
  it('consumes a preview exactly once under concurrent sends and retains reconstructible immutable evidence after restart',async()=>{
   const p=await preview(),body=event(p);const sent=await Promise.all([1,2].map(()=>request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send(body)));
   expect(sent.map(r=>r.status).sort()).toEqual([201,409]);const e=sent.find(r=>r.status===201)!.body;

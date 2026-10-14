@@ -7,6 +7,8 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
+import { CalendarAudienceService } from '../src/modules/calendar/calendar-audience.service';
+import { ApplicationSettingsService } from '../src/modules/application-settings/application-settings.service';
 import { CalendarService } from '../src/modules/calendar/calendar.service';
 import { CalendarDeliveryService } from '../src/modules/calendar/calendar-delivery.service';
 import { NotificationDispatcherService } from '../src/modules/notifications/notification-dispatcher.service';
@@ -68,6 +70,54 @@ describe('Versioned events, private invitations and durable reminder scheduling 
     expect((await inbox.list(guest.id)).items.some(n=>n.category==='EVENT')).toBe(true);
     expect((await inbox.list(other.id)).items).toHaveLength(0);
     await request(app.getHttpServer()).get(`/calendar/events/${event.id}`).set(auth(other)).expect(403);
+  });
+  it('recovers a lost create response across service reconstruction without duplicate effects',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID()};
+    const first=await calendar.createEvent(host.id,dto);
+    const restarted=new CalendarService(db,delivery,app.get(CalendarAudienceService),app.get(ApplicationSettingsService));
+    const retry=await restarted.createEvent(host.id,dto);expect(retry.id).toBe(first.id);
+    expect((await db.query('SELECT * FROM calendar_event_revisions WHERE event_id=$1',[first.id])).rows).toHaveLength(1);
+    expect((await db.query('SELECT * FROM event_invitations WHERE event_id=$1',[first.id])).rows).toHaveLength(1);
+    expect((await db.query('SELECT * FROM calendar_event_reminders WHERE event_id=$1',[first.id])).rows).toHaveLength(2);
+    expect((await db.query("SELECT * FROM audit_outbox WHERE entity_id=$1 AND action='CALENDAR_EVENT_CREATED'",[first.id])).rows).toHaveLength(1);
+    expect((await db.query('SELECT * FROM calendar_notification_recipients WHERE event_id=$1',[first.id])).rows).toHaveLength(2);
+    await request(app.getHttpServer()).post('/calendar').set(auth(host)).send(dto).expect(201).expect(r=>expect(r.body.id).toBe(first.id));
+  });
+  it('isolates account identities and rejects a changed payload for an existing key',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID()};const first=await calendar.createEvent(host.id,dto);
+    await request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send({...dto,title:'Changed'}).expect(409);
+    const second=await calendar.createEvent(other.id,dto);expect(second.id).not.toBe(first.id);
+    await db.query('UPDATE user_accounts SET is_suspended=TRUE WHERE id=$1',[host.id]);
+    try{await expect(calendar.createEvent(host.id,dto)).rejects.toThrow('Active account');}
+    finally{await db.query('UPDATE user_accounts SET is_suspended=FALSE WHERE id=$1',[host.id]);}
+  });
+  it('serializes simultaneous matching retries and conflicting payloads in PostgreSQL',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID()};
+    const matching=await Promise.all(Array.from({length:4},()=>calendar.createEvent(host.id,dto)));
+    expect(new Set(matching.map(e=>e.id)).size).toBe(1);
+    const key=randomUUID();const conflicting=await Promise.all(['One','Two'].map(title=>request(app.getHttpServer()).post('/calendar/events').set(auth(host)).send({...dto,creationKey:key,title})));
+    expect(conflicting.map(r=>r.status).sort()).toEqual([201,409]);
+    expect((await db.query('SELECT * FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[host.id,key])).rows).toHaveLength(1);
+  });
+  it('rolls back the reservation, event, invitations, reminders and notice when intent writing fails',async()=>{
+    const dto={...scheduled(),creationKey:randomUUID()};
+    const before=(await db.query('SELECT count(*)::int AS n FROM calendar_events')).rows[0].n;
+    const failure=jest.spyOn(delivery,'reschedule').mockRejectedValueOnce(new Error('Injected scheduling failure'));
+    try{await expect(calendar.createEvent(host.id,dto)).rejects.toThrow('Injected');}finally{failure.mockRestore();}
+    expect((await db.query('SELECT * FROM calendar_create_receipts WHERE creation_key=$1',[dto.creationKey])).rows).toHaveLength(0);
+    expect((await db.query('SELECT count(*)::int AS n FROM calendar_events')).rows[0].n).toBe(before);
+    const retry=await calendar.createEvent(host.id,dto);
+    expect((await db.query('SELECT * FROM calendar_event_reminders WHERE event_id=$1',[retry.id])).rows).toHaveLength(2);
+  });
+  it('cannot commit an incomplete receipt or drop retained retry evidence',async()=>{
+    const receipt=(await db.query('SELECT * FROM calendar_create_receipts LIMIT 1')).rows[0];
+    await expect(db.query('DELETE FROM calendar_create_receipts WHERE account_id=$1 AND creation_key=$2',[receipt.account_id,receipt.creation_key])).rejects.toThrow('immutable');
+    await expect(db.query('UPDATE calendar_create_receipts SET event_id=NULL WHERE account_id=$1 AND creation_key=$2',[receipt.account_id,receipt.creation_key])).rejects.toThrow('immutable');
+    await expect(db.transaction(async client=>{
+      await client.query("INSERT INTO calendar_create_receipts(account_id,operation,creation_key,payload_hash) VALUES($1,'CREATE_EVENT',$2,$3)",[host.id,randomUUID(),'a'.repeat(64)]);
+    })).rejects.toThrow('requires a committed event');
+    const fs=require('fs'),path=require('path');
+    await expect(db.transaction(async client=>{await client.query(fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/059_calendar_create_receipts.down.sql'),'utf8'));})).rejects.toThrow('CALENDAR_CREATE_RECEIPTS_RETAINED');
   });
   it('restricts editing, rejects stale concurrent revisions and preserves full event history',async()=>{
     await request(app.getHttpServer()).patch(`/calendar/events/${event.id}`).set(auth(guest)).send({version:1,title:'Unauthorized'}).expect(403);

@@ -70,7 +70,7 @@ void main() {
       if(request.url.path=='/genealogy/branches') { return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]); }
       if(request.url.path=='/calendar/events/preview') { return jsonResponse({'previewId':'preview-1','selection':selection,'recipientCount':1,
         'expiresAt':DateTime.now().add(const Duration(minutes:10)).toIso8601String(),'recipients':[{'name':'Fictional recipient'}]}); }
-      if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({},201);}
+      if(request.method=='POST'){submitted=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({'id':'event-1'},201);}
       return jsonResponse([]);
     }))..setAuthToken('fixture');addTearDown(api.dispose);
     await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await createDialog(tester);
@@ -83,7 +83,7 @@ void main() {
   testWidgets('expired audience stays selected and blocks repeated saves until explicitly cleared', (tester) async {
     final bodies=<Map<String,dynamic>>[];
     final api=GenealogyApiService(client:MockClient((request) async {
-      if(request.method=='POST'){bodies.add(jsonDecode(request.body) as Map<String,dynamic>);return jsonResponse({},201);}
+      if(request.method=='POST'){bodies.add(jsonDecode(request.body) as Map<String,dynamic>);return jsonResponse({'id':'event-1'},201);}
       return jsonResponse([]);
     }))..setAuthToken('fixture');addTearDown(api.dispose);
     await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await createDialog(tester);

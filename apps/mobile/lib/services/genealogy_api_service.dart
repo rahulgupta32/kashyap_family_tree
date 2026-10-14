@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/person.dart';
@@ -21,6 +22,8 @@ class GenealogyApiService {
   final ValueNotifier<int> _sessionChanges = ValueNotifier<int>(0);
   bool _disposed = false;
   bool _pushRemovalPending = false;
+  Map<String,dynamic>? _pendingCalendarCreate;
+  bool _calendarCreateBusy = false;
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
@@ -39,6 +42,7 @@ class GenealogyApiService {
   }
 
   int _advanceSessionGeneration() {
+    _pendingCalendarCreate = null;
     final generation = ++_sessionGeneration;
     if (!_disposed) { _sessionChanges.value = generation; }
     return generation;
@@ -57,9 +61,10 @@ class GenealogyApiService {
   Listenable get sessionChanges => _sessionChanges;
   bool get pushRemovalPending => _pushRemovalPending;
 
-  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending}) => {
+  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true}) => {
     'accessToken': access, 'refreshToken': refresh,
     if (removalPending) 'pushRemovalPending': true,
+    if (includeCalendar && _pendingCalendarCreate != null) 'pendingCalendarCreate': _pendingCalendarCreate,
   };
 
   /// The flag shares the secure credential record and its serialized writes.
@@ -120,7 +125,7 @@ class GenealogyApiService {
     await _serializeSessionStorage(() async {
       if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
       await _sessionStore.write(json.encode(_storedSession(access, refresh,
-        removalPending: !replacement && _pushRemovalPending)));
+        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement)));
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
       // Requests may have begun with the prior access token while sign-in was
       // pending. Activation is a second boundary, separate from token rotation.
@@ -154,6 +159,15 @@ class GenealogyApiService {
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
       _pushRemovalPending = data['pushRemovalPending'] == true;
+      final pending = data['pendingCalendarCreate'];
+      if (pending != null) {
+        if (pending is! Map<String,dynamic> || pending['server'] != baseUrl ||
+            pending['owner'] != chatAccountId || pending['body'] is! Map<String,dynamic> ||
+            pending['key'] is! String || !RegExp(r'^[a-f0-9-]{36}$').hasMatch(pending['key'] as String)) {
+          throw const FormatException('Invalid pending calendar creation');
+        }
+        _pendingCalendarCreate = pending;
+      }
       return await _refreshSession();
     } on FormatException {
       await _clearSession();
@@ -308,6 +322,51 @@ class GenealogyApiService {
       throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
     }
     return decoded;
+  }
+
+  bool get hasPendingCalendarCreate => _pendingCalendarCreate != null;
+
+  Future<void> _persistCalendarCreate(int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null) { throw StateError('Session changed'); }
+    // Native sessions persist the intent beside their credentials, before HTTP.
+    // Legacy access-token-only callers keep an in-memory identity only.
+    if (_refreshToken != null) {
+      await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending: _pushRemovalPending)));
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+    }
+  });
+
+  Future<dynamic> createCalendarEvent([Map<String,dynamic>? body]) async {
+    if (_authToken == null || _calendarCreateBusy) { throw StateError('Calendar creation unavailable'); }
+    final generation = _sessionGeneration;
+    _calendarCreateBusy = true;
+    try {
+      if (_pendingCalendarCreate == null) {
+        if (body == null) { throw StateError('No pending creation'); }
+        final random = Random.secure();
+        final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+        bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+        final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+        final key = '${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}';
+        _pendingCalendarCreate = {'key':key, 'owner':chatAccountId, 'server':baseUrl,
+          'body':json.decode(json.encode(body))};
+      }
+      // An unresolved create is immutable. Resolve its outcome before another
+      // draft, including after navigation, process restoration or token rotation.
+      final pending = _pendingCalendarCreate!;
+      await _persistCalendarCreate(generation);
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      final result = await requestJson('/calendar/events', method:'POST', boundAccountId:pending['owner'] as String?, data:{
+        ...(pending['body'] as Map<String,dynamic>), 'creationKey':pending['key'],
+      });
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      if (result is! Map || result['id'] is! String) { throw const FormatException('Invalid creation acknowledgement'); }
+      // Keep the receipt if clearing durable storage fails; replay is safe.
+      _pendingCalendarCreate = null;
+      try { await _persistCalendarCreate(generation); }
+      catch (_) { if (generation == _sessionGeneration) { _pendingCalendarCreate = pending; } rethrow; }
+      return result;
+    } finally { _calendarCreateBusy = false; }
   }
 
   // SDK permission and token acquisition are separate from this authenticated

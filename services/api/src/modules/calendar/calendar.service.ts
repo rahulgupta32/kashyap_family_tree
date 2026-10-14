@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { ApplicationSettingsService } from '../application-settings/application-settings.service';
 import { CalendarAudienceService } from './calendar-audience.service';
 import { calendarPeriod,periodCursor } from './calendar-period';
@@ -141,9 +142,31 @@ export class CalendarService {
     });}catch(error:any){if(error.code==='40001'||error.code==='40P01')throw new ConflictException('Concurrent change; reload and preview again');throw error;}
   }
   async createEvent(userId:string,dto:CreateCalendarEventDto):Promise<CalendarEventDetailDto>{
-    const date=this.validate(dto);
-    return this.selectionTransaction(async client=>{
-      await this.authorizeScope(userId,dto,client);
+    if(!dto||typeof dto!=='object'||Array.isArray(dto))throw new BadRequestException('Calendar event body required');
+    const {creationKey,...payload}=dto;
+    if(creationKey!==undefined)uuid(creationKey,'creation key');
+    allowedFields(payload,keys);
+    const fingerprint=calendarCreateFingerprint(payload);
+    // A unique receipt participates in the SAME transaction as all effects.
+    // Under repeatable read a concurrent winner can cause 40001; retry the
+    // complete transaction with a fresh snapshot, never just the INSERT.
+    for(let attempt=0;;attempt++){
+      try{return await this.selectionTransaction(async client=>{
+      await this.authorizeScope(userId,payload,client);
+      if(creationKey){
+        const receipt=(await client.query(`INSERT INTO calendar_create_receipts(account_id,operation,creation_key,payload_hash)
+          VALUES($1,'CREATE_EVENT',$2,$3) ON CONFLICT DO NOTHING RETURNING creation_key`,[userId,creationKey,fingerprint])).rows[0];
+        if(!receipt){
+          const saved=(await client.query(`SELECT payload_hash,event_id FROM calendar_create_receipts
+            WHERE account_id=$1 AND operation='CREATE_EVENT' AND creation_key=$2`,[userId,creationKey])).rows[0];
+          if(!saved||saved.payload_hash!==fingerprint)throw new ConflictException('Creation key already used with another payload');
+          const event=(await client.query('SELECT * FROM calendar_events WHERE id=$1 AND host_user_id=$2',[saved.event_id,userId])).rows[0];
+          if(!event)throw new ConflictException('Creation receipt unavailable');
+          return this.detail(event,userId,client);
+        }
+      }
+      // Replay precedes time-sensitive validation and preview consumption.
+      const date=this.validate(payload);
       const confirmed=dto.audienceSelection!==undefined?await this.audiences.confirm(userId,dto,client):null;
       const preview=confirmed??await this.previewInvitations(userId,{invitedUserIds:dto.invitedUserIds??[],audienceScope:dto.audienceScope,branchId:dto.branchId},client);
       const e=(await client.query(`INSERT INTO calendar_events(host_user_id,title,description,event_type,audience_scope,branch_id,location,
@@ -157,8 +180,15 @@ export class CalendarService {
         await this.audiences.consume(confirmed,e,userId,client);
       }
       await this.revision(e,'CALENDAR_EVENT_CREATED',userId,client);
+      if(creationKey)await client.query(`UPDATE calendar_create_receipts SET event_id=$3
+        WHERE account_id=$1 AND operation='CREATE_EVENT' AND creation_key=$2`,[userId,creationKey,e.id]);
       return this.detail(e,userId,client);
-    });
+    });}catch(error:any){
+      // selectionTransaction maps only serialization/deadlock errors to this
+      // fixed conflict. Other conflicts (including payload reuse) never retry.
+      if(creationKey&&attempt<2&&error instanceof ConflictException&&error.message==='Concurrent change; reload and preview again')continue;
+      throw error;
+    }}
   }
   private async manageable(e:any,userId:string,client?:any){
     if(e.host_user_id===userId)return true;
@@ -339,4 +369,12 @@ export function validateGregorianInstant(value:unknown):string{
   const check=new Date(Date.UTC(y,m-1,d));
   if(y<1900||y>2100||check.getUTCFullYear()!==y||check.getUTCMonth()!==m-1||check.getUTCDate()!==d||!Number.isFinite(Date.parse(value)))throw new BadRequestException('Invalid Gregorian event time');
   return new Date(value).toISOString();
+}
+
+// Stable JSON object ordering; arrays intentionally retain their submitted order.
+// Persist only the digest, never a second copy of private event content.
+export function calendarCreateFingerprint(value:unknown):string{
+  const canonical=(v:any):any=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?
+    Object.fromEntries(Object.keys(v).sort().filter(k=>v[k]!==undefined).map(k=>[k,canonical(v[k])])):v;
+  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 }

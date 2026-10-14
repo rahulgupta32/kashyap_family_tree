@@ -1,6 +1,6 @@
 const calendarLabels = {
   'required': 'शीर्षक र मिति आवश्यक छ (Title and date are required)',
-  'createFailed': 'कार्यक्रम सुरक्षित भएको पुष्टि भएन। दोहोर्‍याउनुअघि पात्रो जाँच्नुहोस्; छानिएको समूह कायम छ। (Saving was not confirmed. Check the calendar before retrying; the selected audience is retained.)',
+  'createFailed': 'कार्यक्रम सुरक्षित भएको पुष्टि भएन। उही कार्यक्रम पुनः प्रयास गर्न सुरक्षित थिच्नुहोस् वा पात्रोको + प्रयोग गर्नुहोस्। (Saving was not confirmed. Retry the same event with Save or the calendar + button.)',
   'audienceExpired': 'छानिएको समूहको म्याद सकियो। फेरि समूह छान्नुहोस् वा स्पष्ट रूपमा हटाउनुहोस्। (Selected audience expired. Choose it again or explicitly clear it.)',
   'create': 'नयाँ कार्यक्रम (Create event)',
   'title': 'शीर्षक (Title)',

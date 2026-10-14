@@ -26,6 +26,7 @@ export class CalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 
   @Post(['', 'events'])
+  @Header('Cache-Control','private, no-store')
   async createEvent(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateCalendarEventDto,

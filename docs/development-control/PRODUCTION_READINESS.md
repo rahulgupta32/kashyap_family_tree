@@ -1,5 +1,7 @@
 # Production readiness
 
+Latest recovered source `995a52107db47af930255e53459178cd9a259216`: CI38604748504 and iOS38604748496 independently verified SUCCESS. Calendar creation receipts/native pending identity are implemented in the current meaningful checkpoint; new-source PostgreSQL/Flutter/full/native verification remains pending. Keyed creates only are deduplicated; admin/unkeyed adoption and safe permanent-rejection resolution remain open. No frozen acceptance is closed by this batch.
+
 Status: NOT READY; no merge into main, public deployment or store submission authorized.
 
 Authoritative current audit: `REQUIREMENTS_MATRIX.md`/CSV, independent `EDGE_CASE_MATRIX.csv`, unscored `BASELINE_CONTROL_MATRIX.csv`, `RELEASE_CHECKLIST.md`, `EXTERNAL_HANDOFF.md` and `docs/operations/PRODUCTION_RUNBOOK.md`. All applicable frozen/supplemental requirements remain mandatory; no arbitrary completion percentage. See `DECISION_LOG.md` for adopted master execution instructions.
