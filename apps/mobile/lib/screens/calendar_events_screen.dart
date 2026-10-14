@@ -20,14 +20,17 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
   GenealogyApiService get calendarApi => widget.apiService;
   int _epoch = 0;
   DialogRoute<dynamic>? _activeDialog;
+  VoidCallback? _clearDialogDraft;
 
   @override
   void clearCalendarSession() {
     _epoch++;
     _events = [];
     _savingRsvps.clear();
+    _blockedEdits.clear();
     _error = calendarSessionChanged;
     _loading = false;
+    _clearDialogDraft?.call();
     final dialog = _activeDialog;
     if (dialog != null && dialog.isActive) dialog.navigator?.removeRoute(dialog);
     _activeDialog = null;
@@ -36,6 +39,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
   List<dynamic> _events = [];
   String? _error;
   final Set<String> _savingRsvps = {};
+  final Set<String> _blockedEdits = {};
 
   @override
   void initState() {
@@ -55,6 +59,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       final events = await widget.apiService.getCalendarEvents();
       if (epoch == _epoch && checkCalendarSession()) { setState(() {
         _events = events;
+        _blockedEdits.clear();
       }); }
     } catch (e) {
       if (epoch == _epoch && checkCalendarSession()) { setState(() {
@@ -83,46 +88,65 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
     }
   }
 
+  String? _textError(String title, String description, String location) {
+    if (title.trim().isEmpty || title.trim().length > 255) return calendarLabels['titleLimit'];
+    if (description.trim().length > 10000) return calendarLabels['descriptionLimit'];
+    if (location.trim().length > 255) return calendarLabels['locationLimit'];
+    return null;
+  }
+
   Future<void> _create() async {
     if (!checkCalendarSession() || _activeDialog != null) return;
     final title = TextEditingController();
+    final description = TextEditingController();
+    final location = TextEditingController();
+    var eventType = 'GENERAL_EVENT';
     DateTime? selected;
     var reminder = false;
     var busy = false;
     String? error;
     Map<String,dynamic>? audience;
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); selected=null; audience=null;};
     try {
       final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
         title: Text(calendarLabels['create']!),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: title, decoration: InputDecoration(labelText: calendarLabels['title'])),
+          TextField(key: const ValueKey('calendar-title'), controller: title, enabled: !busy, decoration: InputDecoration(labelText: calendarLabels['title'])),
+          DropdownButtonFormField<String>(key: const ValueKey('calendar-event-type'), initialValue: eventType, decoration: InputDecoration(labelText: calendarLabels['eventType']),
+            items: [DropdownMenuItem(value: 'GENERAL_EVENT', child: Text(calendarLabels['generalEvent']!)), DropdownMenuItem(value: 'COMMUNITY_MEETING', child: Text(calendarLabels['communityMeeting']!))],
+            onChanged: busy ? null : (value) {if(dialogContext.mounted && checkCalendarSession() && !busy) update(() => eventType = value!);}),
+          Text(calendarLabels['detailsAudience']!),
+          TextField(key: const ValueKey('calendar-description'), controller: description, enabled: !busy, minLines: 2, maxLines: 4, decoration: InputDecoration(labelText: calendarLabels['description'])),
+          TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy, decoration: InputDecoration(labelText: calendarLabels['location'])),
           TextButton(onPressed: busy ? null : () async {
-            if (!checkCalendarSession()) return;
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
             final date = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 1)),
               firstDate: DateTime.now(), lastDate: DateTime(2100));
             if (date == null || !context.mounted || !checkCalendarSession()) return;
             final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));
             if (time != null && context.mounted && checkCalendarSession()) update(() => selected = DateTime(date.year, date.month, date.day, time.hour, time.minute));
           }, child: Text(selected?.toString() ?? calendarLabels['time']!)),
-          CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy ? null : (value) { if(checkCalendarSession()) update(() => reminder = value ?? false); }),
+          CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy ? null : (value) { if(dialogContext.mounted && checkCalendarSession() && !busy) update(() => reminder = value ?? false); }),
           Text(calendarLabels['dateNote']!),
           TextButton(onPressed: busy ? null : () async {
-            if (!checkCalendarSession()) return;
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
             final picked=await Navigator.of(dialogContext).push<Map<String,dynamic>>(MaterialPageRoute(builder:(_)=>CalendarAudiencePicker(api:widget.apiService)));
             if(dialogContext.mounted && checkCalendarSession())update(()=>audience=picked);
           },child:const Text('आमन्त्रित समूह छान्नुहोस् (Choose invitation audience)')),
           if(audience!=null)...[
             Text('आमन्त्रित खाताहरू (Recipient accounts): ${audience!['recipientCount']}'),
             const Text('छानिएको समूहका खाताहरू मात्र कार्यक्रम हेर्न सक्छन्। (Only invited accounts can view this event.)'),
-            TextButton(onPressed:busy?null:(){if(checkCalendarSession())update(()=>audience=null);},child:const Text('समूह हटाउनुहोस् (Clear audience)')),
+            TextButton(onPressed:busy?null:(){if(dialogContext.mounted && checkCalendarSession() && !busy)update(()=>audience=null);},child:const Text('समूह हटाउनुहोस् (Clear audience)')),
           ],
           if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ])),
         actions: [
-          TextButton(onPressed: busy ? null : () {if(checkCalendarSession()) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
+          TextButton(onPressed: busy ? null : () {if(dialogContext.mounted && checkCalendarSession() && !busy && _activeDialog?.isCurrent == true) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
           TextButton(onPressed: busy ? null : () async {
-            if (!checkCalendarSession()) return;
-            if(title.text.trim().isEmpty || selected == null) {update(() => error = calendarLabels['required']); return;}
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            final textError = _textError(title.text, description.text, location.text);
+            if(textError != null) {update(() => error = textError); return;}
+            if(selected == null) {update(() => error = calendarLabels['required']); return;}
             if(audience!=null){
               final expiry=DateTime.tryParse(audience!['expiresAt'] as String);
               if(expiry==null||!expiry.isAfter(DateTime.now())){update((){audience=null;error='म्याद सकियो, समूह फेरि छान्नुहोस् (Preview expired; choose the audience again)';});return;}
@@ -130,7 +154,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
             update(() {busy = true; error = null;});
             try {
               await widget.apiService.requestJson('/calendar/events', method: 'POST', data: {
-                'title': title.text.trim(), 'eventType': 'GENERAL_EVENT', 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
+                'title': title.text.trim(), 'description': description.text.trim(), 'location': location.text.trim(), 'eventType': eventType, 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
                 if(audience!=null)'audienceSelection':audience!['audienceSelection'],
                 if(audience!=null)'audiencePreviewId':audience!['audiencePreviewId'],
                 'startsAt': selected!.toUtc().toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
@@ -145,29 +169,71 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       _activeDialog = route;
       await Navigator.of(context).push(route);
       await route.completed;
-    } finally {_activeDialog = null; title.dispose();}
+    } finally {_activeDialog = null; _clearDialogDraft=null; title.dispose(); description.dispose(); location.dispose();}
   }
 
   Future<void> _manage(Map event, {bool cancel = false}) async {
-    if (!checkCalendarSession() || _activeDialog != null) return;
-    final controller = TextEditingController(text: cancel ? '' : event['title'] as String? ?? '');
-    final route = DialogRoute<String>(context: context, builder: (context) => AlertDialog(
-      title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
-      content: TextField(controller: controller, decoration: InputDecoration(labelText: calendarLabels[cancel ? 'reason' : 'title'])),
-      actions: [TextButton(onPressed: () {if(checkCalendarSession()) Navigator.pop(context);}, child: Text(calendarLabels['close']!)),
-        TextButton(onPressed: () {if(checkCalendarSession()) Navigator.pop(context, controller.text.trim());}, child: Text(calendarLabels['save']!))],
-    ));
-    _activeDialog = route;
-    final result = await Navigator.of(context).push(route);
-    await route.completed;
-    controller.dispose();
-    _activeDialog = null;
-    if(result == null || !checkCalendarSession()) return;
+    if (!checkCalendarSession() || _activeDialog != null || _blockedEdits.contains(event['id'])) return;
+    final title = TextEditingController(text: cancel ? '' : event['title'] as String? ?? '');
+    final ordinary = !cancel && ['GENERAL_EVENT', 'COMMUNITY_MEETING'].contains(event['eventType']);
+    final description = TextEditingController(text: ordinary ? event['description'] as String? ?? '' : '');
+    final location = TextEditingController(text: ordinary ? event['location'] as String? ?? '' : '');
+    var busy = false, needsReload = false;
+    String? error;
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear();};
     try {
-      await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
-        data: {'version': event['version'], (cancel ? 'reason' : 'title'): result});
-      await _loadEvents();
-    } catch(e) {if(mounted && checkCalendarSession()) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));}
+      final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(key: const ValueKey('calendar-title'), controller: title, enabled: !busy,
+            decoration: InputDecoration(labelText: calendarLabels[cancel ? 'reason' : 'title'])),
+          if(ordinary) ...[
+            Text(calendarLabels['detailsAudience']!),
+            TextField(key: const ValueKey('calendar-description'), controller: description, enabled: !busy, minLines: 2, maxLines: 4,
+              decoration: InputDecoration(labelText: calendarLabels['description'])),
+            TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy,
+              decoration: InputDecoration(labelText: calendarLabels['location'])),
+          ],
+          if(error != null) Text(error!, key: const ValueKey('calendar-edit-error'), style: const TextStyle(color: Colors.red)),
+          if(needsReload) Text(calendarLabels['reloadRequired']!),
+        ])),
+        actions: [
+          TextButton(onPressed: busy ? null : () {if(dialogContext.mounted && checkCalendarSession() && !busy && _activeDialog?.isCurrent == true) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
+          if(needsReload) TextButton(onPressed: busy ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            Navigator.pop(dialogContext);
+            await _loadEvents();
+          }, child: Text(calendarLabels['closeReload']!)),
+          TextButton(onPressed: busy || needsReload ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || needsReload || _activeDialog?.isCurrent != true) return;
+            final textError = cancel
+                ? (title.text.trim().length < 5 || title.text.trim().length > 1000 ? calendarLabels['reasonLimit'] : null)
+                : _textError(title.text, ordinary ? description.text : '', ordinary ? location.text : '');
+            if(textError != null) {update(() => error = textError); return;}
+            update(() {busy=true; error=null;});
+            try {
+              await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
+                data: {'version': event['version'], (cancel ? 'reason' : 'title'): title.text.trim(),
+                  if(ordinary) 'description': description.text.trim(), if(ordinary) 'location': location.text.trim()});
+              if(!checkCalendarSession()) return;
+              if(dialogContext.mounted) Navigator.pop(dialogContext);
+              await _loadEvents();
+            } catch(_) {
+              if(dialogContext.mounted && checkCalendarSession()) {
+                setState(() => _blockedEdits.add(event['id'] as String));
+                update(() {busy=false; needsReload=true; error=calendarLabels['editFailed'];});
+              }
+            }
+          }, child: Text(calendarLabels['save']!)),
+        ],
+      )));
+      _activeDialog=route;
+      await Navigator.of(context).push(route);
+      await route.completed;
+    } finally {
+      _activeDialog=null; _clearDialogDraft=null;
+      title.dispose(); description.dispose(); location.dispose();
+    }
   }
 
   @override
@@ -228,10 +294,14 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                                 if(ev['canManage'] == true && ev['lifecycleState'] != 'CANCELLED') Wrap(children: [
                                   if(ev['startsAt'] != null && ev['recurrenceRuleId'] == null && ['GENERAL_EVENT','COMMUNITY_MEETING'].contains(ev['eventType']))
                                     TextButton(onPressed: () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService, source: Map<String,dynamic>.from(ev as Map)))); }, child: const Text('वार्षिक सम्झना प्रस्ताव (Propose annual reminder)')),
-                                  TextButton(onPressed: () => _manage(ev as Map), child: Text(calendarLabels['edit']!)),
-                                  TextButton(onPressed: () => _manage(ev as Map, cancel: true), child: Text(calendarLabels['cancel']!)),
+                                  TextButton(onPressed: _blockedEdits.contains(ev['id']) ? null : () => _manage(ev as Map), child: Text(calendarLabels['edit']!)),
+                                  TextButton(onPressed: _blockedEdits.contains(ev['id']) ? null : () => _manage(ev as Map, cancel: true), child: Text(calendarLabels['cancel']!)),
                                 ]),
-                                if (ev['location'] != null) Text('स्थान: ${ev['location']}'),
+                                if (_blockedEdits.contains(ev['id'])) Text(calendarLabels['reloadRequired']!),
+                                if (['GENERAL_EVENT', 'COMMUNITY_MEETING'].contains(ev['eventType']))
+                                  Text(calendarLabels[ev['eventType'] == 'COMMUNITY_MEETING' ? 'communityMeeting' : 'generalEvent']!),
+                                if (ev['description'] is String && (ev['description'] as String).isNotEmpty) Text(ev['description'] as String),
+                                if (ev['location'] is String && (ev['location'] as String).isNotEmpty) Text('${calendarLabels['location']}: ${ev['location']}'),
                                 if (widget.apiService.authToken != null)
                                   Wrap(spacing: 8, children: [
                                     for (final option in const {'GOING': 'जानेछु (Going)', 'MAYBE': 'सम्भवतः (Maybe)', 'DECLINED': 'जान्न (Decline)'}.entries)

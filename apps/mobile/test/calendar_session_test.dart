@@ -132,7 +132,7 @@ void main() {
     }))..setAuthToken('old'); addTearDown(api.dispose);
     await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService: api))); await tester.pumpAndSettle();
     await tapText(tester, calendarLabels['edit']!);
-    await tester.enterText(find.byType(TextField), 'Private edit draft');
+    await tester.enterText(find.byKey(const ValueKey('calendar-title')), 'Private edit draft');
     final save = tester.widget<TextButton>(find.widgetWithText(TextButton, calendarLabels['save']!)).onPressed!;
     api.setAuthToken('new'); save(); await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing); expect(find.text('Private edit draft'), findsNothing);
@@ -147,7 +147,7 @@ void main() {
     }))..setAuthToken('old'); addTearDown(api.dispose);
     await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService: api))); await tester.pumpAndSettle();
     await tester.tap(find.byTooltip(calendarLabels['create']!)); await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Private creation draft');
+    await tester.enterText(find.byKey(const ValueKey('calendar-title')), 'Private creation draft');
     api.setAuthToken(null); await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing); expect(find.text('Private creation draft'), findsNothing);
     expect(writes, 0); expect(find.text(calendarSessionChanged), findsOneWidget); expect(tester.takeException(), isNull);
