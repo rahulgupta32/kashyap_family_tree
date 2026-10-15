@@ -1,0 +1,114 @@
+name: iOS native verification
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop, 'feat/*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-native:
+    name: iOS simulator startup, Keychain and unsigned device build
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Record native toolchain
+        run: |
+          mkdir -p test-results
+          flutter --version > test-results/ios-flutter-version.txt
+          xcodebuild -version > test-results/ios-xcode-version.txt
+          sw_vers > test-results/ios-macos-version.txt
+      - name: Verify committed native project
+        run: |
+          python3 scripts/verify_ci_checkout.py
+          python3 -m unittest discover -s scripts -p 'test_ios_*.py'
+          git ls-files --error-unmatch apps/mobile/ios/Runner.xcodeproj/project.pbxproj
+          python3 - <<'PYIOS'
+          from pathlib import Path
+          import plistlib
+          info = plistlib.loads(Path('apps/mobile/ios/Runner/Info.plist').read_bytes())
+          assert info['CFBundleDisplayName'] == 'कश्यप अधिकारी वंशावली'
+          ats = info.get('NSAppTransportSecurity', {})
+          assert not any(ats.get(key) for key in ['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsInWebContent', 'NSAllowsArbitraryLoadsForMedia'])
+          PYIOS
+          python3 scripts/ios-verification-evidence.py archive
+      - name: Install native dependencies
+        run: flutter pub get --enforce-lockfile
+        working-directory: apps/mobile
+      - name: Compile iOS simulator app
+        id: simulator-build
+        run: |
+          set -o pipefail
+          flutter build ios --simulator --debug --dart-define=API_BASE_URL=https://api.invalid 2>&1 | tee ../../test-results/ios-simulator-build.log
+        working-directory: apps/mobile
+      - name: Verify startup and real simulator Keychain
+        timeout-minutes: 20
+        run: bash scripts/run-ios-startup-verification.sh
+      - name: Compile unsigned iOS device app
+        if: ${{ !cancelled() && steps.simulator-build.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          flutter build ios --release --no-codesign --dart-define=API_BASE_URL=https://api.invalid 2>&1 | tee ../../test-results/ios-device-build.log
+        working-directory: apps/mobile
+      - name: Capture verified source and bounded evidence
+        run: |
+          python3 scripts/ios-verification-evidence.py record
+      - name: Retain generated dependency lockfile candidates for review
+        if: always()
+        run: |
+          mkdir -p test-results
+          python3 scripts/ios-verification-evidence.py inspect
+          if [ -f apps/mobile/ios/Podfile.lock ]; then
+            cp apps/mobile/ios/Podfile.lock test-results/ios-podfile-lock-candidate.lock
+            git diff -- apps/mobile/ios/Podfile.lock > test-results/ios-podfile-lock-diff.patch
+            if git diff --quiet -- apps/mobile/ios/Podfile.lock; then
+              echo 'Tracked Podfile.lock did not change' > test-results/ios-podfile-lock-status.txt
+            else
+              echo 'Tracked Podfile.lock changed; candidate requires review and commit' > test-results/ios-podfile-lock-status.txt
+              echo 'Generated CocoaPods lockfile diff for review:'
+              git diff -- apps/mobile/ios/Podfile.lock
+            fi
+          else
+            echo 'Podfile.lock is missing' > test-results/ios-podfile-lock-status.txt
+          fi
+          if [ -f apps/mobile/pubspec.lock ]; then
+            cp apps/mobile/pubspec.lock test-results/ios-pubspec-lock-candidate.lock
+            if git ls-files --error-unmatch apps/mobile/pubspec.lock > /dev/null 2>&1; then
+              git diff -- apps/mobile/pubspec.lock > test-results/ios-pubspec-lock-diff.patch
+              if git diff --quiet -- apps/mobile/pubspec.lock; then
+                echo 'Tracked pubspec.lock did not change' > test-results/ios-pubspec-lock-status.txt
+              else
+                echo 'Tracked pubspec.lock changed; candidate requires review and commit' > test-results/ios-pubspec-lock-status.txt
+              fi
+            else
+              if git diff --no-index -- /dev/null apps/mobile/pubspec.lock > test-results/ios-pubspec-lock-diff.patch; then
+                :
+              else
+                test "$?" -eq 1
+              fi
+              echo 'pubspec.lock is untracked or ignored; candidate requires review' > test-results/ios-pubspec-lock-status.txt
+            fi
+          else
+            echo 'pubspec.lock is missing' > test-results/ios-pubspec-lock-status.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-native-${{ github.run_id }}
+          path: test-results/ios-*
+          if-no-files-found: error
+          retention-days: 14

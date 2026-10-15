@@ -1,0 +1,203 @@
+import { LegacyMediaMigrationService } from '../src/media/legacy-media-migration.service';
+import { promises as files, mkdtempSync } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { createHash } from 'crypto';
+import { OrphanCleanupService } from '../src/media/orphan-cleanup.service';
+import { MediaInventoryService } from '../src/media/media-inventory.service';
+import { ImageDerivativesService } from '../src/media/image-derivatives.service';
+import { ChatAttachmentsService } from '../src/modules/chat/chat-attachments.service';
+import { Test } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as request from 'supertest';
+import { randomUUID } from 'crypto';
+import { AppModule } from '../src/app.module';
+import { DatabaseService } from '../src/database/database.service';
+import { UserRepository } from '../src/database/repositories/user.repository';
+import { SessionRepository } from '../src/database/repositories/session.repository';
+import { ChatService } from '../src/modules/chat/chat.service';
+import { Role } from '@kashyap/contracts';
+import { getJwtSecret, JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM } from '../src/modules/auth/auth.constants';
+import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
+
+import { ProfileService } from '../src/modules/profile/profile.service';
+import { MediaStorageService } from '../src/media/media-storage.service';
+import { S3Client, CreateBucketCommand, ListObjectsV2Command, DeleteObjectCommand, DeleteBucketCommand, GetObjectCommand, PutObjectCommand, PutBucketVersioningCommand, ListObjectVersionsCommand } from '@aws-sdk/client-s3';
+const enabled=process.env.RUN_S3_ACCEPTANCE==='true';
+const s3=new S3Client({region:'us-east-1',endpoint:process.env.MEDIA_S3_ENDPOINT,forcePathStyle:true,requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED'});
+(enabled?describe:describe.skip)('Real private S3 and PostgreSQL media acceptance',()=>{
+ let iso:DisposableDatabase,app:INestApplication,db:DatabaseService,chat:ChatService;
+ let branch:string,otherBranch:string,author:any,reader:any,outsider:any,group:string,direct:string,message:any;
+ let legacyRoot:string;const oldLegacy=process.env.MEDIA_LEGACY_STORAGE_PATH,oldPrefix=process.env.MEDIA_LEGACY_LOCATION_PREFIX;
+ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==';
+ const payload=(clientMessageId=randomUUID())=>({content:'Fictional attachment',clientMessageId,mimeType:'image/png',dataBase64:png});
+ const auth=(u:any)=>`Bearer ${u.token}`;
+ beforeAll(async()=>{
+  if(process.env.MEDIA_STORAGE_BACKEND!=='s3'||!process.env.MEDIA_S3_BUCKET?.startsWith('kashyap-ci-'))throw new Error('Disposable S3 fixture configuration required');
+  legacyRoot=mkdtempSync(path.join(os.tmpdir(),'kashyap-s3-legacy-'));process.env.MEDIA_LEGACY_STORAGE_PATH=legacyRoot;delete process.env.MEDIA_LEGACY_LOCATION_PREFIX;
+  await s3.send(new CreateBucketCommand({Bucket:process.env.MEDIA_S3_BUCKET}));
+  iso=await createDisposableDatabase('s3_media');await assertDatabaseIsolation(iso.client,iso.dbName);
+  const module=await Test.createTestingModule({imports:[AppModule]}).compile();app=module.createNestApplication();await app.listen(0, '127.0.0.1');
+  db=module.get(DatabaseService);chat=module.get(ChatService);await assertDatabaseIsolation(db,iso.dbName);
+  branch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('CHAT_A','परीक्षण अ','Fictional A') RETURNING id")).rows[0].id;
+  otherBranch=(await db.query("INSERT INTO branches(code,name_nepali,name_english) VALUES('CHAT_B','परीक्षण ब','Fictional B') RETURNING id")).rows[0].id;
+  async function user(phone:string,role:Role,b:string){
+   const u=await module.get(UserRepository).findOrCreateByPhone(phone);await module.get(UserRepository).assignRole(u.id,role,b);
+   const person=(await db.query("INSERT INTO persons(gender,living_status,generation,branch_id,birth_year_bs,is_claimed,claimed_user_id) VALUES('MALE','LIVING',3,$1,2040,true,$2) RETURNING id",[b,u.id])).rows[0];
+   await db.query("INSERT INTO person_names(person_id,language,first_name,last_name,full_name,is_primary) VALUES($1,'en','Fictional','Participant','Fictional Participant',true)",[person.id]);
+   await db.query('UPDATE user_accounts SET person_id=$2 WHERE id=$1',[u.id,person.id]);
+   const session=await module.get(SessionRepository).createSession({userId:u.id,refreshTokenHash:randomUUID(),devicePlatform:'WEB',ipAddress:'127.0.0.1',userAgent:'chat-test',expiresAt:new Date(Date.now()+3600000)});
+   const token=module.get(JwtService).sign({sub:u.id,sid:session.id,phoneNumber:phone,tokenType:'access'},{secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM});
+   return {id:u.id,personId:person.id,sessionId:session.id,token,roles:[role],branchIds:[b],roleAssignments:[{role,branchId:b}]};
+  }
+  author=await user('+9779847300001',Role.BRANCH_ADMIN,branch);reader=await user('+9779847300002',Role.VERIFIED_MEMBER,branch);outsider=await user('+9779847300003',Role.BRANCH_ADMIN,otherBranch);
+  group=(await chat.create(author,{type:'GROUP',title:'Fictional receipt group',memberPersonIds:[reader.personId]})).id;
+  direct=(await chat.create(author,{type:'DIRECT',personId:reader.personId})).id;
+ });
+ afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();const objects=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET}));for(const item of [...(objects.Versions||[]),...(objects.DeleteMarkers||[])])await s3.send(new DeleteObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:item.Key,VersionId:item.VersionId}));await s3.send(new DeleteBucketCommand({Bucket:process.env.MEDIA_S3_BUCKET}));s3.destroy();if(legacyRoot)await files.rm(legacyRoot,{recursive:true,force:true});if(oldLegacy===undefined)delete process.env.MEDIA_LEGACY_STORAGE_PATH;else process.env.MEDIA_LEGACY_STORAGE_PATH=oldLegacy;if(oldPrefix===undefined)delete process.env.MEDIA_LEGACY_LOCATION_PREFIX;else process.env.MEDIA_LEGACY_LOCATION_PREFIX=oldPrefix;});
+ it('keeps community images private in real storage and publishes only authorized metadata-free derivatives',async()=>{
+  const created=(await request(app.getHttpServer()).post('/community/posts').set('Authorization',auth(reader)).send({title:'S3 community fixture',content:'Fictional media fixture',category:'DISCUSSION',branchId:branch}).expect(201)).body;
+  const bytes=await require('sharp')({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();
+  const body={version:created.version,reason:'S3 community image fixture',clientUploadId:randomUUID(),mimeType:'image/png',dataBase64:bytes.toString('base64')};
+  const upload=(await request(app.getHttpServer()).post(`/community/posts/${created.id}/media`).set('Authorization',auth(reader)).send(body).expect(201)).body;
+  const row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];expect(row.storage_path).toMatch(/^s3:\/\//);
+  expect(await app.get(MediaStorageService).read(row)).toEqual(bytes);
+  const anonymous=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-community/${row.file_name}`);expect(anonymous.status).toBe(403);
+  await app.get(ImageDerivativesService).processPending(10);
+  await request(app.getHttpServer()).post(`/community/posts/${created.id}/moderate`).set('Authorization',auth(author)).send({version:upload.version,decision:'PUBLISHED',notes:'Review real private image'}).expect(201);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/media/${row.id}`).set('Authorization',auth(author)).expect(200);
+  await request(app.getHttpServer()).get(`/community/posts/${created.id}/media/${row.id}`).set('Authorization',auth(outsider)).expect(403);
+  const jobs=(await db.query('SELECT state FROM media_upload_intents WHERE object_location=$1',[row.storage_path])).rows;expect(jobs[0].state).toBe('COMMITTED');
+ });
+ it('stores profiles remotely, survives service recreation, and keeps unsigned storage private',async()=>{
+  const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',png);
+  const row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];
+  expect(row.storage_path).toMatch(/^s3:\/\//);expect(await new MediaStorageService().read(row)).toEqual(Buffer.from(png,'base64'));
+  const direct=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-profiles/${row.file_name}`);expect(direct.status).toBe(403);
+  await request(app.getHttpServer()).get(`/profile/media/${row.id}`).set('Authorization',auth(author)).expect(200);
+  await request(app.getHttpServer()).get(`/profile/media/${row.id}`).set('Authorization',auth(reader)).expect(403);
+  await request(app.getHttpServer()).get(`/claims/evidence/${row.id}`).set('Authorization',auth(author)).expect(200);
+  await request(app.getHttpServer()).get(`/claims/evidence/${row.id}`).set('Authorization',auth(reader)).expect(403);
+ });
+ it('recovers concurrent attachment retries as one durable message and keeps conversation authorization',async()=>{
+  const body=payload(),endpoint=`/chat/conversations/${group}/attachments`;
+  const results=await Promise.all(Array.from({length:3},()=>request(app.getHttpServer()).post(endpoint).set('Authorization',auth(author)).send(body).expect(201)));
+  message=results[0].body;expect(new Set(results.map(r=>r.body.id)).size).toBe(1);
+  const objects=await s3.send(new ListObjectsV2Command({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:'private-chat/'}));expect(objects.Contents).toHaveLength(1);
+  const row=(await db.query('SELECT a.* FROM media_assets a JOIN chat_message_attachments l ON l.asset_id=a.id WHERE l.message_id=$1',[message.id])).rows[0];
+  expect(await new MediaStorageService().read(row)).toEqual(Buffer.from(png,'base64'));
+  await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages/${message.id}/attachment`).set('Authorization',auth(reader)).expect(200);
+  await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages/${message.id}/attachment`).set('Authorization',auth(outsider)).expect(404);
+  process.env.SIMULATE_SCANNER_FAILURE='true';try{await request(app.getHttpServer()).post(endpoint).set('Authorization',auth(author)).send(body).expect(201);await request(app.getHttpServer()).post(endpoint).set('Authorization',auth(author)).send(payload()).expect(503);}finally{delete process.env.SIMULATE_SCANNER_FAILURE;}
+ });
+ it('preserves committed object bytes when the database commit acknowledgement is lost',async()=>{
+  const body=payload(),real=db.transaction.bind(db);let calls=0;
+  const spy=jest.spyOn(db,'transaction').mockImplementation(async(work:any)=>{const result=await real(work);if(++calls===2)throw new Error('lost commit acknowledgement');return result;});
+  try{await expect(app.get(ChatAttachmentsService).send(group,author,body)).rejects.toThrow('lost commit');}finally{spy.mockRestore();}
+  const retried=await app.get(ChatAttachmentsService).send(group,author,body);expect(retried.alreadySent).toBe(true);
+  const downloaded=await app.get(ChatAttachmentsService).download(group,retried.id,reader);expect(downloaded.buffer).toEqual(Buffer.from(png,'base64'));
+ });
+ it('detects modified remote bytes and retries failed cleanup without purging a legal hold',async()=>{
+  const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',png),row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];
+  await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`,Body:Buffer.alloc(Number(row.byte_size))}));
+  await expect(new MediaStorageService().read(row)).rejects.toThrow('integrity');
+  await db.query("UPDATE media_assets SET retention_status='LEGAL_HOLD' WHERE id=$1",[row.id]);
+  const queued=(await db.query("INSERT INTO media_deletion_queue(asset_id,storage_path,status) VALUES($1,$2,'PENDING') RETURNING id",[row.id,row.storage_path])).rows[0];
+  expect(await app.get(ProfileService).processMediaDeletionQueue()).toBe(0);
+  expect((await db.query('SELECT status,attempts FROM media_deletion_queue WHERE id=$1',[queued.id])).rows[0]).toMatchObject({status:'PENDING',attempts:1});
+  await db.query("UPDATE media_assets SET retention_status='DELETED' WHERE id=$1",[row.id]);
+  const spy=jest.spyOn(app.get(MediaStorageService),'remove').mockRejectedValueOnce(new Error('temporary storage outage'));
+  try{expect(await app.get(ProfileService).processMediaDeletionQueue()).toBe(0);}finally{spy.mockRestore();}
+  expect((await db.query('SELECT status,attempts FROM media_deletion_queue WHERE id=$1',[queued.id])).rows[0]).toMatchObject({status:'PENDING',attempts:2});
+  expect(await app.get(ProfileService).processMediaDeletionQueue()).toBe(1);
+  await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
+ });
+ it('stores sanitized cropped derivatives privately in S3 and removes them with the source',async()=>{
+  const valid='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=';
+  const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',valid,{left:0,top:0,width:5000,height:10000});
+  // Earlier fixture files intentionally contain damaged pixel data; target this new job first.
+  await db.query("UPDATE media_image_jobs SET next_attempt_at=NOW()+INTERVAL '1 hour' WHERE source_asset_id<>$1",[upload.assetId]);
+  expect(await app.get(ImageDerivativesService).processPending(1)).toBe(1);
+  const children=(await db.query('SELECT a.* FROM media_derivatives d JOIN media_assets a ON a.id=d.asset_id WHERE d.source_asset_id=$1',[upload.assetId])).rows;expect(children).toHaveLength(2);
+  for(const child of children){expect(child.storage_path).toMatch(/^s3:\/\//);const anonymous=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/private-derivatives/${child.file_name}`);expect(anonymous.status).toBe(403);}
+  await request(app.getHttpServer()).get(`/profile/media/${upload.assetId}?variant=display`).set('Authorization',auth(author)).expect(200).expect('Content-Type',/image\/webp/);
+  await app.get(ProfileService).removePhoto(author.id);
+  for(const child of children)await expect(new MediaStorageService().read(child)).rejects.toThrow('not found');
+ });
+ it('pins a version and physically removes it from a versioned bucket rather than adding a delete marker',async()=>{
+  await s3.send(new PutBucketVersioningCommand({Bucket:process.env.MEDIA_S3_BUCKET,VersioningConfiguration:{Status:'Enabled'}}));
+  const upload=await app.get(ProfileService).uploadPhoto(author.id,'image/png',png),row=(await db.query('SELECT * FROM media_assets WHERE id=$1',[upload.assetId])).rows[0];
+  expect(row.storage_path).not.toContain('?versionId=null');
+  const originalVersion=decodeURIComponent(row.storage_path.split('?versionId=')[1]);
+  await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`,Body:Buffer.from('Fictional later version')}));
+  expect(await new MediaStorageService().read(row)).toEqual(Buffer.from(png,'base64'));
+  await new MediaStorageService().remove(row);await new MediaStorageService().remove(row);
+  await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:`private-profiles/${row.file_name}`,VersionId:originalVersion}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
+  const versions=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:`private-profiles/${row.file_name}`}));
+  expect(versions.Versions?.some(v=>v.VersionId===originalVersion)).toBe(false);expect(versions.DeleteMarkers||[]).toHaveLength(0);
+ });
+
+ it('inventories exact object versions and delete markers without removing unreferenced bytes',async()=>{
+  const key=`private-profiles/avatar_${randomUUID()}.png`,body=Buffer.from(png,'base64');
+  const first=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));const second=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));await s3.send(new DeleteObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key}));
+  const operator={...author,roleAssignments:[{role:Role.SUPER_ADMIN,branchId:null}]},inventory=app.get(MediaInventoryService),run=await inventory.start(operator);
+  for(let i=0;i<40;i++){if((await inventory.report(operator,run.id)).run.status==='COMPLETE')break;await inventory.advance(operator,run.id);}
+  expect((await inventory.report(operator,run.id)).run.status).toBe('COMPLETE');
+  const rows=(await db.query('SELECT finding,observed_location FROM media_inventory_items WHERE run_id=$1 AND observed_location LIKE $2',[run.id,`s3://${process.env.MEDIA_S3_BUCKET}/${key}?%`])).rows;
+  expect(rows.filter(r=>r.finding==='UNREFERENCED_GRACE')).toHaveLength(2);expect(rows.filter(r=>r.finding==='DELETE_MARKER')).toHaveLength(1);
+  expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(first.VersionId!)))).toBe(true);expect(rows.some(r=>r.observed_location.endsWith(encodeURIComponent(second.VersionId!)))).toBe(true);
+  for(const version of [first.VersionId,second.VersionId]){const object=await s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:version}));expect(object.ContentLength).toBe(body.length);(object.Body as any)?.destroy?.();}
+ });
+
+ it('reconciles lost PUT acknowledgements and cleans only the reviewed exact version',async()=>{
+  const storage=app.get(MediaStorageService),fileName=`avatar_${randomUUID()}.png`,key=`private-profiles/${fileName}`,body=Buffer.from(png,'base64');
+  const real=S3Client.prototype.send;let lost=false;
+  const send=jest.spyOn(S3Client.prototype,'send') as jest.SpyInstance;
+  send.mockImplementation(async function(this:S3Client,command:any,options:any){
+   const result=await (real as any).call(this,command,options);
+   if(command instanceof PutObjectCommand&&command.input.Key===key&&!lost){lost=true;throw new Error('lost PUT acknowledgement');}return result;
+  });
+  try{await expect(storage.put('private-profiles',fileName,body,'image/png',author.id)).rejects.toThrow('write failed');}finally{send.mockRestore();}
+  const intent=(await db.query('SELECT * FROM media_upload_intents WHERE file_name=$1',[fileName])).rows[0];expect(intent.state).toBe('WRITING');expect(intent.object_location).toBeNull();
+  const versions=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:key}));expect(versions.Versions).toHaveLength(1);const version=versions.Versions![0].VersionId!;
+  await db.query("UPDATE media_upload_intents SET created_at=NOW()-INTERVAL '2 days',expires_at=NOW()-INTERVAL '1 day' WHERE id=$1",[intent.id]);
+  const operator={...author,roleAssignments:[{role:Role.SUPER_ADMIN,branchId:null}]},inventory=app.get(MediaInventoryService),cleanup=app.get(OrphanCleanupService),run=await inventory.start(operator);
+  for(let i=0;i<60;i++){if((await inventory.report(operator,run.id)).run.status==='COMPLETE')break;await inventory.advance(operator,run.id);}
+  expect((await inventory.report(operator,run.id)).run.status).toBe('COMPLETE');
+  const item=(await db.query('SELECT * FROM media_inventory_items WHERE run_id=$1 AND upload_intent_id=$2',[run.id,intent.id])).rows[0];expect(item.finding).toBe('ABANDONED_UPLOAD_REVIEW');expect(item.observed_location).toContain(encodeURIComponent(version));
+  expect((await cleanup.approve(operator,run.id,[String(item.id)],'Fictional exact-version review')).scheduled).toBe(1);
+  // A subsequent externally-created version must survive deletion of the reviewed version.
+  const later=await s3.send(new PutObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,Body:body}));expect(later.VersionId).not.toBe(version);
+  expect(await cleanup.processPending()).toBe(1);
+  await expect(s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:version}))).rejects.toMatchObject({$metadata:{httpStatusCode:404}});
+  const retained=await s3.send(new GetObjectCommand({Bucket:process.env.MEDIA_S3_BUCKET,Key:key,VersionId:later.VersionId}));expect(retained.ContentLength).toBe(body.length);(retained.Body as any)?.destroy?.();
+  const after=await s3.send(new ListObjectVersionsCommand({Bucket:process.env.MEDIA_S3_BUCKET,Prefix:key}));expect(after.DeleteMarkers||[]).toHaveLength(0);
+  const journal=(await db.query('SELECT state FROM media_upload_intents WHERE id=$1',[intent.id])).rows[0];expect(journal.state).toBe('ABANDONED');
+  await expect(db.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path) VALUES($1,$2,$3,$4,$3,$5,$6,$7,true,'CLEAN','ACTIVE',$8)`,[randomUUID(),author.id,fileName,intent.bucket,intent.mime_type,intent.byte_size,intent.sha256_checksum,item.observed_location])).rejects.toThrow('not linkable');
+  const referenced=(await db.query("SELECT a.* FROM media_assets a JOIN chat_message_attachments l ON l.asset_id=a.id WHERE l.message_id=$1",[message.id])).rows[0];expect(await storage.read(referenced)).toEqual(body);
+ });
+
+ it('migrates legacy profile, chat and derivative bytes into private S3 without changing authorization or holds',async()=>{
+  const body=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWMQCdYVCdZlgFAAD9oCUV/9UZEAAAAASUVORK5CYII=','base64'),derived=await require('sharp')(body).webp().toBuffer(),assets:any[]=[];
+  for(const bucket of ['private-profiles','private-chat','private-derivatives','private-chat']){
+   const id=randomUUID(),isDerivative=bucket==='private-derivatives',assetBytes=isDerivative?derived:body,fileName=`${isDerivative?'derivative':bucket==='private-chat'?'attachment':'avatar'}_${id}.${isDerivative?'webp':'png'}`,location=path.join(legacyRoot,...(isDerivative?['derivatives']:bucket==='private-chat'?['chat']:[]),fileName);await files.mkdir(path.dirname(location),{recursive:true});await files.writeFile(location,assetBytes);
+   const asset=(await db.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path)
+    VALUES($1,$2,$3,$4,$3,$5,$6,$7,true,'CLEAN',$8,$9) RETURNING *`,[id,author.id,fileName,bucket,isDerivative?'image/webp':'image/png',assetBytes.length,createHash('sha256').update(assetBytes).digest('hex'),assets.length===3?'ACTIVE':'LEGAL_HOLD',location])).rows[0];assets.push(asset);
+  }
+  await db.query("INSERT INTO media_derivatives(source_asset_id,kind,asset_id,width,height,source_checksum,transform) VALUES($1,'thumbnail',$2,2,2,$3,$4)",[assets[0].id,assets[2].id,assets[0].sha256_checksum,JSON.stringify({fixture:true})]);
+  const legacyMessage=await chat.send(group,author,{content:'Fictional legacy file',clientMessageId:randomUUID()});await db.query('INSERT INTO chat_message_attachments(message_id,asset_id) VALUES($1,$2)',[legacyMessage.id,assets[1].id]);await db.query('UPDATE user_accounts SET avatar_asset_id=$1 WHERE id=$2',[assets[0].id,author.id]);
+  const activeMessage=await chat.send(group,author,{content:'Fictional active legacy file',clientMessageId:randomUUID()});await db.query('INSERT INTO chat_message_attachments(message_id,asset_id) VALUES($1,$2)',[activeMessage.id,assets[3].id]);
+  await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages/${legacyMessage.id}/attachment`).set('Authorization',auth(reader)).expect(404);expect((await app.get(ChatAttachmentsService).download(group,activeMessage.id,reader)).buffer).toEqual(body);
+  await request(app.getHttpServer()).get(`/profile/media/${assets[0].id}`).set('Authorization',auth(author)).expect(200);await request(app.getHttpServer()).get(`/profile/media/${assets[0].id}`).set('Authorization',auth(reader)).expect(403);
+  const operator={...author,roleAssignments:[{role:Role.SUPER_ADMIN,branchId:null}]},inventory=app.get(MediaInventoryService),migration=app.get(LegacyMediaMigrationService),run=await inventory.start(operator);
+  for(let i=0;i<60;i++){if((await inventory.report(operator,run.id)).run.status==='COMPLETE')break;await inventory.advance(operator,run.id);}expect((await inventory.report(operator,run.id)).run.status).toBe('COMPLETE');
+  const items=(await db.query("SELECT id FROM media_inventory_items WHERE run_id=$1 AND asset_id=ANY($2::uuid[]) AND finding='LEGACY_MIGRATION_REVIEW'",[run.id,assets.map(a=>a.id)])).rows;expect(items).toHaveLength(4);
+  expect((await migration.approve(operator,run.id,items.map(i=>String(i.id)),'Fictional private migration review')).scheduled).toBe(4);expect(await migration.processPending(4)).toBe(4);
+  for(const previous of assets){const current=(await db.query('SELECT * FROM media_assets WHERE id=$1',[previous.id])).rows[0];expect(current.storage_path).toMatch(/^s3:\/\//);expect(current.retention_status).toBe(previous.retention_status);expect(current.sha256_checksum).toBe(previous.sha256_checksum);expect(await new MediaStorageService().read(current)).toEqual(previous.bucket==='private-derivatives'?derived:body);expect(await files.readFile(previous.storage_path)).toEqual(previous.bucket==='private-derivatives'?derived:body);const unsigned=await fetch(`${process.env.MEDIA_S3_ENDPOINT}/${process.env.MEDIA_S3_BUCKET}/${current.bucket}/${current.file_name}`);expect(unsigned.status).toBe(403);}
+  await request(app.getHttpServer()).get(`/profile/media/${assets[0].id}`).set('Authorization',auth(author)).expect(200);await request(app.getHttpServer()).get(`/profile/media/${assets[0].id}`).set('Authorization',auth(reader)).expect(403);
+  await request(app.getHttpServer()).get(`/profile/media/${assets[0].id}?variant=thumbnail`).set('Authorization',auth(author)).expect(200).expect('Content-Type',/image\/webp/);
+  await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages/${legacyMessage.id}/attachment`).set('Authorization',auth(reader)).expect(404);expect((await app.get(ChatAttachmentsService).download(group,activeMessage.id,reader)).buffer).toEqual(body);await request(app.getHttpServer()).get(`/chat/conversations/${group}/messages/${legacyMessage.id}/attachment`).set('Authorization',auth(outsider)).expect(404);
+ });
+
+});

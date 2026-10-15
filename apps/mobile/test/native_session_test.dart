@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'package:kashyap_mobile/services/session_store.dart';
+import 'chat_outbox_test.dart' show MemoryChatOutboxStore;
 
 class MemorySessionStore implements SessionStore {
   String? value;
@@ -21,9 +23,23 @@ http.Response jsonResponse(Object body, [int status = 200]) =>
 
 void main() {
   group('Native authentication HTTP contract (mock transport, not device acceptance)', () {
+    test('iOS sign-in reports the current native platform instead of Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      final service = GenealogyApiService(sessionStore: MemorySessionStore(), chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
+        expect(request.url.path, '/auth/native/verify');
+        expect(jsonDecode(request.body)['deviceInfo']['platform'], 'ios');
+        return jsonResponse({'accessToken': 'ios-access', 'refreshToken': 'ios-refresh'});
+      }));
+      try {
+        expect(await service.verifyOtp('ios-challenge', '123456'), 'ios-access');
+      } finally {
+        service.dispose();
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
     test('OTP session ID and code use native endpoint; both tokens are stored', () async {
       final store = MemorySessionStore();
-      final service = GenealogyApiService(sessionStore: store, client: MockClient((request) async {
+      final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
         expect(request.headers['Authorization'], isNull);
         final body = jsonDecode(request.body);
         if (request.url.path == '/auth/otp/request') {
@@ -49,7 +65,7 @@ void main() {
       final bothRejected = Completer<void>();
       var rejected = 0;
       var refreshes = 0;
-      final service = GenealogyApiService(sessionStore: store, client: MockClient((request) async {
+      final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
         if (request.url.path == '/auth/native/verify') {
           return jsonResponse({'accessToken': 'expired', 'refreshToken': 'refresh-old'});
         }
@@ -77,7 +93,7 @@ void main() {
 
     test('startup rotates persisted session and logout clears it', () async {
       final store = MemorySessionStore()..value = jsonEncode({'accessToken': 'old', 'refreshToken': 'saved'});
-      final service = GenealogyApiService(sessionStore: store, client: MockClient((request) async {
+      final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(), client: MockClient((request) async {
         if (request.url.path == '/auth/native/refresh') {
           expect(jsonDecode(request.body)['refreshToken'], 'saved');
           return jsonResponse({'accessToken': 'restored', 'refreshToken': 'rotated'});
@@ -97,7 +113,7 @@ void main() {
     test('revoked refresh clears credentials and notifies the app', () async {
       final store = MemorySessionStore()..value = jsonEncode({'accessToken': 'old', 'refreshToken': 'revoked'});
       var expired = false;
-      final service = GenealogyApiService(sessionStore: store,
+      final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(),
         client: MockClient((_) async => jsonResponse({}, 401)));
       service.onSessionExpired = () => expired = true;
       addTearDown(service.dispose);
@@ -109,7 +125,7 @@ void main() {
 
     test('incorrect OTP never creates a session', () async {
       final store = MemorySessionStore();
-      final service = GenealogyApiService(sessionStore: store,
+      final service = GenealogyApiService(sessionStore: store, chatOutboxStore: MemoryChatOutboxStore(),
         client: MockClient((_) async => jsonResponse({'message': 'Invalid OTP'}, 400)));
       addTearDown(service.dispose);
       await expectLater(service.verifyOtp('challenge', '000000'), throwsException);

@@ -13,3 +13,22 @@ body {
   background: rgb(var(--background-start-rgb));
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
+
+.skip-to-content {
+  position: fixed;
+  z-index: 50;
+  top: 0.75rem;
+  left: 0.75rem;
+  transform: translateY(-200%);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  background: #0f172a;
+  color: #fff;
+  font-weight: 600;
+}
+
+.skip-to-content:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid #f59e0b;
+  outline-offset: 3px;
+}

@@ -98,9 +98,9 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     await db.query(
       `INSERT INTO media_assets (id, uploader_user_id, storage_key, bucket, file_name, mime_type, byte_size, sha256_checksum, is_private, quarantine_status, retention_status)
        VALUES
-       ('00000000-0000-0000-0000-000000000101', $1, 'k1', 'private-profiles', 'f1.jpg', 'image/jpeg', 100, 'hash1', TRUE, 'CLEAN', 'ACTIVE'),
-       ('00000000-0000-0000-0000-000000000102', $1, 'k2', 'private-profiles', 'f2.jpg', 'image/jpeg', 100, 'hash2', TRUE, 'CLEAN', 'ACTIVE'),
-       ('00000000-0000-0000-0000-000000000103', $2, 'k3', 'private-profiles', 'f3.jpg', 'image/jpeg', 100, 'hash3', TRUE, 'CLEAN', 'ACTIVE')`,
+       ('00000000-0000-4000-8000-000000000101', $1, 'k1', 'private-profiles', 'f1.jpg', 'image/jpeg', 100, 'hash1', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-4000-8000-000000000102', $1, 'k2', 'private-profiles', 'f2.jpg', 'image/jpeg', 100, 'hash2', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-4000-8000-000000000103', $2, 'k3', 'private-profiles', 'f3.jpg', 'image/jpeg', 100, 'hash3', TRUE, 'CLEAN', 'ACTIVE')`,
       [claimant1Id, claimant2Id],
     );
   });
@@ -121,7 +121,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       knownFamilyMembers: ['Hari Adhikari'],
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000101',
+          mediaAssetId: '00000000-0000-4000-8000-000000000101',
           documentType: 'family_photo',
           description: 'Family photograph with clan elders',
         },
@@ -132,7 +132,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     expect(claim.id).toBeDefined();
     expect(claim.status).toBe(ClaimStatus.PENDING_TIER1);
     expect(claim.evidenceAttachments.length).toBe(1);
-    expect(claim.evidenceAttachments[0].mediaUrl).toContain('00000000-0000-0000-0000-000000000101');
+    expect(claim.evidenceAttachments[0].mediaUrl).toContain('00000000-0000-4000-8000-000000000101');
     expect(claim.evidenceAttachments[0].mediaUrl).toContain('sig=');
 
     // Check transition table
@@ -187,7 +187,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       relationshipDescription: 'Updated with clearer photo',
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000102',
+          mediaAssetId: '00000000-0000-4000-8000-000000000102',
           documentType: 'elder_voucher',
           description: 'Elder written statement',
         },
@@ -275,7 +275,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       reason: 'I am the real Ram Adhikari, claimant 1 is an imposter',
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000103',
+          mediaAssetId: '00000000-0000-4000-8000-000000000103',
           documentType: 'clan_record',
           description: 'Historical vamshavali photocopy',
         },

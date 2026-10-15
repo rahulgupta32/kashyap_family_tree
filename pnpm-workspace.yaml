@@ -5,6 +5,7 @@ packages:
 
 allowBuilds:
   '@nestjs/core': true
+  '@scarf/scarf': false
 
 ignoredBuiltDependencies:
   - '@nestjs/core'
