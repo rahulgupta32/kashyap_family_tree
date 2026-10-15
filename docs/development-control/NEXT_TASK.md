@@ -1,10 +1,11 @@
 # Next execution
 
-Current bounded task: repair only two period/browse regression scroll targets. Read CURRENT_STATE, PRODUCTION_READINESS and CI_FAILURES.
+Current correction: exact Text day-heading selector plus separate source-input assertion in period regression. Production code unchanged. Read CURRENT_STATE, PRODUCTION_READINESS and CI_FAILURES.
 
-1. Fetch actual latest HEAD/PR #5 and preserve newer/uncommitted work. Inspect source-bound automatic runs in PR handoff; no pending-success inference or duplicate manual full workflow.
-2. Require clean Flutter analysis/all245 tests, including browse midnight/BS/Tithi and period source/grouping. Parent24d42cfe Fast38725916852 FAILED: job116391703209 clean analysis,243 passed/two StateError Too many elements at scrollUntilVisible. Full38725924948 Flutter also FAILED. This correction uses the existing explicit vertical scroll finder; every assertion is retained.
-3. Inspect final parent full38725924948/native38725924842 conclusions independently, retaining failures. Older6e5d3c3 full38722246676/Fast38722239572 SUCCESS; iOS38722246761 FAILED before body at30s launch with digest-verified artifact11967073861. Do not change simulators/timeouts speculatively.
-4. Once corrected-source CI is verified, investigate frozen calendar editing/end-time gaps against contracts/API/mobile/admin and choose one bounded implementation. Do not invent BS/Tithi conversion or cultural approvals.
+1. Fetch latest GitHub HEAD/PR #5; preserve newer/uncommitted work. Inspect automatic source-bound checks from PR handoff; pending is not success. No duplicate full manual rerun.
+2. Require clean analysis/all245 Flutter cases. Parent81a441f Fast38726450546/job116393466911 clean analysis,244 passed/one failed: find.text matched both EditableText source input and Text day heading. Scroll correction and browse test passed. Current correction must retain both exact heading and source-input assertions, Nepal midnight and query checks.
+3. Independently inspect parent main38726456738/native38726456605 and earlier main38725924948/native38725924842. Preserve historical failures; do not infer success or speculate on simulator/timeouts.
+4. After verified closure, complete one bounded calendar editing workflow against frozen requirements/contracts/API/mobile/admin, preserving version checks, privacy/audience, account fences and durable mutation outcome recovery. Inspect end-time semantics before expanding database/contracts.
+5. Continue remaining frozen end-to-end workflows, approved data/import rehearsals, independent security/usability/device acceptance, API/messaging load, production operations/DR and mobile distribution/live providers/UAT/Jyphra approval in dependency order. Do not invent owners/data/credentials/authority approvals or label aggregate CI as final acceptance.
 
-All260 acceptance/production gates remain OPEN. No merge/deploy/store submission. Record actual conclusions in PR and fold them into the next meaningful checkpoint; avoid documentation-only CI loops.
+All260 final acceptance/release gates OPEN. No merge/deploy/store submission. Stop at reviewed pushed checkpoints while long CI runs independently; append conclusions to PR and fold into next meaningful implementation, avoiding documentation-only CI loops.

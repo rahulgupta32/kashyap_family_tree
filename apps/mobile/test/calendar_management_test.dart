@@ -119,7 +119,8 @@ void main() {
     await tester.tap(find.text('Show calendar period'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), 200, scrollable:find.byWidgetPredicate((w)=>w is Scrollable && w.axisDirection==AxisDirection.down));
-    expect(find.text('2027-01-01'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is Text && w.data == '2027-01-01'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '2027-01-01');
     expect(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), findsOneWidget);
     expect(queries.single, {'source':'AD','view':'MONTH','date':'2027-01-01'});
   });

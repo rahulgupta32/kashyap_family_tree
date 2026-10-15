@@ -1,3 +1,11 @@
+## Calendar period heading selector correction
+
+Recovered GitHub HEAD `81a441f7505b509af0aafb06379d08e3ab33938a`, tree `5375cdbd83627fe95796ad2defdd7635814f40fa`, checkout clean. Fast38726450546 FAILED. Inspected Flutter job116393466911:244 passed/one failed, clean analysis. Both vertical scroll calls now succeed and browse midnight/BS/Tithi case passes. The remaining period assertion at line122 uses find.text on a value shared by EditableText input and Text day heading; actual result is two widgets. This is test selector ambiguity, not a displayed-time or server-grouping failure.
+
+Correction selects exactly one Text heading with the expected day and separately asserts that the source input controller retains the same value. Nepal midnight and original source-query assertions stay intact; no matcher count relaxed, no production code/timeouts changed. New-source Flutter execution remains PENDING: require clean analysis/all245 cases. No unrelated feature added. All six user-stated release areas remain mandatory and ordered: complete frozen workflows; governed approved data; independent security/privacy/accessibility/localization/device acceptance; API/messaging load; production operations/DR; signing/live providers/UAT/Jyphra approval. Engineering evidence cannot substitute named authority or production acceptance.
+
+Local matrix/release/workbook validators, ten matrix negatives, five workbook regressions and whitespace PASS. Flutter/Dart unavailable locally. Exact correction SHA/tree/automatic runs are in the source-bound PR #5 handoff. All260 final acceptance/production gates remain OPEN; no merge/deploy/manual rerun.
+
 ## Period/browse regression scroll target correction
 
 Recovered exact remote/PR HEAD `24d42cfe73176859198a52c17f07222cfbff2739`, tree `a0ad81965db9f640ddc91814635eb82b114029d6`, with clean checkout. Fast38725916852 FAILED; inspected Flutter job116391703209: clean analysis,243 passed/two failed. Both new tests throw StateError Too many elements inside WidgetController.scrollUntilVisible (calendar_management_test.dart99/121), because its default finder also matches horizontal editable scrollables. Full38725924948 Flutter job116391636294 likewise FAILED; remaining full/native38725924842 results were pending at recovery.
