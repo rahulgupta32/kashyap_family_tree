@@ -1,10 +1,10 @@
 # Next execution
 
-Current bounded batch: mobile calendar period/browse Nepal display. Read CURRENT_STATE, PRODUCTION_READINESS and `docs/execution/CALENDAR_PERIOD_DISPLAY_REPORT.md`.
+Current bounded task: repair only two period/browse regression scroll targets. Read CURRENT_STATE, PRODUCTION_READINESS and CI_FAILURES.
 
-1. Fetch actual latest GitHub HEAD/PR #5 and preserve all newer/uncommitted changes. Inspect automatic source-bound fast/full/native runs from PR handoff; never infer queued/pending success.
-2. Require clean analysis/all245 Flutter cases including the two new period/browse regressions; preserve existing query/grouping, BS/Tithi source labels, pagination and account fences. Flutter unavailable locally. Do not credit parent243 cases to the new source.
-3. Retain parent6e5d3c3 Main38722246676/Fast38722239572 SUCCESS and iOS38722246761 FAILURE. Digest-verified artifact11967073861 shows30-second test-launch timeout, empty log and no app assertions; both builds passed. Inspect new native evidence and fix only demonstrated causes, without speculative simulator/timeout changes or duplicate full reruns.
-4. After verification, investigate frozen calendar editing/end-time workflow gaps against API/contracts/mobile/admin before selecting a bounded implementation. Recurrence/cultural conversion/source approvals remain separate and unavailable; do not invent them.
+1. Fetch actual latest HEAD/PR #5 and preserve newer/uncommitted work. Inspect source-bound automatic runs in PR handoff; no pending-success inference or duplicate manual full workflow.
+2. Require clean Flutter analysis/all245 tests, including browse midnight/BS/Tithi and period source/grouping. Parent24d42cfe Fast38725916852 FAILED: job116391703209 clean analysis,243 passed/two StateError Too many elements at scrollUntilVisible. Full38725924948 Flutter also FAILED. This correction uses the existing explicit vertical scroll finder; every assertion is retained.
+3. Inspect final parent full38725924948/native38725924842 conclusions independently, retaining failures. Older6e5d3c3 full38722246676/Fast38722239572 SUCCESS; iOS38722246761 FAILED before body at30s launch with digest-verified artifact11967073861. Do not change simulators/timeouts speculatively.
+4. Once corrected-source CI is verified, investigate frozen calendar editing/end-time gaps against contracts/API/mobile/admin and choose one bounded implementation. Do not invent BS/Tithi conversion or cultural approvals.
 
-All260 final acceptance and production gates remain OPEN. No merge/deploy/store submission. Fold outcomes into the next meaningful checkpoint and PR; avoid documentation-only CI loops.
+All260 acceptance/production gates remain OPEN. No merge/deploy/store submission. Record actual conclusions in PR and fold them into the next meaningful checkpoint; avoid documentation-only CI loops.

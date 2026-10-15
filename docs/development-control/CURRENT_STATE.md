@@ -1,3 +1,11 @@
+## Period/browse regression scroll target correction
+
+Recovered exact remote/PR HEAD `24d42cfe73176859198a52c17f07222cfbff2739`, tree `a0ad81965db9f640ddc91814635eb82b114029d6`, with clean checkout. Fast38725916852 FAILED; inspected Flutter job116391703209: clean analysis,243 passed/two failed. Both new tests throw StateError Too many elements inside WidgetController.scrollUntilVisible (calendar_management_test.dart99/121), because its default finder also matches horizontal editable scrollables. Full38725924948 Flutter job116391636294 likewise FAILED; remaining full/native38725924842 results were pending at recovery.
+
+This correction scopes only those two scrolling calls to Scrollable with AxisDirection.down, matching the existing calendar pagination regression. Production Dart code, data, assertions, timeout values and security/audience/session behavior are unchanged. No calendar editing feature started while this demonstrated regression remained open. Failure retained in CI_FAILURES. New-source Flutter execution remains PENDING: require clean analysis/all245 tests, including both previously failing widgets. Flutter/Dart unavailable locally. Local frozen matrix/release/workbook validators, ten matrix negatives, five workbook regressions and whitespace passed. Resolve this correction SHA/tree and automatic runs from the PR #5 handoff.
+
+All260 final acceptance/production gates remain OPEN. No merge/deploy/manual full rerun. After verifying correction, inspect remaining calendar editing/end-time requirements as the next bounded task.
+
 ## Calendar period/browse Nepal display — verification pending
 
 Recovered HEAD `6e5d3c3bcc9f5bc06be3ebd187c5499064c6f16b`, tree `5ca08a4cb4c2fc093323fdc27893e5d774436dfb`, unchanged in GitHub PR #5. Fast38722239572 and Main38722246676 are independently SUCCESS. Main logs confirm454 unit/552 general PostgreSQL-Redis integration/67 browser/243 Flutter tests and clean analysis; all six jobs passed. Dedicated storage covers ten general-suite skips. Fictional restore passed, without production DR acceptance.

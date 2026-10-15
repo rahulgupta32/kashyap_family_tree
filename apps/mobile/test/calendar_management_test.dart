@@ -96,7 +96,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), findsOneWidget);
     expect(find.text('BS: 2083-05-15'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Tithi: 2083 / 5 · SHUKLA 3 (conversion unavailable)'), 200);
+    await tester.scrollUntilVisible(find.text('Tithi: 2083 / 5 · SHUKLA 3 (conversion unavailable)'), 200, scrollable:find.byWidgetPredicate((w)=>w is Scrollable && w.axisDirection==AxisDirection.down));
     expect(find.text('Tithi: 2083 / 5 · SHUKLA 3 (conversion unavailable)'), findsOneWidget);
     expect(find.textContaining('2026-12-31T18:25'), findsNothing);
   });
@@ -118,7 +118,7 @@ void main() {
     await tester.ensureVisible(find.text('Show calendar period'));
     await tester.tap(find.text('Show calendar period'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), 200);
+    await tester.scrollUntilVisible(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), 200, scrollable:find.byWidgetPredicate((w)=>w is Scrollable && w.axisDirection==AxisDirection.down));
     expect(find.text('2027-01-01'), findsOneWidget);
     expect(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), findsOneWidget);
     expect(queries.single, {'source':'AD','view':'MONTH','date':'2027-01-01'});

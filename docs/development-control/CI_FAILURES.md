@@ -51,3 +51,11 @@ Source `b62f6c93b0d3ed2ced22762dea8a8a6b7eb76bed`: full general CI38570262065 SU
 ## Native create privacy fixture analyzer correction
 
 Source `ce0f1e9aa4e088273575b5a63d55ffbd25bba60d`: Fast38604295628 FAILED; Flutter job115991218739 log inspected. Analyze reports curly_braces_in_flow_control_structures at calendar_create_privacy_test.dart34/71, the multiline mocked preview return statements. Widgets did not execute. Correction adds explicit blocks in those test fixture branches; production code, assertions, timeouts and lint rules unchanged. New-source execution remains PENDING. Full38604311219/native38604311215 are independently pending until their actual conclusions are retrieved.
+
+## Period/browse regression scroll target correction
+
+Recovered exact remote/PR HEAD `24d42cfe73176859198a52c17f07222cfbff2739`, tree `a0ad81965db9f640ddc91814635eb82b114029d6`, with clean checkout. Fast38725916852 FAILED; inspected Flutter job116391703209: clean analysis,243 passed/two failed. Both new tests throw StateError Too many elements inside WidgetController.scrollUntilVisible (calendar_management_test.dart99/121), because its default finder also matches horizontal editable scrollables. Full38725924948 Flutter job116391636294 likewise FAILED; remaining full/native38725924842 results were pending at recovery.
+
+This correction scopes only those two scrolling calls to Scrollable with AxisDirection.down, matching the existing calendar pagination regression. Production Dart code, data, assertions, timeout values and security/audience/session behavior are unchanged. No calendar editing feature started while this demonstrated regression remained open. Failure retained in CI_FAILURES. New-source Flutter execution remains PENDING: require clean analysis/all245 tests, including both previously failing widgets. Flutter/Dart unavailable locally. Local frozen matrix/release/workbook validators, ten matrix negatives, five workbook regressions and whitespace passed. Resolve this correction SHA/tree and automatic runs from the PR #5 handoff.
+
+All260 final acceptance/production gates remain OPEN. No merge/deploy/manual full rerun. After verifying correction, inspect remaining calendar editing/end-time requirements as the next bounded task.
