@@ -42,6 +42,7 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   const create = page.getByRole('dialog', { name: 'Create event', exact: true });
   const title = `Fictional calendar acceptance ${Date.now()}`;
   await create.getByPlaceholder('उदा: कुल पूजा २०८३').fill(title);
+  await create.getByRole('combobox',{name:'Event type',exact:true}).selectOption('GENERAL_EVENT');
   await create.getByRole('combobox', { name: /Date source/ }).selectOption('AD');
   const start = new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 16);
   await create.getByLabel(/Gregorian date and time/).fill(start);

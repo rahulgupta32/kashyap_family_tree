@@ -39,3 +39,5 @@ Source: frozen Master Requirements §38 and Freeze Record §6. Complete mandator
 - Public deployment/app store submission/main merge: **not authorized**.
 
 See `EXTERNAL_HANDOFF.md` and `docs/operations/PRODUCTION_RUNBOOK.md` for public ownership and acceptance boundaries; detailed operational preparation documents are provided privately. These are preparation documents, not proof that infrastructure or owners exist. Keep all evidence linked to its actual source and test scope.
+
+Current complete execution assignment: [COMPLETION_SEQUENCE.md](COMPLETION_SEQUENCE.md) and its260-row CSV. This supersedes older speculative next-feature suggestions; it does not close any gate or amend frozen scope.

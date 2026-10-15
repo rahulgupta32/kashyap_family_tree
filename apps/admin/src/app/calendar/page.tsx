@@ -392,7 +392,7 @@ export default function CalendarAdminPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">प्रकार (Event Type)*</label>
-                <select
+                <select aria-label="Event type"
                   value={formData.eventType}
                   onChange={(e) => setFormData({ ...formData, eventType: e.target.value })}
                   className="w-full text-xs p-2.5 border border-slate-200 rounded-lg"
