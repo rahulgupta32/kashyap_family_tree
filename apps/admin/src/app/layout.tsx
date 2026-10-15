@@ -73,6 +73,7 @@ export default function RootLayout({
                   <Link href="/audit" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अडिट इतिहास (Audit history)</Link>
                   <Link href="/map" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">परिवारको स्थान (Household map)</Link>
 <Link href="/chat" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सन्देश (Messages)</Link>
+                  <Link href="/policies" className="block px-3 py-2 text-sm">नीति र सहमति (Policies)</Link>
                   <Link href="/notifications" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">सूचनाहरू (Notifications)</Link>
                   <Link href="/broadcasts" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">प्रशासनिक सूचनाहरू (Notices)</Link>
                   <Link href="/follows" className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-300 hover:bg-slate-800 text-sm font-medium transition">अनुसरण (Following)</Link>

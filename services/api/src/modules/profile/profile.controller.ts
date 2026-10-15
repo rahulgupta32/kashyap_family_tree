@@ -1,3 +1,5 @@
+import { PolicyAcknowledgementService } from './policy-acknowledgement.service';
+import { Header } from '@nestjs/common';
 import { allowedFields } from '../community/community-policy';
 import {
   Controller,
@@ -30,7 +32,17 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 
 @Controller(['me', 'profile'])
 export class ProfileController {
-  constructor(private readonly profileService: ProfileService) {}
+  constructor(private readonly profileService: ProfileService, private readonly policies:PolicyAcknowledgementService) {}
+
+  @Get('policies')
+  @Header('Cache-Control','private, no-store')
+  @UseGuards(JwtAuthGuard)
+  policyStatus(@CurrentUser() user:AuthenticatedUser){return this.policies.list(user.id);}
+
+  @Post('policies/acknowledgements')
+  @Header('Cache-Control','private, no-store')
+  @UseGuards(JwtAuthGuard)
+  acknowledgePolicy(@CurrentUser() user:AuthenticatedUser,@Body() body:any){return this.policies.accept(user.id,body);}
 
   @Get(['', 'me'])
   @UseGuards(JwtAuthGuard)

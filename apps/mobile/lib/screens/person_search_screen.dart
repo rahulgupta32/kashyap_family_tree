@@ -1,3 +1,4 @@
+import 'policy_acknowledgements_screen.dart';
 import 'device_sessions_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/person.dart';
@@ -81,6 +82,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
       appBar: AppBar(
         title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if(widget.apiService.authToken!=null) IconButton(tooltip:'नीति र सहमति (Policies)',icon:const Icon(Icons.policy),onPressed:(){Navigator.of(context).push(MaterialPageRoute(builder:(_)=>PolicyAcknowledgementsScreen(api:widget.apiService)));}),
           if (widget.apiService.authToken != null)
             IconButton(tooltip: 'मेरा उपकरणहरू (My devices)', icon: const Icon(Icons.devices), onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeviceSessionsScreen(apiService: widget.apiService)));

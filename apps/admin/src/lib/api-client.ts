@@ -487,6 +487,11 @@ export class ApiClient {
     return data;
   }
 
+  static async policyRequest(token:string,body?:unknown):Promise<any>{
+    const res=await fetch(`${API_BASE}/me/policies${body===undefined?'':'/acknowledgements'}`,{method:body===undefined?'GET':'POST',headers:this.getHeaders(token),credentials:'include',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+    if(!res.ok)throw new Error('Policy action unconfirmed');return res.json();
+  }
+
   static async calendarRequest(token: string, path: string, method = 'GET', body?: unknown): Promise<any> {
     const res = await fetch(`${API_BASE}/calendar/${path}`, {method, headers: this.getHeaders(token), credentials:'include',
       cache:'no-store', ...(body === undefined ? {} : {body:JSON.stringify(body)})});
