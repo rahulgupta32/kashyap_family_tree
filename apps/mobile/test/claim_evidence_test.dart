@@ -14,7 +14,8 @@ const asset='11111111-1111-4111-8111-111111111111';
 Future<void> tap(WidgetTester t,Finder finder)async{await t.ensureVisible(finder);await t.tap(finder);await t.pumpAndSettle();}
 Finder submit()=>find.widgetWithText(ElevatedButton,claimLabels['submit']!);
 Future<void> form(WidgetTester t,GenealogyApiService api)async{await t.pumpWidget(MaterialApp(home:ClaimProfileScreen(personId:'fictional-person',personName:'Private fictional person',apiService:api)));await t.pumpAndSettle();}
-Future<void> fill(WidgetTester t)async{await t.scrollUntilVisible(find.byKey(const ValueKey('claim-description')),-200,scrollable:find.byWidgetPredicate((w)=>w is Scrollable&&w.axisDirection==AxisDirection.down));await t.enterText(find.byKey(const ValueKey('claim-description')),'Fictional relationship');await tap(t,find.widgetWithText(CheckboxListTile,claimLabels['truth']!));}
+// The multiline input also owns a vertical Scrollable; select its page ancestor.
+Future<void> fill(WidgetTester t)async{await t.scrollUntilVisible(find.byKey(const ValueKey('claim-description')),-200,scrollable:find.ancestor(of:find.byKey(const ValueKey('claim-description')),matching:find.byType(Scrollable)));await t.enterText(find.byKey(const ValueKey('claim-description')),'Fictional relationship');await tap(t,find.widgetWithText(CheckboxListTile,claimLabels['truth']!));}
 void main(){
  TestWidgetsFlutterBinding.ensureInitialized();
  tearDown(()=>TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel,null));

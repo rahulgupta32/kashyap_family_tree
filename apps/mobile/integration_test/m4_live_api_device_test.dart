@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:kashyap_mobile/localization/claim_labels.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -186,9 +187,9 @@ void main() {
     await drawer(tester, 'दाबी प्रमाणीकरण (Profile Claims)');
     expect(tester.widget<ClaimProfileScreen>(find.byType(ClaimProfileScreen)).personId, rootId);
     await tester.enterText(find.byType(TextField), 'Fictional Android claimant with independently reviewed lineage.');
-    await press(tester, find.byType(CheckboxListTile));
+    await press(tester, find.widgetWithText(CheckboxListTile, claimLabels['truth']!));
     await press(tester, find.text('दाबी पेश गर्नुहोस् (Submit Claim)'));
-    await until(tester, find.text('तपाईंको प्रोफाइल दाबी सफलतापूर्वक दर्ता भयो। समीक्षा पश्चात् सूचित गरिनेछ।'));
+    await until(tester, find.text('${claimLabels['submitted']} · PENDING_TIER1'));
     final claims = await api('/claims', token: service.authToken) as List;
     final claim = claims.singleWhere((c) => c['targetPersonId'] == rootId);
     expect(claim['status'], 'PENDING_TIER1');

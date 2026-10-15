@@ -20,6 +20,17 @@ describe('Private media storage boundaries', () => {
     process.env.MEDIA_S3_BUCKET='fictional-private';process.env.MEDIA_S3_ENDPOINT='http://localhost:9000';expect(()=>new MediaStorageService()).toThrow('HTTPS');
     process.env.MEDIA_STORAGE_BACKEND='typo';expect(()=>new MediaStorageService()).toThrow('Unsupported');
   });
+  it('stores independent evidence only in private profiles and retains integrity/location checks', async () => {
+    const store=new MediaStorageService(),name=`evidence_${randomUUID()}.png`;
+    const location=await store.put('private-profiles',name,bytes,'image/png'),row=record(name,location);
+    expect(await new MediaStorageService().read(row)).toEqual(bytes);
+    for(const bucket of ['private-chat','private-community','private-derivatives','public'])
+      expect(()=>store.location(bucket,name)).toThrow('Invalid media location');
+    expect(()=>store.location('private-profiles','../'+name)).toThrow('Invalid media location');
+    await expect(store.read({...row,storage_path:'/etc/passwd'})).rejects.toThrow('Invalid media location');
+    await store.remove(row);
+    await expect(store.read(row)).rejects.toThrow('Media bytes not found');
+  });
   it('survives adapter recreation and refuses overwrite, tampered bytes and changed locations', async () => {
     const name=file(),store=new MediaStorageService(),location=await store.put('private-profiles',name,bytes,'image/png'),row=record(name,location);
     expect(await new MediaStorageService().read(row)).toEqual(bytes);
