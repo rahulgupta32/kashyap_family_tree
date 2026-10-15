@@ -62,6 +62,11 @@ export default function CalendarAdminPage() {
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[accessToken]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editDescription,setEditDescription]=useState('');
+  const [editLocation,setEditLocation]=useState('');
+  const [blockedEdits,setBlockedEdits]=useState<Set<string>>(()=>new Set());
+  const manageBusyRef=useRef<object|null>(null);
+  const editOrdinary=!!editing && ['GENERAL_EVENT','COMMUNITY_MEETING'].includes(editing.eventType) && !editing.recurrenceRuleId;
   const [editStart, setEditStart] = useState('');
   const [editTimeChanged, setEditTimeChanged] = useState(false);
   const editCanReschedule=!!editing?.startsAt && !editing.recurrenceRuleId && ['GENERAL_EVENT','COMMUNITY_MEETING'].includes(editing.eventType);
@@ -72,7 +77,7 @@ export default function CalendarAdminPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useLayoutEffect(()=>{
-    pendingCreateRef.current=null;setPendingCreate(null);createBusyRef.current=null;
+    pendingCreateRef.current=null;setPendingCreate(null);createBusyRef.current=null;manageBusyRef.current=null;setBlockedEdits(new Set());setEditDescription('');setEditLocation('');
     setShowCreateModal(false);setFormData(initialCalendarForm());setDateMode('BS');setStartsAt('');setReminder(false);setSearch('');
     setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);
     setEvents([]);setEditing(null);setEditTitle('');setEditStart('');setEditTimeChanged(false);setCancelReason('');setHistory([]);setMessage(null);setActionLoading(false);setRsvpPending(null);
@@ -96,11 +101,12 @@ export default function CalendarAdminPage() {
   async function loadEvents() {
     if (!accessToken) return;
     const sequence=++eventListSequence.current;
+    const mayUnblock=!manageBusyRef.current;
     setLoading(true);
     try {
       const data = await ApiClient.listCalendarEvents(accessToken);
       if(requestScopeRef.current!==requestScope||eventListSequence.current!==sequence)return;
-      setEvents(data);
+      setEvents(data);if(mayUnblock)setBlockedEdits(new Set());
     } catch (err: any) {
       if(requestScopeRef.current!==requestScope||eventListSequence.current!==sequence)return;
       setMessage({ type: 'error', text: err.message });
@@ -225,19 +231,39 @@ export default function CalendarAdminPage() {
     finally{if(requestScopeRef.current===requestScope)setActionLoading(false);}
   }
   async function manage(cancel=false) {
-    if(!accessToken||!editing)return;
+    if(requestScopeRef.current!==requestScope||!accessToken||!editing||manageBusyRef.current||blockedEdits.has(editing.id))return;
+    let payload:any;
+    try {
+      if(cancel){
+        if(cancelReason.trim().length<5||cancelReason.trim().length>1000)throw new Error('Cancellation reason must contain 5–1000 characters');
+        payload={version:editing.version,reason:cancelReason.trim()};
+      }else{
+        if(!editTitle.trim()||editTitle.trim().length>255|| (editOrdinary && (editDescription.trim().length>10000||editLocation.trim().length>255)))
+          throw new Error('शीर्षक 1–255, विवरण 10000 र स्थान 255 अक्षरसम्म (Title 1–255; details up to 10000; venue up to 255 characters)');
+        payload={version:editing.version,title:editTitle.trim(),
+          ...(editOrdinary?{description:editDescription.trim(),location:editLocation.trim()}:{}),
+          ...(editCanReschedule && editTimeChanged?{startsAt:nepalWallTimeToUtc(editStart)}:{})};
+      }
+    }catch(error:any){setMessage({type:'error',text:error.message});return;}
+    const operation={};manageBusyRef.current=operation;eventListSequence.current++;
     setActionLoading(true);setMessage(null);
     try {
-      await ApiClient.calendarRequest(accessToken,`events/${editing.id}${cancel?'/cancel':''}`,cancel?'POST':'PATCH',
-        cancel?{version:editing.version,reason:cancelReason}:{version:editing.version,title:editTitle,
-          ...(editCanReschedule && editTimeChanged ? {startsAt:nepalWallTimeToUtc(editStart)} : {})});
+      await ApiClient.calendarRequest(accessToken,`events/${editing.id}${cancel?'/cancel':''}`,cancel?'POST':'PATCH',payload);
       if(requestScopeRef.current!==requestScope)return;setEditing(null);await loadEvents();
-    }catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
-    finally{if(requestScopeRef.current===requestScope)setActionLoading(false);}
+    }catch{
+      if(requestScopeRef.current===requestScope){
+        setBlockedEdits(old=>new Set(old).add(editing.id));
+        setMessage({type:'error',text:'परिवर्तन पुष्टि भएन; पुनः लोड गर्नुहोस् (Change unconfirmed; reload before editing again)'});
+      }
+    }finally{
+      if(manageBusyRef.current===operation)manageBusyRef.current=null;
+      if(requestScopeRef.current===requestScope)setActionLoading(false);
+    }
   }
 
   return (
     <div className="space-y-6">
+      <button type="button" disabled={actionLoading} onClick={()=>loadEvents()}>कार्यक्रम पुनः लोड (Reload events)</button>
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">कुल क्यालेन्डर तथा चाडपर्व (Kinship Observances Calendar)</h1>
@@ -304,8 +330,8 @@ export default function CalendarAdminPage() {
               </div>
               {ev.lifecycleState === 'CANCELLED' && <p role="status">{label('cancelled')}</p>}
               {ev.rsvpCounts && <p>{label('attendance')}: {ev.rsvpCounts.going} Going · {ev.rsvpCounts.maybe} Maybe · {ev.rsvpCounts.declined} Declined</p>}
-              {ev.canManage && ev.lifecycleState !== 'CANCELLED' && <button type="button" onClick={async()=>{
-                setEditing(ev);setEditTitle(ev.title);setEditStart(ev.startsAt?formatNepalInstant(ev.startsAt).slice(0,16).replace(' ','T'):'');setEditTimeChanged(false);setCancelReason('');setHistory([]);
+              {ev.canManage && ev.lifecycleState !== 'CANCELLED' && <button type="button" disabled={actionLoading||blockedEdits.has(ev.id)} onClick={async()=>{
+                setEditing(ev);setEditDescription(ev.description??'');setEditLocation(ev.location??'');setEditTitle(ev.title);setEditStart(ev.startsAt?formatNepalInstant(ev.startsAt).slice(0,16).replace(' ','T'):'');setEditTimeChanged(false);setCancelReason('');setHistory([]);
                 try{if(accessToken){const revisions=await ApiClient.calendarRequest(accessToken,`events/${ev.id}/history`);if(requestScopeRef.current===requestScope)setHistory(revisions);}}
                 catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
               }}>{label('edit')}</button>}
@@ -327,14 +353,19 @@ export default function CalendarAdminPage() {
       {editing && <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
         <div role="dialog" aria-modal="true" aria-label={label('edit')} className="bg-white max-w-lg w-full p-6 space-y-4 rounded-xl">
           <h2>{label('edit')}</h2>
-          <label>Title<input aria-label="Event title" value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="block border p-2 w-full" /></label>
+          <label>Title<input aria-label="Event title" disabled={actionLoading} value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="block border p-2 w-full" /></label>
+          {editOrdinary && <>
+            <label>विवरण (Details)<textarea aria-label="Event details" disabled={actionLoading} value={editDescription} onChange={e=>setEditDescription(e.target.value)} /></label>
+            <label>स्थान (Venue)<input aria-label="Event venue" disabled={actionLoading} value={editLocation} onChange={e=>setEditLocation(e.target.value)} /></label>
+          </>}
           {editCanReschedule && <label>सुरु समय (Start · Nepal UTC+05:45)<input aria-label="Event start · Nepal UTC+05:45" type="datetime-local" value={editStart} disabled={actionLoading} onChange={e=>{setEditStart(e.target.value);setEditTimeChanged(true);}} /></label>}
-          <button disabled={actionLoading} onClick={()=>manage()}>{label('save')}</button>
+          <button disabled={actionLoading||blockedEdits.has(editing.id)} onClick={()=>manage()}>{label('save')}</button>
           <label>{label('reason')}<input aria-label={label('reason')} value={cancelReason} onChange={e=>setCancelReason(e.target.value)} className="block border p-2 w-full" /></label>
-          <button disabled={actionLoading||cancelReason.trim().length<5} onClick={()=>manage(true)}>{label('cancel')}</button>
+          <button disabled={actionLoading||blockedEdits.has(editing.id)||cancelReason.trim().length<5} onClick={()=>manage(true)}>{label('cancel')}</button>
           <p>Revisions: {history.map(r=>r.version).join(', ')}</p>
           {history.filter(r=>r.audienceEvidence).map(r=><p key={r.version}>संस्करण (Revision) {r.version}: {r.audienceEvidence.basis.selection.type} · {r.audienceEvidence.basis.recipients.length} आमन्त्रित खाताहरू (recipient accounts)</p>)}
-          <button onClick={()=>setEditing(null)}>{label('close')}</button>
+          {blockedEdits.has(editing.id) && <button disabled={actionLoading} onClick={async()=>{setEditing(null);await loadEvents();}}>बन्द गरी पुनः लोड (Close and reload events)</button>}
+          <button disabled={actionLoading} onClick={()=>setEditing(null)}>{label('close')}</button>
         </div>
       </div>}
       {/* Create Modal */}

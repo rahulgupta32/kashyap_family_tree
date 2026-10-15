@@ -57,6 +57,8 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   await card.getByRole('button', { name: /Edit event/ }).click();
   const edit = page.getByRole('dialog', { name: /Edit event/ });
   await edit.getByLabel('Event title', { exact: true }).fill(`${title} updated`);
+  await edit.getByLabel('Event details',{exact:true}).fill('  Fictional updated agenda  ');
+  await edit.getByLabel('Event venue',{exact:true}).fill('  Fictional updated venue  ');
   await expect(edit.getByLabel('Event start · Nepal UTC+05:45',{exact:true})).toHaveValue(start);
   const moved=new Date(Date.now()+86400000*4).toISOString().slice(0,10)+'T00:10';
   await edit.getByLabel('Event start · Nepal UTC+05:45',{exact:true}).fill(moved);
@@ -64,7 +66,7 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   card = page.getByRole('article', { name: `${title} updated`, exact: true });
   await expect(card).toBeVisible();
   const changed=await page.request.get(`${API}/calendar/events/${event.id}`,{headers:await headers(page)});expect(changed.ok()).toBeTruthy();
-  const updated=await changed.json();expect(updated.startsAt).toBe(new Date(new Date(moved+'Z').getTime()-345*60000).toISOString());expect(updated.audienceScope).toBe(event.audienceScope);expect(updated.reminderOffsets).toEqual([60]);expect(updated.version).toBe(2);
+  const updated=await changed.json();expect(updated.startsAt).toBe(new Date(new Date(moved+'Z').getTime()-345*60000).toISOString());expect(updated.audienceScope).toBe(event.audienceScope);expect(updated.reminderOffsets).toEqual([60]);expect(updated.version).toBe(2);expect(updated.description).toBe('Fictional updated agenda');expect(updated.location).toBe('Fictional updated venue');
   await card.getByRole('button', { name: /Edit event/ }).click();
   await expect(edit.getByText(/Revisions: 2, 1/)).toBeVisible();
   await edit.getByLabel(/Cancellation reason/).fill('Fictional organizer cancellation');
@@ -93,4 +95,40 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   await expect(period).toContainText('AD · AGENDA');
   await expect(period).toContainText(`${title} updated`);
 
+});
+
+
+test('ordinary admin edit validates bounds and retains uncertain intent until explicit reload',async({page})=>{
+  await login(page);
+  let current:any={id:'11111111-1111-4111-8111-111111111111',title:'Fictional edit recovery',description:'Server details',location:'Server venue',eventType:'GENERAL_EVENT',audienceScope:'INVITED_ONLY',canManage:true,version:4,lifecycleState:'ACTIVE',startsAt:'2030-01-02T04:15:23.456Z',reminderOffsets:[60]};
+  const patches:any[]=[];
+  await page.route(url=>url.pathname.startsWith('/calendar/events'),async route=>{
+    const request=route.request();
+    if(request.method()==='PATCH'){
+      patches.push(request.postDataJSON());
+      if(patches.length===1){current={...current,version:5,title:'Server resolved event',description:'Resolved details'};await route.fulfill({status:503,json:{message:'Private raw diagnostic'}});}
+      else{current={...current,...patches.at(-1),version:6};await route.fulfill({json:current});}
+    }else if(request.url().endsWith('/history')){await route.fulfill({json:[]});}
+    else if(request.method()==='GET'){await route.fulfill({json:[current]});}
+    else{await route.continue();}
+  });
+  await page.goto('/calendar');
+  await page.getByRole('article',{name:current.title,exact:true}).getByRole('button',{name:/Edit event/}).click();
+  let dialog=page.getByRole('dialog',{name:/Edit event/});
+  await dialog.getByLabel('Event details',{exact:true}).fill('x'.repeat(10001));
+  await dialog.getByRole('button',{name:/Save changes/}).click();
+  await expect(page.getByText(/Title 1–255; details up to 10000/)).toBeVisible();expect(patches).toHaveLength(0);
+  await dialog.getByLabel('Event details',{exact:true}).fill('Private unresolved draft');
+  await dialog.getByRole('button',{name:/Save changes/}).click();
+  await expect(dialog.getByRole('button',{name:/Save changes/})).toBeDisabled();
+  await expect(dialog.getByLabel('Event details',{exact:true})).toHaveValue('Private unresolved draft');
+  await expect(page.getByText('Private raw diagnostic',{exact:true})).toHaveCount(0);
+  expect(patches[0]).toEqual({version:4,title:'Fictional edit recovery',description:'Private unresolved draft',location:'Server venue'});
+  await dialog.getByRole('button',{name:/Close and reload events/}).click();
+  await page.getByRole('article',{name:'Server resolved event',exact:true}).getByRole('button',{name:/Edit event/}).click();
+  dialog=page.getByRole('dialog',{name:/Edit event/});
+  await expect(dialog.getByLabel('Event details',{exact:true})).toHaveValue('Resolved details');
+  await dialog.getByLabel('Event details',{exact:true}).fill('');await dialog.getByLabel('Event venue',{exact:true}).fill('');
+  await dialog.getByRole('button',{name:/Save changes/}).click();await expect(dialog).toHaveCount(0);
+  expect(patches).toHaveLength(2);expect(patches[1]).toEqual({version:5,title:'Server resolved event',description:'',location:''});
 });

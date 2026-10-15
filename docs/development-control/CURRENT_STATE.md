@@ -1,3 +1,11 @@
+## Admin ordinary-event details/recovery — verification pending
+
+Recovered GitHub/PR HEAD `df40d8f4cf88869c1ed9c6392bb485e1cbd7fcfe`, tree `0e48c60735924f198188929059a345b673d4d506`, clean checkout. Fast38728838213 SUCCESS; inspected Flutter job116401380402 clean analysis/all248 passed. Main38728845599/native38728846504 still IN_PROGRESS at observation; no full/source verification inferred. Earlier f06bc69 Main38726981014/Fast38726975683/native38726981032 are independently SUCCESS.
+
+Current meaningful checkpoint completes admin ordinary details/venue editing using existing versioned PATCH. Trimmed validation/explicit clearing, synchronous mutation coalescing, private draft retention after uncertain HTTP, generic errors, block until current-scope successful reload, explicit reload recovery; pre-mutation reads invalidated and reads begun during mutation cannot unblock. Account/authority changes clear new private state; no audience/recipient/source/reminder edits. Enhanced real-browser persisted-data assertions plus one new mocked failure/recovery/limits/minimal-patch journey. Local admin typecheck, browser listing only, frozen validators/15 regressions and whitespace PASS. Actual new-source browser/full/native execution PENDING. Report: `docs/execution/ADMIN_ORDINARY_EVENT_EDIT_REPORT.md`.
+
+End-time/all-day legacy contracts need separate accepted API/schema semantics review; no behavior invented. All260 final acceptance/production gates OPEN. No merge/deploy/manual full rerun.
+
 ## Ordinary Gregorian start-time editing — verification pending
 
 Recovered remote/PR HEAD `f06bc69e2c9c44242ba11eb23ace122d3bc2462f`, tree `adefa0e1cb66e4a7359dcf1b15eb8f6e5f32a7f3`, checkout clean. Fast38726975683/Main38726981014 SUCCESS, all six main jobs; inspected Flutter job116395161247 clean analysis/all245 passed. This closes the period/browse fixture failures for that source. iOS38726981032 remained running (unsigned device build) at observation, not credited successful.
