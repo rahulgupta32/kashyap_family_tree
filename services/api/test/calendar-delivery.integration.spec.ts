@@ -185,6 +185,20 @@ describe('Versioned events, private invitations and durable reminder scheduling 
     await request(app.getHttpServer()).get(`/calendar/events/${event.id}/history`).set(auth(guest)).expect(404);
     expect((await db.query("SELECT status FROM calendar_event_reminders WHERE event_id=$1 AND event_version=1",[event.id])).rows.every(r=>r.status==='CANCELLED')).toBe(true);
   });
+  it('reschedules atomically with unchanged audience and rejects replayed old version',async()=>{
+    const created=await calendar.createEvent(host.id,scheduled());
+    const before=(await db.query('SELECT recipient_user_id FROM calendar_event_reminders WHERE event_id=$1 AND event_version=1 ORDER BY recipient_user_id',[created.id])).rows;
+    const startsAt=new Date(Date.now()+86400000*4).toISOString();
+    const failure=jest.spyOn(delivery,'reschedule').mockRejectedValueOnce(new Error('Injected reschedule rollback'));
+    try{await expect(calendar.updateEvent(created.id,host,{version:1,startsAt})).rejects.toThrow('Injected');}finally{failure.mockRestore();}
+    expect((await calendar.getEvent(created.id,host)).version).toBe(1);
+    const updated=await request(app.getHttpServer()).patch(`/calendar/events/${created.id}`).set(auth(host)).send({version:1,startsAt}).expect(200);
+    expect(updated.body).toMatchObject({startsAt,version:2,audienceScope:'INVITED_ONLY',reminderOffsets:[60]});
+    expect((await db.query('SELECT recipient_user_id FROM calendar_event_reminders WHERE event_id=$1 AND event_version=2 ORDER BY recipient_user_id',[created.id])).rows).toEqual(before);
+    expect((await db.query('SELECT status FROM calendar_event_reminders WHERE event_id=$1 AND event_version=1',[created.id])).rows.every(r=>r.status==='CANCELLED')).toBe(true);
+    await request(app.getHttpServer()).patch(`/calendar/events/${created.id}`).set(auth(host)).send({version:1,startsAt}).expect(409);
+    expect((await calendar.getEvent(created.id,host)).version).toBe(2);
+  });
   it('records RSVP counts for organizers without disclosing the recipient roster to invitees',async()=>{
     await request(app.getHttpServer()).post(`/calendar/events/${event.id}/rsvp`).set(auth(guest)).send({response:'GOING'}).expect(201);
     const hostDetail=(await request(app.getHttpServer()).get(`/calendar/events/${event.id}`).set(auth(host)).expect(200)).body;

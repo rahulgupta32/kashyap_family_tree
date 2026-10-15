@@ -83,7 +83,7 @@ void main(){
  });
 
  testWidgets('ordinary edit preserves date type and audience by sending only content plus exact version',(tester)async{
-  var current=ordinaryEvent();Map<String,dynamic>? patched;
+  var current={...ordinaryEvent(),'startsAt':'2027-01-02T04:15:23.456Z'};Map<String,dynamic>? patched;
   final api=GenealogyApiService(client:MockClient((request)async{
    if(request.method=='PATCH'){expect(request.url.path,'/calendar/events/event-1');patched=jsonDecode(request.body) as Map<String,dynamic>;current={...current,...patched!,'version':5};return jsonResponse(current);}
    return jsonResponse([current]);
@@ -93,7 +93,7 @@ void main(){
   await tester.enterText(find.byKey(titleKey),' Updated meeting ');await tester.enterText(find.byKey(descriptionKey),' Updated details ');await tester.enterText(find.byKey(locationKey),' New venue ');
   await tapButton(tester,calendarLabels['save']!);
   expect(patched,{'version':4,'title':'Updated meeting','description':'Updated details','location':'New venue'});
-  expect(current['startsAt'],'2027-01-02T04:15:00Z');expect(current['eventType'],'COMMUNITY_MEETING');expect(current['audienceScope'],'INVITED_ONLY');
+  expect(current['startsAt'],'2027-01-02T04:15:23.456Z');expect(current['eventType'],'COMMUNITY_MEETING');expect(current['audienceScope'],'INVITED_ONLY');
   expect(current['audienceSelection'],{'type':'BRANCH','branchId':'branch-1'});expect(current['reminderOffsets'],[60]);
   expect(find.text('Updated details'),findsOneWidget);expect(find.text('${calendarLabels['location']}: New venue'),findsOneWidget);
  });
@@ -158,8 +158,9 @@ void main(){
   await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await tapButton(tester,calendarLabels['edit']!);
   await tester.enterText(find.byKey(descriptionKey),'Unsubmitted private edit');
   final controller=tester.widget<TextField>(find.byKey(descriptionKey)).controller!;
+  final startController=tester.widget<TextField>(find.byKey(const ValueKey('calendar-edit-start'))).controller!;
   final save=tester.widget<TextButton>(find.widgetWithText(TextButton,calendarLabels['save']!)).onPressed!;
-  api.setAuthToken('new');expect(controller.text,'');save();await tester.pumpAndSettle();
+  api.setAuthToken('new');expect(controller.text,'');expect(startController.text,'');save();await tester.pumpAndSettle();
   expect(writes,0);expect(find.byType(AlertDialog),findsNothing);expect(find.text('Approved private details'),findsNothing);expect(find.text(calendarSessionChanged),findsOneWidget);expect(tester.takeException(),isNull);
  });
 
@@ -224,4 +225,29 @@ void main(){
   api.setAuthToken('new');pending.complete(jsonResponse(ordinaryEvent()));await tester.pumpAndSettle();
   expect(writes,1);expect(reads,1);expect(find.byType(AlertDialog),findsNothing);expect(find.text('Approved private details'),findsNothing);expect(find.text(calendarSessionChanged),findsOneWidget);expect(tester.takeException(),isNull);
  });
+ testWidgets('ordinary reschedule sends only explicit new instant with current version',(tester)async{
+  Map<String,dynamic>? patch;
+  final api=GenealogyApiService(client:MockClient((request)async{
+   if(request.method=='PATCH'){patch=jsonDecode(request.body) as Map<String,dynamic>;return jsonResponse({});}
+   return jsonResponse([ordinaryEvent()]);
+  }))..setAuthToken('mock-access');addTearDown(api.dispose);
+  await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await tapButton(tester,calendarLabels['edit']!);
+  final field=find.byKey(const ValueKey('calendar-edit-start'));
+  expect(tester.widget<TextField>(field).controller!.text,'2027-01-02T10:00');
+  await tester.ensureVisible(field);await tester.enterText(field,'2027-01-01T00:10');
+  await tapButton(tester,calendarLabels['save']!);
+  expect(patch,{'version':4,'title':'Fictional meeting','description':'Approved private details','location':'Approved venue','startsAt':'2026-12-31T18:25:00.000Z'});
+ });
+ testWidgets('invalid reschedule stays in draft without an HTTP mutation',(tester)async{
+  var writes=0;
+  final api=GenealogyApiService(client:MockClient((request)async{
+   if(request.method=='PATCH'){writes++;return jsonResponse({});}return jsonResponse([ordinaryEvent()]);
+  }))..setAuthToken('mock-access');addTearDown(api.dispose);
+  await tester.pumpWidget(MaterialApp(home:CalendarEventsScreen(apiService:api)));await tester.pumpAndSettle();await tapButton(tester,calendarLabels['edit']!);
+  final field=find.byKey(const ValueKey('calendar-edit-start'));await tester.ensureVisible(field);await tester.enterText(field,'2027-02-29T10:00');
+  await tapButton(tester,calendarLabels['save']!);expect(writes,0);
+  expect(find.byKey(const ValueKey('calendar-edit-error')),findsOneWidget);
+  expect(tester.widget<TextField>(field).controller!.text,'2027-02-29T10:00');
+ });
+
 }

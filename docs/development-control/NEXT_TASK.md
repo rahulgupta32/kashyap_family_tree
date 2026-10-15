@@ -1,11 +1,11 @@
 # Next execution
 
-Current correction: exact Text day-heading selector plus separate source-input assertion in period regression. Production code unchanged. Read CURRENT_STATE, PRODUCTION_READINESS and CI_FAILURES.
+Current bounded batch: ordinary Gregorian start-time rescheduling in admin/mobile using the existing versioned transactional API. Read CURRENT_STATE, PRODUCTION_READINESS and `docs/execution/CALENDAR_RESCHEDULE_CLIENT_REPORT.md`.
 
-1. Fetch latest GitHub HEAD/PR #5; preserve newer/uncommitted work. Inspect automatic source-bound checks from PR handoff; pending is not success. No duplicate full manual rerun.
-2. Require clean analysis/all245 Flutter cases. Parent81a441f Fast38726450546/job116393466911 clean analysis,244 passed/one failed: find.text matched both EditableText source input and Text day heading. Scroll correction and browse test passed. Current correction must retain both exact heading and source-input assertions, Nepal midnight and query checks.
-3. Independently inspect parent main38726456738/native38726456605 and earlier main38725924948/native38725924842. Preserve historical failures; do not infer success or speculate on simulator/timeouts.
-4. After verified closure, complete one bounded calendar editing workflow against frozen requirements/contracts/API/mobile/admin, preserving version checks, privacy/audience, account fences and durable mutation outcome recovery. Inspect end-time semantics before expanding database/contracts.
-5. Continue remaining frozen end-to-end workflows, approved data/import rehearsals, independent security/usability/device acceptance, API/messaging load, production operations/DR and mobile distribution/live providers/UAT/Jyphra approval in dependency order. Do not invent owners/data/credentials/authority approvals or label aggregate CI as final acceptance.
+1. Fetch actual latest HEAD/PR #5 and preserve newer/uncommitted work. Inspect automatic exact-source fast/main/native runs in PR handoff. No pending-success inference or duplicate manual full rerun.
+2. Require clean analysis/all248 Flutter tests including strict parser/valid midnight patch/invalid draft and precision-preserving existing edit case. Execute enhanced real-browser organizer journey and PostgreSQL rollback/reschedule/stale-version regression. Inspect exact failures; preserve assertions/privacy/version fences.
+3. Parentf06bc69 Main38726981014/Fast38726975683 independently SUCCESS; all245 Flutter passed and clean analysis. Native38726981032 was running at observation: inspect its conclusion/evidence independently. Preserve historical fixture/native failures.
+4. After source verification, review remaining calendar end-time/all-day/startTime contract fields against frozen requirements and existing schema before selecting a bounded implementation. Current batch changes existing AD instant only; no BS/Tithi inference or recurring-rule edit support.
+5. Continue full workflow completion, authorized data/import rehearsals, independent security/usability/device acceptance, full API/messaging load, operations/DR and signing/live providers/UAT/Jyphra approval. No invented approvals/data/credentials or acceptance from aggregate CI.
 
-All260 final acceptance/release gates OPEN. No merge/deploy/store submission. Stop at reviewed pushed checkpoints while long CI runs independently; append conclusions to PR and fold into next meaningful implementation, avoiding documentation-only CI loops.
+All260 final acceptance and production gates OPEN. No merge/deploy/store submission. Record actual outcomes in PR, folding into next meaningful checkpoint without documentation-only CI loops.

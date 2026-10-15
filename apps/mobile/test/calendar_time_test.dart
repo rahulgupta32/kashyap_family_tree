@@ -21,4 +21,11 @@ void main(){
    expect(()=>nepalWallTimeToUtc(wall),throwsFormatException);
   }
  });
+ test('reschedule parser rejects rollover and converts explicit Nepal midnight',(){
+  expect(nepalWallInputToUtc('2027-01-01T00:10'),'2026-12-31T18:25:00.000Z');
+  for(final value in ['2027-02-29T10:00','2027-01-01T24:00','2027-01-01T10:60','2027-01-01T10:00Z','2083-05-15','']) {
+   expect(()=>nepalWallInputToUtc(value),throwsFormatException);
+  }
+ });
+
 }

@@ -1,3 +1,11 @@
+## Ordinary Gregorian start-time editing — verification pending
+
+Recovered remote/PR HEAD `f06bc69e2c9c44242ba11eb23ace122d3bc2462f`, tree `adefa0e1cb66e4a7359dcf1b15eb8f6e5f32a7f3`, checkout clean. Fast38726975683/Main38726981014 SUCCESS, all six main jobs; inspected Flutter job116395161247 clean analysis/all245 passed. This closes the period/browse fixture failures for that source. iOS38726981032 remained running (unsigned device build) at observation, not credited successful.
+
+Current meaningful batch exposes existing versioned Gregorian start-time rescheduling in admin/mobile for ordinary Gregorian events only. Explicit fixed Nepal UTC+05:45, strict minute fields, dirty-only patch preserving untouched timestamp precision, unchanged audience/recipients/reminder offsets. No database/API/authorization/source conversion change. Added Dart parser/widget regressions (expected248 total), enhanced real-browser organizer journey and PostgreSQL transaction/reminder/stale-version case. Local API/admin typechecks, browser discovery only, frozen validators/15 validator regressions and whitespace PASS. New-source Flutter/PostgreSQL/browser/full/native execution remains PENDING. Full scope/limits: `docs/execution/CALENDAR_RESCHEDULE_CLIENT_REPORT.md`.
+
+End-time semantics, other categories/recurring rules and source conversion remain separate. No frozen final acceptance closed; all260 production gates remain OPEN. No merge/deploy/manual full rerun.
+
 ## Calendar period heading selector correction
 
 Recovered GitHub HEAD `81a441f7505b509af0aafb06379d08e3ab33938a`, tree `5375cdbd83627fe95796ad2defdd7635814f40fa`, checkout clean. Fast38726450546 FAILED. Inspected Flutter job116393466911:244 passed/one failed, clean analysis. Both vertical scroll calls now succeed and browse midnight/BS/Tithi case passes. The remaining period assertion at line122 uses find.text on a value shared by EditableText input and Text day heading; actual result is two widgets. This is test selector ambiguity, not a displayed-time or server-grouping failure.

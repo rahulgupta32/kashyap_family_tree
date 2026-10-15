@@ -16,3 +16,15 @@ String formatNepalInstant(String value) {
   return '${wall.toIso8601String().substring(0,16).replaceFirst('T',' ')} · नेपाल समय (Nepal UTC+05:45)';
 }
 String formatNepalWallTime(DateTime wall) => '${wall.toIso8601String().substring(0,16).replaceFirst('T',' ')} · नेपाल समय (Nepal UTC+05:45)';
+
+/// Parse explicit minute-precision Gregorian fields without accepting date rollover.
+String nepalWallInputToUtc(String value) {
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$').firstMatch(value);
+  if (match == null) { throw const FormatException('Invalid Gregorian wall time'); }
+  final fields = [for (var i = 1; i <= 5; i++) int.parse(match.group(i)!)];
+  final wall = DateTime.utc(fields[0], fields[1], fields[2], fields[3], fields[4]);
+  if (wall.year != fields[0] || wall.month != fields[1] || wall.day != fields[2] || wall.hour != fields[3] || wall.minute != fields[4]) {
+    throw const FormatException('Invalid Gregorian wall time');
+  }
+  return nepalWallTimeToUtc(wall).toIso8601String();
+}

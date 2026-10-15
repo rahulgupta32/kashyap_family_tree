@@ -62,6 +62,9 @@ export default function CalendarAdminPage() {
   useEffect(()=>{setDerivedPreview(null);setPreviewKey(null);},[accessToken]);
   const [editing, setEditing] = useState<CalendarEventDetailDto | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [editStart, setEditStart] = useState('');
+  const [editTimeChanged, setEditTimeChanged] = useState(false);
+  const editCanReschedule=!!editing?.startsAt && !editing.recurrenceRuleId && ['GENERAL_EVENT','COMMUNITY_MEETING'].includes(editing.eventType);
   const [cancelReason, setCancelReason] = useState('');
   const [history, setHistory] = useState<any[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
@@ -72,7 +75,7 @@ export default function CalendarAdminPage() {
     pendingCreateRef.current=null;setPendingCreate(null);createBusyRef.current=null;
     setShowCreateModal(false);setFormData(initialCalendarForm());setDateMode('BS');setStartsAt('');setReminder(false);setSearch('');
     setDerivedEnabled(false);setSelection(undefined);setDerivedPreview(null);setInvitees([]);setCandidates([]);setPreviewKey(null);
-    setEvents([]);setEditing(null);setEditTitle('');setCancelReason('');setHistory([]);setMessage(null);setActionLoading(false);setRsvpPending(null);
+    setEvents([]);setEditing(null);setEditTitle('');setEditStart('');setEditTimeChanged(false);setCancelReason('');setHistory([]);setMessage(null);setActionLoading(false);setRsvpPending(null);
     if(sessionLoading)return;
     try {
       const saved=sessionStorage.getItem(pendingCreateStorageKey);
@@ -226,7 +229,8 @@ export default function CalendarAdminPage() {
     setActionLoading(true);setMessage(null);
     try {
       await ApiClient.calendarRequest(accessToken,`events/${editing.id}${cancel?'/cancel':''}`,cancel?'POST':'PATCH',
-        cancel?{version:editing.version,reason:cancelReason}:{version:editing.version,title:editTitle});
+        cancel?{version:editing.version,reason:cancelReason}:{version:editing.version,title:editTitle,
+          ...(editCanReschedule && editTimeChanged ? {startsAt:nepalWallTimeToUtc(editStart)} : {})});
       if(requestScopeRef.current!==requestScope)return;setEditing(null);await loadEvents();
     }catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
     finally{if(requestScopeRef.current===requestScope)setActionLoading(false);}
@@ -301,7 +305,7 @@ export default function CalendarAdminPage() {
               {ev.lifecycleState === 'CANCELLED' && <p role="status">{label('cancelled')}</p>}
               {ev.rsvpCounts && <p>{label('attendance')}: {ev.rsvpCounts.going} Going · {ev.rsvpCounts.maybe} Maybe · {ev.rsvpCounts.declined} Declined</p>}
               {ev.canManage && ev.lifecycleState !== 'CANCELLED' && <button type="button" onClick={async()=>{
-                setEditing(ev);setEditTitle(ev.title);setCancelReason('');setHistory([]);
+                setEditing(ev);setEditTitle(ev.title);setEditStart(ev.startsAt?formatNepalInstant(ev.startsAt).slice(0,16).replace(' ','T'):'');setEditTimeChanged(false);setCancelReason('');setHistory([]);
                 try{if(accessToken){const revisions=await ApiClient.calendarRequest(accessToken,`events/${ev.id}/history`);if(requestScopeRef.current===requestScope)setHistory(revisions);}}
                 catch(error:any){if(requestScopeRef.current===requestScope)setMessage({type:'error',text:error.message});}
               }}>{label('edit')}</button>}
@@ -324,6 +328,7 @@ export default function CalendarAdminPage() {
         <div role="dialog" aria-modal="true" aria-label={label('edit')} className="bg-white max-w-lg w-full p-6 space-y-4 rounded-xl">
           <h2>{label('edit')}</h2>
           <label>Title<input aria-label="Event title" value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="block border p-2 w-full" /></label>
+          {editCanReschedule && <label>सुरु समय (Start · Nepal UTC+05:45)<input aria-label="Event start · Nepal UTC+05:45" type="datetime-local" value={editStart} disabled={actionLoading} onChange={e=>{setEditStart(e.target.value);setEditTimeChanged(true);}} /></label>}
           <button disabled={actionLoading} onClick={()=>manage()}>{label('save')}</button>
           <label>{label('reason')}<input aria-label={label('reason')} value={cancelReason} onChange={e=>setCancelReason(e.target.value)} className="block border p-2 w-full" /></label>
           <button disabled={actionLoading||cancelReason.trim().length<5} onClick={()=>manage(true)}>{label('cancel')}</button>

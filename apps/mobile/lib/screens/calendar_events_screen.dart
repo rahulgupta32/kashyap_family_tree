@@ -213,9 +213,12 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
     final ordinary = !cancel && ['GENERAL_EVENT', 'COMMUNITY_MEETING'].contains(event['eventType']);
     final description = TextEditingController(text: ordinary ? event['description'] as String? ?? '' : '');
     final location = TextEditingController(text: ordinary ? event['location'] as String? ?? '' : '');
+    final canReschedule = ordinary && event['startsAt'] != null && event['recurrenceRuleId'] == null;
+    final start = TextEditingController(text: canReschedule ? nepalWallClock(DateTime.parse(event['startsAt'] as String)).toIso8601String().substring(0,16) : '');
+    var timeChanged = false;
     var busy = false, needsReload = false;
     String? error;
-    _clearDialogDraft = () {title.clear(); description.clear(); location.clear();};
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); start.clear();};
     try {
       final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
         title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
@@ -229,6 +232,9 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
             TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy,
               decoration: InputDecoration(labelText: calendarLabels['location'])),
           ],
+          if(canReschedule) TextField(key: const ValueKey('calendar-edit-start'), controller: start, enabled: !busy && !needsReload,
+            decoration: const InputDecoration(labelText: 'सुरु समय (Start · Nepal UTC+05:45)', hintText: 'YYYY-MM-DDTHH:mm'),
+            onChanged: (_) { timeChanged = true; }),
           if(error != null) Text(error!, key: const ValueKey('calendar-edit-error'), style: const TextStyle(color: Colors.red)),
           if(needsReload) Text(calendarLabels['reloadRequired']!),
         ])),
@@ -245,11 +251,17 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                 ? (title.text.trim().length < 5 || title.text.trim().length > 1000 ? calendarLabels['reasonLimit'] : null)
                 : _textError(title.text, ordinary ? description.text : '', ordinary ? location.text : '');
             if(textError != null) {update(() => error = textError); return;}
+            String? updatedStart;
+            if(canReschedule && timeChanged) {
+              try { updatedStart = nepalWallInputToUtc(start.text); }
+              on FormatException { update(() => error = 'मान्य मिति र समय दिनुहोस् (Enter YYYY-MM-DDTHH:mm · Nepal UTC+05:45)'); return; }
+            }
             update(() {busy=true; error=null;});
             try {
               await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
                 data: {'version': event['version'], (cancel ? 'reason' : 'title'): title.text.trim(),
-                  if(ordinary) 'description': description.text.trim(), if(ordinary) 'location': location.text.trim()});
+                  if(ordinary) 'description': description.text.trim(), if(ordinary) 'location': location.text.trim(),
+                  if(updatedStart != null) 'startsAt': updatedStart});
               if(!checkCalendarSession()) return;
               if(dialogContext.mounted) Navigator.pop(dialogContext);
               await _loadEvents();
@@ -267,7 +279,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       await route.completed;
     } finally {
       _activeDialog=null; _clearDialogDraft=null;
-      title.dispose(); description.dispose(); location.dispose();
+      title.dispose(); description.dispose(); location.dispose(); start.dispose();
     }
   }
 

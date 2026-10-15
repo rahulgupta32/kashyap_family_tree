@@ -57,9 +57,14 @@ test('organizer creates an AD gathering, edits its revision and cancels RSVP', a
   await card.getByRole('button', { name: /Edit event/ }).click();
   const edit = page.getByRole('dialog', { name: /Edit event/ });
   await edit.getByLabel('Event title', { exact: true }).fill(`${title} updated`);
+  await expect(edit.getByLabel('Event start · Nepal UTC+05:45',{exact:true})).toHaveValue(start);
+  const moved=new Date(Date.now()+86400000*4).toISOString().slice(0,10)+'T00:10';
+  await edit.getByLabel('Event start · Nepal UTC+05:45',{exact:true}).fill(moved);
   await edit.getByRole('button', { name: /Save changes/ }).click();
   card = page.getByRole('article', { name: `${title} updated`, exact: true });
   await expect(card).toBeVisible();
+  const changed=await page.request.get(`${API}/calendar/events/${event.id}`,{headers:await headers(page)});expect(changed.ok()).toBeTruthy();
+  const updated=await changed.json();expect(updated.startsAt).toBe(new Date(new Date(moved+'Z').getTime()-345*60000).toISOString());expect(updated.audienceScope).toBe(event.audienceScope);expect(updated.reminderOffsets).toEqual([60]);expect(updated.version).toBe(2);
   await card.getByRole('button', { name: /Edit event/ }).click();
   await expect(edit.getByText(/Revisions: 2, 1/)).toBeVisible();
   await edit.getByLabel(/Cancellation reason/).fill('Fictional organizer cancellation');
