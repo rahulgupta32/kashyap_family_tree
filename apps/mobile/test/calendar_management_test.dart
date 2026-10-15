@@ -82,4 +82,46 @@ void main() {
     expect(queries.last['before'],'2026-10-06|9007199254740993');
   });
 
+  testWidgets('browse displays Nepal midnight while preserving BS and undated Tithi', (tester) async {
+    final service = GenealogyApiService(client: MockClient((_) async => jsonResponse({
+      'items': [
+        {'title':'AD boundary', 'startsAt':'2026-12-31T18:25:00Z'},
+        {'title':'BS source', 'solarDate':'2083-05-15'},
+        {'title':'Tithi source', 'tithiYearBs':2083, 'tithiMonthBs':5, 'tithiPaksha':'SHUKLA', 'tithiNumber':3},
+      ].map((e) => {...e, 'eventType':'GENERAL_EVENT', 'audienceScope':'COMMUNITY', 'lifecycleState':'ACTIVE'}).toList(),
+      'nextBefore':null,
+    })))..setAuthToken('mock-access');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CalendarBrowseScreen(api:service)));
+    await tester.pumpAndSettle();
+    expect(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), findsOneWidget);
+    expect(find.text('BS: 2083-05-15'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Tithi: 2083 / 5 · SHUKLA 3 (conversion unavailable)'), 200);
+    expect(find.text('Tithi: 2083 / 5 · SHUKLA 3 (conversion unavailable)'), findsOneWidget);
+    expect(find.textContaining('2026-12-31T18:25'), findsNothing);
+  });
+
+  testWidgets('period labels Nepal time without changing server day grouping or source query', (tester) async {
+    final queries = <Map<String,String>>[];
+    final service = GenealogyApiService(client:MockClient((request) async {
+      queries.add(request.url.queryParameters);
+      return jsonResponse({
+        'period':{'source':'AD','view':'MONTH','date':'2027-01-01','previousDate':null,'nextDate':null},
+        'days':[], 'undatedCount':0, 'nextBefore':null,
+        'items':[{'title':'AD midnight','displayDate':'2027-01-01','startsAt':'2026-12-31T18:25:00Z','eventType':'GENERAL_EVENT','lifecycleState':'ACTIVE'}],
+      });
+    }))..setAuthToken('mock-access');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home:CalendarPeriodScreen(api:service)));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '2027-01-01');
+    await tester.ensureVisible(find.text('Show calendar period'));
+    await tester.tap(find.text('Show calendar period'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), 200);
+    expect(find.text('2027-01-01'), findsOneWidget);
+    expect(find.text('2027-01-01 00:10 · नेपाल समय (Nepal UTC+05:45)'), findsOneWidget);
+    expect(queries.single, {'source':'AD','view':'MONTH','date':'2027-01-01'});
+  });
+
 }

@@ -399,7 +399,7 @@ class _CalendarBrowseScreenState extends State<CalendarBrowseScreen> with Calend
   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Apply calendar filters')),
   if(_error!=null)...[Text(_error!),TextButton(onPressed:_busy?null:()=>_load(_cursor),child:const Text('Retry calendar page'))],
   if(_busy)const Center(child:CircularProgressIndicator())else if(_items.isEmpty)const Text('No accessible events in this page.')else ..._items.map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-   Text(e['title'] as String),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?"AD: ${e['startsAt']}":"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
+   Text(e['title'] as String),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?formatNepalInstant(e['startsAt'] as String):"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
   ])))),
   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Latest calendar events')),
   TextButton(onPressed:_busy||_next==null?null:()=>_load(_next),child:const Text('Older calendar events')),

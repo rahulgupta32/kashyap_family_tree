@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'calendar_session_guard.dart';
 import '../services/genealogy_api_service.dart';
+import '../services/calendar_time.dart';
 
 class CalendarPeriodScreen extends StatefulWidget {
  final GenealogyApiService api;
@@ -20,7 +21,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
  String? _error;
  Map? _page;
  @override
- void initState(){super.initState();final today=DateTime.now().toUtc().add(const Duration(hours:5,minutes:45));_date.text='${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';}
+ void initState(){super.initState();final today=nepalWallClock(DateTime.now());_date.text='${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';}
  @override
  void dispose(){_date.dispose();super.dispose();}
  void _clear(){if(!checkCalendarSession())return;_epoch++;setState((){_page=null;_error=null;});}
@@ -37,7 +38,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
   final items=(_page?['items'] as List?)??[];
   final groups=items.map((e)=>e['displayDate']??'UNDATED').toSet();
   return Scaffold(appBar:AppBar(title:const Text('पात्रो दृश्य (Calendar views)')),body:!calendarSessionCurrent?const Center(child:Text(calendarSessionChanged)):ListView(padding:const EdgeInsets.all(16),children:[
-   const Text('AD times use Asia/Kathmandu. Select the original calendar; switching source does not convert an event or the selected date. BS month cells are numbered days; weekday conversion is unavailable.'),
+   const Text('AD times display fixed Nepal UTC+05:45. Select the original calendar; switching source does not convert an event or the selected date. BS month cells are numbered days; weekday conversion is unavailable.'),
    DropdownButtonFormField<String>(initialValue:_source,decoration:const InputDecoration(labelText:'Date source'),items:['AD','BS'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_source=v!);}),
    DropdownButtonFormField<String>(initialValue:_view,key:ValueKey(_view),decoration:const InputDecoration(labelText:'Calendar view'),items:const [DropdownMenuItem(value:'DAY',child:Text('दिन (Day)')),DropdownMenuItem(value:'MONTH',child:Text('महिना (Month)')),DropdownMenuItem(value:'AGENDA',child:Text('कार्यसूची (Agenda for month)'))],onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_view=v!);}),
    TextField(controller:_date,enabled:!_busy,decoration:const InputDecoration(labelText:'Source date (YYYY-MM-DD)'),onChanged:(_)=>_clear()),
@@ -52,7 +53,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
     if(items.isEmpty)const Text('No accessible events in this period.'),
     ...groups.map((group)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
      Text(group=='UNDATED'?'Undated Tithi — conversion unavailable':group as String),
-     ...items.where((e)=>(e['displayDate']??'UNDATED')==group).map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(e['title'] as String),Text(e['startsAt']!=null?"AD instant: ${e['startsAt']}":e['solarDate']!=null?"BS: ${e['solarDate']}":"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']}"),Text("${e['eventType']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String)])))),
+     ...items.where((e)=>(e['displayDate']??'UNDATED')==group).map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(e['title'] as String),Text(e['startsAt']!=null?formatNepalInstant(e['startsAt'] as String):e['solarDate']!=null?"BS: ${e['solarDate']}":"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']}"),Text("${e['eventType']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String)])))),
     ])),
     TextButton(onPressed:_busy?null:()=>_load(),child:const Text('First calendar period page')),
     TextButton(onPressed:_busy||_page!['nextBefore']==null?null:(){if(checkCalendarSession() && !_busy && _page!=null)_load(before:_page!['nextBefore'] as String);},child:const Text('More period events')),
