@@ -27,7 +27,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
             };
           }
           if (sql.includes('FROM user_accounts')) {
-            return { rows: [{ id: params[0], phone_number: '9841000001', person_id: null }] };
+            return { rows: [{ id: params[0], phone_number: '9841000001', person_id: null, is_active:true }] };
           }
           if (sql.includes('FROM persons WHERE id = $1')) {
             return { rows: [{ id: params[0], is_claimed: false, claimed_user_id: null, branch_id: 'b-001' }] };
@@ -103,7 +103,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
         {
           id: 'ev-1',
           claim_id: 'claim_123',
-          media_asset_id: 'med-001',
+          media_asset_id: '11111111-1111-4111-8111-111111111111',
           document_type: 'family_photo',
           description: 'Family Photo',
           created_at: new Date().toISOString(),
@@ -159,7 +159,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
 
   it('rejects linking conversation assets as claim evidence before ownership or file access', async () => {
     const client={query:jest.fn().mockResolvedValue({rows:[{id:'asset',bucket:'private-chat',uploader_user_id:'owner',quarantine_status:'CLEAN',retention_status:'ACTIVE'}]})};
-    await expect((claimsService as any).validateEvidenceAttachments(client,'owner',[{mediaAssetId:'asset'}])).rejects.toThrow('Choose a private profile evidence upload');
+    await expect((claimsService as any).validateEvidenceAttachments(client,'owner',[{mediaAssetId:'11111111-1111-4111-8111-111111111111',documentType:'family_photo'}])).rejects.toThrow('Choose a private profile evidence upload');
   });
 
   describe('Claim Submission & Statement of Truth', () => {
@@ -170,7 +170,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
         knownFamilyMembers: ['Krishna Bahadur Adhikari', 'Suresh Adhikari'],
         evidenceAttachments: [
           {
-            mediaAssetId: 'med-001',
+            mediaAssetId: '11111111-1111-4111-8111-111111111111',
             documentType: 'family_photo',
             description: 'Family photo with branch elders',
           },

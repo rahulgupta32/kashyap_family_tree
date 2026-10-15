@@ -1,0 +1,18 @@
+const claimLabels={
+ 'title':'प्रोफाइल दाबी (Claim Profile)',
+ 'description':'सम्बन्ध तथा चिनारी विवरण (Relationship Description)',
+ 'truth':'सत्यताको घोषणा (Statement of Truth)',
+ 'submit':'दाबी पेश गर्नुहोस् (Submit Claim)',
+ 'required':'सत्यताको घोषणा र सम्बन्ध विवरण अनिवार्य छन् (Confirm the statement and enter relationship details)',
+ 'notice':'सीमित पारिवारिक प्रमाण मात्र पठाउनुहोस्। नागरिकता/पासपोर्ट, वित्तीय, स्वास्थ्य वा अन्य निषेधित कागजात नपठाउनुहोस्। (Send limited family evidence only. Do not upload citizenship/passport scans, financial, medical or other prohibited documents.)',
+ 'noticeCheck':'मैले प्रमाणसम्बन्धी सूचना पढेको छु (I have read the evidence notice)',
+ 'upload':'प्रमाण छान्नुहोस् (Choose evidence image)',
+ 'uploadFailed':'प्रमाण उपलब्ध भएन (Evidence upload unconfirmed; choose again to retry)',
+ 'remove':'सूचीबाट हटाउनुहोस् (Remove from this submission)',
+ 'submitted':'दाबी दर्ता भएको छ (Claim recorded; check current review status)',
+ 'unconfirmed':'दाबी पुष्टि भएन। मूल दाबी पुनः प्रयास गर्नुहोस् (Claim unconfirmed; retry the original submission)',
+ 'check':'दाबी स्थिति जाँच्नुहोस् (Check claim status)',
+ 'retry':'मूल दाबी पुनः प्रयास (Retry original claim)',
+ 'retained':'मूल विवरण राखिएको छ (Original draft retained; retry the same submission)',
+ 'session':'सत्र बदलियो। दाबी फेरि खोल्नुहोस् (Session changed; reopen claim)',
+};

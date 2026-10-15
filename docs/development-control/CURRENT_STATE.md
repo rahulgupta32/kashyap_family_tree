@@ -1,3 +1,11 @@
+## F1 private claim evidence and keyed submission — verification pending
+
+Recovered remote/PR HEAD `f464dfce33e645bade90cd8fc7ba5dc21cfae63b`, tree `d6da20b171367c561d06288937a382f96f562918`, clean checkout. Fast38771541235/Main38771548602/iOS38771548365 independently SUCCESS, all six main jobs. Inspected logs466 unit/561 general integration/70 browser/clean252 Flutter; dedicated storage covers ten general skips. This closes the policy-workflow pending observations for that exact source, not F1 or production acceptance.
+
+Current meaningful F1 batch: limited private claim-evidence upload via existing scanner/image/storage controls without avatar mutation; native notice/category/selection and session-bound immutable retry body; migration062 account/key/content-bound creation receipts make concurrent/lost-response retries one claim/attachments/transition/audit. Unsupported metadata rejected; current reviewer/download completion fenced across authentication changes. No government-document approval/collection authority invented. Existing unkeyed compatibility remains; upload attempts themselves are not exactly once, and native pending claim state is route-memory only.
+
+Local all479 unit/49 suites/shared contracts build/API typecheck+build/admin typecheck/frozen validators/15 validator regressions/whitespace PASS. Added6 PostgreSQL HTTP/4 Flutter/1 browser cases; browser discovery only. New migration/PG/Flutter/browser/native execution PENDING (expected256 Flutter/567 general integration/71 browser). Full scope/limits: `docs/execution/CLAIM_EVIDENCE_MEMBER_WORKFLOW_REPORT.md`. Remaining correction/resubmission/dispute attachments, process-restored pending intents, complete profile/claim/privacy acceptance and all260 release gates OPEN. No merge/deploy/manual full rerun.
+
 ## F1 policy acknowledgement workflow — verification pending
 
 Recovered GitHub/PR HEAD `d24a476be944cc17df4a303c4d50de7109e8945d`, tree `373921ed29408c68b3ad477093e958771f5468f9`, clean checkout. Fast38731166028/iOS38731174002 SUCCESS; main38731173915 FAILED at platform116409042349 while five other jobs passed. Browser organizer rescheduled successfully then navigated to original day; current test uses moved date, preserving all assertions/timeouts. Failure retained.

@@ -1,4 +1,4 @@
-import { uuid } from '../community/community-policy';
+import { allowedFields, uuid } from '../community/community-policy';
 import { getMediaHmacSecret } from '../../common/utils/media-hmac.config';
 import { ImageDerivativesService } from '../../media/image-derivatives.service';
 import { ImageProcessorService, validateImageCrop } from '../../media/image-processor.service';
@@ -346,7 +346,19 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     return this.db.transaction(runner);
   }
 
+  async uploadClaimEvidence(userId:string,body:any){
+    allowedFields(body,['mimeType','dataBase64','documentType','evidenceNoticeAccepted']);
+    if(body.evidenceNoticeAccepted!==true||!['family_photo','event_invitation','clan_record'].includes(body.documentType))
+      throw new BadRequestException('Choose permitted limited evidence and acknowledge the collection notice');
+    const result=await this.storeProfileImage(userId,body.mimeType,body.dataBase64,undefined,body.documentType);
+    return {mediaAssetId:result.assetId,documentType:body.documentType,sha256:result.sha256,quarantineStatus:result.quarantineStatus};
+  }
+
   async uploadPhoto(userId: string, mimeType: string, base64Data: string, cropInput?: unknown): Promise<MediaUploadResult> {
+    return this.storeProfileImage(userId,mimeType,base64Data,cropInput);
+  }
+
+  private async storeProfileImage(userId: string, mimeType: string, base64Data: string, cropInput?: unknown, evidenceType?:string): Promise<MediaUploadResult> {
     const crop = validateImageCrop(cropInput);
     const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimes.includes(mimeType)) {
@@ -384,7 +396,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
     const assetId = crypto.randomUUID();
     const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/png' ? 'png' : 'webp';
-    const fileName = `avatar_${assetId}.${ext}`;
+    const fileName = `${evidenceType?'evidence':'avatar'}_${assetId}.${ext}`;
     const scanResult = await this.malwareScanner.scanFile(buffer, fileName);
     if(scanResult.status==='CLEAN') await this.processor.inspect(buffer,mimeType);
     const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType,userId);
@@ -392,16 +404,16 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     try {
       const quarantineStatus=scanResult.status===ScanResultStatus.CLEAN?'CLEAN':scanResult.status===ScanResultStatus.INFECTED?'QUARANTINED':'SCANNER_FAILED';
       await this.db.transaction(async client=>{
-        const account=(await client.query('SELECT is_active FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
-        if(!account?.is_active)throw new ForbiddenException('Active account required to upload a photo');
+        const account=(await client.query('SELECT is_active,is_suspended,deleted_at FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+        if(!account?.is_active||account.is_suspended||account.deleted_at)throw new ForbiddenException('Active account required to upload a photo');
         await client.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path,scan_evidence)
           VALUES($1,$2,$3,'private-profiles',$3,$4,$5,$6,TRUE,$7,'ACTIVE',$8,$9)`,
           [assetId,userId,fileName,mimeType,buffer.length,sha256,quarantineStatus,storagePath,JSON.stringify(scanResult.evidence)]);
-        if(quarantineStatus==='CLEAN'){
+        if(quarantineStatus==='CLEAN'&&!evidenceType){
           if(this.images)await this.images.enqueue(client,assetId,crop);
           await client.query('UPDATE user_accounts SET avatar_asset_id=$1,updated_at=NOW() WHERE id=$2',[assetId,userId]);
         }
-        await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_PHOTO_UPLOADED',entityType:'MEDIA_ASSET',entityId:assetId,actorId:userId,actorRole:'MEMBER',newValue:{quarantineStatus,sha256}},client);
+        await this.auditOutboxRepo.recordAuditIntent({action:evidenceType?'PROFILE_CLAIM_EVIDENCE_UPLOADED':'PROFILE_PHOTO_UPLOADED',entityType:'MEDIA_ASSET',entityId:assetId,actorId:userId,actorRole:'MEMBER',newValue:{quarantineStatus,sha256,...(evidenceType?{documentType:evidenceType}:{})}},client);
       });
       if(quarantineStatus==='QUARANTINED')throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName||'Malware detected'}`);
       if(quarantineStatus!=='CLEAN')throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');

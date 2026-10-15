@@ -1,13 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 import { ClaimDetailDto, ClaimStatus } from '@kashyap/contracts';
 
 export default function ClaimsAdminPage() {
-  const { accessToken, hasRole, isLoading } = useAuth();
+  const { accessToken, user, hasRole, isLoading } = useAuth();
+  const scope=JSON.stringify([user?.id,accessToken,isLoading]);
+  const scopeRef=useRef(scope);scopeRef.current=scope;
+  const downloadBusy=useRef<object|null>(null);
   const loadVersion = useRef(0);
+  const [loadedScope,setLoadedScope]=useState('');
   const [claims, setClaims] = useState<ClaimDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -18,13 +22,15 @@ export default function ClaimsAdminPage() {
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  useLayoutEffect(()=>{scopeRef.current=scope;loadVersion.current++;downloadBusy.current=null;setClaims([]);setLoadedScope('');setActiveClaim(null);setReviewNotes('');setMessage(null);setEvidenceError(null);setDownloadingAsset(null);setActionLoading(false);return()=>{scopeRef.current='';loadVersion.current++;downloadBusy.current=null;};},[scope]);
+
   useEffect(() => {
     if (!isLoading) void loadClaims();
     return () => { loadVersion.current += 1; };
   }, [accessToken, selectedStatus, isLoading]);
 
   async function loadClaims() {
-    if (!accessToken || isLoading) return;
+    if (scopeRef.current!==scope||!accessToken || isLoading) return;
     const requestVersion = ++loadVersion.current;
     setLoading(true);
     try {
@@ -32,54 +38,60 @@ export default function ClaimsAdminPage() {
         accessToken,
         selectedStatus === 'ALL' ? undefined : { status: selectedStatus },
       );
-      if (requestVersion === loadVersion.current) setClaims(data);
+      if (requestVersion === loadVersion.current&&scopeRef.current===scope){setClaims(data);setLoadedScope(scope);}
     } catch (err: any) {
-      if (requestVersion === loadVersion.current) setMessage({ type: 'error', text: err.message });
+      if (requestVersion === loadVersion.current) setMessage({ type: 'error', text: 'दाबी कार्य उपलब्ध छैन (Claim action unavailable; reload to retry)' });
     } finally {
       if (requestVersion === loadVersion.current) setLoading(false);
     }
   }
 
   async function handleTier1(decision: 'VOUCHED' | 'REJECTED' | 'CORRECTION_REQUESTED') {
-    if (!activeClaim || !accessToken) return;
+    if (scopeRef.current!==scope||!activeClaim || !accessToken) return;
     setActionLoading(true);
     setMessage(null);
     try {
       await ApiClient.tier1Review(accessToken, activeClaim.id, { decision, notes: reviewNotes });
+      if(scopeRef.current!==scope)return;
       setMessage({ type: 'success', text: `Tier 1 review recorded: ${decision}` });
       setActiveClaim(null);
       setReviewNotes('');
       await loadClaims();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      if(scopeRef.current!==scope)return;
+      setMessage({ type: 'error', text: 'दाबी कार्य उपलब्ध छैन (Claim action unavailable; reload to retry)' });
     } finally {
-      setActionLoading(false);
+      if(scopeRef.current===scope)setActionLoading(false);
     }
   }
 
   async function handleTier2(decision: 'APPROVED' | 'REJECTED' | 'CORRECTION_REQUESTED') {
-    if (!activeClaim || !accessToken) return;
+    if (scopeRef.current!==scope||!activeClaim || !accessToken) return;
     setActionLoading(true);
     setMessage(null);
     try {
       await ApiClient.tier2Review(accessToken, activeClaim.id, { decision, notes: reviewNotes });
+      if(scopeRef.current!==scope)return;
       setMessage({ type: 'success', text: `Tier 2 adjudication recorded: ${decision}` });
       setActiveClaim(null);
       setReviewNotes('');
       await loadClaims();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      if(scopeRef.current!==scope)return;
+      setMessage({ type: 'error', text: 'दाबी कार्य उपलब्ध छैन (Claim action unavailable; reload to retry)' });
     } finally {
-      setActionLoading(false);
+      if(scopeRef.current===scope)setActionLoading(false);
     }
   }
 
   async function downloadEvidence(assetId: string) {
-    if (!accessToken) return;
+    if(scopeRef.current!==scope||!accessToken||downloadBusy.current)return;
+    const operation={};downloadBusy.current=operation;
     setDownloadingAsset(assetId);
     setEvidenceError(null);
     try {
       const blob = await ApiClient.downloadClaimEvidence(accessToken, assetId);
+      if(scopeRef.current!==scope||downloadBusy.current!==operation)return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -89,12 +101,13 @@ export default function ClaimsAdminPage() {
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      setEvidenceError(error.message);
+      if(scopeRef.current===scope)setEvidenceError('प्रमाण उपलब्ध छैन (Evidence unavailable; reload to retry)');
     } finally {
-      setDownloadingAsset(null);
+      if(downloadBusy.current===operation){downloadBusy.current=null;setDownloadingAsset(null);}
     }
   }
 
+  const visibleClaims=loadedScope===scope?claims:[];
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -147,12 +160,12 @@ export default function ClaimsAdminPage() {
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-slate-400">लोड हुँदैछ (Loading claims)...</td>
                 </tr>
-              ) : claims.length === 0 ? (
+              ) : visibleClaims.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-slate-400">कुनै दाबी फेला परेन (No claims found in this state).</td>
                 </tr>
               ) : (
-                claims.map((claim) => (
+                visibleClaims.map((claim) => (
                   <tr key={claim.id} className="hover:bg-slate-50 transition">
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-900">{claim.targetPerson.primaryNameNepali}</div>
@@ -176,7 +189,7 @@ export default function ClaimsAdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => setActiveClaim(claim)}
+                        onClick={() => {if(scopeRef.current===scope)setActiveClaim(claim);}}
                         className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-xs font-medium transition"
                       >
                         समीक्षा गर्नुहोस् (Review)
@@ -191,7 +204,7 @@ export default function ClaimsAdminPage() {
       </div>
 
       {/* Review Modal */}
-      {activeClaim && (
+      {activeClaim && loadedScope===scope && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl border border-slate-100">
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">

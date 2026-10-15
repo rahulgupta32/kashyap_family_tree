@@ -59,6 +59,11 @@ export class ProfileController {
     return this.profileService.updateProfile(user.id, dto);
   }
 
+  @Post('claim-evidence')
+  @Header('Cache-Control','private, no-store')
+  @UseGuards(JwtAuthGuard)
+  uploadClaimEvidence(@CurrentUser() user:AuthenticatedUser,@Body() body:any){return this.profileService.uploadClaimEvidence(user.id,body);}
+
   @Post('photo')
   @UseGuards(JwtAuthGuard)
   async uploadPhoto(
