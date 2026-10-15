@@ -66,3 +66,25 @@ test('failed recovery-metadata persistence prevents create HTTP and keeps one in
  const dialog=await open(page);await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional storage retry');await dialog.getByRole('button',{name:/\(Save\)/}).click();await expect(dialog.getByRole('button',{name:/Retry creation/})).toBeEnabled();expect(creates).toBe(0);
  await page.evaluate(()=>(window as any).__restoreCalendarStorage());await dialog.getByRole('button',{name:/Retry creation/}).click();await expect(dialog).toHaveCount(0);expect(creates).toBe(1);
 });
+
+for(const timezoneId of ['America/New_York','Asia/Tokyo']){
+ test.describe(`Nepal Gregorian entry from ${timezoneId}`,()=>{
+  test.use({timezoneId});
+  test('submits explicit Nepal wall time as UTC and labels rendered time',async({page})=>{
+   await login(page);await page.goto('/calendar');let body:any;
+   await page.route(url=>url.pathname==='/calendar/events',async route=>{
+    if(route.request().method()==='POST'){
+     body=route.request().postDataJSON();await route.fulfill({status:201,json:{id:'nepal-time-event'}});return;
+    }
+    await route.fulfill({json:body?[{...body,id:'nepal-time-event',version:1,lifecycleState:'ACTIVE',canManage:false}]:[]});
+   });
+   const dialog=await open(page);await dialog.getByPlaceholder('उदा: कुल पूजा २०८३').fill('Fictional explicit Nepal time');
+   await dialog.getByRole('combobox',{name:/Date source/}).selectOption('AD');
+   await dialog.getByLabel(/Gregorian date and time/).fill('2027-01-02T00:10');
+   await expect(dialog.getByLabel(/Gregorian date and time/)).toHaveAccessibleName(/Nepal UTC\+05:45/);
+   await dialog.getByRole('button',{name:/\(Save\)/}).click();await expect(dialog).toHaveCount(0);
+   expect(body.startsAt).toBe('2027-01-01T18:25:00.000Z');expect(body).not.toHaveProperty('solarDate');expect(body).not.toHaveProperty('tithiYearBs');
+   await expect(page.getByText('2027-01-02 00:10 · नेपाल समय (Nepal UTC+05:45)',{exact:false})).toBeVisible();
+  });
+ });
+}

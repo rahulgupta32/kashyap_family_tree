@@ -5,3 +5,4 @@ export * from './calendar.js';
 
 export * from "./calendar-management.js";
 export { chatManagement, chatReceipts, chatOutboxLabels } from './chat-management';
+export * from './calendar-time.js';

@@ -1,5 +1,16 @@
 # Current development state
 
+## Explicit Nepal-offset Gregorian event entry — new-source verification pending
+
+Recovered actual remote HEAD `94035936d12cddff23170a6bbf99225e010cc5e9`, tree `c3e8e9cfa3e6b89495f0129119e95585cd28e348`; active checkout clean, PR #5 draft/open on its existing M4 base. GitHub now independently reports Fast38614156198, full CI38614164411 and native38614164428 SUCCESS. Prior inspected platform evidence439 unit/552 general integration/65 browser, clean239 Flutter and fictional restore remains tied to that source. This closes the preceding calendar resolution/admin batch's pending workflow observations, not its broader production acceptance.
+
+Current meaningful implementation (resolve SHA/tree from Git and PR handoff): ordinary Flutter/admin Gregorian entry explicitly uses organizer-supplied fixed UTC+05:45 rather than the host timezone. Flutter picker fields use UTC-backed wall tuples, Nepal-clock defaults and one explicit subtraction before HTTP; admin uses strict calendar-field validation rather than new Date(local input). Both main event lists render the instant with a visible Nepal-offset label. Existing API instants, stored events, audience/authorization/idempotency payloads and BS/Tithi representations are preserved; no historical IANA-zone or cultural/date-source inference is made.
+
+Local PASS: all454 unit cases/47 suites, localization compilation and admin TypeScript; frozen matrix/release/workbook validators, ten matrix negatives, five workbook regressions and whitespace. Added15 unit cases, four Flutter cases plus stronger actual composition-body assertions, and two browser journeys under America/New_York/Asia/Tokyo. Six browser cases in the affected file list successfully; this is discovery only. New Flutter/browser/native/full execution remains unverified locally because SDK/services are absent. Report: `docs/execution/CALENDAR_NEPAL_TIME_ENTRY_REPORT.md`.
+
+Scope is explicit fixed-offset entry/main-list display only; no BS/Tithi conversion, historical timezone reconstruction, timestamp migration, cultural activation, calendar end-time/full editing or whole-client display audit. All260 frozen acceptance rows and existing production/security/load/accessibility/provider/signing/operations/data/owner gates remain OPEN. No merge/deploy. Next: inspect exact-source automatic checks, fix demonstrated failures only, then review the remaining calendar period/browse/detail time presentation and frozen workflow gaps before widening scope.
+
+
 ## Calendar outcome resolution and admin retry adoption — new-source CI pending
 
 Recovered remote HEAD `119f987b1db22893a0c3356a637fac238c7db27b`, tree `c742c9fb8e2da36a0d3257fc655a8ae4eef8ca80`; clean checkout and PR #5 draft/open on existing M4 base. Fast38611278852 SUCCESS; inspected Flutter job116015089033 confirms clean analysis/all232 cases, including corrected owner/server restoration rejection. Full38611288843 and native38611288848 are independently SUCCESS. All six CI jobs and native job116015018428 passed. Inspected platform job116015022536 confirms434 unit,548 general PostgreSQL/Redis and61 browser cases plus a successful fictional restore; ten general storage skips are covered by the dedicated successful storage job. Parent failures remain retained rather than relabelled. Prior434 API unit checks remain tied to their source.

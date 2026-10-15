@@ -6,6 +6,8 @@ Recovery of0e26e628: Fast38609751149 failed one Flutter fixture (clean analysis,
 
 Current meaningful batch adds permanent account-bound close/recover resolution and admin keyed retries/recovery metadata; source verification is pending. Parent119f987 Fast38611278852/full38611288843/native38611288848 independently SUCCESS; all232 Flutter cases/analysis and all six platform jobs passed. New local439 unit cases and API/admin checks pass; new PostgreSQL/Flutter/browser/full/native acceptance remains unverified. Closure does not cancel an existing event, and no individual frozen acceptance is closed.
 
+Recovered94035936 calendar resolution/admin batch now has successful Fast38614156198/full38614164411/native38614164428. Current meaningful batch makes ordinary Gregorian entry/main-list display explicitly fixed Nepal UTC+05:45; local454 unit cases/localization/admin checks pass, but new-source Flutter/browser/full/native verification remains pending. No full requirement acceptance, historical-zone or calendar conversion acceptance is inferred.
+
 Status: NOT READY; no merge into main, public deployment or store submission authorized.
 
 Authoritative current audit: `REQUIREMENTS_MATRIX.md`/CSV, independent `EDGE_CASE_MATRIX.csv`, unscored `BASELINE_CONTROL_MATRIX.csv`, `RELEASE_CHECKLIST.md`, `EXTERNAL_HANDOFF.md` and `docs/operations/PRODUCTION_RUNBOOK.md`. All applicable frozen/supplemental requirements remain mandatory; no arbitrary completion percentage. See `DECISION_LOG.md` for adopted master execution instructions.

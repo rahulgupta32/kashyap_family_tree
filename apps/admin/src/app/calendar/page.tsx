@@ -4,6 +4,7 @@ import { GenealogyAudience } from './genealogy-audience';
 import { CalendarPeriod } from './period';
 import { RecurringReminders } from './recurring-reminders';
 import { CalendarBrowse } from './browse';
+import { nepalWallTimeToUtc, formatNepalInstant } from '@kashyap/localization';
 import { calendarManagement } from '@kashyap/localization';
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
@@ -139,7 +140,7 @@ export default function CalendarAdminPage() {
         tithiNumber: Number(formData.tithiNumber),
       };
       if (dateMode === 'AD') {
-        payload.startsAt = new Date(startsAt).toISOString();
+        payload.startsAt = nepalWallTimeToUtc(startsAt);
         payload.reminderOffsets = reminder ? [60] : [];
         delete payload.tithiYearBs; delete payload.tithiMonthBs; delete payload.tithiPaksha; delete payload.tithiNumber;
       }
@@ -284,7 +285,7 @@ export default function CalendarAdminPage() {
               </div>
 
               <div className="text-xs space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                {ev.startsAt && <div>{label('time')}: {new Date(ev.startsAt).toLocaleString()}</div>}
+                {ev.startsAt && <div>{label('time')}: {formatNepalInstant(ev.startsAt)}</div>}
                 {ev.solarDate ? (
                   <div><span className="text-slate-400">मिति (BS):</span> <span className="font-semibold text-slate-800">{ev.solarDate}</span></div>
                 ) : (
@@ -393,7 +394,7 @@ export default function CalendarAdminPage() {
               </select>
             </label>
             {dateMode === 'AD' && <div className="space-y-2">
-              <label className="block text-sm">{label('time')}<input aria-label={label('time')} type="datetime-local" required value={startsAt} onChange={e=>setStartsAt(e.target.value)} className="block border p-2 w-full" /></label>
+              <label className="block text-sm">{label('time')} · नेपाल समय (Nepal UTC+05:45)<input aria-label={`${label('time')} · Nepal UTC+05:45`} type="datetime-local" required value={startsAt} onChange={e=>setStartsAt(e.target.value)} className="block border p-2 w-full" /></label>
               <label><input type="checkbox" checked={reminder} onChange={e=>setReminder(e.target.checked)} /> {label('oneHour')}</label>
               <p className="text-xs text-slate-500">{label('schedulingNote')}</p>
             </div>}

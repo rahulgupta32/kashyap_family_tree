@@ -1,3 +1,4 @@
+import '../services/calendar_time.dart';
 import 'calendar_audience_picker.dart';
 import 'calendar_session_guard.dart';
 import 'package:flutter/material.dart';
@@ -143,13 +144,15 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy && !submitted, decoration: InputDecoration(labelText: calendarLabels['location'])),
           TextButton(onPressed: busy || submitted ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
-            final date = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 1)),
-              firstDate: DateTime.now(), lastDate: DateTime(2100));
+            final today = nepalWallClock(DateTime.now());
+            final date = await showDatePicker(context: context, initialDate: DateTime.utc(today.year,today.month,today.day+1),
+              firstDate: DateTime.utc(today.year,today.month,today.day), lastDate: DateTime.utc(2100));
             if (date == null || !context.mounted || !checkCalendarSession()) return;
             final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));
-            if (time != null && context.mounted && checkCalendarSession()) update(() => selected = DateTime(date.year, date.month, date.day, time.hour, time.minute));
-          }, child: Text(selected?.toString() ?? calendarLabels['time']!)),
+            if (time != null && context.mounted && checkCalendarSession()) update(() => selected = DateTime.utc(date.year, date.month, date.day, time.hour, time.minute));
+          }, child: Text(selected == null ? calendarLabels['time']! : formatNepalWallTime(selected!))),
           CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy || submitted ? null : (value) { if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted) update(() => reminder = value ?? false); }),
+          const Text('नेपाल समय (Nepal UTC+05:45)'),
           Text(calendarLabels['dateNote']!),
           TextButton(onPressed: busy || submitted ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
@@ -189,7 +192,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                 'title': title.text.trim(), 'description': description.text.trim(), 'location': location.text.trim(), 'eventType': eventType, 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
                 if(audience!=null)'audienceSelection':audience!['audienceSelection'],
                 if(audience!=null)'audiencePreviewId':audience!['audiencePreviewId'],
-                'startsAt': selected!.toUtc().toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
+                'startsAt': nepalWallTimeToUtc(selected!).toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
               });
               if(!checkCalendarSession()) return;
               if(dialogContext.mounted) Navigator.pop(dialogContext);
@@ -321,7 +324,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Text('मिति: ${ev['startsAt'] ?? ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
+                                Text('मिति: ${(ev['startsAt'] == null ? null : formatNepalInstant(ev['startsAt'] as String)) ?? ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
                                 if(ev['lifecycleState'] == 'CANCELLED') Text(calendarLabels['cancelled']!),
                                 if(ev['rsvpCounts'] != null) Text('${calendarLabels['attendance']}: ${ev['rsvpCounts']['going']} Going · ${ev['rsvpCounts']['maybe']} Maybe'),
                                 if(ev['canManage'] == true && ev['lifecycleState'] != 'CANCELLED') Wrap(children: [

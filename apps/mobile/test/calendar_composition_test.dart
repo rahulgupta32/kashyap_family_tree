@@ -49,6 +49,8 @@ void main(){
   await tapButton(tester,calendarLabels['save']!);
   expect(submitted,containsPair('title','Fictional community meeting'));expect(submitted,containsPair('eventType','COMMUNITY_MEETING'));
   expect(submitted,containsPair('description','Organizers approved these details.'));expect(submitted,containsPair('location','Fictional hall'));
+  expect(DateTime.parse(submitted!['startsAt'] as String).hour,4);
+  expect(DateTime.parse(submitted!['startsAt'] as String).minute,15);
   expect(submitted!['audienceScope'],'COMMUNITY');expect(submitted!['reminderOffsets'],isEmpty);expect(DateTime.parse(submitted!['startsAt'] as String).isUtc,isTrue);
   expect(submitted!.keys.toSet(),{'title','description','location','eventType','audienceScope','startsAt','reminderOffsets','creationKey'});
   expect(find.byType(AlertDialog),findsNothing);expect(find.text('Organizers approved these details.'),findsOneWidget);
