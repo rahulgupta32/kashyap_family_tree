@@ -6,6 +6,8 @@ import { ClaimStatus, DisputeStatus } from './enums.js';
 import { PersonSummaryDto } from './genealogy.js';
 
 export interface SubmitClaimDto {
+  /** Account-bound retry identity for initial claim creation. */
+  creationKey?: string;
   targetPersonId: string;
   relationshipDescription: string;
   knownFamilyMembers?: string[];

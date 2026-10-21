@@ -1,6 +1,8 @@
-import * as fs from 'fs';
+import { allowedFields, uuid } from '../community/community-policy';
+import { MediaStorageService } from '../../media/media-storage.service';
 import {
   Injectable,
+  Optional,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
@@ -40,6 +42,7 @@ export class ClaimsService {
     private readonly branchRepo: BranchRepository,
     private readonly userRepo: UserRepository,
     private readonly auditOutboxRepo: AuditOutboxRepository,
+    @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
   ) {}
 
   private generatePresignedUrl(mediaAssetId: string, claimantUserId?: string): string {
@@ -56,10 +59,16 @@ export class ClaimsService {
     uploaderUserId: string,
     attachments?: Array<{ mediaAssetId: string; documentType: any; description?: string }>,
   ): Promise<void> {
-    if (!attachments || attachments.length === 0) return;
+    if(attachments===undefined)return;
+    if(!Array.isArray(attachments)||attachments.length>5)throw new BadRequestException('Choose up to five evidence attachments');
+    const seen=new Set<string>();
     for (const att of attachments) {
+      allowedFields(att,['mediaAssetId','documentType','description']);uuid(att.mediaAssetId,'evidence');
+      if(seen.has(att.mediaAssetId)||!['family_photo','event_invitation','elder_voucher','address_receipt','clan_record','other'].includes(att.documentType))throw new BadRequestException('Invalid or duplicate evidence attachment');
+      seen.add(att.mediaAssetId);
+      if(att.description!==undefined&&(typeof att.description!=='string'||att.description.length>1000))throw new BadRequestException('Evidence description exceeds limit');
       const res = await client.query(
-        'SELECT id, uploader_user_id, quarantine_status, retention_status FROM media_assets WHERE id = $1',
+        'SELECT id, uploader_user_id, bucket, quarantine_status, retention_status FROM media_assets WHERE id = $1',
         [att.mediaAssetId],
       );
       const asset = res.rows[0];
@@ -69,6 +78,7 @@ export class ClaimsService {
           message: `Evidence media asset not found: ${att.mediaAssetId}`,
         });
       }
+      if (asset.bucket !== 'private-profiles') throw new BadRequestException('Choose a private profile evidence upload');
       if (asset.uploader_user_id !== uploaderUserId) {
         throw new ForbiddenException({
           errorCode: ErrorCode.FORBIDDEN,
@@ -96,7 +106,7 @@ export class ClaimsService {
     queryUser?: string,
     queryExpires?: string,
     querySig?: string,
-  ): Promise<{ filePath: string; fileName: string; mimeType: string; byteSize: number }> {
+  ): Promise<{ buffer: Buffer; fileName: string; mimeType: string; byteSize: number }> {
     if (!viewer || !viewer.id) {
       throw new UnauthorizedException('Authentication required to access evidence asset');
     }
@@ -106,6 +116,8 @@ export class ClaimsService {
     if (!asset) {
       throw new NotFoundException('Evidence media asset not found');
     }
+
+    if (asset.bucket !== 'private-profiles') throw new NotFoundException('Evidence media asset not found');
 
     if (asset.quarantine_status !== 'CLEAN') {
       throw new ForbiddenException('Media asset failed malware scan and has been quarantined');
@@ -182,12 +194,9 @@ export class ClaimsService {
       throw new ForbiddenException('You do not have permission to access or stream this evidence asset');
     }
 
-    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
-      throw new NotFoundException('Physical media file not found on storage volume');
-    }
-
+    const buffer = await this.storage.read(asset);
     return {
-      filePath: asset.storage_path,
+      buffer,
       fileName: asset.file_name,
       mimeType: asset.mime_type,
       byteSize: asset.byte_size,
@@ -195,13 +204,15 @@ export class ClaimsService {
   }
 
   async submitClaim(claimantUserId: string, dto: SubmitClaimDto): Promise<ClaimDetailDto> {
-    if (!dto.statementOfTruth) {
+    if(dto?.creationKey!==undefined){uuid(dto.creationKey,'creation key');allowedFields(dto,['creationKey','targetPersonId','relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth']);}
+    if (dto?.statementOfTruth!==true) {
       throw new BadRequestException({
         errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
         message: 'Must agree to statement of truth',
       });
     }
 
+    if(typeof dto.relationshipDescription!=='string'||!dto.relationshipDescription.trim()||dto.relationshipDescription.trim().length>2000)throw new BadRequestException('Relationship description must contain 1–2000 characters');
     return this.db.transaction(async (client) => {
       // 1. Check if claimant account is already linked
       const userRes = await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [claimantUserId]);
@@ -211,6 +222,16 @@ export class ClaimsService {
           errorCode: ErrorCode.UNAUTHORIZED,
           message: 'Claimant user account not found',
         });
+      }
+      if(!user.is_active||user.is_suspended||user.deleted_at)throw new ForbiddenException('Active account required');
+      if(dto.creationKey){
+        const receipt=(await client.query('SELECT payload_hash,claim_id FROM claim_creation_receipts WHERE account_id=$1 AND creation_key=$2',[claimantUserId,dto.creationKey])).rows[0];
+        if(receipt){
+          if(receipt.payload_hash!==claimCreationFingerprint(dto))throw new ConflictException('Creation key already used with a different claim');
+          const original=(await client.query('SELECT * FROM profile_claims WHERE id=$1 AND claimant_user_id=$2',[receipt.claim_id,claimantUserId])).rows[0];
+          if(!original)throw new ConflictException('Original claim unavailable');
+          return this.mapToDetailDto(original,client);
+        }
       }
       if (user.person_id) {
         throw new ConflictException({
@@ -322,6 +343,7 @@ export class ClaimsService {
         client,
       );
 
+      if(dto.creationKey)await client.query('INSERT INTO claim_creation_receipts(account_id,creation_key,payload_hash,claim_id) VALUES($1,$2,$3,$4)',[claimantUserId,dto.creationKey,claimCreationFingerprint(dto),claim.id]);
       return this.mapToDetailDto(claim, client);
     });
   }
@@ -1251,4 +1273,9 @@ export class ClaimsService {
       });
     }
   }
+}
+
+export function claimCreationFingerprint(dto:SubmitClaimDto):string{
+ const canonical=(v:any):any=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().filter(k=>k!=='creationKey'&&v[k]!==undefined).map(k=>[k,canonical(v[k])])):v;
+ return crypto.createHash('sha256').update(JSON.stringify(canonical(dto))).digest('hex');
 }

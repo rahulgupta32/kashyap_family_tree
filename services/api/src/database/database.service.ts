@@ -2,10 +2,15 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/commo
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { newDb, IMemoryDb } from 'pg-mem';
 
+// Preserve useful failure classes without echoing server messages, SQL, values or stacks.
+const DIAGNOSTIC_SQLSTATES = new Set(['23505','23503','23502','23514','40001','40P01','57014','53300','57P01','08006','08001','28P01','42P01','42703','42501']);
+const diagnosticSqlstate = (error: any): string => DIAGNOSTIC_SQLSTATES.has(error?.code) ? error.code : 'UNKNOWN';
+
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DatabaseService.name);
   private pool: Pool | null = null;
+  private journalPool: Pool | null = null;
   private memDb: IMemoryDb | null = null;
   private isMemoryDb = false;
   private isConnected = false;
@@ -59,7 +64,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const dbPassword = process.env.DB_PASSWORD || 'kashyap_secure_dev_password';
     const dbName = process.env.DB_NAME || 'kashyap_db';
 
-    this.logger.log(`Connecting to real PostgreSQL at ${dbHost}:${dbPort}/${dbName}...`);
+    this.logger.log('DATABASE_CONNECTING');
     this.pool = new Pool({
       connectionString: dbUrl,
       host: dbHost,
@@ -71,20 +76,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     });
+    this.observePoolErrors(this.pool, 'MAIN');
 
     try {
       const client = await this.pool.connect();
-      this.logger.log(`Connected to real PostgreSQL database successfully at ${dbHost}:${dbPort}/${dbName}.`);
+      this.logger.log('DATABASE_CONNECTED');
       client.release();
       this.isMemoryDb = false;
       this.isConnected = true;
     } catch (err: any) {
       this.isConnected = false;
-      this.logger.error(
-        `FATAL: Failed to connect to required PostgreSQL database at ${dbHost}:${dbPort}/${dbName}: ${err.message}. Automatic in-memory fallback is disabled.`,
-        err.stack,
-      );
-      throw new Error(`Database connection failed: ${err.message}`);
+      this.logger.error(`DATABASE_CONNECTION_UNAVAILABLE sqlstate=${diagnosticSqlstate(err)}`);
+      throw new Error('DATABASE_CONNECTION_UNAVAILABLE');
     }
   }
 
@@ -105,7 +108,17 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('In-process PostgreSQL SQL engine initialized.');
   }
 
+  private observePoolErrors(pool: Pool, kind: 'MAIN' | 'JOURNAL'): void {
+    // pg-pool emits idle-client failures outside query promises. Without a
+    // listener a backend restart/termination becomes an uncaught process error.
+    pool.on('error', error => {
+      if (kind === 'MAIN') this.isConnected = false;
+      this.logger.error(`DATABASE_POOL_UNAVAILABLE pool=${kind} sqlstate=${diagnosticSqlstate(error)}`);
+    });
+  }
+
   async onModuleDestroy() {
+    if(this.journalPool)await this.journalPool.end();
     if (this.pool) {
       await this.pool.end();
       this.isConnected = false;
@@ -129,13 +142,24 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       const res = await this.pool.query<R>(text, params);
       const duration = Date.now() - start;
       if (duration > 100) {
-        this.logger.warn(`Slow query (${duration}ms): ${text.substring(0, 100)}...`);
+        this.logger.warn(`DATABASE_QUERY_SLOW durationMs=${duration}`);
       }
       return res;
     } catch (err: any) {
-      this.logger.error(`Database Query Error: ${err.message} | Query: ${text}`, err.stack);
+      this.logger.error(`DATABASE_QUERY_UNAVAILABLE sqlstate=${diagnosticSqlstate(err)}`);
       throw err;
     }
+  }
+
+  /** Autocommit write evidence must survive caller rollback, including saturated worker pools. */
+  async journalQuery(text:string,params:any[]=[]):Promise<QueryResult> {
+    if(!this.pool||this.isMemoryDb)throw new Error('Real PostgreSQL required for media write journal');
+    // pg-pool deliberately makes password non-enumerable; spreading options loses it.
+    if(!this.journalPool) {
+      this.journalPool=new Pool({...this.pool.options,password:this.pool.options.password,max:2,connectionTimeoutMillis:5000,query_timeout:10000});
+      this.observePoolErrors(this.journalPool, 'JOURNAL');
+    }
+    return this.journalPool.query(text,params);
   }
 
   async getClient(): Promise<PoolClient> {
@@ -172,17 +196,19 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const start = Date.now();
     try {
       await this.query('SELECT 1');
+      this.isConnected = true;
       return {
         status: 'up',
         latencyMs: Date.now() - start,
         isMemoryDb: this.isMemoryDb,
       };
     } catch (err: any) {
+      this.isConnected = false;
       return {
         status: 'down',
         latencyMs: Date.now() - start,
         isMemoryDb: this.isMemoryDb,
-        error: err.message,
+        error: 'DATABASE_UNAVAILABLE',
       };
     }
   }

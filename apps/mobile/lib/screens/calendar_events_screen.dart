@@ -1,5 +1,11 @@
+import '../services/calendar_time.dart';
+import 'calendar_audience_picker.dart';
+import 'calendar_session_guard.dart';
 import 'package:flutter/material.dart';
+import 'calendar_period_screen.dart';
+import 'calendar_recurrence_screen.dart';
 import '../services/genealogy_api_service.dart';
+import '../localization/calendar_labels.dart';
 
 class CalendarEventsScreen extends StatefulWidget {
   final GenealogyApiService apiService;
@@ -10,11 +16,33 @@ class CalendarEventsScreen extends StatefulWidget {
   State<CalendarEventsScreen> createState() => _CalendarEventsScreenState();
 }
 
-class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
+class _CalendarEventsScreenState extends State<CalendarEventsScreen> with CalendarSessionGuard<CalendarEventsScreen> {
+  @override
+  GenealogyApiService get calendarApi => widget.apiService;
+  int _epoch = 0;
+  bool _resolvingCreate = false;
+  DialogRoute<dynamic>? _activeDialog;
+  VoidCallback? _clearDialogDraft;
+
+  @override
+  void clearCalendarSession() {
+    _epoch++;
+    _resolvingCreate = false;
+    _events = [];
+    _savingRsvps.clear();
+    _blockedEdits.clear();
+    _error = calendarSessionChanged;
+    _loading = false;
+    _clearDialogDraft?.call();
+    final dialog = _activeDialog;
+    if (dialog != null && dialog.isActive) dialog.navigator?.removeRoute(dialog);
+    _activeDialog = null;
+  }
   bool _loading = true;
   List<dynamic> _events = [];
   String? _error;
   final Set<String> _savingRsvps = {};
+  final Set<String> _blockedEdits = {};
 
   @override
   void initState() {
@@ -23,6 +51,8 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
   }
 
   Future<void> _loadEvents() async {
+    if (!checkCalendarSession()) return;
+    final epoch = ++_epoch;
     setState(() {
       _loading = true;
       _error = null;
@@ -30,32 +60,226 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
 
     try {
       final events = await widget.apiService.getCalendarEvents();
-      if (mounted) { setState(() {
+      if (epoch == _epoch && checkCalendarSession()) { setState(() {
         _events = events;
+        _blockedEdits.clear();
       }); }
     } catch (e) {
-      if (mounted) { setState(() {
+      if (epoch == _epoch && checkCalendarSession()) { setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
       }); }
     } finally {
-      if (mounted) { setState(() {
+      if (epoch == _epoch && checkCalendarSession()) { setState(() {
         _loading = false;
       }); }
     }
   }
 
   Future<void> _rsvp(String eventId, String response) async {
+    if (!checkCalendarSession() || _savingRsvps.contains(eventId)) return;
     setState(() => _savingRsvps.add(eventId));
     try {
       await widget.apiService.rsvpEvent(eventId, response);
-      final events = await widget.apiService.getCalendarEvents();
-      if (mounted) { setState(() => _events = events); }
+      if (!checkCalendarSession()) return;
+      await _loadEvents();
     } catch (error) {
-      if (mounted) {
+      if (mounted && checkCalendarSession()) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
-      if (mounted) { setState(() => _savingRsvps.remove(eventId)); }
+      if (checkCalendarSession()) { setState(() => _savingRsvps.remove(eventId)); }
+    }
+  }
+
+  String? _textError(String title, String description, String location) {
+    if (title.trim().isEmpty || title.trim().length > 255) return calendarLabels['titleLimit'];
+    if (description.trim().length > 10000) return calendarLabels['descriptionLimit'];
+    if (location.trim().length > 255) return calendarLabels['locationLimit'];
+    return null;
+  }
+
+  Future<bool> _resolvePendingCreate() async {
+    if (!checkCalendarSession() || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate) return false;
+    setState(() => _resolvingCreate = true);
+    try {
+      final outcome = await widget.apiService.resolveCalendarCreate();
+      if (!checkCalendarSession()) return false;
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(calendarLabels[outcome == 'CREATED' ? 'createRecovered' : 'createClosed']!))); }
+      await _loadEvents();
+      return checkCalendarSession();
+    } catch (_) {
+      if (mounted && checkCalendarSession()) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(calendarLabels['createFailed']!))); }
+      return false;
+    } finally { if (checkCalendarSession()) { setState(() => _resolvingCreate = false); } }
+  }
+
+  Future<void> _create() async {
+    if (!checkCalendarSession() || _activeDialog != null) return;
+    if (widget.apiService.hasPendingCalendarCreate) {
+      try { await widget.apiService.createCalendarEvent(); if(checkCalendarSession()) { await _loadEvents(); } }
+      catch (_) { if(mounted && checkCalendarSession()) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(calendarLabels['createFailed']!))); } }
+      return;
+    }
+    final title = TextEditingController();
+    final description = TextEditingController();
+    final location = TextEditingController();
+    var eventType = 'GENERAL_EVENT';
+    DateTime? selected;
+    var reminder = false;
+    var busy = false;
+    var submitted = false;
+    String? error;
+    Map<String,dynamic>? audience;
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); selected=null; audience=null;};
+    try {
+      final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: Text(calendarLabels['create']!),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(key: const ValueKey('calendar-title'), controller: title, enabled: !busy && !submitted, decoration: InputDecoration(labelText: calendarLabels['title'])),
+          DropdownButtonFormField<String>(key: const ValueKey('calendar-event-type'), initialValue: eventType, decoration: InputDecoration(labelText: calendarLabels['eventType']),
+            items: [DropdownMenuItem(value: 'GENERAL_EVENT', child: Text(calendarLabels['generalEvent']!)), DropdownMenuItem(value: 'COMMUNITY_MEETING', child: Text(calendarLabels['communityMeeting']!))],
+            onChanged: busy || submitted ? null : (value) {if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted) update(() => eventType = value!);}),
+          Text(calendarLabels['detailsAudience']!),
+          TextField(key: const ValueKey('calendar-description'), controller: description, enabled: !busy && !submitted, minLines: 2, maxLines: 4, decoration: InputDecoration(labelText: calendarLabels['description'])),
+          TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy && !submitted, decoration: InputDecoration(labelText: calendarLabels['location'])),
+          TextButton(onPressed: busy || submitted ? null : () async {
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            final today = nepalWallClock(DateTime.now());
+            final date = await showDatePicker(context: context, initialDate: DateTime.utc(today.year,today.month,today.day+1),
+              firstDate: DateTime.utc(today.year,today.month,today.day), lastDate: DateTime.utc(2100));
+            if (date == null || !context.mounted || !checkCalendarSession()) return;
+            final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));
+            if (time != null && context.mounted && checkCalendarSession()) update(() => selected = DateTime.utc(date.year, date.month, date.day, time.hour, time.minute));
+          }, child: Text(selected == null ? calendarLabels['time']! : formatNepalWallTime(selected!))),
+          CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy || submitted ? null : (value) { if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted) update(() => reminder = value ?? false); }),
+          const Text('नेपाल समय (Nepal UTC+05:45)'),
+          Text(calendarLabels['dateNote']!),
+          TextButton(onPressed: busy || submitted ? null : () async {
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            final picked=await Navigator.of(dialogContext).push<Map<String,dynamic>>(MaterialPageRoute(builder:(_)=>CalendarAudiencePicker(api:widget.apiService)));
+            if(dialogContext.mounted && checkCalendarSession() && picked != null)update(()=>audience=picked);
+          },child:const Text('आमन्त्रित समूह छान्नुहोस् (Choose invitation audience)')),
+          if(audience!=null)...[
+            Text('आमन्त्रित खाताहरू (Recipient accounts): ${audience!['recipientCount']}'),
+            const Text('छानिएको समूहका खाताहरू मात्र कार्यक्रम हेर्न सक्छन्। (Only invited accounts can view this event.)'),
+            TextButton(onPressed:busy||submitted?null:(){if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted)update(()=>audience=null);},child:const Text('समूह हटाउनुहोस् (Clear audience)')),
+          ],
+          if(error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+        ])),
+        actions: [
+          if(submitted) TextButton(onPressed:busy ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            update(() => busy = true);
+            final resolved = await _resolvePendingCreate();
+            if(dialogContext.mounted && checkCalendarSession()) {
+              if(resolved) { Navigator.pop(dialogContext); }
+              else { update(() => busy = false); }
+            }
+          },child:Text(calendarLabels['resolveCreate']!)),
+          TextButton(onPressed: busy ? null : () {if(dialogContext.mounted && checkCalendarSession() && !busy && _activeDialog?.isCurrent == true) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
+          TextButton(onPressed: busy ? null : () async {
+            if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            final textError = _textError(title.text, description.text, location.text);
+            if(textError != null) {update(() => error = textError); return;}
+            if(selected == null) {update(() => error = calendarLabels['required']); return;}
+            if(!submitted && audience!=null){
+              final expiry=DateTime.tryParse(audience!['expiresAt'] as String);
+              if(expiry==null||!expiry.isAfter(DateTime.now())){update(()=>error=calendarLabels['audienceExpired']);return;}
+            }
+            update(() {busy = true; submitted = true; error = null;});
+            try {
+              await widget.apiService.createCalendarEvent({
+                'title': title.text.trim(), 'description': description.text.trim(), 'location': location.text.trim(), 'eventType': eventType, 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
+                if(audience!=null)'audienceSelection':audience!['audienceSelection'],
+                if(audience!=null)'audiencePreviewId':audience!['audiencePreviewId'],
+                'startsAt': nepalWallTimeToUtc(selected!).toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],
+              });
+              if(!checkCalendarSession()) return;
+              if(dialogContext.mounted) Navigator.pop(dialogContext);
+              await _loadEvents();
+            } catch(_) {if(dialogContext.mounted && checkCalendarSession()) update(() {busy = false; error = calendarLabels['createFailed'];});}
+          }, child: Text(calendarLabels['save']!)),
+        ],
+      )));
+      _activeDialog = route;
+      await Navigator.of(context).push(route);
+      await route.completed;
+    } finally {_activeDialog = null; _clearDialogDraft=null; title.dispose(); description.dispose(); location.dispose(); if(checkCalendarSession()) { setState(() {}); }}
+  }
+
+  Future<void> _manage(Map event, {bool cancel = false}) async {
+    if (!checkCalendarSession() || _activeDialog != null || _blockedEdits.contains(event['id'])) return;
+    final title = TextEditingController(text: cancel ? '' : event['title'] as String? ?? '');
+    final ordinary = !cancel && ['GENERAL_EVENT', 'COMMUNITY_MEETING'].contains(event['eventType']);
+    final description = TextEditingController(text: ordinary ? event['description'] as String? ?? '' : '');
+    final location = TextEditingController(text: ordinary ? event['location'] as String? ?? '' : '');
+    final canReschedule = ordinary && event['startsAt'] != null && event['recurrenceRuleId'] == null;
+    final start = TextEditingController(text: canReschedule ? nepalWallClock(DateTime.parse(event['startsAt'] as String)).toIso8601String().substring(0,16) : '');
+    var timeChanged = false;
+    var busy = false, needsReload = false;
+    String? error;
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); start.clear();};
+    try {
+      final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
+        title: Text(calendarLabels[cancel ? 'cancel' : 'edit']!),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(key: const ValueKey('calendar-title'), controller: title, enabled: !busy,
+            decoration: InputDecoration(labelText: calendarLabels[cancel ? 'reason' : 'title'])),
+          if(ordinary) ...[
+            Text(calendarLabels['detailsAudience']!),
+            TextField(key: const ValueKey('calendar-description'), controller: description, enabled: !busy, minLines: 2, maxLines: 4,
+              decoration: InputDecoration(labelText: calendarLabels['description'])),
+            TextField(key: const ValueKey('calendar-location'), controller: location, enabled: !busy,
+              decoration: InputDecoration(labelText: calendarLabels['location'])),
+          ],
+          if(canReschedule) TextField(key: const ValueKey('calendar-edit-start'), controller: start, enabled: !busy && !needsReload,
+            decoration: const InputDecoration(labelText: 'सुरु समय (Start · Nepal UTC+05:45)', hintText: 'YYYY-MM-DDTHH:mm'),
+            onChanged: (_) { timeChanged = true; }),
+          if(error != null) Text(error!, key: const ValueKey('calendar-edit-error'), style: const TextStyle(color: Colors.red)),
+          if(needsReload) Text(calendarLabels['reloadRequired']!),
+        ])),
+        actions: [
+          TextButton(onPressed: busy ? null : () {if(dialogContext.mounted && checkCalendarSession() && !busy && _activeDialog?.isCurrent == true) Navigator.pop(dialogContext);}, child: Text(calendarLabels['close']!)),
+          if(needsReload) TextButton(onPressed: busy ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
+            Navigator.pop(dialogContext);
+            await _loadEvents();
+          }, child: Text(calendarLabels['closeReload']!)),
+          TextButton(onPressed: busy || needsReload ? null : () async {
+            if(!dialogContext.mounted || !checkCalendarSession() || busy || needsReload || _activeDialog?.isCurrent != true) return;
+            final textError = cancel
+                ? (title.text.trim().length < 5 || title.text.trim().length > 1000 ? calendarLabels['reasonLimit'] : null)
+                : _textError(title.text, ordinary ? description.text : '', ordinary ? location.text : '');
+            if(textError != null) {update(() => error = textError); return;}
+            String? updatedStart;
+            if(canReschedule && timeChanged) {
+              try { updatedStart = nepalWallInputToUtc(start.text); }
+              on FormatException { update(() => error = 'मान्य मिति र समय दिनुहोस् (Enter YYYY-MM-DDTHH:mm · Nepal UTC+05:45)'); return; }
+            }
+            update(() {busy=true; error=null;});
+            try {
+              await widget.apiService.requestJson('/calendar/events/${event['id']}${cancel ? '/cancel' : ''}', method: cancel ? 'POST' : 'PATCH',
+                data: {'version': event['version'], (cancel ? 'reason' : 'title'): title.text.trim(),
+                  if(ordinary) 'description': description.text.trim(), if(ordinary) 'location': location.text.trim(),
+                  if(updatedStart != null) 'startsAt': updatedStart});
+              if(!checkCalendarSession()) return;
+              if(dialogContext.mounted) Navigator.pop(dialogContext);
+              await _loadEvents();
+            } catch(_) {
+              if(dialogContext.mounted && checkCalendarSession()) {
+                setState(() => _blockedEdits.add(event['id'] as String));
+                update(() {busy=false; needsReload=true; error=calendarLabels['editFailed'];});
+              }
+            }
+          }, child: Text(calendarLabels['save']!)),
+        ],
+      )));
+      _activeDialog=route;
+      await Navigator.of(context).push(route);
+      await route.completed;
+    } finally {
+      _activeDialog=null; _clearDialogDraft=null;
+      title.dispose(); description.dispose(); location.dispose(); start.dispose();
     }
   }
 
@@ -65,10 +289,15 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
       appBar: AppBar(
         title: const Text('सांस्कृतिक तथा पारिवारिक पात्रो (Calendar)'),
         actions: [
-          IconButton(onPressed: _loadEvents, icon: const Icon(Icons.refresh)),
+          IconButton(tooltip: 'Calendar day month agenda', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarPeriodScreen(api: widget.apiService))); }, icon: const Icon(Icons.calendar_month)),
+          IconButton(tooltip: 'Browse all calendar events', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarBrowseScreen(api: widget.apiService))); }, icon: const Icon(Icons.list_alt)),
+          IconButton(tooltip: 'वार्षिक सम्झना (Annual reminders)', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService))); }, icon: const Icon(Icons.event_repeat)),
+          IconButton(tooltip: calendarLabels['resolveCreate'], onPressed: !calendarSessionCurrent || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate ? null : () { _resolvePendingCreate(); }, icon: const Icon(Icons.fact_check)),
+          IconButton(tooltip: widget.apiService.hasPendingCalendarCreate ? 'बाँकी सिर्जना पुनः प्रयास (Retry pending creation)' : calendarLabels['create'], onPressed: !calendarSessionCurrent ? null : _create, icon: const Icon(Icons.add)),
+          IconButton(onPressed: !calendarSessionCurrent ? null : _loadEvents, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: _loading
+      body: !calendarSessionCurrent ? const Center(child: Text(calendarSessionChanged)) : _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
@@ -79,7 +308,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                       children: [
                         Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
                         const SizedBox(height: 12),
-                        ElevatedButton(onPressed: _loadEvents, child: const Text('पुनः प्रयास गर्नुहोस्')),
+                        ElevatedButton(onPressed: !calendarSessionCurrent ? null : _loadEvents, child: const Text('पुनः प्रयास गर्नुहोस्')),
                       ],
                     ),
                   ),
@@ -107,8 +336,20 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const SizedBox(height: 4),
-                                Text('मिति: ${ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
-                                if (ev['location'] != null) Text('स्थान: ${ev['location']}'),
+                                Text('मिति: ${(ev['startsAt'] == null ? null : formatNepalInstant(ev['startsAt'] as String)) ?? ev['solarDate'] ?? 'तिथि आधारित'} • दायरा: ${ev['audienceScope']}'),
+                                if(ev['lifecycleState'] == 'CANCELLED') Text(calendarLabels['cancelled']!),
+                                if(ev['rsvpCounts'] != null) Text('${calendarLabels['attendance']}: ${ev['rsvpCounts']['going']} Going · ${ev['rsvpCounts']['maybe']} Maybe'),
+                                if(ev['canManage'] == true && ev['lifecycleState'] != 'CANCELLED') Wrap(children: [
+                                  if(ev['startsAt'] != null && ev['recurrenceRuleId'] == null && ['GENERAL_EVENT','COMMUNITY_MEETING'].contains(ev['eventType']))
+                                    TextButton(onPressed: () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService, source: Map<String,dynamic>.from(ev as Map)))); }, child: const Text('वार्षिक सम्झना प्रस्ताव (Propose annual reminder)')),
+                                  TextButton(onPressed: _blockedEdits.contains(ev['id']) ? null : () => _manage(ev as Map), child: Text(calendarLabels['edit']!)),
+                                  TextButton(onPressed: _blockedEdits.contains(ev['id']) ? null : () => _manage(ev as Map, cancel: true), child: Text(calendarLabels['cancel']!)),
+                                ]),
+                                if (_blockedEdits.contains(ev['id'])) Text(calendarLabels['reloadRequired']!),
+                                if (['GENERAL_EVENT', 'COMMUNITY_MEETING'].contains(ev['eventType']))
+                                  Text(calendarLabels[ev['eventType'] == 'COMMUNITY_MEETING' ? 'communityMeeting' : 'generalEvent']!),
+                                if (ev['description'] is String && (ev['description'] as String).isNotEmpty) Text(ev['description'] as String),
+                                if (ev['location'] is String && (ev['location'] as String).isNotEmpty) Text('${calendarLabels['location']}: ${ev['location']}'),
                                 if (widget.apiService.authToken != null)
                                   Wrap(spacing: 8, children: [
                                     for (final option in const {'GOING': 'जानेछु (Going)', 'MAYBE': 'सम्भवतः (Maybe)', 'DECLINED': 'जान्न (Decline)'}.entries)
@@ -116,7 +357,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                                         key: ValueKey('rsvp-${ev['id']}-${option.key}'),
                                         label: Text(option.value),
                                         selected: ev['myRsvp'] == option.key,
-                                        onSelected: _savingRsvps.contains(ev['id']) ? null
+                                        onSelected: _savingRsvps.contains(ev['id']) || ev['lifecycleState'] == 'CANCELLED' ? null
                                             : (_) => _rsvp(ev['id'] as String, option.key),
                                       ),
                                   ]),
@@ -131,4 +372,48 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> {
                     ),
     );
   }
+}
+
+class CalendarBrowseScreen extends StatefulWidget {
+ final GenealogyApiService api;
+ const CalendarBrowseScreen({super.key,required this.api});
+ @override
+ State<CalendarBrowseScreen> createState()=>_CalendarBrowseScreenState();
+}
+class _CalendarBrowseScreenState extends State<CalendarBrowseScreen> with CalendarSessionGuard<CalendarBrowseScreen>{
+ @override
+ GenealogyApiService get calendarApi => widget.api;
+ int _epoch=0;
+ @override
+ void clearCalendarSession(){_epoch++;_year.clear();_month=null;_items=[];_next=null;_cursor=null;_error=calendarSessionChanged;_busy=false;}
+ final _year=TextEditingController();
+ String? _month,_next,_cursor,_error;
+ List<dynamic> _items=[];
+ bool _busy=true;
+ @override
+ void initState(){super.initState();_load();}
+ @override
+ void dispose(){_year.dispose();super.dispose();}
+ Future<void> _load([String? before])async{
+  if(!checkCalendarSession())return;
+  final epoch=++_epoch;
+  setState((){_busy=true;_error=null;_items=[];_next=null;_cursor=before;});
+  final query=Uri(queryParameters:{if(before!=null)'before':before,if(_year.text.trim().isNotEmpty)'yearBs':_year.text.trim(),if(_month!=null)'monthBs':_month!}).query;
+  try{final result=await widget.api.requestJson('/calendar/browse?$query') as Map;
+   if(epoch==_epoch && checkCalendarSession()){setState((){_items=result['items'] as List;_next=result['nextBefore'] as String?;});}
+  }catch(e){if(epoch==_epoch && checkCalendarSession()){setState(()=>_error=e.toString());}}finally{if(epoch==_epoch && checkCalendarSession()){setState(()=>_busy=false);}}
+ }
+ @override
+ Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('सबै कार्यक्रम (Browse all events)')),body:!calendarSessionCurrent?const Center(child:Text(calendarSessionChanged)):ListView(padding:const EdgeInsets.all(16),children:[
+  const Text('Newest submissions first. BS filters use stored BS/Tithi metadata; AD events are not converted.'),
+  TextField(controller:_year,enabled:!_busy,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'BS year (2000–2090)'),onChanged:(_){if(checkCalendarSession())setState((){_epoch++;_next=null;_items=[];});}),
+  DropdownButtonFormField<String>(initialValue:_month,decoration:const InputDecoration(labelText:'BS month'),items:[const DropdownMenuItem(value:'',child:Text('All months')),...List.generate(12,(i)=>DropdownMenuItem(value:'${i+1}',child:Text('${i+1}')))],onChanged:_busy?null:(v){if(checkCalendarSession())setState((){_epoch++;_month=v==''?null:v;_next=null;_items=[];});}),
+  TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Apply calendar filters')),
+  if(_error!=null)...[Text(_error!),TextButton(onPressed:_busy?null:()=>_load(_cursor),child:const Text('Retry calendar page'))],
+  if(_busy)const Center(child:CircularProgressIndicator())else if(_items.isEmpty)const Text('No accessible events in this page.')else ..._items.map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+   Text(e['title'] as String),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?formatNepalInstant(e['startsAt'] as String):"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
+  ])))),
+  TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Latest calendar events')),
+  TextButton(onPressed:_busy||_next==null?null:()=>_load(_next),child:const Text('Older calendar events')),
+ ]));
 }

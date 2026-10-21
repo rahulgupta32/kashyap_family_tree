@@ -1,3 +1,4 @@
+import '../widgets/profile_photo_editor.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -24,6 +25,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
   bool _loading = true;
   bool _loaded = false;
   String? _message;
+  String? _avatarAsset;
 
   @override
   void initState() {
@@ -36,6 +38,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
     try {
       final profile = await widget.apiService.getMyProfile();
       if (!mounted) { return; }
+      _avatarAsset=profile['avatarAssetId'] as String?;
       final person = profile['person'] as Map<String, dynamic>? ?? {};
       final privacy = profile['privacy'] as Map<String, dynamic>? ?? {};
       _addressController.text = person['currentAddress'] as String? ?? '';
@@ -110,6 +113,8 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ProfilePhotoEditor(api:widget.apiService,initialAsset:_avatarAsset),
+
             if (_message != null) ...[
               Container(
                 width: double.infinity,

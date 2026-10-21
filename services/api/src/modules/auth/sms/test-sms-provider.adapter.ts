@@ -46,6 +46,15 @@ export class TestSmsProviderAdapter implements ISmsProvider {
     };
   }
 
+  async sendNotification(_phoneNumber: string, _message: string): Promise<SmsSendResult> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL SECURITY CONFIGURATION: TestSmsProviderAdapter cannot execute in production.');
+    }
+    // Notification text is never an authentication code and never enters OTP inspection history.
+    this.logger.debug('TEST_SMS_NOTIFICATION_SIMULATED');
+    return { success: true, provider: 'TestSmsProviderAdapter', simulated: true };
+  }
+
   /**
    * Accessible ONLY to test harnesses for automated assertions.
    * Never exposed to external HTTP callers or normal API payloads.

@@ -1,8 +1,13 @@
 import 'dart:convert';
+import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/person.dart';
 import '../models/tree_node.dart';
 import 'session_store.dart';
+import 'chat_connection.dart';
+import 'chat_outbox.dart';
+import 'api_endpoint_config.dart';
 
 class GenealogyApiService {
   final String baseUrl;
@@ -10,44 +15,159 @@ class GenealogyApiService {
   String? _refreshToken;
   final http.Client _client;
   final SessionStore _sessionStore;
+  final ChatOutboxStore _chatOutboxStore;
+  ChatOutbox? _chatOutbox;
   Future<bool>? _refreshing;
+  int _sessionGeneration = 0;
+  final ValueNotifier<int> _sessionChanges = ValueNotifier<int>(0);
+  bool _disposed = false;
+  bool _pushRemovalPending = false;
+  Map<String,dynamic>? _pendingCalendarCreate;
+  bool _calendarCreateBusy = false;
+  Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
+  void Function()? onMfaRequired;
 
   GenealogyApiService({
-    this.baseUrl = const String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000'),
+    this.baseUrl = mobileApiBaseUrl,
     http.Client? client,
     SessionStore? sessionStore,
+    ChatOutboxStore? chatOutboxStore,
   }) : _client = client ?? http.Client(),
-       _sessionStore = sessionStore ?? SecureSessionStore();
+       _sessionStore = sessionStore ?? SecureSessionStore(),
+       _chatOutboxStore = chatOutboxStore ?? SecureChatOutboxStore() {
+    if (!isUsableApiEndpoint(baseUrl)) {
+      throw const FormatException('Mobile API endpoint unavailable');
+    }
+  }
+
+  int _advanceSessionGeneration() {
+    _pendingCalendarCreate = null;
+    final generation = ++_sessionGeneration;
+    if (!_disposed) { _sessionChanges.value = generation; }
+    return generation;
+  }
 
   void setAuthToken(String? token) {
+    _advanceSessionGeneration();
+    _chatOutbox?.stop();
     _authToken = token;
     _refreshToken = null;
+    _pushRemovalPending = false;
   }
 
   String? get authToken => _authToken;
+  int get pushSessionGeneration => _sessionGeneration;
+  Listenable get sessionChanges => _sessionChanges;
+  bool get pushRemovalPending => _pushRemovalPending;
 
-  Future<void> _acceptSession(Map<String, dynamic> data) async {
+  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true}) => {
+    'accessToken': access, 'refreshToken': refresh,
+    if (removalPending) 'pushRemovalPending': true,
+    if (includeCalendar && _pendingCalendarCreate != null) 'pendingCalendarCreate': _pendingCalendarCreate,
+  };
+
+  /// The flag shares the secure credential record and its serialized writes.
+  /// Rotation retains it; accepting a replacement native session clears it.
+  Future<void> rememberPushRemoval(int generation) {
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    _pushRemovalPending = true; // Stop reconciliation even if storage fails.
+    return _persistPushRemoval(true, generation);
+  }
+
+  Future<void> confirmPushRemoval(int generation) => _persistPushRemoval(false, generation);
+
+  Future<void> _persistPushRemoval(bool pending, int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    // Injected bearer-only sessions have no restorable credential record.
+    // Do not overwrite secure storage with a non-restorable token pair.
+    if (_refreshToken != null) {
+      try {
+        await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending: pending)));
+      } catch (_) { throw StateError('Push preference storage unavailable'); }
+    }
+    if (generation != _sessionGeneration || _authToken == null) {
+      throw StateError('Push session changed');
+    }
+    _pushRemovalPending = pending; // Clearing requires a confirmed durable write.
+  });
+
+  // This subject scopes encrypted local intent, not server authorization. Every
+  // send still authenticates and checks current permissions in the API.
+  String? get chatAccountId {
+    try {
+      final parts=_authToken?.split('.');
+      if(parts==null||parts.length!=3){return null;}
+      final value=json.decode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      return value is Map&&value['sub'] is String?value['sub'] as String:null;
+    } catch(_){return null;}
+  }
+  ChatOutbox get chatOutbox => _chatOutbox ??= ChatOutbox(store:_chatOutboxStore,server:Uri.parse(baseUrl).toString(),
+    currentOwner:()=>chatAccountId,send:(message,owner) async {
+      final response=await _send('POST',Uri.parse('$baseUrl/chat/conversations/${message.conversationId}/${message.attachment==null?'messages':'attachments'}'),
+        boundAccountId:owner,body:json.encode({'content':message.content,'clientMessageId':message.id,...?message.attachment}));
+      if(response.statusCode<200||response.statusCode>=300){throw ChatSendFailure(response.statusCode);}
+      final value=json.decode(response.body);
+      if(value is! Map||value['id'] is! String){throw const FormatException('Invalid committed message response');}
+    });
+
+  Future<void> _acceptSession(Map<String, dynamic> data, {bool replacement = false}) async {
+    final generation = _sessionGeneration;
     final access = data['accessToken'];
     final refresh = data['refreshToken'];
     if (access is! String || access.isEmpty || refresh is! String || refresh.isEmpty) {
       throw const FormatException('Invalid native authentication response');
     }
-    await _sessionStore.write(json.encode({'accessToken': access, 'refreshToken': refresh}));
-    _authToken = access;
-    _refreshToken = refresh;
+    await _serializeSessionStorage(() async {
+      if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
+      await _sessionStore.write(json.encode(_storedSession(access, refresh,
+        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement)));
+      if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
+      // Requests may have begun with the prior access token while sign-in was
+      // pending. Activation is a second boundary, separate from token rotation.
+      if (replacement) { _advanceSessionGeneration(); _pushRemovalPending = false; }
+      _authToken = access;
+      _refreshToken = refresh;
+    });
+  }
+
+  Future<void> _serializeSessionStorage(Future<void> Function() work) {
+    final pending = _sessionStorageWork.then((_) => work());
+    // Keep the queue usable after a failed write; the caller still sees failure.
+    _sessionStorageWork = pending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return pending;
   }
 
   Future<bool> restoreSession() async {
+    final generation = _advanceSessionGeneration();
+    await _sessionStorageWork;
     final saved = await _sessionStore.read();
+    if (generation != _sessionGeneration) { throw StateError('Session changed during restore'); }
     if (saved == null) { return false; }
     try {
       final data = json.decode(saved);
-      if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty) {
+      if (data is! Map<String, dynamic> || data['accessToken'] is! String || data['refreshToken'] is! String || (data['refreshToken'] as String).isEmpty ||
+          (data.containsKey('pushRemovalPending') && data['pushRemovalPending'] is! bool)) {
         throw const FormatException('Invalid saved session');
       }
+      // Fence work begun during the asynchronous persisted-session read.
+      _advanceSessionGeneration();
       _authToken = data['accessToken'] as String;
       _refreshToken = data['refreshToken'] as String;
+      _pushRemovalPending = data['pushRemovalPending'] == true;
+      final pending = data['pendingCalendarCreate'];
+      if (pending != null) {
+        if (pending is! Map<String,dynamic> || pending['server'] != baseUrl ||
+            pending['owner'] != chatAccountId || pending['body'] is! Map<String,dynamic> ||
+            pending['key'] is! String || !RegExp(r'^[a-f0-9-]{36}$').hasMatch(pending['key'] as String)) {
+          throw const FormatException('Invalid pending calendar creation');
+        }
+        _pendingCalendarCreate = pending;
+      }
       return await _refreshSession();
     } on FormatException {
       await _clearSession();
@@ -56,10 +176,17 @@ class GenealogyApiService {
   }
 
   Future<void> _clearSession() async {
+    final generation = _advanceSessionGeneration();
     _authToken = null;
     _refreshToken = null;
-    try { await _sessionStore.clear(); }
-    finally { onSessionExpired?.call(); }
+    _pushRemovalPending = false;
+    try { await _serializeSessionStorage(() => _sessionStore.clear()); }
+    finally {
+      if (generation == _sessionGeneration) {
+        try { await chatOutbox.clear(); }
+        finally { if (generation == _sessionGeneration) { onSessionExpired?.call(); } }
+      }
+    }
   }
 
   Future<bool> _refreshSession() async {
@@ -74,10 +201,12 @@ class GenealogyApiService {
   }
 
   Future<bool> _rotateSession() async {
+    final generation = _sessionGeneration;
     final response = await _client.post(Uri.parse('$baseUrl/auth/native/refresh'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'refreshToken': _refreshToken}),
     ).timeout(const Duration(seconds: 20));
+    if (generation != _sessionGeneration) { throw StateError('Session changed during refresh'); }
     if (response.statusCode == 401 || response.statusCode == 403) {
       await _clearSession();
       return false;
@@ -87,8 +216,18 @@ class GenealogyApiService {
     return true;
   }
 
-  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true}) async {
+  Future<http.Response> _send(String method, Uri uri, {String? body, bool authenticated = true, String? boundAccountId, int? boundSessionGeneration}) async {
+    // Rotation preserves this generation; replacement sign-in, restore and
+    // clearing do not. Never replay an older user's request in a new session.
+    final requestGeneration = boundSessionGeneration ?? (authenticated ? _sessionGeneration : null);
+    void checkSession() {
+      if (requestGeneration != null && _sessionGeneration != requestGeneration) {
+        throw StateError('Session changed during request');
+      }
+    }
     Future<http.Response> send() async {
+      checkSession();
+      if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
       final request = http.Request(method, uri);
       request.headers.addAll(authenticated ? _headers : {'Content-Type': 'application/json'});
       if (body != null) { request.body = body; }
@@ -97,25 +236,44 @@ class GenealogyApiService {
     }
     final tokenUsed = _authToken;
     var response = await send();
+    checkSession();
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Message session changed');}
     if (authenticated && response.statusCode == 401 && _refreshToken != null) {
       if (_authToken != tokenUsed || await _refreshSession()) { response = await send(); }
     }
+    checkSession();
     if (authenticated && response.statusCode == 401 && _authToken != null) { await _clearSession(); }
+    if (authenticated && response.statusCode == 403) {
+      try {
+        final value = json.decode(response.body);
+        if (value is Map && value['errorCode'] == 'MFA_REQUIRED') { onMfaRequired?.call(); }
+      } on FormatException { /* Non-JSON denials remain ordinary errors. */ }
+    }
     return response;
   }
 
   Future<void> logout() async {
+    final generation = _sessionGeneration;
+    _chatOutbox?.stop();
     try {
       if (_refreshing != null) { await _refreshing; }
+      if (generation != _sessionGeneration) { throw StateError('Session changed during logout'); }
       final response = await _send('POST', Uri.parse('$baseUrl/auth/logout'),
         authenticated: false, body: json.encode({'refreshToken': _refreshToken}));
       if (response.statusCode != 200) { throw Exception('Logout failed (${response.statusCode})'); }
     } finally {
-      await _clearSession();
+      if (generation == _sessionGeneration) { await _clearSession(); }
     }
   }
 
-  void dispose() => _client.close();
+  void dispose() {
+    if (_disposed) { return; }
+    _disposed = true;
+    _advanceSessionGeneration(); // Fence requests without notifying unmounting widgets.
+    _sessionChanges.dispose();
+    _chatOutbox?.dispose();
+    _client.close();
+  }
 
   Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
@@ -136,21 +294,160 @@ class GenealogyApiService {
     }
   }
 
-  Future<String> verifyOtp(String otpSessionId, String code, {String platform = 'android'}) async {
+  Future<String> verifyOtp(String otpSessionId, String code, {String? platform}) async {
+    final generation = _advanceSessionGeneration();
     final uri = Uri.parse('$baseUrl/auth/native/verify');
     final body = json.encode({
       'otpSessionId': otpSessionId, 'code': code,
       'deviceInfo': {'deviceId': 'mobile-${DateTime.now().microsecondsSinceEpoch}',
-        'platform': platform, 'appVersion': '1.0.0'},
+        'platform': platform ?? (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android'), 'appVersion': '1.0.0'},
     });
     final response = await _send('POST', uri, body: body, authenticated: false);
+    if (generation != _sessionGeneration) { throw StateError('Session changed during sign-in'); }
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = json.decode(response.body);
-      await _acceptSession(data as Map<String, dynamic>);
+      await _acceptSession(data as Map<String, dynamic>, replacement: true);
       return _authToken!;
     } else {
       throw Exception('OTP प्रमाणीकरण असफल भयो (${response.statusCode})');
     }
+  }
+
+  Future<dynamic> requestJson(String path, {String method = 'GET', Map<String, dynamic>? data, String? boundAccountId}) async {
+    final response = await _send(method, Uri.parse('$baseUrl$path'),
+      body: data == null ? null : json.encode(data), boundAccountId: boundAccountId);
+    if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Request session changed');}
+    final decoded = response.body.isEmpty ? null : json.decode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
+    }
+    return decoded;
+  }
+
+  bool get hasPendingCalendarCreate => _pendingCalendarCreate != null;
+
+  Future<void> _persistCalendarCreate(int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null) { throw StateError('Session changed'); }
+    // Native sessions persist the intent beside their credentials, before HTTP.
+    // Legacy access-token-only callers keep an in-memory identity only.
+    if (_refreshToken != null) {
+      await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending: _pushRemovalPending)));
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+    }
+  });
+
+  Future<dynamic> createCalendarEvent([Map<String,dynamic>? body]) async {
+    if (_authToken == null || _calendarCreateBusy) { throw StateError('Calendar creation unavailable'); }
+    final generation = _sessionGeneration;
+    _calendarCreateBusy = true;
+    try {
+      if (_pendingCalendarCreate == null) {
+        if (body == null) { throw StateError('No pending creation'); }
+        final random = Random.secure();
+        final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+        bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+        final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+        final key = '${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}';
+        _pendingCalendarCreate = {'key':key, 'owner':chatAccountId, 'server':baseUrl,
+          'body':json.decode(json.encode(body))};
+      }
+      // An unresolved create is immutable. Resolve its outcome before another
+      // draft, including after navigation, process restoration or token rotation.
+      final pending = _pendingCalendarCreate!;
+      await _persistCalendarCreate(generation);
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      final result = await requestJson('/calendar/events', method:'POST', boundAccountId:pending['owner'] as String?, data:{
+        ...(pending['body'] as Map<String,dynamic>), 'creationKey':pending['key'],
+      });
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      if (result is! Map || result['id'] is! String) { throw const FormatException('Invalid creation acknowledgement'); }
+      await _confirmCalendarCreate(pending, generation);
+      return result;
+    } finally { _calendarCreateBusy = false; }
+  }
+
+  Future<void> _confirmCalendarCreate(Map<String,dynamic> pending, int generation) => _serializeSessionStorage(() async {
+    if (generation != _sessionGeneration || _authToken == null || _pendingCalendarCreate?['key'] != pending['key']) {
+      throw StateError('Session changed');
+    }
+    // Keep memory pending during the write: a queued/concurrent credential
+    // refresh must not drop an intent whose durable cleanup is unconfirmed.
+    if (_refreshToken != null) {
+      await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending:_pushRemovalPending, includeCalendar:false)));
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+    }
+    _pendingCalendarCreate = null;
+  });
+
+  Future<String> resolveCalendarCreate() async {
+    if (_authToken == null || _calendarCreateBusy || _pendingCalendarCreate == null) { throw StateError('Calendar resolution unavailable'); }
+    final generation = _sessionGeneration;
+    final pending = _pendingCalendarCreate!;
+    _calendarCreateBusy = true;
+    try {
+      await _persistCalendarCreate(generation);
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      final result = await requestJson('/calendar/events/creation-resolution', method:'POST', boundAccountId:pending['owner'] as String?, data:{
+        ...(pending['body'] as Map<String,dynamic>), 'creationKey':pending['key'],
+      });
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      if (result is! Map || !['CREATED','ABANDONED'].contains(result['outcome']) ||
+          (result['outcome'] == 'CREATED' && result['eventId'] is! String)) {
+        throw const FormatException('Invalid resolution acknowledgement');
+      }
+      await _confirmCalendarCreate(pending, generation);
+      return result['outcome'] as String;
+    } finally { _calendarCreateBusy = false; }
+  }
+
+  // SDK permission and token acquisition are separate from this authenticated
+  // transport. Never persist or include provider credentials in error messages.
+  Future<dynamic> _pushRegistration(String method, {Map<String, String>? data}) async {
+    if (_authToken == null || _authToken!.isEmpty) {
+      throw StateError('Push registration requires a session');
+    }
+    final response = await _send(method, Uri.parse('$baseUrl/notifications/push-registration'),
+      body: data == null ? null : json.encode(data), boundSessionGeneration: _sessionGeneration);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Push registration failed (${response.statusCode})');
+    }
+    try {
+      return response.body.isEmpty ? null : json.decode(response.body);
+    } on FormatException {
+      throw const FormatException('Invalid push registration response');
+    }
+  }
+
+  Future<dynamic> registerPushToken(String token, {String? platform}) {
+    final resolved = platform ?? (defaultTargetPlatform == TargetPlatform.iOS ? 'IOS' : 'ANDROID');
+    if (!RegExp(r'^[A-Za-z0-9_:.-]{16,500}$').hasMatch(token) || !['ANDROID', 'IOS'].contains(resolved)) {
+      throw const FormatException('Invalid push registration');
+    }
+    return _pushRegistration('PUT', data: {'token': token, 'platform': resolved});
+  }
+
+  Future<dynamic> currentPushRegistration() => _pushRegistration('GET');
+
+  Future<dynamic> removePushRegistration() => _pushRegistration('DELETE');
+
+  Future<dynamic> communityMedia(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/community$path'),body:data==null?null:json.encode(data),boundAccountId:owner);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception('Community image request failed (${response.statusCode})');}
+    return method=='GET'?response:json.decode(response.body);
+  }
+
+  Future<http.Response> downloadChatAttachment(String conversationId,String messageId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/chat/conversations/$conversationId/messages/$messageId/attachment'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Attachment unavailable (${response.statusCode})');}
+    return response;
+  }
+
+  Future<ChatConnection> openChatConnection() async {
+    // A real authenticated request rotates an expired native session before the socket opens.
+    await getMyProfile();
+    final token = _authToken;
+    if (token == null) { throw StateError('Sign in for messaging'); }
+    return NativeChatConnection.connect(baseUrl, token);
   }
 
   // Bilingual search
@@ -274,6 +571,17 @@ class GenealogyApiService {
     final response = await _send('GET', Uri.parse('$baseUrl/profile/me'));
     if (response.statusCode != 200) { throw Exception('Profile load failed (${response.statusCode})'); }
     return json.decode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String,dynamic>> profilePhotoRequest(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
+    final response=await _send(method,Uri.parse('$baseUrl/profile$path'),boundAccountId:owner,body:data==null?null:json.encode(data));
+    final result=json.decode(response.body);
+    if(response.statusCode<200||response.statusCode>=300){throw Exception(result is Map?result['message']??'Photo request failed':'Photo request failed');}
+    return Map<String,dynamic>.from(result as Map);
+  }
+  Future<http.Response> downloadProfilePhoto(String assetId,String owner) async {
+    final response=await _send('GET',Uri.parse('$baseUrl/profile/media/$assetId?variant=thumbnail'),boundAccountId:owner);
+    if(response.statusCode!=200){throw Exception('Photo unavailable');}return response;
   }
 
   Future<void> rsvpEvent(String eventId, String response) async {

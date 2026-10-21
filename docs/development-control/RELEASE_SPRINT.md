@@ -1,0 +1,35 @@
+# Release sprint — 21 October 2026
+
+Authority: Jyphra Technology Pvt. Ltd. Target: production-ready first release, subject to approved baseline disposition. No mandatory feature is deferred by this plan. No merge, deployment or store submission is authorized.
+
+Planning window: 96 hours from kickoff on 21 October, ending 25 October Nepal time. 24 October is the candidate-readiness checkpoint, not a claim that four full days have elapsed. Exact candidate remains unappointed.
+
+## Execution and integration
+
+One integration owner reviews and publishes the existing integration branch. Parallel tasks have separate file ownership; no independent concurrent pushes. Use exact-source CI and focused checks; retain failures and never replace a pending outcome with an assumed pass. Every blocker needs source/evidence, dependency, responsible role, acceptance test and actual result. Role names below are required responsibilities, not invented appointments or approvals.
+
+| Window | Required outcome |
+|---|---|
+| 0–12h | Reconcile current code and frozen requirements; approve scope dispositions; identify named external owners and environment |
+| 12–48h | Complete independent cross-layer journeys, infrastructure preparation and governed data/domain prerequisites in parallel |
+| 48–72h | Integrate candidate; execute functional/negative/security/accessibility/load/device acceptance |
+| 72–96h | Freeze features; restore/rollback/UAT and exact-candidate evidence review; Jyphra go/no-go |
+
+## Initial blocker register
+
+| ID | Blocker / dependency | Responsible role | Required exit evidence | Current status |
+|---|---|---|---|---|
+| B01 | Claim retry widget tap misses viewport after layout change | Mobile/QA | Exact-source clean Flutter analysis and complete suite, retry identity assertions retained | Correction prepared; runtime pending |
+| B02 | Member claim status/correction/resubmission/dispute and process-restored pending identity | Member lifecycle engineering | Authorized API/admin/mobile complete lifecycle, account-switch/negative/retry evidence | Status viewing in implementation; remaining lifecycle open |
+| B03 | Import promotion writer disabled | Data engineering + Data Steward | Approved mapping/consent; controlled promotion/resume/reconciliation and two accepted rehearsals | OPEN |
+| B04 | Cultural proposal state stored in process-local Map | Domain engineering + cultural authority | Durable independent approval/restart/concurrency evidence; approved rules before activation | OPEN; HG gates remain closed |
+| B05 | Production environment and recoverability not verified | Operations | Approved stack, private storage/scanner/workers/TLS/secrets, alerts, measured PITR/restore/rollback | OPEN; preparation only |
+| B06 | Example native identities/debug signing and live providers/device acceptance | Release/mobile + account owners | Approved identities, signed artifacts, physical-device SMS/FCM/APNs lifecycle evidence | OPEN |
+| B07 | Independent security/privacy/accessibility/localization/load/UAT acceptance | Named reviewers + Product Owner | Requirement-specific exact-candidate evidence and signed required decisions | OPEN |
+| B08 | Scope and final release authorization | Jyphra release authority | Approved dispositions, RG-01..12 closure and explicit go/no-go | OPEN |
+
+This targeted register does not replace the 260-row requirement register, 260 edge cases, supplemental controls or RELEASE_CHECKLIST. Other incomplete workflows remain mandatory until formally disposed. Source audit is targeted, not a completed per-line audit. No aggregate completion percentage or guaranteed launch is asserted.
+
+## Recovered source evidence
+
+PR5 source d0bc6e107beedf6c03841db7d49a1723b660e7e1: iOS38780047751 SUCCESS; Fast38780039580 FAILURE; Main38780047946 FAILURE. Main platform job116577570666 passed including567 general integration and71 browser cases; private S3, Android/live API, ClamAV and fictional repository benchmark jobs passed. Flutter job116577570579 clean analysis,255 passed/1 failed. Log identifies retry button centre at y600 outside800x600 root after error-message layout change; no weakened assertions or timeout increase permitted. Prior source success is not verification of the next commit.

@@ -1,3 +1,4 @@
+import { PolicyAcknowledgementService } from './policy-acknowledgement.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { ProfileController } from './profile.controller';
 import { ProfileService } from './profile.service';
@@ -8,7 +9,7 @@ import { DatabaseModule } from '../../database/database.module';
 @Module({
   imports: [DatabaseModule, forwardRef(() => AuthModule)],
   controllers: [ProfileController],
-  providers: [ProfileService, MalwareScannerService],
+  providers: [ProfileService, MalwareScannerService, PolicyAcknowledgementService],
   exports: [ProfileService, MalwareScannerService],
 })
 export class ProfileModule {}
