@@ -11,7 +11,15 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 const channel=MethodChannel('kashyap/chat_attachments');
 const asset='11111111-1111-4111-8111-111111111111';
-Future<void> tap(WidgetTester t,Finder finder)async{await t.ensureVisible(finder);await t.tap(finder);await t.pumpAndSettle();}
+Future<void> tap(WidgetTester t,Finder finder)async{
+ // Centre the control and settle scroll/layout changes before hit testing.
+ // A failure message can move the retry button after the initial submission.
+ await Scrollable.ensureVisible(t.element(finder),alignment:0.5);
+ await t.pumpAndSettle();
+ expect(finder.hitTestable(),findsOneWidget);
+ await t.tap(finder);
+ await t.pumpAndSettle();
+}
 Finder submit()=>find.widgetWithText(ElevatedButton,claimLabels['submit']!);
 Future<void> form(WidgetTester t,GenealogyApiService api)async{await t.pumpWidget(MaterialApp(home:ClaimProfileScreen(personId:'fictional-person',personName:'Private fictional person',apiService:api)));await t.pumpAndSettle();}
 // The multiline input also owns a vertical Scrollable; select its page ancestor.
@@ -31,6 +39,7 @@ void main(){
   await fill(t);await tap(t,submit());expect(claims.length,1);expect(find.text('Private diagnostic'),findsNothing);
   expect(t.widget<TextField>(find.byKey(const ValueKey('claim-description'))).enabled,isFalse);
   final retry=find.widgetWithText(ElevatedButton,claimLabels['retry']!);await tap(t,retry);expect(claims.length,2);expect(claims[0],claims[1]);
+  expect(find.widgetWithText(OutlinedButton,claimLabels['check']!),findsOneWidget);
   expect(claims[0]['creationKey'],matches(RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$')));expect(claims[0]['evidenceAttachments'],[{'mediaAssetId':asset,'documentType':'family_photo'}]);
  });
  testWidgets('delayed picker cannot upload or restore private draft after account replacement',(t)async{

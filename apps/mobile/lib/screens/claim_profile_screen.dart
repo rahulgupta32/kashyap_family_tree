@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 import '../services/genealogy_api_service.dart';
 import '../localization/claim_labels.dart';
+import 'claim_status_screen.dart';
 
 class ClaimProfileScreen extends StatefulWidget {
  final String personId,personName;
@@ -18,11 +19,11 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen>{
  late final GenealogyApiService _api;
  late final int _generation;
  bool truth=false,notice=false,busy=false,success=false,expired=false;
- String type='family_photo';String? message;Map<String,dynamic>? pending;
+ String type='family_photo';String? message;String? submittedClaimId;Map<String,dynamic>? pending;
  bool get current=>mounted&&!expired&&identical(widget.apiService,_api)&&_api.authToken!=null&&_api.pushSessionGeneration==_generation;
  @override
  void initState(){super.initState();_api=widget.apiService;_generation=_api.pushSessionGeneration;_api.sessionChanges.addListener(changed);}
- void changed(){if(!current&&mounted){setState((){expired=true;description.clear();attachments.clear();pending=null;truth=false;notice=false;busy=false;message=claimLabels['session'];});}}
+ void changed(){if(!current&&mounted){setState((){expired=true;description.clear();attachments.clear();pending=null;submittedClaimId=null;truth=false;notice=false;busy=false;message=claimLabels['session'];});}}
  @override
  void didUpdateWidget(covariant ClaimProfileScreen oldWidget){super.didUpdateWidget(oldWidget);if(oldWidget.personId!=widget.personId){expired=true;}changed();}
  @override
@@ -48,7 +49,7 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen>{
   setState((){busy=true;message=null;});
   try{
    final registered=await _api.requestJson('/claims',method:'POST',data:pending) as Map;
-   if(current){setState((){success=true;message='${claimLabels['submitted']} · ${registered['status']??''}';});}
+   if(current){setState((){success=true;submittedClaimId=registered['id'] is String && (registered['id'] as String).isNotEmpty ? registered['id'] as String : null;message='${claimLabels['submitted']} · ${registered['status']??''}';});}
   }catch(_){if(current){setState((){message=claimLabels['unconfirmed'];});}}
   finally{if(current){setState(()=>busy=false);}}
  }
@@ -65,6 +66,9 @@ class _ClaimProfileScreenState extends State<ClaimProfileScreen>{
    DropdownButtonFormField<String>(initialValue:type,decoration:const InputDecoration(labelText:'प्रमाण प्रकार (Evidence category)'),items:const [DropdownMenuItem(value:'family_photo',child:Text('पारिवारिक फोटो (Family photo)')),DropdownMenuItem(value:'event_invitation',child:Text('कार्यक्रम निमन्त्रणा (Event invitation)')),DropdownMenuItem(value:'clan_record',child:Text('पारिवारिक अभिलेख (Family record)'))],onChanged:editable?(value){if(current&&value!=null){setState(()=>type=value);}}:null),
    OutlinedButton(onPressed:editable&&notice&&attachments.length<5?choose:null,child:Text(claimLabels['upload']!)),
    for(final a in attachments)ListTile(title:Text(a['documentType'] as String),trailing:IconButton(tooltip:claimLabels['remove'],icon:const Icon(Icons.remove_circle_outline),onPressed:editable?(){if(current){setState(()=>attachments.remove(a));}}:null)),
+   if(success&&submittedClaimId!=null)OutlinedButton(onPressed:current?(){
+    if(current){Navigator.of(context).push(MaterialPageRoute(builder:(_)=>ClaimStatusScreen(claimId:submittedClaimId!,api:_api)));}
+   }:null,child:Text(claimLabels['check']!)),
    if(busy)const Center(child:CircularProgressIndicator()),
    ElevatedButton(onPressed:!current||busy||success?null:submit,child:Text(claimLabels[pending==null?'submit':'retry']!)),
   ]));

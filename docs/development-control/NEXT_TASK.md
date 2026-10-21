@@ -1,3 +1,11 @@
+# Release sprint next execution
+
+Read RELEASE_SPRINT.md and CURRENT_STATE.md. Preserve existing integration branch/PR5 base and newer work. Inspect automatic exact-source fast/main/native results; pending is not passed, no duplicate full reruns. Resolve demonstrated failures without weakening assertions.
+
+Continue complete member lifecycle: existing-claim discovery, approved correction/resubmission/dispute evidence paths and process-restored immutable pending intents. Current new screen covers only fresh authorized status for a confirmed creation ID; no lifecycle milestone is closed. Coordinate independent data/domain/operations/release inputs through the blocker register with separate file ownership and one integration owner. All frozen requirements remain mandatory; no merge/deploy.
+
+## Previous detailed queue (retained)
+
 # Next execution
 
 Master sequence remains F1–F6 in COMPLETION_SEQUENCE. Current batch: repair demonstrated claim-evidence storage and cross-layer test failures. Read CURRENT_STATE, PRODUCTION_READINESS and `docs/execution/CLAIM_EVIDENCE_MEMBER_WORKFLOW_REPORT.md`.

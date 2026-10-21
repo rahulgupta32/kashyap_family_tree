@@ -11,8 +11,26 @@ const claimLabels={
  'remove':'सूचीबाट हटाउनुहोस् (Remove from this submission)',
  'submitted':'दाबी दर्ता भएको छ (Claim recorded; check current review status)',
  'unconfirmed':'दाबी पुष्टि भएन। मूल दाबी पुनः प्रयास गर्नुहोस् (Claim unconfirmed; retry the original submission)',
+ 'statusTitle':'दाबीको वर्तमान स्थिति (Current claim status)',
+ 'statusRefresh':'स्थिति पुनः लोड (Reload status)',
+ 'statusUnavailable':'दाबी स्थिति उपलब्ध भएन। पुनः प्रयास गर्नुहोस् (Claim status unavailable; retry)',
+ 'correctionReview':'समीक्षकले सच्याउन अनुरोध गरेका छन्। तलको निर्देशन पढ्नुहोस् (The reviewer requested corrections; read the instructions below)',
  'check':'दाबी स्थिति जाँच्नुहोस् (Check claim status)',
  'retry':'मूल दाबी पुनः प्रयास (Retry original claim)',
  'retained':'मूल विवरण राखिएको छ (Original draft retained; retry the same submission)',
  'session':'सत्र बदलियो। दाबी फेरि खोल्नुहोस् (Session changed; reopen claim)',
+};
+
+const claimStatusLabels = {
+ 'DRAFT':'मस्यौदा (Draft)',
+ 'PENDING_TIER1':'पहिलो समीक्षा बाँकी (First review pending)',
+ 'CORRECTION_REQUESTED':'सुधार अनुरोध गरिएको (Corrections requested)',
+ 'RESUBMITTED':'पुनः पेश गरिएको (Resubmitted)',
+ 'PENDING_TIER2':'दोस्रो समीक्षा बाँकी (Second review pending)',
+ 'ESCALATED':'माथिल्लो समीक्षामा (Escalated for review)',
+ 'APPROVED':'स्वीकृत (Approved)',
+ 'REJECTED':'अस्वीकृत (Rejected)',
+ 'DISPUTED':'विवादमा (Disputed)',
+ 'SUPERSEDED':'प्रतिस्थापित (Superseded)',
+ 'WITHDRAWN':'फिर्ता लिइएको (Withdrawn)',
 };
