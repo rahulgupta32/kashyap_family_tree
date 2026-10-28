@@ -492,7 +492,13 @@ class GenealogyApiService {
     return retryPendingProfileClaim();
   }
 
-  Future<Map<String, dynamic>> retryPendingProfileClaim() async {
+  Future<Map<String, dynamic>> retryPendingProfileClaim() => _sendPendingProfileClaim(resolving:false);
+
+  /// Explicitly recover a recorded claim or permanently close its unused retry
+  /// identity. This never cancels/deletes an already recorded claim.
+  Future<Map<String, dynamic>> resolvePendingProfileClaim() => _sendPendingProfileClaim(resolving:true);
+
+  Future<Map<String, dynamic>> _sendPendingProfileClaim({required bool resolving}) async {
     if (_authToken == null || _profileClaimBusy || _pendingProfileClaim == null) {
       throw StateError('Profile claim retry unavailable');
     }
@@ -512,10 +518,23 @@ class GenealogyApiService {
       });
       if (generation != _sessionGeneration) { throw StateError('Session changed'); }
       final body = pending['body'] as Map<String, dynamic>;
-      final result = await requestJson('/claims', method: 'POST', boundAccountId: pending['owner'] as String?,
+      final result = await requestJson(resolving ? '/claims/creation-resolution' : '/claims',
+          method: 'POST', boundAccountId: pending['owner'] as String?,
           data: {...body, 'creationKey': pending['key']});
       if (generation != _sessionGeneration) { throw StateError('Session changed'); }
-      if (result is! Map<String, dynamic> || result['id'] is! String || (result['id'] as String).isEmpty ||
+      if (resolving) {
+        if (result is! Map<String,dynamic>) {
+          throw const FormatException('Invalid profile claim resolution');
+        }
+        final outcome = result['outcome'];
+        final created = outcome == 'CREATED' && result.length == 2 &&
+            result['claimId'] is String && (result['claimId'] as String).trim().isNotEmpty &&
+            (result['claimId'] as String).length <= 128;
+        final abandoned = outcome == 'ABANDONED' && result.length == 1;
+        if (!created && !abandoned) {
+          throw const FormatException('Invalid profile claim resolution');
+        }
+      } else if (result is! Map<String, dynamic> || result['id'] is! String || (result['id'] as String).isEmpty ||
           (result.containsKey('targetPersonId') && result['targetPersonId'] != body['targetPersonId'])) {
         throw const FormatException('Invalid profile claim acknowledgement');
       }

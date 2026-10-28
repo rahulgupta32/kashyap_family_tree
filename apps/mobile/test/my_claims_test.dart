@@ -18,7 +18,103 @@ Map<String,dynamic> claim() => {'id':'owned-claim','status':'PENDING_TIER1',
 
 Map<String,dynamic> page(List<dynamic> items, [String? next]) => {'items':items,'nextCursor':next};
 
+Future<void> openResolution(WidgetTester tester) async {
+  final button = find.byKey(const ValueKey('resolve-pending-claim'));
+  await Scrollable.ensureVisible(tester.element(button),alignment:0.5);
+  await tester.pumpAndSettle();await tester.tap(button);await tester.pumpAndSettle();
+}
+
+Future<void> confirmResolution(WidgetTester tester) async {
+  final button = find.byKey(const ValueKey('confirm-claim-resolution'));
+  await tester.ensureVisible(button);await tester.tap(button);await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets('explicit close requires confirmation and permanent closure permits new creation', (tester) async {
+    final created = <dynamic>[];final resolutions = <dynamic>[];
+    final api = GenealogyApiService(client:MockClient((request) async {
+      if (request.url.path == '/claims') {
+        created.add(jsonDecode(request.body));return http.Response('{}',503);
+      }
+      if (request.url.path == '/claims/creation-resolution') {
+        resolutions.add(jsonDecode(request.body));return jsonResponse({'outcome':'ABANDONED'});
+      }
+      return jsonResponse(page([]));
+    }))..setAuthToken('member');
+    addTearDown(api.dispose);
+    final body = {'targetPersonId':'target','relationshipDescription':'Original private relation','statementOfTruth':true};
+    await expectLater(api.createProfileClaim(body),throwsException);
+    await tester.pumpWidget(MaterialApp(home:MyClaimsScreen(api:api)));await tester.pumpAndSettle();
+    expect(resolutions,isEmpty);await openResolution(tester);expect(resolutions,isEmpty);
+    expect(find.byType(AlertDialog),findsOneWidget);
+    await tester.tap(find.text(myClaimLabels['resolveCancel']!));await tester.pumpAndSettle();
+    expect(resolutions,isEmpty);expect(api.hasPendingProfileClaim,isTrue);
+    await openResolution(tester);await confirmResolution(tester);
+    expect(resolutions,[created.single]);expect(api.hasPendingProfileClaim,isFalse);
+    expect(find.text(myClaimLabels['closed']!),findsOneWidget);
+    expect(find.byKey(const ValueKey('resolve-pending-claim')),findsNothing);
+    expect(find.byType(ClaimStatusScreen),findsNothing);
+    await expectLater(api.createProfileClaim(body),throwsException);
+    expect(created[1]['creationKey'],isNot(created[0]['creationKey']));
+  });
+
+  testWidgets('resolution recovers existing claim through fresh status without cancellation', (tester) async {
+    final paths = <String>[];
+    final api = GenealogyApiService(client:MockClient((request) async {
+      paths.add('${request.method} ${request.url.path}');
+      if (request.url.path == '/claims') return http.Response('{}',503);
+      if (request.url.path == '/claims/creation-resolution') return jsonResponse({'outcome':'CREATED','claimId':'recorded'});
+      if (request.url.path == '/claims/recorded') return jsonResponse({'id':'recorded','status':'PENDING_TIER1'});
+      return jsonResponse(page([]));
+    }))..setAuthToken('member');
+    addTearDown(api.dispose);
+    await expectLater(api.createProfileClaim({'targetPersonId':'target','relationshipDescription':'Original relation','statementOfTruth':true}),throwsException);
+    await tester.pumpWidget(MaterialApp(home:MyClaimsScreen(api:api)));await tester.pumpAndSettle();
+    await openResolution(tester);await confirmResolution(tester);
+    expect(find.byType(ClaimStatusScreen),findsOneWidget);expect(api.hasPendingProfileClaim,isFalse);
+    expect(paths,['POST /claims','GET /claims/mine','POST /claims/creation-resolution','GET /claims/recorded']);
+    await tester.pageBack();await tester.pumpAndSettle();expect(paths.last,'GET /claims/mine');
+  });
+
+  testWidgets('uncertain resolution retains pending and coalesces resolve and retry callbacks', (tester) async {
+    var resolutions = 0,creates = 0;final pending = Completer<http.Response>();
+    final api = GenealogyApiService(client:MockClient((request) {
+      if (request.url.path == '/claims') { creates++;return Future.value(http.Response('{}',503)); }
+      if (request.url.path == '/claims/creation-resolution') { resolutions++;return pending.future; }
+      return Future.value(jsonResponse(page([])));
+    }))..setAuthToken('member');
+    addTearDown(api.dispose);
+    await expectLater(api.createProfileClaim({'targetPersonId':'target','relationshipDescription':'Original relation','statementOfTruth':true}),throwsException);
+    await tester.pumpWidget(MaterialApp(home:MyClaimsScreen(api:api)));await tester.pumpAndSettle();
+    final retry = tester.widget<ElevatedButton>(find.byKey(const ValueKey('recover-pending-claim'))).onPressed!;
+    final resolve = tester.widget<OutlinedButton>(find.byKey(const ValueKey('resolve-pending-claim'))).onPressed!;
+    await openResolution(tester);
+    final confirm = tester.widget<TextButton>(find.byKey(const ValueKey('confirm-claim-resolution'))).onPressed!;
+    confirm();confirm();await tester.pump();
+    resolve();retry();await tester.pump();expect(resolutions,1);expect(creates,1);
+    pending.complete(http.Response('{"message":"Private diagnostic"}',503));await tester.pumpAndSettle();
+    expect(api.hasPendingProfileClaim,isTrue);expect(find.text(myClaimLabels['resolveUnconfirmed']!),findsOneWidget);
+    expect(find.textContaining('Private diagnostic'),findsNothing);expect(find.byType(ClaimStatusScreen),findsNothing);
+  });
+
+  testWidgets('account replacement during resolution cannot apply old confirmation or navigate', (tester) async {
+    final pending = Completer<http.Response>();var resolutions = 0;
+    final api = GenealogyApiService(client:MockClient((request) {
+      if (request.url.path == '/claims') return Future.value(http.Response('{}',503));
+      if (request.url.path == '/claims/creation-resolution') { resolutions++;return pending.future; }
+      return Future.value(jsonResponse(page([])));
+    }))..setAuthToken('member');
+    addTearDown(api.dispose);
+    await expectLater(api.createProfileClaim({'targetPersonId':'target','relationshipDescription':'Original relation','statementOfTruth':true}),throwsException);
+    await tester.pumpWidget(MaterialApp(home:MyClaimsScreen(api:api)));await tester.pumpAndSettle();
+    await openResolution(tester);
+    tester.widget<TextButton>(find.byKey(const ValueKey('confirm-claim-resolution'))).onPressed!();await tester.pump();
+    expect(resolutions,1);api.setAuthToken('replacement');
+    pending.complete(jsonResponse({'outcome':'CREATED','claimId':'old-recorded'}));await tester.pumpAndSettle();
+    expect(find.byType(ClaimStatusScreen),findsNothing);expect(find.text(myClaimLabels['closed']!),findsNothing);
+    expect(find.text(myClaimLabels['session']!),findsOneWidget);
+  });
+
   final hundred = List.generate(100,(index)=>{...claim(),'id':'claim-$index'});
   testWidgets('older pages are explicit and bounded with latest reset', (tester) async {
     final queries = <Map<String,String>>[];

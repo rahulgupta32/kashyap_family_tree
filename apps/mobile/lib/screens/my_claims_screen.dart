@@ -21,8 +21,8 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
   late final GenealogyApiService _api;
   late final int _generation;
   bool _expired = false, _loading = false, _opening = false, _recovering = false;
-  String? _error, _nextCursor;
-  bool _olderPage = false;
+  String? _error, _nextCursor, _notice;
+  bool _olderPage = false, _confirming = false;
   List<_ClaimSummary> _claims = [];
 
   bool get _current => mounted && !_expired && identical(widget.api, _api) &&
@@ -43,8 +43,8 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
         _expired = true;
         _claims = [];
         _nextCursor = null;
-        _error = null;
-        _loading = false;
+        _error = _notice = null;
+        _loading = _confirming = false;
       });
     }
   }
@@ -72,7 +72,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
       _claims = [];
       _nextCursor = null;
       _olderPage = false;
-      _error = null;
+      _error = _notice = null;
     });
     try {
       // Ownership is enforced by this dedicated endpoint, including for accounts
@@ -147,6 +147,54 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
     }
   }
 
+  Future<void> _resolve() async {
+    if (!_current || _loading || _opening || _recovering || !_api.hasPendingProfileClaim) return;
+    setState(() { _recovering = _confirming = true; _error = _notice = null; });
+    var confirmed = false, abandoned = false, answered = false;
+    void answer(BuildContext dialogContext,bool value) {
+      if (answered || !dialogContext.mounted || ModalRoute.of(dialogContext)?.isCurrent != true) return;
+      answered = true;
+      Navigator.pop(dialogContext,value);
+    }
+    try {
+      final accepted = await showDialog<bool>(context:context,builder:(dialogContext) => AlertDialog(
+        title:Text(myClaimLabels['resolve']!),
+        content:Text(myClaimLabels['resolveExplanation']!),
+        actions:[
+          TextButton(onPressed:() => answer(dialogContext,false),child:Text(myClaimLabels['resolveCancel']!)),
+          TextButton(key:const ValueKey('confirm-claim-resolution'),
+            onPressed:() => answer(dialogContext,true),child:Text(myClaimLabels['resolveConfirm']!)),
+        ],
+      ));
+      if (!_current || accepted != true) return;
+      setState(() => _confirming = false);
+      final result = await _api.resolvePendingProfileClaim();
+      if (!_current) return;
+      abandoned = result['outcome'] == 'ABANDONED';
+      if (!abandoned) {
+        final id = result['claimId'];
+        if (result['outcome'] != 'CREATED' || id is! String || id.isEmpty) {
+          throw const FormatException('Unavailable resolution');
+        }
+        confirmed = true;
+        await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+            ClaimStatusScreen(claimId:id,api:_api)));
+      } else {
+        confirmed = true;
+      }
+    } catch (_) {
+      if (_current) setState(() => _error = myClaimLabels['resolveUnconfirmed']);
+    } finally {
+      if (_current) {
+        setState(() { _recovering = _confirming = false; });
+        if (confirmed) {
+          await _reload();
+          if (_current && abandoned) setState(() => _notice = myClaimLabels['closed']);
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _api.sessionChanges.removeListener(_sessionChanged);
@@ -160,13 +208,18 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
     body: !_current
         ? Center(child: Text(myClaimLabels['session']!))
         : ListView(padding: const EdgeInsets.all(16), children: [
-            if (_loading || _recovering) const Center(child: CircularProgressIndicator()),
+            if (_loading || (_recovering && !_confirming)) const Center(child: CircularProgressIndicator()),
             if (_error != null) Semantics(liveRegion: true, child: Text(_error!)),
+            if (_notice != null) Semantics(liveRegion:true,child:Text(_notice!)),
             if (_api.hasPendingProfileClaim) ...[
               Text(myClaimLabels['pending']!),
               ElevatedButton(key: const ValueKey('recover-pending-claim'),
                 onPressed: _loading || _opening || _recovering ? null : _recover,
                 child: Text(myClaimLabels['recover']!)),
+              Text(myClaimLabels['resolveExplanation']!),
+              OutlinedButton(key:const ValueKey('resolve-pending-claim'),
+                onPressed:_loading || _opening || _recovering ? null : _resolve,
+                child:Text(myClaimLabels['resolve']!)),
             ],
             if (!_loading && !_recovering && _error == null && _claims.isEmpty)
               Text(myClaimLabels['empty']!),
