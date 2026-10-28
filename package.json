@@ -4,7 +4,7 @@
   "private": true,
   "description": "Kashyap Adhikari Family Tree Platform — Monorepo",
   "author": "Jyphra Technology Pvt. Ltd.",
-  "license": "SEE LICENSE IN LICENSE_DECISION_REQUIRED.md",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.15.9 <10"

@@ -81,8 +81,9 @@ git clone https://github.com/rahulgupta32/kashyap_family_tree.git D:\Jyphra\kash
 
 ## License
 
-All rights reserved. This software is proprietary to **Jyphra Technology Pvt. Ltd.**  
-See [LICENSE_DECISION_REQUIRED.md](LICENSE_DECISION_REQUIRED.md) for details.
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+Copyright 2026 **Jyphra Technology Pvt. Ltd.** See [NOTICE](NOTICE).
 
 ## Contact
 

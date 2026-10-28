@@ -1,3 +1,7 @@
+# Owner-selected Apache 2.0 — 28 October 2026
+
+Read `APACHE2_PUBLICATION_DECISION_20261028.md` first. Jyphra owner explicitly approved open-source publication and selected Apache2.0. LICENSE/NOTICE/package/README now reflect that choice. New exact-payload GitHub review is required; prior rejection is historical and not bypassed. No merge/deploy; production gates remain OPEN/NO-GO.
+
 # Current publication checkpoint — 28 October 2026
 
 Read `PUBLICATION_CLEARANCE_20261028.md` first. General owner approval received; GitHub create-tree was rejected by automatic review for exact disclosure/license clearance. No retry or alternate upload. New tested code70e04c4:600unit/55suites, API/admin checks/builds, frozen validators and production audit0/251 PASS. Remote4c14f9e unchanged; RG01..12OPEN; NO-GO. Exact manifest/company license decision and applicable review remain required.
