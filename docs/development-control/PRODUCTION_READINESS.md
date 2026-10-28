@@ -1,3 +1,7 @@
+# Current publication checkpoint — 28 October 2026
+
+Read `PUBLICATION_CLEARANCE_20261028.md` first. General owner approval received; GitHub create-tree was rejected by automatic review for exact disclosure/license clearance. No retry or alternate upload. New tested code70e04c4:600unit/55suites, API/admin checks/builds, frozen validators and production audit0/251 PASS. Remote4c14f9e unchanged; RG01..12OPEN; NO-GO. Exact manifest/company license decision and applicable review remain required.
+
 # Latest local checkpoint — 22 October 2026
 
 Read `docs/execution/CLAIM_RESOLUTION_AND_GOVERNANCE_UI_REPORT.md` before the historical entries below. Remote HEAD remains4c14f9e; new claim closure/mobile evidence/governance UI work is local only. Backend 571 tests/53 suites and final admin production build pass; new-source database/Flutter/browser/native/CI remain pending. Publication review remains blocked; no alternate upload. Target26 October does not change frozen scope or gates. Production **NO-GO**; no merge/deploy.
