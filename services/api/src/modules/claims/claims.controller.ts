@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Header,
   Post,
@@ -57,8 +58,17 @@ export class ClaimsController {
   @Get('mine')
   @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard)
-  async listOwnClaims(@CurrentUser() user: AuthenticatedUser) {
-    return this.claimsService.listOwnClaims(user);
+  async listOwnClaims(@CurrentUser() user: AuthenticatedUser,
+      @Query('paged') paged?: unknown, @Query('cursor') cursor?: unknown) {
+    if (paged !== undefined && paged !== 'true' && paged !== 'false') {
+      throw new BadRequestException('Invalid claim history page mode');
+    }
+    if (paged !== 'true' && cursor !== undefined) {
+      throw new BadRequestException('Claim history cursor requires page mode');
+    }
+    return paged === 'true'
+      ? this.claimsService.listOwnClaims(user, { cursor })
+      : this.claimsService.listOwnClaims(user);
   }
 
   @Get(':id')

@@ -33,6 +33,12 @@ import { UserRepository } from '../../database/repositories/user.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import * as crypto from 'crypto';
 
+export interface OwnClaimSummary {
+  id: string; targetPersonId: string; status: ClaimStatus;
+  version: number; createdAt: string | Date; updatedAt: string | Date;
+}
+export interface OwnClaimPage { items: OwnClaimSummary[]; nextCursor: string | null; }
+
 @Injectable()
 export class ClaimsService {
   constructor(
@@ -1109,19 +1115,49 @@ export class ClaimsService {
     return this.mapToDetailDto(claim, undefined, actor);
   }
 
-  /** Account-owned history, independent of any reviewer role or branch filter. */
-  async listOwnClaims(actor: AuthenticatedUser) {
+  /** Account-owned history, independent of any reviewer role or branch filter.
+   * The optional page envelope preserves the original bounded-array contract.
+   */
+  async listOwnClaims(actor: AuthenticatedUser): Promise<OwnClaimSummary[]>;
+  async listOwnClaims(actor: AuthenticatedUser, page: { cursor?: unknown }): Promise<OwnClaimPage>;
+  async listOwnClaims(actor: AuthenticatedUser, page?: { cursor?: unknown }): Promise<OwnClaimSummary[] | OwnClaimPage> {
     if (!actor?.id) throw new UnauthorizedException('Authentication required');
+    let after: { createdAt: string; id: string } | undefined;
+    if (page?.cursor !== undefined) {
+      try {
+        const cursor = page.cursor;
+        if (typeof cursor !== 'string' || cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
+        const bytes = Buffer.from(cursor, 'base64url');
+        if (bytes.toString('base64url') !== cursor) throw new Error();
+        const value = JSON.parse(bytes.toString('utf8'));
+        if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'createdAt,id,owner' ||
+            value.owner !== actor.id || typeof value.createdAt !== 'string' || value.createdAt.startsWith('0000') ||
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value.createdAt)) throw new Error();
+        // Date is validation only. Never round the cursor's six fractional digits.
+        if (new Date(value.createdAt).toISOString().slice(0, 19) !== value.createdAt.slice(0, 19)) throw new Error();
+        after = { createdAt: value.createdAt, id: uuid(value.id, 'claim cursor ID') };
+      } catch (_) { throw new BadRequestException('Invalid claim history cursor'); }
+    }
     const result = await this.db.query(
-      `SELECT id, target_person_id, status, version, created_at, updated_at
+      `SELECT id, target_person_id, status, version, created_at, updated_at,
+              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at
        FROM profile_claims WHERE claimant_user_id = $1
-       ORDER BY created_at DESC, id DESC LIMIT 100`,
-      [actor.id],
+       ${after ? 'AND (created_at, id) < ($2::timestamptz, $3::uuid)' : ''}
+       ORDER BY created_at DESC, id DESC LIMIT ${page ? 101 : 100}`,
+      after ? [actor.id, after.createdAt, after.id] : [actor.id],
     );
-    return result.rows.map(row => ({
+    const records = page ? result.rows.slice(0, 100) : result.rows;
+    const items = records.map(row => ({
       id: row.id, targetPersonId: row.target_person_id, status: row.status,
       version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
     }));
+    if (!page) return items;
+    const last = records[records.length - 1];
+    // SQL text retains PostgreSQL microseconds, unlike pg's JavaScript Date.
+    const nextCursor = result.rows.length > 100 ? Buffer.from(JSON.stringify({
+      owner: actor.id, createdAt: last.cursor_created_at, id: last.id,
+    })).toString('base64url') : null;
+    return { items, nextCursor };
   }
 
   async listClaims(

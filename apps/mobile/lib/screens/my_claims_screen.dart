@@ -21,7 +21,8 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
   late final GenealogyApiService _api;
   late final int _generation;
   bool _expired = false, _loading = false, _opening = false, _recovering = false;
-  String? _error;
+  String? _error, _nextCursor;
+  bool _olderPage = false;
   List<_ClaimSummary> _claims = [];
 
   bool get _current => mounted && !_expired && identical(widget.api, _api) &&
@@ -41,6 +42,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
       setState(() {
         _expired = true;
         _claims = [];
+        _nextCursor = null;
         _error = null;
         _loading = false;
       });
@@ -56,24 +58,42 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
     }
   }
 
-  Future<void> _reload() async {
+  Future<void> _reload() => _loadPage();
+
+  Future<void> _loadOlder() async {
+    if (!_current || _nextCursor == null) return;
+    await _loadPage(_nextCursor);
+  }
+
+  Future<void> _loadPage([String? cursor]) async {
     if (!_current || _loading || _opening || _recovering) return;
     setState(() {
       _loading = true;
       _claims = [];
+      _nextCursor = null;
+      _olderPage = false;
       _error = null;
     });
     try {
       // Ownership is enforced by this dedicated endpoint, including for accounts
       // with reviewer roles. Never use the reviewer collection as "my claims".
-      final result = await _api.requestJson('/claims/mine');
+      final path = Uri(path:'/claims/mine',queryParameters:{'paged':'true',
+        if (cursor != null) 'cursor':cursor}).toString();
+      final result = await _api.requestJson(path);
       if (!_current) return;
-      if (result is! List || result.length > 100) {
+      if (result is! Map || result['items'] is! List || (result['items'] as List).length > 100) {
         throw const FormatException('Unavailable claim collection');
+      }
+      final items = result['items'] as List;
+      final next = result['nextCursor'];
+      if (!result.containsKey('nextCursor') ||
+          (next != null && (next is! String || next.isEmpty || next.length > 1024 ||
+            !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(next) || next == cursor || items.length != 100))) {
+        throw const FormatException('Unavailable claim continuation');
       }
       final ids = <String>{};
       final summaries = <_ClaimSummary>[];
-      for (final claim in result) {
+      for (final claim in items) {
         if (claim is! Map || claim['id'] is! String ||
             (claim['id'] as String).isEmpty || !ids.add(claim['id'] as String) ||
             claim['status'] is! String || !claimStatusLabels.containsKey(claim['status'])) {
@@ -82,7 +102,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
         summaries.add(_ClaimSummary(claim['id'] as String, claim['status'] as String));
       }
       // Retain only the fields needed for discovery, never evidence or phones.
-      setState(() => _claims = summaries);
+      setState(() { _claims = summaries; _nextCursor = next as String?; _olderPage = cursor != null; });
     } catch (_) {
       if (_current) setState(() => _error = myClaimLabels['unavailable']);
     } finally {
@@ -150,14 +170,18 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
             ],
             if (!_loading && !_recovering && _error == null && _claims.isEmpty)
               Text(myClaimLabels['empty']!),
-            if (_claims.isNotEmpty) Text(myClaimLabels['limit']!),
+            if (_claims.isNotEmpty) Text(myClaimLabels[_olderPage ? 'olderPage' : 'limit']!),
+            if (_nextCursor != null)
+              OutlinedButton(key:const ValueKey('older-claims'),
+                onPressed:_loading || _opening || _recovering ? null : _loadOlder,
+                child:Text(myClaimLabels['older']!)),
+            OutlinedButton(onPressed: _loading || _opening || _recovering ? null : _reload,
+                child: Text(myClaimLabels['reload']!)),
             for (final claim in _claims)
               ListTile(key: ValueKey('my-claim-${claim.id}'), title: Text('${myClaimLabels['reference']} ${claim.id}'),
                   subtitle: Text(claimStatusLabels[claim.status]!),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _opening || _recovering ? null : () => _open(claim)),
-            OutlinedButton(onPressed: _loading || _opening || _recovering ? null : _reload,
-                child: Text(myClaimLabels['reload']!)),
           ]),
   );
 }
