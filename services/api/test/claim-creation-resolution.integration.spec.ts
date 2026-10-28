@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
+import { RedisService } from '../src/redis/redis.service';
 import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
 import { AuditOutboxRepository } from '../src/database/repositories/audit-outbox.repository';
@@ -17,11 +18,13 @@ import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation }
 
 describe('Claim initial-create resolution with real account locking and immutable closure',()=>{
  let iso:DisposableDatabase,app:INestApplication,db:DatabaseService,audit:AuditOutboxRepository,claims:ClaimsService,n=0;
+ const admissionKeys=new Set<string>();
  const auth=(u:any)=>({Authorization:'Bearer '+u.token});
  async function actor(){
   const u=await app.get(UserRepository).findOrCreateByPhone('+97798475558'+String(++n).padStart(2,'0'));
   await app.get(UserRepository).setPhoneVerified(u.id,true);await app.get(UserRepository).assignRole(u.id,Role.REGISTERED_USER);
   const s=await app.get(SessionRepository).createSession({userId:u.id,refreshTokenHash:randomUUID(),devicePlatform:'WEB',expiresAt:new Date(Date.now()+3600000)});
+  admissionKeys.add(`claims:creation-resolution:account:${u.id}`);
   return {id:u.id,token:app.get(JwtService).sign({sub:u.id,sid:s.id,tokenType:'access'},{secret:getJwtSecret(),issuer:JWT_ISSUER,audience:JWT_AUDIENCE,algorithm:JWT_ALGORITHM})};
  }
  async function intent(){return {creationKey:randomUUID(),targetPersonId:(await db.query("INSERT INTO persons(gender,living_status,generation) VALUES('MALE','LIVING',3) RETURNING id")).rows[0].id,relationshipDescription:'Fictional retained creation body',statementOfTruth:true};}
@@ -36,13 +39,26 @@ describe('Claim initial-create resolution with real account locking and immutabl
   const module=await Test.createTestingModule({imports:[AppModule]}).compile();app=module.createNestApplication();await app.init();
   db=module.get(DatabaseService);audit=module.get(AuditOutboxRepository);claims=module.get(ClaimsService);await assertDatabaseIsolation(db,iso.dbName);
  },60000);
- afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
+ afterAll(async()=>{if(app){if(admissionKeys.size)await app.get(RedisService).del(...admissionKeys);await app.close();}if(iso)await iso.drop();});
  it('requires authentication, original complete metadata and active current accounts',async()=>{
   const u=await actor(),b=await intent();await request(app.getHttpServer()).post('/claims/creation-resolution').send(b).expect(401);
   for(const change of [{creationKey:undefined},{targetPersonId:'invalid'},{statementOfTruth:'true'},{evidenceAttachments:{}},{accountId:u.id}])await resolve(u,{...b,...change}).expect(400);
   await db.query('UPDATE user_accounts SET is_suspended=TRUE WHERE id=$1',[u.id]);
   try{await resolve(u,b).expect(403);}finally{await db.query('UPDATE user_accounts SET is_suspended=FALSE WHERE id=$1',[u.id]);}
   expect(await counts(u,b.creationKey)).toEqual({receipts:'0',closures:'0',claims:'0',audits:'0'});
+ });
+ it('does not create closure or audit when Redis admission is unavailable',async()=>{
+  const u=await actor(),body=await intent();
+  const unavailable=jest.spyOn(app.get(RedisService),'isReady').mockReturnValueOnce(false);
+  try{await resolve(u,body).expect(503);}finally{unavailable.mockRestore();}
+  expect(await counts(u,body.creationKey)).toEqual({receipts:'0',closures:'0',claims:'0',audits:'0'});
+ });
+ it('bounds concurrent distinct-key closures per account using live Redis admission',async()=>{
+  const u=await actor(),body=await intent();
+  const results=await Promise.all(Array.from({length:11},()=>resolve(u,{...body,creationKey:randomUUID()})));
+  expect(results.filter(r=>r.status===201)).toHaveLength(10);
+  expect(results.filter(r=>r.status===429)).toHaveLength(1);
+  expect((await db.query('SELECT count(*) AS total FROM claim_creation_closures WHERE account_id=$1',[u.id])).rows[0].total).toBe('10');
  });
  it('closes an unavailable target/evidence attempt, replays one audit, and blocks its old key permanently',async()=>{
   const u=await actor(),b={...(await intent()),targetPersonId:randomUUID(),evidenceAttachments:[{mediaAssetId:randomUUID(),documentType:'family_photo'}]};
