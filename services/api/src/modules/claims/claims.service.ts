@@ -12,6 +12,8 @@ import {
 import { PoolClient } from 'pg';
 import {
   SubmitClaimDto,
+  ResolveClaimCreationDto,
+  ClaimCreationResolutionDto,
   ClaimDetailDto,
   Tier1ReviewClaimDto,
   Tier2ReviewClaimDto,
@@ -238,6 +240,9 @@ export class ClaimsService {
           if(!original)throw new ConflictException('Original claim unavailable');
           return this.mapToDetailDto(original,client);
         }
+        const closure=(await client.query('SELECT payload_hash FROM claim_creation_closures WHERE account_id=$1 AND creation_key=$2',[claimantUserId,dto.creationKey])).rows[0];
+        if(closure)throw new ConflictException(closure.payload_hash===claimCreationFingerprint(dto)
+          ? 'Claim creation attempt is permanently closed' : 'Creation key already used with a different claim');
       }
       if (user.person_id) {
         throw new ConflictException({
@@ -351,6 +356,39 @@ export class ClaimsService {
 
       if(dto.creationKey)await client.query('INSERT INTO claim_creation_receipts(account_id,creation_key,payload_hash,claim_id) VALUES($1,$2,$3,$4)',[claimantUserId,dto.creationKey,claimCreationFingerprint(dto),claim.id]);
       return this.mapToDetailDto(claim, client);
+    });
+  }
+
+  /** Recover an owned create receipt or permanently close its unused account/key identity. */
+  async resolveClaimCreation(claimantUserId: string, dto: ResolveClaimCreationDto): Promise<ClaimCreationResolutionDto> {
+    validateClaimResolutionIntent(dto);
+    const fingerprint = claimCreationFingerprint(dto);
+    return this.db.transaction(async client => {
+      // The same account lock serializes this resolution against submitClaim, including unknown commit outcomes.
+      const user = (await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [claimantUserId])).rows[0];
+      if (!user) throw new NotFoundException('Claimant user account not found');
+      if (!user.is_active || user.is_suspended || user.deleted_at) throw new ForbiddenException('Active account required');
+      const receipt = (await client.query('SELECT payload_hash,claim_id FROM claim_creation_receipts WHERE account_id=$1 AND creation_key=$2',
+        [claimantUserId,dto.creationKey])).rows[0];
+      if (receipt) {
+        if (receipt.payload_hash !== fingerprint) throw new ConflictException('Creation key already used with a different claim');
+        const original = (await client.query('SELECT id FROM profile_claims WHERE id=$1 AND claimant_user_id=$2', [receipt.claim_id,claimantUserId])).rows[0];
+        if (!original) throw new ConflictException('Original claim unavailable');
+        return {outcome:'CREATED',claimId:original.id};
+      }
+      const closure = (await client.query('SELECT payload_hash FROM claim_creation_closures WHERE account_id=$1 AND creation_key=$2',
+        [claimantUserId,dto.creationKey])).rows[0];
+      if (closure) {
+        if (closure.payload_hash !== fingerprint) throw new ConflictException('Creation key already used with a different claim');
+        return {outcome:'ABANDONED'};
+      }
+      // Metadata is bound to its original hash. Current target/evidence eligibility is deliberately not re-run:
+      // closing a rejected attempt must remain possible after a target disappears or an upload is retired.
+      await client.query('INSERT INTO claim_creation_closures(account_id,creation_key,payload_hash) VALUES($1,$2,$3)',
+        [claimantUserId,dto.creationKey,fingerprint]);
+      await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_CLAIM_CREATION_ABANDONED',entityType:'CLAIM_CREATION_ATTEMPT',
+        entityId:dto.creationKey,actorId:claimantUserId,newValue:{outcome:'ABANDONED'}},client);
+      return {outcome:'ABANDONED'};
     });
   }
 
@@ -1350,4 +1388,27 @@ export class ClaimsService {
 export function claimCreationFingerprint(dto:SubmitClaimDto):string{
  const canonical=(v:any):any=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().filter(k=>k!=='creationKey'&&v[k]!==undefined).map(k=>[k,canonical(v[k])])):v;
  return crypto.createHash('sha256').update(JSON.stringify(canonical(dto))).digest('hex');
+}
+
+/** Syntax-only validation: resolution must not depend on the current availability of referenced records. */
+function validateClaimResolutionIntent(dto: ResolveClaimCreationDto): void {
+  allowedFields(dto,['creationKey','targetPersonId','relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth']);
+  uuid(dto.creationKey,'creation key'); uuid(dto.targetPersonId,'target person');
+  if (dto.statementOfTruth !== true) throw new BadRequestException('Must agree to statement of truth');
+  if (typeof dto.relationshipDescription !== 'string' || !dto.relationshipDescription.trim() || dto.relationshipDescription.trim().length > 2000)
+    throw new BadRequestException('Relationship description must contain 1–2000 characters');
+  if (dto.knownFamilyMembers !== undefined && (!Array.isArray(dto.knownFamilyMembers) || dto.knownFamilyMembers.length > 100 ||
+      dto.knownFamilyMembers.some(member => typeof member !== 'string' || member.length > 200))) throw new BadRequestException('Invalid family member references');
+  if (dto.evidenceAttachments !== undefined) {
+    if (!Array.isArray(dto.evidenceAttachments) || dto.evidenceAttachments.length > 5) throw new BadRequestException('Choose up to five evidence attachments');
+    const seen = new Set<string>();
+    for (const att of dto.evidenceAttachments) {
+      allowedFields(att,['mediaAssetId','documentType','description']);uuid(att.mediaAssetId,'evidence');
+      const identity = att.mediaAssetId.toLowerCase();
+      if (seen.has(identity) || !['family_photo','event_invitation','elder_voucher','address_receipt','clan_record','other'].includes(att.documentType))
+        throw new BadRequestException('Invalid or duplicate evidence attachment');
+      seen.add(identity);
+      if (att.description !== undefined && (typeof att.description !== 'string' || att.description.length > 1000)) throw new BadRequestException('Evidence description exceeds limit');
+    }
+  }
 }

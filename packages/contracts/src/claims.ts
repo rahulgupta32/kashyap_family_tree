@@ -19,6 +19,15 @@ export interface SubmitClaimDto {
   statementOfTruth: boolean;
 }
 
+/** Resolves one retained initial-create identity; the complete original body is required. */
+export interface ResolveClaimCreationDto extends SubmitClaimDto {
+  creationKey: string;
+}
+
+export type ClaimCreationResolutionDto =
+  | { outcome: 'CREATED'; claimId: string }
+  | { outcome: 'ABANDONED' };
+
 export interface ClaimEvidenceAttachmentDto {
   id: string;
   mediaAssetId: string;

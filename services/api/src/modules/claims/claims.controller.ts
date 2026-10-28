@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import {
   SubmitClaimDto,
+  ResolveClaimCreationDto,
+  ClaimCreationResolutionDto,
   ClaimDetailDto,
   Tier1ReviewClaimDto,
   Tier2ReviewClaimDto,
@@ -41,6 +43,13 @@ export class ClaimsController {
     @Body() dto: SubmitClaimDto,
   ): Promise<ClaimDetailDto> {
     return this.claimsService.submitClaim(user.id, dto);
+  }
+
+  @Post('creation-resolution')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard)
+  async resolveCreation(@CurrentUser() user: AuthenticatedUser, @Body() dto: ResolveClaimCreationDto): Promise<ClaimCreationResolutionDto> {
+    return this.claimsService.resolveClaimCreation(user.id, dto);
   }
 
   @Get()
