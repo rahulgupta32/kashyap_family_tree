@@ -1,3 +1,7 @@
+# Recover this local checkpoint before further publication
+
+Read RECOVERY_CHECKPOINT_20261022.md first. Four meaningful local commits exist beyond remote4c14f9e; do not reimplement them or discard separate branches. Automatic GitHub publication review remains BLOCKED. Obtain explicit approval for exact reviewed public payload/destination and use applicable checks; never bypass through another upload method. Once permitted, publish source-bound existing PR5 branch and inspect automatic CI without duplicate runs. Local539 unit/type/build/frozen checks pass; actual PG/Flutter/browser/native/migration verification pending. No production acceptance closed. No merge/deploy.
+
 # Next release sprint execution
 
 Fetch actual branch/PR5 HEAD and source-bound automatic checks. Inspect pending main/fast/native conclusions without assuming success or starting duplicate full runs. New batch report: docs/execution/MEMBER_CLAIM_RECOVERY_CORRECTION_REPORT.md. Fix demonstrated failures, preserving assertions and existing security/privacy gates.

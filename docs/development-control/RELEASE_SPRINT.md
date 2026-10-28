@@ -20,9 +20,9 @@ One integration owner reviews and publishes the existing integration branch. Par
 | ID | Blocker / dependency | Responsible role | Required exit evidence | Current status |
 |---|---|---|---|---|
 | B01 | Claim retry widget tap misses viewport after layout change | Mobile/QA | Exact-source clean Flutter analysis and complete suite, retry identity assertions retained | Verified at4c14f9e (260 Flutter tests); later-source checks separate |
-| B02 | Member claim status/correction/resubmission/dispute and process-restored pending identity | Member lifecycle engineering | Authorized API/admin/mobile complete lifecycle, account-switch/negative/retry evidence | Discovery/durable initial retry/versioned description correction implemented; new-source runtime pending; remaining lifecycle open |
+| B02 | Member claim status/correction/resubmission/dispute and process-restored pending identity | Member lifecycle engineering | Authorized API/admin/mobile complete lifecycle, account-switch/negative/retry evidence | Discovery/durable retry/versioned correction recovered; older pagination/admin Tier2 correction integrated LOCALLY through8aec913; runtime pending; remaining lifecycle open |
 | B03 | Import promotion writer disabled | Data engineering + Data Steward | Approved mapping/consent; controlled promotion/resume/reconciliation and two accepted rehearsals | OPEN |
-| B04 | Cultural proposal state stored in process-local Map | Domain engineering + cultural authority | Durable independent approval/restart/concurrency evidence; approved rules before activation | OPEN; HG gates remain closed |
+| B04 | Cultural proposal state stored in process-local Map | Domain engineering + cultural authority | Durable independent approval/restart/concurrency evidence; approved rules before activation | Durable proposal/MFA/history code integrated LOCALLY8aec913; migration/PG runtime/authority provisioning pending; HG gates closed |
 | B05 | Production environment and recoverability not verified | Operations | Approved stack, private storage/scanner/workers/TLS/secrets, alerts, measured PITR/restore/rollback | OPEN; preparation only |
 | B06 | Example native identities/debug signing and live providers/device acceptance | Release/mobile + account owners | Approved identities, signed artifacts, physical-device SMS/FCM/APNs lifecycle evidence | OPEN |
 | B07 | Independent security/privacy/accessibility/localization/load/UAT acceptance | Named reviewers + Product Owner | Requirement-specific exact-candidate evidence and signed required decisions | OPEN |
@@ -33,3 +33,7 @@ This targeted register does not replace the 260-row requirement register, 260 ed
 ## Recovered source evidence
 
 PR5 source d0bc6e107beedf6c03841db7d49a1723b660e7e1: iOS38780047751 SUCCESS; Fast38780039580 FAILURE; Main38780047946 FAILURE. Main platform job116577570666 passed including567 general integration and71 browser cases; private S3, Android/live API, ClamAV and fictional repository benchmark jobs passed. Flutter job116577570579 clean analysis,255 passed/1 failed. Log identifies retry button centre at y600 outside800x600 root after error-message layout change; no weakened assertions or timeout increase permitted. Prior source success is not verification of the next commit.
+
+## 22 October local recovery update
+
+Remote4c14f9e remains published; local code through8aec913 is not published. Source publication is a new explicit blocker B09 owned by repository owner/applicable approval review: the public source/documentation upload was rejected; exact reviewed payload approval and permitted checks required, no workaround. Integrated539 unit/type/build/frozen checks pass; new-source PG/Flutter/browser/native and migrations pending. RECOVERY_CHECKPOINT_20261022.md records all four local batches and remaining human/engineering owners. Decision remains NO-GO.

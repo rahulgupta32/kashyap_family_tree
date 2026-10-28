@@ -1,3 +1,9 @@
+# Current release decision — 22 October 2026: NO-GO
+
+Remote4c14f9e/PR5 is draft/open with successful fast/full/iOS checks for that source. Recovered and parallel local sprint code through8aec913 is UNPUBLISHED due active automatic publication-review rejection. Local integrated539 unit tests, typechecks/builds and frozen validators pass; PG migrations/integration, Flutter/browser/native and new-source CI remain unverified. See RECOVERY_CHECKPOINT_20261022.md and RELEASE_SPRINT.md. All260 acceptance and RG-01..12 remain OPEN; no main merge/deploy/store/real-data/cultural activation authorized.
+
+## Retained source-bound history
+
 # Production readiness
 
 Latest recovered source `995a52107db47af930255e53459178cd9a259216`: CI38604748504 and iOS38604748496 independently verified SUCCESS. Calendar creation receipts/native pending identity are implemented in the current meaningful checkpoint; new-source PostgreSQL/Flutter/full/native verification remains pending. Keyed creates only are deduplicated; admin/unkeyed adoption and safe permanent-rejection resolution remain open. No frozen acceptance is closed by this batch.
