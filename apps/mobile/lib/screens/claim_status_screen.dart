@@ -16,6 +16,11 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
   late final GenealogyApiService _api;
   late final int _generation;
   static const _picker = MethodChannel('kashyap/chat_attachments');
+  static const _evidenceNames = {
+    'family_photo':'पारिवारिक फोटो (Family photo)',
+    'event_invitation':'कार्यक्रम निमन्त्रणा (Event invitation)',
+    'clan_record':'पारिवारिक अभिलेख (Family record)',
+  };
   final _description = TextEditingController();
   final List<Map<String,dynamic>> _evidence = [];
   bool _uploading = false, _notice = false;
@@ -205,7 +210,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
                   OutlinedButton(key:const ValueKey('claim-correction-evidence-upload'),
                     onPressed:_canCorrect&&_notice&&_evidence.length<5?_chooseEvidence:null,
                     child:Text(claimLabels['upload']!)),
-                  for(final item in _evidence)ListTile(title:Text(item['documentType'] as String),
+                  for(final item in _evidence)ListTile(title:Text(_evidenceNames[item['documentType']]??claimLabels['additionalEvidence']!),
                     trailing:IconButton(tooltip:claimLabels['remove'],icon:const Icon(Icons.remove_circle_outline),
                       onPressed:_canCorrect?(){if(_canCorrect)setState(()=>_evidence.remove(item));}:null)),
                   ElevatedButton(onPressed:_canCorrect?_resubmit:null,
