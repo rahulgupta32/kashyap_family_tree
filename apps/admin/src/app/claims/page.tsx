@@ -237,6 +237,18 @@ export default function ClaimsAdminPage() {
                 <span className="text-slate-400 block">हालको स्थिति:</span>
                 <span className="font-bold text-indigo-600">{activeClaim.status}</span>
               </div>
+              <div>
+                <span className="text-slate-400 block">संस्करण (Version):</span>
+                <span>{activeClaim.version}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">पुनः पेश संख्या (Resubmissions):</span>
+                <span>{activeClaim.resubmissionCount}</span>
+              </div>
+              {activeClaim.correctionRequestNotes && <div className="col-span-2">
+                <span className="text-slate-400 block">संशोधन अनुरोध (Correction request):</span>
+                <p className="whitespace-pre-wrap break-words">{activeClaim.correctionRequestNotes}</p>
+              </div>}
               <div className="col-span-2">
                 <span className="text-slate-400 block">सम्बन्ध विवरण:</span>
                 <span className="text-slate-700">{activeClaim.relationshipDescription || 'उपलब्ध छैन'}</span>
@@ -275,10 +287,11 @@ export default function ClaimsAdminPage() {
             {/* Review Decision Controls */}
             {evidenceError && <p role="alert" className="text-sm text-rose-700">{evidenceError}</p>}
             <div className="space-y-3">
-              <label className="block text-xs font-medium text-slate-700">
+              <label htmlFor="claim-review-notes" className="block text-xs font-medium text-slate-700">
                 समीक्षा टिप्पणी (Reviewer Notes):
               </label>
               <textarea
+                id="claim-review-notes"
                 value={reviewNotes}
                 onChange={(e) => setReviewNotes(e.target.value)}
                 placeholder="प्रमाणीकरण वा अस्वीकृतिको कारण उल्लेख गर्नुहोस्..."
@@ -323,6 +336,13 @@ export default function ClaimsAdminPage() {
                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition"
                     >
                       तह २ अन्तिम स्वीकृति (Approve & Link)
+                    </button>
+                    <button
+                      onClick={() => handleTier2('CORRECTION_REQUESTED')}
+                      disabled={actionLoading}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition"
+                    >
+                      संशोधन माग (Need Correction)
                     </button>
                     <button
                       onClick={() => handleTier2('REJECTED')}
