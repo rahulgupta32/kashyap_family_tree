@@ -192,14 +192,7 @@ export class ClaimsService {
         [assetId],
       );
       const branchId = claimEvidenceRes.rows[0]?.branch_id;
-      if (branchId) {
-        const hasBranchRole = (viewer.roleAssignments || []).some(
-          (ra) => (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) && ra.branchId === branchId,
-        );
-        if (hasBranchRole) {
-          isAuthorized = true;
-        }
-      }
+      isAuthorized = this.hasBranchAuthority(viewer, branchId);
     }
 
     if (!isAuthorized) {
@@ -878,6 +871,14 @@ export class ClaimsService {
           [claimId, claim.status, actor.id, dto.notes],
         );
 
+        await this.auditOutboxRepo.recordAuditIntent(
+          {action: 'CLAIM_TIER2_CORRECTION_REQUIRED', entityType: 'PROFILE_CLAIM', entityId: claimId,
+            actorId: actor.id, actorRole: Role.SUPER_ADMIN,
+            oldValue: {status: claim.status, version: claim.version},
+            newValue: {status: 'CORRECTION_REQUESTED', version: updatedClaim.version, notes: dto.notes}},
+          client,
+        );
+
         const mapped = await this.mapToDetailDto(updatedClaim, client);
         return { claim: mapped, alreadyApproved: false };
       } else {
@@ -891,10 +892,12 @@ export class ClaimsService {
     disputantUserId: string,
     dto: FileClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
-    if (!dto.reason || !dto.reason.trim()) {
+    allowedFields(dto, ['reason', 'evidenceAttachments']);
+    if (typeof dto.reason !== 'string' || !dto.reason.trim()) {
       throw new BadRequestException('Dispute reason is required');
     }
 
+    const reason = dto.reason.trim();
     return this.db.transaction(async (client) => {
       const claimRes = await client.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1 FOR UPDATE', [claimId]);
       const claim = claimRes.rows[0];
@@ -913,10 +916,12 @@ export class ClaimsService {
         throw new BadRequestException('Claimant cannot dispute their own approved claim');
       }
 
+      await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
+
       const disputeRes = await client.query<ClaimDisputeRecord>(
         `INSERT INTO claim_disputes (claim_id, disputant_user_id, reason, status)
          VALUES ($1, $2, $3, 'OPEN') RETURNING *`,
-        [claimId, disputantUserId, dto.reason],
+        [claimId, disputantUserId, reason],
       );
       const dispute = disputeRes.rows[0];
 
@@ -926,7 +931,6 @@ export class ClaimsService {
       );
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
-        await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description, dispute_id)
@@ -939,7 +943,7 @@ export class ClaimsService {
       await client.query(
         `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
          VALUES ('PROFILE_CLAIM', $1, 'APPROVED', 'DISPUTED', $2, $3)`,
-        [claimId, disputantUserId, dto.reason],
+        [claimId, disputantUserId, reason],
       );
 
       await this.auditOutboxRepo.recordAuditIntent(
@@ -950,7 +954,7 @@ export class ClaimsService {
           actorId: disputantUserId,
           actorRole: 'MEMBER',
           oldValue: { claimStatus: 'APPROVED' },
-          newValue: { claimStatus: 'DISPUTED', disputeId: dispute.id, reason: dto.reason },
+          newValue: { claimStatus: 'DISPUTED', disputeId: dispute.id, reason },
         },
         client,
       );
@@ -978,6 +982,13 @@ export class ClaimsService {
     if (!actor.roles.includes(Role.SUPER_ADMIN)) {
       throw new ForbiddenException('Only Super Admin can resolve claim disputes');
     }
+
+    allowedFields(dto, ['decision', 'notes']);
+    if (!['DISMISSED', 'RESOLVED'].includes(dto.decision) || typeof dto.notes !== 'string' ||
+        !dto.notes.trim() || dto.notes.length > 4000) {
+      throw new BadRequestException('Choose a valid dispute decision and provide 1–4000 characters of resolution notes');
+    }
+    const notes = dto.notes.trim();
 
     return this.db.transaction(async (client) => {
       const dispRes = await client.query<ClaimDisputeRecord>('SELECT * FROM claim_disputes WHERE id = $1 FOR UPDATE', [disputeId]);
@@ -1025,7 +1036,7 @@ export class ClaimsService {
         `UPDATE claim_disputes 
          SET status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
          WHERE id = $4`,
-        [newDisputeStatus, dto.notes, actor.id, disputeId],
+        [newDisputeStatus, notes, actor.id, disputeId],
       );
 
       if (dto.decision === 'DISMISSED') {
@@ -1036,7 +1047,7 @@ export class ClaimsService {
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('PROFILE_CLAIM', $1, 'DISPUTED', 'APPROVED', $2, $3)`,
-          [claim.id, actor.id, `Dispute dismissed: ${dto.notes}`],
+          [claim.id, actor.id, `Dispute dismissed: ${notes}`],
         );
       } else {
         await client.query(
@@ -1059,7 +1070,7 @@ export class ClaimsService {
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('PROFILE_CLAIM', $1, 'DISPUTED', 'SUPERSEDED', $2, $3)`,
-          [claim.id, actor.id, `Dispute upheld: ${dto.notes}`],
+          [claim.id, actor.id, `Dispute upheld: ${notes}`],
         );
       }
 
@@ -1071,7 +1082,7 @@ export class ClaimsService {
           actorId: actor.id,
           actorRole: Role.SUPER_ADMIN,
           oldValue: { disputeStatus: dispute.status, claimStatus: claim.status },
-          newValue: { disputeStatus: newDisputeStatus, resolutionNotes: dto.notes },
+          newValue: { disputeStatus: newDisputeStatus, resolutionNotes: notes },
         },
         client,
       );
@@ -1082,7 +1093,7 @@ export class ClaimsService {
         disputantUserId: dispute.disputant_user_id,
         reason: dispute.reason,
         status: newDisputeStatus,
-        resolutionNotes: dto.notes,
+        resolutionNotes: notes,
         resolvedByUserId: actor.id,
         resolvedAt: new Date().toISOString(),
         createdAt: dispute.created_at,
@@ -1157,11 +1168,7 @@ export class ClaimsService {
       const person = await this.personRepo.findById(claim.target_person_id);
       const targetBranchId = person?.branch_id;
 
-      const hasAuthority = (actor.roleAssignments || []).some(
-        (ra) =>
-          (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
-          ra.branchId === targetBranchId,
-      );
+      const hasAuthority = this.hasBranchAuthority(actor, targetBranchId);
 
       if (!hasAuthority) {
         throw new ForbiddenException({
@@ -1223,26 +1230,21 @@ export class ClaimsService {
     actor?: AuthenticatedUser,
     options?: { status?: ClaimStatus; claimantUserId?: string; branchId?: string },
   ): Promise<ClaimDetailDto[]> {
-    const isReviewer = actor
-      ? (actor.roles?.includes(Role.SUPER_ADMIN) ||
-        (actor.roleAssignments || []).some(
-          (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
-        ))
-      : true;
-
     let claimantFilter = options?.claimantUserId;
     let branchFilter = options?.branchId;
-
-    if (actor && !isReviewer) {
-      // Regular members can only view their own claims
-      claimantFilter = actor.id;
-    } else if (actor && !actor.roles?.includes(Role.SUPER_ADMIN)) {
-      const branchAssignments = (actor.roleAssignments || [])
-        .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
-        .map((ra) => ra.branchId)
-        .filter((b): b is string => b !== null);
-      if (branchAssignments.length > 0 && !branchFilter) {
-        branchFilter = branchAssignments[0];
+    if (actor && !actor.roles?.includes(Role.SUPER_ADMIN)) {
+      const hasReviewerRole = actor.roles?.some(role => role === Role.BRANCH_ADMIN || role === Role.BRANCH_VERIFIER);
+      if (!hasReviewerRole) {
+        claimantFilter = actor.id;
+      } else {
+        const assignments = (actor.roleAssignments || [])
+          .filter(assignment => this.hasBranchAuthority(actor, assignment.branchId))
+          .map(assignment => assignment.branchId as string);
+        if (!assignments.length || (branchFilter !== undefined && !assignments.includes(branchFilter))) {
+          throw new ForbiddenException({errorCode: ErrorCode.BRANCH_MISMATCH,
+            message: 'You are not authorized to review claims for this branch'});
+        }
+        branchFilter = branchFilter ?? assignments[0];
       }
     }
 
@@ -1294,9 +1296,7 @@ export class ClaimsService {
     // Phone and evidence redaction if viewer is not claimant and not reviewer
     let canViewEvidence = true;
     if (viewer && !viewer.roles?.includes(Role.SUPER_ADMIN) && viewer.id !== claim.claimant_user_id) {
-      const isReviewer = (viewer.roleAssignments || []).some(
-        (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
-      );
+      const isReviewer = this.hasBranchAuthority(viewer, person?.branch_id);
       if (!isReviewer) {
         claimantPhone = claimantPhone.substring(0, 4) + '****' + claimantPhone.slice(-2);
         canViewEvidence = false;
@@ -1351,17 +1351,20 @@ export class ClaimsService {
     };
   }
 
+  private hasBranchAuthority(actor: AuthenticatedUser, branchId: unknown): boolean {
+    return typeof branchId === 'string' && branchId.trim().length > 0 &&
+      (actor.roleAssignments || []).some(assignment =>
+        (assignment.role === Role.BRANCH_ADMIN || assignment.role === Role.BRANCH_VERIFIER) &&
+        actor.roles?.includes(assignment.role) && assignment.branchId === branchId);
+  }
+
   private async validateBranchAuthority(client: any, actor: AuthenticatedUser, targetPersonId: string) {
     if (actor.roles.includes(Role.SUPER_ADMIN)) return;
 
     const personRes = await client.query('SELECT branch_id FROM persons WHERE id = $1', [targetPersonId]);
     const targetBranchId = personRes.rows[0]?.branch_id;
 
-    const hasAuthority = (actor.roleAssignments || []).some(
-      (ra) =>
-        (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
-        ra.branchId === targetBranchId,
-    );
+    const hasAuthority = this.hasBranchAuthority(actor, targetBranchId);
 
     if (!hasAuthority) {
       throw new ForbiddenException({

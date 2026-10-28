@@ -593,6 +593,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       case 'CLAIM_TIER1_VOUCHED':
         return 'तपाईंको दाबी तह १ बाट सिफारिस भएको छ। (Claim vouched at Tier 1)';
       case 'CLAIM_TIER1_CORRECTION_REQUIRED':
+      case 'CLAIM_TIER2_CORRECTION_REQUIRED':
         return 'दाबीमा संशोधन आवश्यक छ। (Correction requested for your claim)';
       case 'CLAIM_TIER1_REJECTED':
       case 'CLAIM_TIER2_REJECTED':

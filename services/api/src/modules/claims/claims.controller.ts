@@ -53,6 +53,7 @@ export class ClaimsController {
   }
 
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async listClaims(
