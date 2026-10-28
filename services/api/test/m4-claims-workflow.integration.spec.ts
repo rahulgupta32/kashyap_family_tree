@@ -182,8 +182,25 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     expect(corrected.status).toBe(ClaimStatus.CORRECTION_REQUESTED);
     expect(corrected.correctionRequestNotes).toBe('Please attach clearer family photo');
 
-    // 2. Claimant resubmits
+    // A stale member screen must not consume a newer correction request.
+    await expect(claimsService.resubmit(claimId, claimant1Id, {
+      expectedVersion: corrected.version - 1,
+      relationshipDescription: 'Stale correction must not be written',
+      statementOfTruth: true,
+    })).rejects.toMatchObject({ status: 409 });
+    const stillCorrected = await claimsService.getClaimById(claimId, {
+      id: claimant1Id, roles: [Role.REGISTERED_USER], roleAssignments: [],
+    } as any);
+    expect(stillCorrected.version).toBe(corrected.version);
+    expect(stillCorrected.status).toBe(ClaimStatus.CORRECTION_REQUESTED);
+    expect(stillCorrected.resubmissionCount).toBe(corrected.resubmissionCount);
+    expect(stillCorrected.relationshipDescription).toBe(corrected.relationshipDescription);
+    expect(stillCorrected.evidenceAttachments.map(({ id, mediaAssetId }) => ({ id, mediaAssetId })))
+      .toEqual(corrected.evidenceAttachments.map(({ id, mediaAssetId }) => ({ id, mediaAssetId })));
+
+    // 2. Claimant resubmits the correction version actually read.
     const resubmitted = await claimsService.resubmit(claimId, claimant1Id, {
+      expectedVersion: corrected.version,
       relationshipDescription: 'Updated with clearer photo',
       evidenceAttachments: [
         {
@@ -196,6 +213,14 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     });
     expect(resubmitted.status).toBe(ClaimStatus.PENDING_TIER1);
     expect(resubmitted.resubmissionCount).toBe(1);
+    expect(resubmitted.version).toBe(corrected.version + 1);
+    for (const original of corrected.evidenceAttachments) {
+      expect(resubmitted.evidenceAttachments).toContainEqual(expect.objectContaining({
+        id: original.id, mediaAssetId: original.mediaAssetId, documentType: original.documentType,
+      }));
+    }
+    expect(resubmitted.evidenceAttachments.some((attachment) =>
+      attachment.mediaAssetId === '00000000-0000-4000-8000-000000000102')).toBe(true);
   });
 
   it('4. should enforce Tier 1 vouch and Tier 2 approval separation of duties', async () => {

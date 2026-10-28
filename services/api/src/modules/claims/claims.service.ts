@@ -420,11 +420,22 @@ export class ClaimsService {
     claimantUserId: string,
     dto: ResubmitClaimDto,
   ): Promise<ClaimDetailDto> {
-    if (!dto.statementOfTruth) {
+    if (dto?.statementOfTruth !== true) {
       throw new BadRequestException({
         errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
         message: 'Must agree to statement of truth',
       });
+    }
+
+    allowedFields(dto, ['relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth','expectedVersion']);
+    if (dto.relationshipDescription !== undefined &&
+        (typeof dto.relationshipDescription !== 'string' || !dto.relationshipDescription.trim() || dto.relationshipDescription.trim().length > 2000)) {
+      throw new BadRequestException('Relationship description must contain 1–2000 characters');
+    }
+    if (dto.knownFamilyMembers !== undefined &&
+        (!Array.isArray(dto.knownFamilyMembers) || dto.knownFamilyMembers.length > 100 ||
+          dto.knownFamilyMembers.some(member => typeof member !== 'string' || member.length > 200))) {
+      throw new BadRequestException('Invalid family member references');
     }
 
     return this.db.transaction(async (client) => {
@@ -441,12 +452,23 @@ export class ClaimsService {
         });
       }
 
+      if (dto.expectedVersion !== undefined) {
+        if (!Number.isSafeInteger(dto.expectedVersion) || dto.expectedVersion < 1) {
+          throw new BadRequestException('Current claim version must be a positive integer');
+        }
+        if (dto.expectedVersion !== claim.version) {
+          throw new ConflictException('Claim changed; reload before resubmitting');
+        }
+      }
+
       if (claim.status !== ClaimStatus.CORRECTION_REQUESTED) {
         throw new BadRequestException({
           errorCode: ErrorCode.INVALID_CLAIM_STATE,
           message: 'Claim is not in CORRECTION_REQUESTED status',
         });
       }
+
+      await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
 
       // Hardening: Reset both Tier 1 and Tier 2 decisions upon resubmission
       const updatedRes = await client.query<ClaimRecord>(
@@ -476,7 +498,6 @@ export class ClaimsService {
       const updatedClaim = updatedRes.rows[0];
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
-        await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description)
@@ -1086,6 +1107,21 @@ export class ClaimsService {
     }
 
     return this.mapToDetailDto(claim, undefined, actor);
+  }
+
+  /** Account-owned history, independent of any reviewer role or branch filter. */
+  async listOwnClaims(actor: AuthenticatedUser) {
+    if (!actor?.id) throw new UnauthorizedException('Authentication required');
+    const result = await this.db.query(
+      `SELECT id, target_person_id, status, version, created_at, updated_at
+       FROM profile_claims WHERE claimant_user_id = $1
+       ORDER BY created_at DESC, id DESC LIMIT 100`,
+      [actor.id],
+    );
+    return result.rows.map(row => ({
+      id: row.id, targetPersonId: row.target_person_id, status: row.status,
+      version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
   }
 
   async listClaims(

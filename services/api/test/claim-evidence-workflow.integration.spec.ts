@@ -51,6 +51,30 @@ describe('Private claim upload, attachment, replay and reviewer access (PostgreS
   await request(app.getHttpServer()).get(`/claims/evidence/${asset.mediaAssetId}`).set(auth(reviewer)).expect(200);
   await request(app.getHttpServer()).get(`/claims/${claim.id}`).set(auth(b)).expect(403);
  });
+ it('lists only current-account minimized summaries even for reviewers and ignores claimant filters',async()=>{
+  await request(app.getHttpServer()).get('/claims/mine').expect(401);
+  const own=(await request(app.getHttpServer()).get(`/claims/mine?claimantUserId=${b.id}`).set(auth()).expect('Cache-Control','private, no-store').expect(200)).body;
+  expect(own).toHaveLength(1);expect(own[0]).toMatchObject({id:claim.id,status:'PENDING_TIER1',version:1});
+  expect(Object.keys(own[0]).sort()).toEqual(['createdAt','id','status','targetPersonId','updatedAt','version'].sort());
+  expect((await request(app.getHttpServer()).get('/claims/mine').set(auth(b)).expect(200)).body).toEqual([]);
+  expect((await request(app.getHttpServer()).get('/claims/mine').set(auth(reviewer)).expect(200)).body).toEqual([]);
+ });
+ it('serializes concurrent correction resubmissions and fences later correction cycles',async()=>{
+  const correction=(await request(app.getHttpServer()).post(`/claims/${claim.id}/correction-request`).set(auth(reviewer)).send({notes:'Clarify fictional relation'}).expect(201)).body;
+  const body={expectedVersion:correction.version,relationshipDescription:'Updated fictional relation',statementOfTruth:true};
+  await request(app.getHttpServer()).post(`/claims/${claim.id}/resubmit`).set(auth(b)).send(body).expect(403);
+  await request(app.getHttpServer()).post(`/claims/${claim.id}/resubmit`).set(auth()).send({...body,evidenceAttachments:{}}).expect(400);
+  const results=await Promise.all([1,2].map(()=>request(app.getHttpServer()).post(`/claims/${claim.id}/resubmit`).set(auth()).send(body)));
+  expect(results.map(r=>r.status).sort()).toEqual([201,409]);
+  const current=(await request(app.getHttpServer()).get(`/claims/${claim.id}`).set(auth()).expect(200)).body;
+  expect(current).toMatchObject({status:'PENDING_TIER1',version:correction.version+1,resubmissionCount:1,relationshipDescription:body.relationshipDescription});
+  expect(current.evidenceAttachments.map((e:any)=>e.mediaAssetId)).toEqual([asset.mediaAssetId]);
+  expect((await db.query("SELECT count(*) FROM audit_outbox WHERE entity_id=$1 AND action='CLAIM_RESUBMITTED'",[claim.id])).rows[0].count).toBe('1');
+  const later=(await request(app.getHttpServer()).post(`/claims/${claim.id}/correction-request`).set(auth(reviewer)).send({notes:'Second fictional review'}).expect(201)).body;
+  await request(app.getHttpServer()).post(`/claims/${claim.id}/resubmit`).set(auth()).send(body).expect(409);
+  const unchanged=(await request(app.getHttpServer()).get(`/claims/${claim.id}`).set(auth()).expect(200)).body;
+  expect(unchanged).toMatchObject({status:'CORRECTION_REQUESTED',version:later.version,resubmissionCount:1});
+ });
  it('does not let another account attach the upload',async()=>{
   const body={targetPersonId:await target(),relationshipDescription:'Fictional different member',statementOfTruth:true,evidenceAttachments:[{mediaAssetId:asset.mediaAssetId,documentType:'family_photo'}]};
   await request(app.getHttpServer()).post('/claims').set(auth(b)).send(body).expect(403);

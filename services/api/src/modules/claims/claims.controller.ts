@@ -1,5 +1,6 @@
 import {
   Controller,
+  Header,
   Post,
   Get,
   Body,
@@ -53,7 +54,15 @@ export class ClaimsController {
     return this.claimsService.listClaims(user, { status, branchId, claimantUserId });
   }
 
+  @Get('mine')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard)
+  async listOwnClaims(@CurrentUser() user: AuthenticatedUser) {
+    return this.claimsService.listOwnClaims(user);
+  }
+
   @Get(':id')
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async getClaim(

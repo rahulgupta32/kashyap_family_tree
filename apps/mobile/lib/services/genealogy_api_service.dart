@@ -24,6 +24,8 @@ class GenealogyApiService {
   bool _pushRemovalPending = false;
   Map<String,dynamic>? _pendingCalendarCreate;
   bool _calendarCreateBusy = false;
+  Map<String, dynamic>? _pendingProfileClaim;
+  bool _profileClaimBusy = false;
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
@@ -43,6 +45,7 @@ class GenealogyApiService {
 
   int _advanceSessionGeneration() {
     _pendingCalendarCreate = null;
+    _pendingProfileClaim = null;
     final generation = ++_sessionGeneration;
     if (!_disposed) { _sessionChanges.value = generation; }
     return generation;
@@ -61,10 +64,11 @@ class GenealogyApiService {
   Listenable get sessionChanges => _sessionChanges;
   bool get pushRemovalPending => _pushRemovalPending;
 
-  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true}) => {
+  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true, bool includeProfileClaim = true}) => {
     'accessToken': access, 'refreshToken': refresh,
     if (removalPending) 'pushRemovalPending': true,
     if (includeCalendar && _pendingCalendarCreate != null) 'pendingCalendarCreate': _pendingCalendarCreate,
+    if (includeProfileClaim && _pendingProfileClaim != null) 'pendingProfileClaim': _pendingProfileClaim,
   };
 
   /// The flag shares the secure credential record and its serialized writes.
@@ -125,7 +129,7 @@ class GenealogyApiService {
     await _serializeSessionStorage(() async {
       if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
       await _sessionStore.write(json.encode(_storedSession(access, refresh,
-        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement)));
+        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement, includeProfileClaim: !replacement)));
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
       // Requests may have begun with the prior access token while sign-in was
       // pending. Activation is a second boundary, separate from token rotation.
@@ -167,6 +171,21 @@ class GenealogyApiService {
           throw const FormatException('Invalid pending calendar creation');
         }
         _pendingCalendarCreate = pending;
+      }
+      if (data.containsKey('pendingProfileClaim')) {
+        final claim = data['pendingProfileClaim'];
+        if (claim is! Map<String, dynamic> ||
+            claim.length != 4 ||
+            !claim.keys.toSet().containsAll({'key', 'owner', 'server', 'body'}) ||
+            claim['server'] != baseUrl ||
+            claim['owner'] is! String || (claim['owner'] as String).isEmpty ||
+            claim['owner'] != chatAccountId ||
+            claim['key'] is! String || !_claimCreationKey.hasMatch(claim['key'] as String) ||
+            claim['body'] is! Map<String, dynamic>) {
+          throw const FormatException('Invalid pending profile claim');
+        }
+        _validateProfileClaimBody(claim['body'] as Map<String, dynamic>);
+        _pendingProfileClaim = claim;
       }
       return await _refreshSession();
     } on FormatException {
@@ -398,6 +417,123 @@ class GenealogyApiService {
       await _confirmCalendarCreate(pending, generation);
       return result['outcome'] as String;
     } finally { _calendarCreateBusy = false; }
+  }
+
+  bool get hasPendingProfileClaim => _pendingProfileClaim != null;
+  String? get pendingProfileClaimTargetId =>
+      (_pendingProfileClaim?['body'] as Map<String, dynamic>?)?['targetPersonId'] as String?;
+
+  static final _claimCreationKey = RegExp(
+      r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$');
+
+  // The secure record may contain only the initial claim contract. It cannot
+  // restore routes, credentials, arbitrary metadata, or an editable retry body.
+  static void _validateProfileClaimBody(Map<String, dynamic> body) {
+    const fields = {'targetPersonId', 'relationshipDescription', 'statementOfTruth',
+      'knownFamilyMembers', 'evidenceAttachments'};
+    bool text(dynamic value, int maximum, {bool empty = false}) =>
+        value is String && value.length <= maximum && (empty || value.trim().isNotEmpty);
+    if (body.keys.any((key) => !fields.contains(key)) ||
+        !text(body['targetPersonId'], 128) ||
+        !text(body['relationshipDescription'], 2000) ||
+        body['statementOfTruth'] != true) {
+      throw const FormatException('Invalid profile claim body');
+    }
+    if (body.containsKey('knownFamilyMembers')) {
+      final members = body['knownFamilyMembers'];
+      if (members is! List || members.length > 100 || members.any((member) => !text(member, 200, empty: true))) {
+        throw const FormatException('Invalid profile claim family references');
+      }
+    }
+    if (body.containsKey('evidenceAttachments')) {
+      final attachments = body['evidenceAttachments'];
+      final seen = <String>{};
+      const types = {'family_photo', 'event_invitation', 'elder_voucher',
+        'address_receipt', 'clan_record', 'other'};
+      if (attachments is! List || attachments.length > 5) {
+        throw const FormatException('Invalid profile claim evidence');
+      }
+      for (final attachment in attachments) {
+        if (attachment is! Map<String, dynamic> ||
+            attachment.keys.any((key) => !{'mediaAssetId', 'documentType', 'description'}.contains(key)) ||
+            !text(attachment['mediaAssetId'], 128) ||
+            !types.contains(attachment['documentType']) ||
+            !seen.add(attachment['mediaAssetId'] as String) ||
+            (attachment.containsKey('description') && !text(attachment['description'], 1000, empty: true))) {
+          throw const FormatException('Invalid profile claim evidence');
+        }
+      }
+    }
+    if (utf8.encode(json.encode(body)).length > 32768) {
+      throw const FormatException('Profile claim intent exceeds limit');
+    }
+  }
+
+  /// Persist an account/API-bound immutable identity before native HTTP. A
+  /// pending creation must be retried explicitly, never replaced by a new draft.
+  /// Bearer-only legacy/test sessions retain memory state until replacement.
+  Future<Map<String, dynamic>> createProfileClaim(Map<String, dynamic> body) async {
+    if (_authToken == null || _profileClaimBusy || _pendingProfileClaim != null) {
+      throw StateError('Profile claim creation unavailable');
+    }
+    // JSON copy detaches nested lists/maps from the caller before any await.
+    final copied = json.decode(json.encode(body)) as Map<String, dynamic>;
+    _validateProfileClaimBody(copied);
+    if (_refreshToken != null && (chatAccountId == null || chatAccountId!.isEmpty)) {
+      throw StateError('Profile claim account unavailable');
+    }
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final key = '${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}';
+    _pendingProfileClaim = {'key': key, 'owner': chatAccountId, 'server': baseUrl, 'body': copied};
+    return retryPendingProfileClaim();
+  }
+
+  Future<Map<String, dynamic>> retryPendingProfileClaim() async {
+    if (_authToken == null || _profileClaimBusy || _pendingProfileClaim == null) {
+      throw StateError('Profile claim retry unavailable');
+    }
+    final generation = _sessionGeneration;
+    final pending = _pendingProfileClaim!;
+    if (pending['server'] != baseUrl || pending['owner'] != chatAccountId) {
+      throw StateError('Profile claim session changed');
+    }
+    _profileClaimBusy = true;
+    try {
+      await _serializeSessionStorage(() async {
+        if (generation != _sessionGeneration || _authToken == null) { throw StateError('Session changed'); }
+        if (_refreshToken != null) {
+          await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!, removalPending: _pushRemovalPending)));
+          if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+        }
+      });
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      final body = pending['body'] as Map<String, dynamic>;
+      final result = await requestJson('/claims', method: 'POST', boundAccountId: pending['owner'] as String?,
+          data: {...body, 'creationKey': pending['key']});
+      if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+      if (result is! Map<String, dynamic> || result['id'] is! String || (result['id'] as String).isEmpty ||
+          (result.containsKey('targetPersonId') && result['targetPersonId'] != body['targetPersonId'])) {
+        throw const FormatException('Invalid profile claim acknowledgement');
+      }
+      await _serializeSessionStorage(() async {
+        if (generation != _sessionGeneration || _authToken == null || _pendingProfileClaim?['key'] != pending['key']) {
+          throw StateError('Session changed');
+        }
+        // Preserve memory until durable cleanup succeeds. Refresh/push/calendar
+        // writes share this queue and cannot resurrect or discard this intent.
+        if (_refreshToken != null) {
+          await _sessionStore.write(json.encode(_storedSession(_authToken!, _refreshToken!,
+              removalPending: _pushRemovalPending, includeProfileClaim: false)));
+          if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+        }
+        _pendingProfileClaim = null;
+      });
+      return result;
+    } finally { _profileClaimBusy = false; }
   }
 
   // SDK permission and token acquisition are separate from this authenticated

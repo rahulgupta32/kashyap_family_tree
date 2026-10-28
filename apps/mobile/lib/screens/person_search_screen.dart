@@ -1,3 +1,5 @@
+import '../localization/my_claim_labels.dart';
+import 'my_claims_screen.dart';
 import 'policy_acknowledgements_screen.dart';
 import 'device_sessions_screen.dart';
 import 'package:flutter/material.dart';
@@ -149,6 +151,14 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 );
               },
             ),
+            if (widget.apiService.authToken != null)
+              ListTile(leading: const Icon(Icons.assignment_ind),
+                title: Text(myClaimLabels['title']!), onTap: () {
+                  if (widget.apiService.authToken == null) return;
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => MyClaimsScreen(api: widget.apiService)));
+                }),
             ListTile(
               leading: const Icon(Icons.verified_user, color: Colors.blue),
               title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),

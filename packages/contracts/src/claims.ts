@@ -70,6 +70,8 @@ export interface RequestClaimCorrectionDto {
 }
 
 export interface ResubmitClaimDto {
+  /** Current claim version observed by the client; omitted only by legacy callers. */
+  expectedVersion?: number;
   relationshipDescription?: string;
   knownFamilyMembers?: string[];
   evidenceAttachments?: Array<{

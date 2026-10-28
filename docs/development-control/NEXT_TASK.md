@@ -1,3 +1,11 @@
+# Next release sprint execution
+
+Fetch actual branch/PR5 HEAD and source-bound automatic checks. Inspect pending main/fast/native conclusions without assuming success or starting duplicate full runs. New batch report: docs/execution/MEMBER_CLAIM_RECOVERY_CORRECTION_REPORT.md. Fix demonstrated failures, preserving assertions and existing security/privacy gates.
+
+Member discovery now covers latest100 own references; initial keyed native creation persists/replays through process restoration; correction description/truth uses loaded revision. Next complete approved correction evidence/dispute journeys and safe permanent-rejection resolution before clearing unknown creation intents; add bounded older-claim pagination. Keep independent data/domain/operations/distribution handoffs active through RELEASE_SPRINT. No mandatory scope deferred or milestone closed from aggregate CI. No merge/deploy.
+
+## Retained prior queue
+
 # Release sprint next execution
 
 Read RELEASE_SPRINT.md and CURRENT_STATE.md. Preserve existing integration branch/PR5 base and newer work. Inspect automatic exact-source fast/main/native results; pending is not passed, no duplicate full reruns. Resolve demonstrated failures without weakening assertions.

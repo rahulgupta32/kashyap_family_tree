@@ -19,8 +19,8 @@ One integration owner reviews and publishes the existing integration branch. Par
 
 | ID | Blocker / dependency | Responsible role | Required exit evidence | Current status |
 |---|---|---|---|---|
-| B01 | Claim retry widget tap misses viewport after layout change | Mobile/QA | Exact-source clean Flutter analysis and complete suite, retry identity assertions retained | Correction prepared; runtime pending |
-| B02 | Member claim status/correction/resubmission/dispute and process-restored pending identity | Member lifecycle engineering | Authorized API/admin/mobile complete lifecycle, account-switch/negative/retry evidence | Status viewing in implementation; remaining lifecycle open |
+| B01 | Claim retry widget tap misses viewport after layout change | Mobile/QA | Exact-source clean Flutter analysis and complete suite, retry identity assertions retained | Verified at4c14f9e (260 Flutter tests); later-source checks separate |
+| B02 | Member claim status/correction/resubmission/dispute and process-restored pending identity | Member lifecycle engineering | Authorized API/admin/mobile complete lifecycle, account-switch/negative/retry evidence | Discovery/durable initial retry/versioned description correction implemented; new-source runtime pending; remaining lifecycle open |
 | B03 | Import promotion writer disabled | Data engineering + Data Steward | Approved mapping/consent; controlled promotion/resume/reconciliation and two accepted rehearsals | OPEN |
 | B04 | Cultural proposal state stored in process-local Map | Domain engineering + cultural authority | Durable independent approval/restart/concurrency evidence; approved rules before activation | OPEN; HG gates remain closed |
 | B05 | Production environment and recoverability not verified | Operations | Approved stack, private storage/scanner/workers/TLS/secrets, alerts, measured PITR/restore/rollback | OPEN; preparation only |

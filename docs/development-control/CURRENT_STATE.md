@@ -1,3 +1,9 @@
+## Member claim discovery, durable creation retry and correction — verification pending
+
+Recovered actual remote/PR HEAD4c14f9e2576f48981d50af72adf278edb9e9529e: Fast39630696816/Main39630707317/iOS39630707354 independently SUCCESS; all six main jobs passed and Flutter119327866306 confirms260 tests. Current source adds own-account minimized latest100 discovery/drawer, secure native immutable initial-claim retry/process recovery, and claimant description/truth correction with supplied-version fencing under the server row lock. Wrong-owner/stale/concurrent/invalid metadata, retained evidence, storage uncertainty/session/privacy regressions added. Uncertain correction requires fresh status reload and retains disabled draft through failed reads.
+
+Local packages/API/admin typechecks/API build and all511 backend unit tests/51 suites PASS (container-only missing Express link repaired before complete rerun). Frozen validators/15 regressions and whitespace PASS. Actual new-source PostgreSQL/Flutter/native/full CI PENDING; no SDK/database locally. Read docs/execution/MEMBER_CLAIM_RECOVERY_CORRECTION_REPORT.md for exact limits. Latest100 pagination, dispute/evidence-correction UI and safe permanent-rejection resolution remain OPEN. No full milestone/frozen acceptance closed. All260/RG-01..12 OPEN; no merge/deploy/store.
+
 ## Release sprint kickoff and member claim status — verification pending
 
 Recovered PR5 HEAD d0bc6e107beedf6c03841db7d49a1723b660e7e1; iOS38780047751 SUCCESS, Fast38780039580/Main38780047946 FAILURE. Inspected platform116577570666 SUCCESS (567 general integration/71 browser); Android/private S3/ClamAV/repository benchmark passed. Flutter116577570579 clean analysis,255 passed/one failed: retry tap centre y600 outside800x600 viewport after message layout change. This checkpoint centres/settles the widget before tapping and requires hitTestable; assertions/timeouts unchanged.
