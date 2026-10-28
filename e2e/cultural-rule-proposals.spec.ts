@@ -148,3 +148,72 @@ test('late private detail and history cannot repopulate a replaced authenticatio
     await expect(page.getByRole('button', { name: /Request review|Request final/ })).toHaveCount(0);
   } finally { release(); }
 });
+
+test('older catalog replaces and clears the prior private page before the response arrives', async ({ page }) => {
+  await login(page);
+  const olderId = '44444444-4444-4444-8444-444444444444';
+  let entered!: () => void, release!: () => void;
+  const arrived = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => url.origin === new URL(API).origin && url.pathname === routePath, async route => {
+    if (new URL(route.request().url()).searchParams.has('before')) {
+      entered(); await gate;
+      await route.fulfill({ json: { items: [{ ...fixture, id: olderId, englishTerm: 'Older private term' }], nextBefore: null } });
+    } else await route.fulfill({ json: { items: [fixture], nextBefore: id } });
+  });
+  await page.goto(routePath);
+  await page.getByRole('button', { name: /Older proposals/ }).click(); await arrived;
+  try {
+    await expect(page.getByRole('article')).toHaveCount(0);
+    release();
+    await expect(page.getByRole('article')).toHaveCount(1);
+    await expect(page.getByRole('article')).toContainText('Older private term');
+    await expect(page.getByRole('article')).not.toContainText(fixture.englishTerm);
+  } finally { release(); }
+});
+
+for (const invalid of ['wrong-detail-id', 'oversized-history', 'malformed-status', 'malformed-cursor'] as const) {
+  test(`invalid private response ${invalid} clears records and disables decisions`, async ({ page }) => {
+    await login(page); let invalidate = false;
+    await page.route(url => url.origin === new URL(API).origin && url.pathname.startsWith(routePath), async route => {
+      const path = new URL(route.request().url()).pathname;
+      let json: unknown = path.endsWith('/history') ? [event] : path === routePath ? { items: [fixture], nextBefore: null } : fixture;
+      if (invalidate) {
+        if (invalid === 'wrong-detail-id' && path === `${routePath}/${id}`) json = { ...fixture, id: reviewer };
+        if (invalid === 'oversized-history' && path.endsWith('/history')) json = Array.from({ length: 11 }, (_, i) => ({ ...event, sequence: String(i + 1) }));
+        if (invalid === 'malformed-status' && path === routePath) json = { items: [{ ...fixture, status: 'UNKNOWN' }], nextBefore: null };
+        if (invalid === 'malformed-cursor' && path === routePath) json = { items: [fixture], nextBefore: 'invalid' };
+      }
+      await route.fulfill({ json });
+    });
+    await page.goto(routePath);
+    await expect(page.getByRole('article')).toHaveCount(1);
+    invalidate = true;
+    await page.getByRole('button', { name: /Details and decision history/ }).click();
+    await expect(page.getByRole('alert')).toContainText('Action unconfirmed');
+    await expect(page.getByRole('article')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Selected rule proposal' })).toHaveCount(0);
+    await expect(page.getByRole('form', { name: 'New rule proposal' }).getByRole('button')).toBeDisabled();
+  });
+}
+
+for (const invalid of ['acknowledgement', 'reload'] as const) {
+  test(`wrong mutation ${invalid} identity never confirms a private decision`, async ({ page }) => {
+    await login(page); let mutated = false;
+    await page.route(url => url.origin === new URL(API).origin && url.pathname.startsWith(routePath), async route => {
+      const request = route.request(), path = new URL(request.url()).pathname;
+      if (request.method() === 'POST') {
+        mutated = true;
+        await route.fulfill({ json: { ...fixture, id: invalid === 'acknowledgement' ? reviewer : id, status: 'REVIEWED' } }); return;
+      }
+      await route.fulfill({ json: path.endsWith('/history') ? [event] : path === routePath ? { items: [fixture], nextBefore: null }
+        : { ...fixture, id: mutated && invalid === 'reload' ? reviewer : id } });
+    });
+    await page.goto(routePath); await inspect(page);
+    await page.getByLabel('निर्णय टिप्पणी (Decision notes)', { exact: true }).fill('Fictional identity mismatch regression');
+    await page.getByRole('button', { name: /Request review endorsement/ }).click();
+    await expect(page.getByRole('alert')).toContainText('Action unconfirmed');
+    await expect(page.getByRole('region', { name: 'Selected rule proposal' })).toHaveCount(0);
+    await expect(page.getByRole('article')).toHaveCount(0);
+  });
+}

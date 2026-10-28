@@ -16,6 +16,37 @@ type Proposal = {
 type ProposalPage = { items: Proposal[]; nextBefore: string | null };
 type DecisionEvent = { sequence: string; action: string; actorId: string; fromStatus: string | null;
   toStatus: string; reason: string; createdAt: string };
+const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const statuses = ['PROPOSED', 'REVIEWED', 'APPROVED', 'REJECTED'];
+const bounded = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+const timestamp = (v: unknown) => typeof v === 'string' && v.length <= 40 && Number.isFinite(Date.parse(v));
+function proposalValid(value: unknown): value is Proposal {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Proposal;
+  return uuid(p.id) && Object.values(RuleType).includes(p.ruleType) && statuses.includes(p.status) &&
+    bounded(p.pathCode, 200) && bounded(p.nepaliTerm, 500) && bounded(p.englishTerm, 500) &&
+    bounded(p.rationale, 4000) && uuid(p.proposedByUserId) && timestamp(p.createdAt) &&
+    (p.descriptionNepali === undefined || bounded(p.descriptionNepali, 4000)) &&
+    (p.reviewerUserId === undefined || uuid(p.reviewerUserId)) &&
+    (p.seniorAuthorityUserId === undefined || uuid(p.seniorAuthorityUserId)) &&
+    (p.reviewerNotes === undefined || bounded(p.reviewerNotes, 4000)) &&
+    (p.authorityComments === undefined || bounded(p.authorityComments, 4000)) &&
+    (p.reviewedAt === undefined || timestamp(p.reviewedAt)) && (p.approvedAt === undefined || timestamp(p.approvedAt));
+}
+function pageValid(value: unknown): value is ProposalPage {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as ProposalPage;
+  return Array.isArray(p.items) && p.items.length <= 100 && p.items.every(proposalValid) &&
+    new Set(p.items.map(item => item.id)).size === p.items.length && (p.nextBefore === null || uuid(p.nextBefore));
+}
+function historyValid(value: unknown): value is DecisionEvent[] {
+  return Array.isArray(value) && value.length <= 10 && value.every(event => event && typeof event === 'object' &&
+    typeof event.sequence === 'string' && /^[1-9][0-9]{0,19}$/.test(event.sequence) &&
+    ['PROPOSED', 'REVIEWED', 'DECIDED'].includes(event.action) && uuid(event.actorId) &&
+    (event.fromStatus === null || statuses.includes(event.fromStatus)) && statuses.includes(event.toStatus) &&
+    bounded(event.reason, 4000) && timestamp(event.createdAt)) &&
+    new Set(value.map(event => event.sequence)).size === value.length;
+}
 const empty = { ruleType: RuleType.NATA_SAINO, pathCode: '', nepaliTerm: '', englishTerm: '', descriptionNepali: '', rationale: '' };
 const unavailable = 'कार्य पुष्टि भएन। हालको सूची पुनः लोड गरी जाँच्नुहोस्। (Action unconfirmed. Reload current proposals and check before another action.)';
 
@@ -53,7 +84,7 @@ export default function RuleProposalsPage() {
     const work = {}; operation.current = work;
     const stamp = ++version.current;
     setBusy(true); setError(''); setMessage(''); setSelected(null); setHistory([]); setNotes('');
-    if (!before) { setLoadedScope(''); setCatalog({ items: [], nextBefore: null }); }
+    clearPrivate();
     try {
       const [page, result] = await Promise.all([
         ApiClient.culturalRuleProposals<ProposalPage>(before ? `?before=${encodeURIComponent(before)}` : '', accessToken),
@@ -63,7 +94,8 @@ export default function RuleProposalsPage() {
         ]) : Promise.resolve(null),
       ]);
       if (!valid(stamp, work)) return;
-      setCatalog(old => before ? { items: [...old.items, ...page.items], nextBefore: page.nextBefore } : page);
+      if (!pageValid(page) || (result && (!proposalValid(result[0]) || result[0].id !== id || !historyValid(result[1])))) throw new Error('Invalid private response');
+      setCatalog(page);
       setLoadedScope(scope); setSelected(result?.[0] ?? null); setHistory(result?.[1] ?? []); setUnconfirmed(false);
     } catch {
       if (valid(stamp, work)) { clearPrivate(); setUnconfirmed(true); setError(unavailable); }
@@ -100,13 +132,14 @@ export default function RuleProposalsPage() {
             ? { ruleId: detail!.id, reviewerUserId: user.id, reviewerNotes: note, isEndorsed: kind === 'ENDORSE' }
             : { ruleId: detail!.id, seniorAuthorityUserId: user.id, authorityComments: note, decision: kind === 'APPROVE' ? 'APPROVED' : 'REJECTED' });
       if (!valid(stamp, work)) return;
-      if (!result || typeof result.id !== 'string' || !result.id) throw new Error('Unconfirmed result');
+      if (!proposalValid(result) || (kind !== 'PROPOSE' && result.id !== detail!.id)) throw new Error('Unconfirmed result');
       const [page, fresh, events] = await Promise.all([
         ApiClient.culturalRuleProposals<ProposalPage>('', accessToken),
         ApiClient.culturalRuleProposals<Proposal>(`/${encodeURIComponent(result.id)}`, accessToken),
         ApiClient.culturalRuleProposals<DecisionEvent[]>(`/${encodeURIComponent(result.id)}/history`, accessToken),
       ]);
       if (!valid(stamp, work)) return;
+      if (!pageValid(page) || !proposalValid(fresh) || fresh.id !== result.id || !historyValid(events)) throw new Error('Invalid private response');
       setCatalog(page); setLoadedScope(scope); setSelected(fresh); setHistory(events); setNotes('');
       if (kind === 'PROPOSE') setForm(empty);
       setMessage('प्रस्ताव अभिलेख पुनः जाँचियो (Proposal record reloaded). नियम सक्रिय भएका छैनन् (Rules have not been activated).');
