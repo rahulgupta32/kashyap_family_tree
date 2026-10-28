@@ -8,6 +8,8 @@ import {
   ForbiddenException,
   ConflictException,
   UnauthorizedException,
+  HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import {
@@ -28,6 +30,7 @@ import {
 } from '@kashyap/contracts';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { DatabaseService } from '../../database/database.service';
+import { RedisService } from '../../redis/redis.service';
 import { ClaimRepository, ClaimRecord, ClaimDisputeRecord } from '../../database/repositories/claim.repository';
 import { PersonRepository } from '../../database/repositories/person.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
@@ -51,6 +54,7 @@ export class ClaimsService {
     private readonly userRepo: UserRepository,
     private readonly auditOutboxRepo: AuditOutboxRepository,
     @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   private generatePresignedUrl(mediaAssetId: string, claimantUserId?: string): string {
@@ -363,6 +367,23 @@ export class ClaimsService {
   async resolveClaimCreation(claimantUserId: string, dto: ResolveClaimCreationDto): Promise<ClaimCreationResolutionDto> {
     validateClaimResolutionIntent(dto);
     const fingerprint = claimCreationFingerprint(dto);
+    // Bound immutable closure/audit growth across keys, sessions and API replicas.
+    // Redis failure cannot silently enable unbounded permanent writes.
+    let attempts: number;
+    try {
+      if (!this.redis?.isReady()) throw new Error('Admission unavailable');
+      attempts = Number(await this.redis.eval(`
+        local attempts = redis.call('INCR', KEYS[1])
+        if attempts == 1 or redis.call('TTL', KEYS[1]) < 0 then
+          redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return attempts
+      `, 1, `claims:creation-resolution:account:${claimantUserId}`, 600));
+      if (!Number.isSafeInteger(attempts) || attempts < 1) throw new Error('Admission unconfirmed');
+    } catch {
+      throw new ServiceUnavailableException('Claim resolution temporarily unavailable');
+    }
+    if (attempts > 10) throw new HttpException('Too many claim resolution requests. Try again later.', 429);
     return this.db.transaction(async client => {
       // The same account lock serializes this resolution against submitClaim, including unknown commit outcomes.
       const user = (await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [claimantUserId])).rows[0];

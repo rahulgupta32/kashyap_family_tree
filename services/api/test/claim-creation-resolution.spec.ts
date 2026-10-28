@@ -14,9 +14,23 @@ describe('Permanent account-bound initial claim resolution',()=>{
    return {rows:[]};
   });
   const audit={recordAuditIntent:jest.fn(async()=>{})};
-  const service=new ClaimsService({transaction:(work:any)=>work({query})} as any,{} as any,{} as any,{} as any,{} as any,audit as any);
+  const service=new ClaimsService({transaction:(work:any)=>work({query})} as any,{} as any,{} as any,{} as any,{} as any,audit as any,undefined,{isReady:()=>true,eval:jest.fn(async()=>1)} as any);
   return {service,query,audit};
  }
+ it('rejects excess account-wide resolution attempts before database work',async()=>{
+  const f=fixture();const redis=(f.service as any).redis;redis.eval.mockResolvedValue(11);
+  await expect(f.service.resolveClaimCreation(account,body())).rejects.toMatchObject({status:429});
+  expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining("redis.call('INCR'"),1,`claims:creation-resolution:account:${account}`,600);
+  expect(f.query).not.toHaveBeenCalled();expect(f.audit.recordAuditIntent).not.toHaveBeenCalled();
+ });
+ it.each(['unready','failure','invalid'])('fails closed on %s admission before database work',async mode=>{
+  const f=fixture();const redis=(f.service as any).redis;
+  if(mode==='unready')redis.isReady=()=>false;
+  if(mode==='failure')redis.eval.mockRejectedValue(new Error('Private provider diagnostic'));
+  if(mode==='invalid')redis.eval.mockResolvedValue('invalid');
+  await expect(f.service.resolveClaimCreation(account,body())).rejects.toMatchObject({status:503,message:'Claim resolution temporarily unavailable'});
+  expect(f.query).not.toHaveBeenCalled();expect(f.audit.recordAuditIntent).not.toHaveBeenCalled();
+ });
  it('closes an unused identity without looking up targets or assets or creating workflow records',async()=>{
   const f=fixture(),intent={...body(),evidenceAttachments:[{mediaAssetId:randomUUID(),documentType:'family_photo' as const}]};
   await expect(f.service.resolveClaimCreation(account,intent)).resolves.toEqual({outcome:'ABANDONED'});
