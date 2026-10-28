@@ -32,6 +32,14 @@ export default function ClaimsAdminPage() {
   async function loadClaims() {
     if (scopeRef.current!==scope||!accessToken || isLoading) return;
     const requestVersion = ++loadVersion.current;
+    // A fresh authorization read replaces the entire private review context.
+    downloadBusy.current = null;
+    setClaims([]);
+    setLoadedScope('');
+    setActiveClaim(null);
+    setReviewNotes('');
+    setEvidenceError(null);
+    setDownloadingAsset(null);
     setLoading(true);
     try {
       const data = await ApiClient.listClaims(
@@ -40,9 +48,9 @@ export default function ClaimsAdminPage() {
       );
       if (requestVersion === loadVersion.current&&scopeRef.current===scope){setClaims(data);setLoadedScope(scope);}
     } catch (err: any) {
-      if (requestVersion === loadVersion.current) setMessage({ type: 'error', text: 'दाबी कार्य उपलब्ध छैन (Claim action unavailable; reload to retry)' });
+      if (requestVersion === loadVersion.current && scopeRef.current === scope) setMessage({ type: 'error', text: 'दाबी कार्य उपलब्ध छैन (Claim action unavailable; reload to retry)' });
     } finally {
-      if (requestVersion === loadVersion.current) setLoading(false);
+      if (requestVersion === loadVersion.current && scopeRef.current === scope) setLoading(false);
     }
   }
 
@@ -101,7 +109,7 @@ export default function ClaimsAdminPage() {
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error: any) {
-      if(scopeRef.current===scope)setEvidenceError('प्रमाण उपलब्ध छैन (Evidence unavailable; reload to retry)');
+      if(scopeRef.current===scope&&downloadBusy.current===operation)setEvidenceError('प्रमाण उपलब्ध छैन (Evidence unavailable; reload to retry)');
     } finally {
       if(downloadBusy.current===operation){downloadBusy.current=null;setDownloadingAsset(null);}
     }
@@ -159,6 +167,10 @@ export default function ClaimsAdminPage() {
               {loading ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-slate-400">लोड हुँदैछ (Loading claims)...</td>
+                </tr>
+              ) : loadedScope !== scope ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400" role="alert">दाबी सूची उपलब्ध छैन (Claims unavailable; refresh to retry).</td>
                 </tr>
               ) : visibleClaims.length === 0 ? (
                 <tr>
