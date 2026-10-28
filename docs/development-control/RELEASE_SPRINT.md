@@ -37,3 +37,7 @@ PR5 source d0bc6e107beedf6c03841db7d49a1723b660e7e1: iOS38780047751 SUCCESS; Fas
 ## 22 October local recovery update
 
 Remote4c14f9e remains published; local code through8aec913 is not published. Source publication is a new explicit blocker B09 owned by repository owner/applicable approval review: the public source/documentation upload was rejected; exact reviewed payload approval and permitted checks required, no workaround. Integrated539 unit/type/build/frozen checks pass; new-source PG/Flutter/browser/native and migrations pending. RECOVERY_CHECKPOINT_20261022.md records all four local batches and remaining human/engineering owners. Decision remains NO-GO.
+
+## Continued local integration — 22 October
+
+User target revised to **26 October 2026**; no mandatory requirement or acceptance gate is waived. B02 now also includes locally implemented scanned correction additions and acknowledged durable pending-creation resolution/closure; full dispute and runtime acceptance remain OPEN. B04 now includes a private proposal governance UI, with final bounded review and runtime acceptance pending. Full backend non-integration verification is 571 tests/53 suites PASS; final admin production build PASS. B03/B05/B06/B07/B08/B09 remain OPEN with the roles above. See CLAIM_RESOLUTION_AND_GOVERNANCE_UI_REPORT for the exact evidence limits and human dependencies. New source remains unpublished; decision NO-GO.

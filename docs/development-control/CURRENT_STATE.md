@@ -1,3 +1,7 @@
+# Latest local checkpoint — 22 October 2026
+
+Read `docs/execution/CLAIM_RESOLUTION_AND_GOVERNANCE_UI_REPORT.md` before the historical entries below. Remote HEAD remains4c14f9e; new claim closure/mobile evidence/governance UI work is local only. Backend 571 tests/53 suites and final admin production build pass; new-source database/Flutter/browser/native/CI remain pending. Publication review remains blocked; no alternate upload. Target26 October does not change frozen scope or gates. Production **NO-GO**; no merge/deploy.
+
 ## 22 October recovery — LOCAL ONLY / publication blocked
 
 Remote/PR5 remains4c14f9e2576f48981d50af72adf278edb9e9529e (draft/open; Fast39630696816/Main39630707317/iOS39630707354 SUCCESS). Recovered21-file batch committed locally210ff4e, with reviewed independent admin correction8268b51, own-history pagination6b8a51b and durable cultural governance8aec913 integrated locally. Nothing from these four commits is published. All539 unit cases/52 suites, API/admin typechecks/builds and frozen validators/15 regressions PASS on local integrated code8aec913. Actual PG migrations/integration, Flutter/browser/native and new-source CI PENDING; publication blocked by automatic approval review. Explicit reviewed public-payload approval plus applicable check permission required; do not route around rejection. Detailed exact source/evidence/blockers: RECOVERY_CHECKPOINT_20261022.md. All release gates OPEN; NO-GO; no merge/deploy.

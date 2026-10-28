@@ -1,3 +1,7 @@
+# Latest local checkpoint — 22 October 2026
+
+Read `docs/execution/CLAIM_RESOLUTION_AND_GOVERNANCE_UI_REPORT.md` before the historical entries below. Remote HEAD remains4c14f9e; new claim closure/mobile evidence/governance UI work is local only. Backend 571 tests/53 suites and final admin production build pass; new-source database/Flutter/browser/native/CI remain pending. Publication review remains blocked; no alternate upload. Target26 October does not change frozen scope or gates. Production **NO-GO**; no merge/deploy.
+
 # Current release decision — 22 October 2026: NO-GO
 
 Remote4c14f9e/PR5 is draft/open with successful fast/full/iOS checks for that source. Recovered and parallel local sprint code through8aec913 is UNPUBLISHED due active automatic publication-review rejection. Local integrated539 unit tests, typechecks/builds and frozen validators pass; PG migrations/integration, Flutter/browser/native and new-source CI remain unverified. See RECOVERY_CHECKPOINT_20261022.md and RELEASE_SPRINT.md. All260 acceptance and RG-01..12 remain OPEN; no main merge/deploy/store/real-data/cultural activation authorized.

@@ -1,3 +1,7 @@
+# Latest local checkpoint — 22 October 2026
+
+Read `docs/execution/CLAIM_RESOLUTION_AND_GOVERNANCE_UI_REPORT.md` before the historical entries below. Remote HEAD remains4c14f9e; new claim closure/mobile evidence/governance UI work is local only. Backend 571 tests/53 suites and final admin production build pass; new-source database/Flutter/browser/native/CI remain pending. Publication review remains blocked; no alternate upload. Target26 October does not change frozen scope or gates. Production **NO-GO**; no merge/deploy.
+
 # Recover this local checkpoint before further publication
 
 Read RECOVERY_CHECKPOINT_20261022.md first. Four meaningful local commits exist beyond remote4c14f9e; do not reimplement them or discard separate branches. Automatic GitHub publication review remains BLOCKED. Obtain explicit approval for exact reviewed public payload/destination and use applicable checks; never bypass through another upload method. Once permitted, publish source-bound existing PR5 branch and inspect automatic CI without duplicate runs. Local539 unit/type/build/frozen checks pass; actual PG/Flutter/browser/native/migration verification pending. No production acceptance closed. No merge/deploy.
