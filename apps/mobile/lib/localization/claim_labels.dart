@@ -14,6 +14,8 @@ const claimLabels={
  'resubmit':'सुधार पुनः पेश गर्नुहोस् (Resubmit correction)',
  'resubmitUnconfirmed':'सुधार पुष्टि भएन। स्थिति पुनः लोड गर्नुहोस् (Correction unconfirmed; reload status)',
  'reloadBeforeCorrection':'फेरि परिवर्तन गर्नुअघि वर्तमान स्थिति लोड गर्नुहोस् (Reload current status before another correction)',
+ 'additionalEvidence':'थप प्रमाण (Additional evidence)',
+ 'evidenceCategory':'प्रमाण प्रकार (Evidence category)',
  'evidenceRetained':'पहिले पठाएका प्रमाण सुरक्षित रहन्छन् (Previously submitted evidence is retained)',
  'statusTitle':'दाबीको वर्तमान स्थिति (Current claim status)',
  'statusRefresh':'स्थिति पुनः लोड (Reload status)',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../localization/claim_labels.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -14,7 +15,11 @@ class ClaimStatusScreen extends StatefulWidget {
 class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
   late final GenealogyApiService _api;
   late final int _generation;
+  static const _picker = MethodChannel('kashyap/chat_attachments');
   final _description = TextEditingController();
+  final List<Map<String,dynamic>> _evidence = [];
+  bool _uploading = false, _notice = false;
+  String _evidenceType = 'family_photo';
   bool _expired = false, _loading = false, _saving = false, _truth = false;
   bool _claimant = false, _needsReload = false;
   int? _version;
@@ -22,7 +27,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
   bool get _current => mounted && !_expired && identical(widget.api, _api) &&
       _api.authToken != null && _api.pushSessionGeneration == _generation;
   bool get _canCorrect => _current && _claimant && _status == 'CORRECTION_REQUESTED' &&
-      _version != null && !_loading && !_saving && !_needsReload;
+      _version != null && !_loading && !_saving && !_uploading && !_needsReload;
   @override
   void initState() {
     super.initState();
@@ -35,14 +40,15 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
     _status = _correction = _error = null;
     _version = null;
     _claimant = _truth = false;
-    if (!preserveDraft) _description.clear();
+    _notice = false;
+    if (!preserveDraft) { _description.clear(); _evidence.clear(); }
   }
   void _sessionChanged() {
     if (!_current && mounted) {
       setState(() {
         _expired = true;
         _clear();
-        _loading = _saving = false;
+        _loading = _saving = _uploading = false;
       });
     }
   }
@@ -55,7 +61,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
     }
   }
   Future<void> _load() async {
-    if (!_current || _loading || _saving) return;
+    if (!_current || _loading || _saving || _uploading) return;
     setState(() { _loading = true; _clear(preserveDraft:_needsReload); });
     try {
       final result = await _api.requestJson('/claims/${Uri.encodeComponent(widget.claimId)}');
@@ -81,11 +87,42 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
         _description.text = claimant && _status == 'CORRECTION_REQUESTED'
             ? result['relationshipDescription'] as String : '';
         _needsReload = false;
+        _evidence.clear();
+        _notice = false;
       });
     } catch (_) {
       if (_current) setState(() => _error = claimLabels['statusUnavailable']);
     } finally {
       if (_current) setState(() => _loading = false);
+    }
+  }
+  Future<void> _chooseEvidence() async {
+    if (!_canCorrect || !_notice || _evidence.length >= 5) return;
+    final selectedType = _evidenceType;
+    setState(() { _uploading = true; _error = null; });
+    try {
+      final file = await _picker.invokeMapMethod<String,dynamic>('pickProfile');
+      if (!_current || file == null) return;
+      if (!['image/jpeg','image/png','image/webp'].contains(file['mimeType']) ||
+          file['dataBase64'] is! String || (file['dataBase64'] as String).length > 13981016) {
+        throw const FormatException('Unavailable evidence image');
+      }
+      final result = await _api.requestJson('/me/claim-evidence',method:'POST',data:{
+        'mimeType':file['mimeType'],'dataBase64':file['dataBase64'],
+        'documentType':selectedType,'evidenceNoticeAccepted':true,
+      });
+      if (!_current) return;
+      if (result is! Map || result['mediaAssetId'] is! String ||
+          !RegExp(r'^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-5][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$').hasMatch(result['mediaAssetId'] as String) ||
+          result['documentType'] != selectedType || result['quarantineStatus'] != 'CLEAN' ||
+          _evidence.any((item) => item['mediaAssetId'] == result['mediaAssetId'])) {
+        throw const FormatException('Unconfirmed private evidence');
+      }
+      setState(() => _evidence.add({'mediaAssetId':result['mediaAssetId'],'documentType':selectedType}));
+    } catch (_) {
+      if (_current) setState(() => _error = claimLabels['uploadFailed']);
+    } finally {
+      if (_current) setState(() => _uploading = false);
     }
   }
   Future<void> _resubmit() async {
@@ -96,7 +133,8 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
       return;
     }
     final body = <String,dynamic>{'expectedVersion':_version,
-      'relationshipDescription':description,'statementOfTruth':true};
+      'relationshipDescription':description,'statementOfTruth':true,
+      if (_evidence.isNotEmpty) 'evidenceAttachments':_evidence.map((item)=>Map<String,dynamic>.from(item)).toList()};
     setState(() { _saving = true; _error = null; });
     try {
       await _api.requestJson('/claims/${Uri.encodeComponent(widget.claimId)}/resubmit',
@@ -113,7 +151,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
           _status = _correction = null;
           _version = null;
           _truth = _claimant = false;
-          if (_error == null) _description.clear();
+          if (_error == null) { _description.clear(); _evidence.clear(); }
         });
         if (_error == null) await _load();
       }
@@ -123,6 +161,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
   void dispose() {
     _api.sessionChanges.removeListener(_sessionChanged);
     _description.dispose();
+    _evidence.clear();
     super.dispose();
   }
   @override
@@ -131,12 +170,13 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
     body: _expired || !_current
         ? Center(child: Text(claimLabels['session']!))
         : ListView(padding: const EdgeInsets.all(16), children: [
-            if (_loading || _saving) const Center(child: CircularProgressIndicator()),
+            if (_loading || _saving || _uploading) const Center(child: CircularProgressIndicator()),
             if (_error != null) Semantics(liveRegion: true, child: Text(_error!)),
             if (_needsReload) ...[
               Text(claimLabels['reloadBeforeCorrection']!),
               TextField(key:const ValueKey('claim-unconfirmed-correction'),controller:_description,
                 enabled:false,maxLines:3,decoration:InputDecoration(labelText:claimLabels['description'])),
+              if(_evidence.isNotEmpty)Text('${claimLabels['additionalEvidence']}: ${_evidence.length}'),
             ],
             if (_status != null) ...[
               Semantics(liveRegion: true, child: Text(claimStatusLabels[_status]!)),
@@ -151,12 +191,29 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
                   CheckboxListTile(key:const ValueKey('claim-correction-truth'),value:_truth,
                     onChanged:_canCorrect?(value){if(_canCorrect)setState(()=>_truth=value??false);}:null,
                     title:Text(claimLabels['truth']!)),
+                  Text(claimLabels['notice']!),
+                  CheckboxListTile(key:const ValueKey('claim-correction-evidence-notice'),value:_notice,
+                    onChanged:_canCorrect?(value){if(_canCorrect)setState(()=>_notice=value??false);}:null,
+                    title:Text(claimLabels['noticeCheck']!)),
+                  DropdownButtonFormField<String>(initialValue:_evidenceType,
+                    decoration:InputDecoration(labelText:claimLabels['evidenceCategory']),
+                    items:const [
+                      DropdownMenuItem(value:'family_photo',child:Text('पारिवारिक फोटो (Family photo)')),
+                      DropdownMenuItem(value:'event_invitation',child:Text('कार्यक्रम निमन्त्रणा (Event invitation)')),
+                      DropdownMenuItem(value:'clan_record',child:Text('पारिवारिक अभिलेख (Family record)')),
+                    ],onChanged:_canCorrect?(value){if(_canCorrect&&value!=null)setState(()=>_evidenceType=value);}:null),
+                  OutlinedButton(key:const ValueKey('claim-correction-evidence-upload'),
+                    onPressed:_canCorrect&&_notice&&_evidence.length<5?_chooseEvidence:null,
+                    child:Text(claimLabels['upload']!)),
+                  for(final item in _evidence)ListTile(title:Text(item['documentType'] as String),
+                    trailing:IconButton(tooltip:claimLabels['remove'],icon:const Icon(Icons.remove_circle_outline),
+                      onPressed:_canCorrect?(){if(_canCorrect)setState(()=>_evidence.remove(item));}:null)),
                   ElevatedButton(onPressed:_canCorrect?_resubmit:null,
                     child:Text(claimLabels['resubmit']!)),
                 ],
               ],
             ],
-            OutlinedButton(onPressed: _loading || _saving ? null : _load,
+            OutlinedButton(onPressed: _loading || _saving || _uploading ? null : _load,
                 child: Text(claimLabels['statusRefresh']!)),
           ]),
   );
