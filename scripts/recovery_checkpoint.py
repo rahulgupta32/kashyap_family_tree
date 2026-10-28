@@ -38,6 +38,33 @@ def refs(repo):
                 '--format=%(refname)%09%(objectname)').decode().splitlines())
 
 
+
+def clean_worktrees(repo):
+    """Check every registered checkout without recording or printing private paths."""
+    count = 0
+    heads = []
+    for block in git(repo, 'worktree', 'list', '--porcelain', '-z').split(b'\0\0'):
+        fields = [field for field in block.split(b'\0') if field]
+        if not fields:
+            continue
+        if b'bare' in fields:
+            continue
+        location = next((field[9:] for field in fields if field.startswith(b'worktree ')), None)
+        head = next((field[5:].decode() for field in fields if field.startswith(b'HEAD ')), None)
+        if (location is None or not Path(os.fsdecode(location)).is_dir() or
+                any(field.startswith(b'prunable') for field in fields)):
+            raise CheckpointError('A registered worktree is unavailable or prunable; refusing incomplete checkpoint')
+        if git(os.fsdecode(location), 'status', '--porcelain', '--untracked-files=no').strip():
+            raise CheckpointError('Tracked worktree/index changes exist in a registered worktree; preserve them first')
+        count += 1
+        if head:
+            heads.append(head)
+    reachable = set(git(repo, 'rev-list', '--all', 'HEAD').decode().splitlines())
+    if any(head not in reachable for head in heads):
+        raise CheckpointError('A detached worktree commit has no captured reference; give it a branch before checkpointing')
+    return count
+
+
 def files(repo, head):
     entries = []
     for row in git(repo, 'ls-tree', '-r', '-z', '--full-tree', head).split(b'\0'):
@@ -124,8 +151,7 @@ def create(repo, destination, notes_path=None):
         raise CheckpointError('Output directory must be outside the source repository')
     if destination.exists():
         raise CheckpointError('Output directory already exists; refusing overwrite')
-    if git(repo, 'status', '--porcelain', '--untracked-files=no').strip():
-        raise CheckpointError('Tracked worktree/index changes exist; commit or preserve them separately first')
+    worktree_count = clean_worktrees(repo)
     supplied_notes = json.loads(Path(notes_path).read_text()) if notes_path else {}
     if not isinstance(supplied_notes, dict):
         raise CheckpointError('Notes must be a JSON object')
@@ -144,12 +170,13 @@ def create(repo, destination, notes_path=None):
                     'source_commit': head, 'source_tree': tree, 'refs': original_refs,
                     'commits': git(repo, 'rev-list', '--all', 'HEAD').decode().splitlines(),
                     'files': files(repo, head), 'bundle_sha256': digest(staging / 'source.bundle'),
-                    'excluded_untracked_count': untracked_count, 'notes': notes,
+                    'excluded_untracked_count': untracked_count, 'registered_worktrees_checked': worktree_count,
+                    'notes': notes,
                     'notes_evidence': 'Caller supplied; this tool does not run or validate application tests',
                     'durability': 'UNCONFIRMED: copy to owner-approved persistent private storage and verify there',
                     'publication': 'Local archive only; no upload or public disclosure authorization'}
         if (refs(repo) != original_refs or git(repo, 'rev-parse', 'HEAD').decode().strip() != head or
-                git(repo, 'status', '--porcelain', '--untracked-files=no').strip()):
+                clean_worktrees(repo) != worktree_count):
             raise CheckpointError('Source changed while checkpointing; retry after writers finish')
         (staging / 'manifest.json').write_text(json.dumps(manifest, indent=2, ensure_ascii=True) + '\n')
         (staging / 'SHA256SUMS').write_text(''.join(digest(staging / name) + '  ' + name + '\n'

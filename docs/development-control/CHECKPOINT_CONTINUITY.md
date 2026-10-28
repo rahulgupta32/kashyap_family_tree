@@ -35,7 +35,7 @@ The package contains:
 - `manifest.json`: exact source commit/tree, captured refs, complete reachable commit inventory, tracked file paths/modes/blob IDs/SHA-256/byte sizes, bundle SHA-256, excluded untracked count and supplied work/evidence notes.
 - `SHA256SUMS`: hashes for the bundle and manifest.
 
-The source worktree/index must be clean for tracked files. Untracked paths are counted without reading their content and excluded. The tool refuses Gitlinks/submodules because the parent bundle cannot guarantee those separate sources. Snapshot creation also aborts if HEAD, refs or tracked cleanliness change during collection. Directory permissions are 0700 and artifact permissions 0600 on this platform. Do not commit these archives or raw evidence to the source repository.
+Every existing registered worktree/index must be clean for tracked files, not only the selected source checkout. Unavailable or prunable registrations fail closed; no private checkout paths are written to the manifest or error. Detached worktree commits without a captured reference must receive a named branch first so they cannot be silently omitted. The tool records the count of checked registered worktrees. Untracked paths are counted without reading their content and excluded. The tool refuses Gitlinks/submodules because the parent bundle cannot guarantee those separate sources. Snapshot creation also aborts if HEAD, refs or tracked cleanliness change during collection. Directory permissions are 0700 and artifact permissions 0600 on this platform. Do not commit these archives or raw evidence to the source repository.
 
 ## Verify before trusting or deleting another copy
 
@@ -55,4 +55,4 @@ Record the approved private destination and custodian, checkpoint commit/tree an
 
 ## Tool verification performed
 
-An isolated fictional Git fixture with two branches and one tag passed create plus isolated clone verification and explicit verification. Untracked content was excluded. Existing destination, dirty tracked source and a deliberately corrupted bundle were each rejected. These are checkpoint-tool controls, **not application or production acceptance tests**. No external upload, GitHub write, source reconstruction, merge or deployment occurred.
+An isolated fictional Git fixture with two branches and one tag passed create plus isolated clone verification and explicit verification. Untracked content was excluded. Existing destination, dirty tracked source, dirty linked worktree and a deliberately corrupted bundle were each rejected. These are checkpoint-tool controls, **not application or production acceptance tests**. No external upload, GitHub write, source reconstruction, merge or deployment occurred.
