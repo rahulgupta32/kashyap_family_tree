@@ -89,7 +89,7 @@ test('tier 2 correction returns to the claimant and resubmission requires indepe
     await page.getByRole('button', { name: /रिफ्रेस गर्नुहोस् \(Refresh\)/ }).click();
     expect((await reload).ok()).toBeTruthy();
     await page.getByRole('row').filter({ hasText: person.primaryNameEnglish }).getByRole('button', { name: /Review/ }).click();
-    await expect(page.getByText('Corrected fictional relationship', { exact: true })).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Corrected fictional relationship$/ })).toBeVisible();
     await expect(page.getByText('पुनः पेश संख्या (Resubmissions):', { exact: true }).locator('..').locator('span').last()).toHaveText('1');
     await expect(page.getByRole('button', { name: /Approve & Link/ })).toHaveCount(0);
     expect((await checked(await api.get(`${API}/profile/me`, { headers: memberHeaders }))).personId).toBeUndefined();
