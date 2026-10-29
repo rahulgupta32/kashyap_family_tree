@@ -1,3 +1,15 @@
+# Current executable queue — 29 October 2026
+
+Use GitHub as authoritative source; PR5 stays draft on its existing base. Owner-approved Apache2.0 publication succeeded. Historical HOLD/local-only entries below are not current restrictions.
+
+1. Inspect exact-source automatic main/iOS results for the dispute-admin batch. Require the new private-read unit cases, real PostgreSQL adjudication read assertions and unmocked browser DISMISSED/RESOLVED journey. Pending/discovered is not passed. Fix demonstrated failures without weakening recusal/privacy/identity protections or rerunning successful full workflows unnecessarily.
+2. Require new claimant rejection-feedback widget regressions and actual Android correction/resubmission marker on this exact source. Then continue member dispute initiation/discovery under frozen visibility rules and native rejection acceptance. Admin dispute adjudication does not complete the mobile dispute experience or signed requirement acceptance.
+3. Continue independent frozen workstreams and external handoffs: approved data/domain/privacy, staging/runtime ownership, production-like recovery/load/security/accessibility, signing/providers/physical devices and UAT. No mandatory scope deferred.
+
+Resolve this batch identity with `git log -1 --format=%H -- docs/execution/CLAIM_DISPUTE_ADMIN_COMPLETION_20261029.md`; exact canonical published SHA/tree/results are also recorded in PR5. Push reviewed recoverable batches, verify retrieval, and continue compatible work. All260 final acceptances and RG01..12 remain OPEN/NO-GO.
+
+## Historical queue
+
 # Owner-selected Apache 2.0 — 28 October 2026
 
 Read `APACHE2_PUBLICATION_DECISION_20261028.md` first. Jyphra owner explicitly approved open-source publication and selected Apache2.0. LICENSE/NOTICE/package/README now reflect that choice. New exact-payload GitHub review is required; prior rejection is historical and not bypassed. No merge/deploy; production gates remain OPEN/NO-GO.

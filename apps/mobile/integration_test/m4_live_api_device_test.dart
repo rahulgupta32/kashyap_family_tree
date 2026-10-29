@@ -218,6 +218,25 @@ void main() {
     expect(claim['status'], 'PENDING_TIER1');
     final tier1 = await reviewerLogin('+9779800000002');
     final tier2 = await reviewerLogin('+9779800000001');
+    const correctionNotes = 'Clarify the fictional relationship before independent review.';
+    final correction = await api('/claims/${claim['id']}/correction-request', token: tier1,
+      data: {'notes': correctionNotes});
+    expect(correction['status'], 'CORRECTION_REQUESTED');
+    await press(tester, find.text(claimLabels['check']!));
+    await until(tester, find.text(correctionNotes));
+    await tester.enterText(find.byKey(const ValueKey('claim-correction-description')),
+      'Corrected fictional Android relationship for independent review.');
+    await press(tester, find.byKey(const ValueKey('claim-correction-truth')));
+    await press(tester, find.text(claimLabels['resubmit']!));
+    await until(tester, find.text(claimStatusLabels['PENDING_TIER1']!));
+    final resubmitted = await api('/claims/${claim['id']}', token: service.authToken);
+    expect(resubmitted['status'], 'PENDING_TIER1');
+    expect(resubmitted['version'], correction['version'] + 1);
+    expect(resubmitted['resubmissionCount'], 1);
+    expect(resubmitted['relationshipDescription'], 'Corrected fictional Android relationship for independent review.');
+    expect((await service.getMyProfile())['personId'], isNull);
+    await back(tester);
+    debugPrint('[CLAIM CORRECTION DEVICE] Real reviewer feedback, version-bound mobile resubmission and unlinked pending account verified');
     await api('/claims/${claim['id']}/tier1-review', token: tier1,
       data: {'decision': 'VOUCHED', 'notes': 'Independent fictional device fixture review.'});
     await api('/claims/${claim['id']}/tier2-review', token: tier2,

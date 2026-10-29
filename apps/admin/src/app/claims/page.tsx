@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
-import { ClaimDetailDto, ClaimStatus } from '@kashyap/contracts';
+import ClaimDisputesPanel from './claim-disputes-panel';
+import { ClaimDetailDto, ClaimStatus, Role } from '@kashyap/contracts';
 
 export default function ClaimsAdminPage() {
   const { accessToken, user, hasRole, isLoading } = useAuth();
@@ -266,6 +267,10 @@ export default function ClaimsAdminPage() {
                 <span className="text-slate-700">{activeClaim.relationshipDescription || 'उपलब्ध छैन'}</span>
               </div>
             </div>
+
+            {hasRole(Role.SUPER_ADMIN) && accessToken && user?.id && <ClaimDisputesPanel
+              key={activeClaim.id} claimId={activeClaim.id} token={accessToken} accountId={user.id}
+              onResolved={() => { void loadClaims(); }} />}
 
             {/* Evidence Attachments */}
             <div>

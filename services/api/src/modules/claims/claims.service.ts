@@ -22,6 +22,7 @@ import {
   RequestClaimCorrectionDto,
   ResubmitClaimDto,
   FileClaimDisputeDto,
+  ResolveClaimDisputeDto,
   ClaimDisputeDetailDto,
   ClaimStatus,
   DisputeStatus,
@@ -974,10 +975,27 @@ export class ClaimsService {
     });
   }
 
+  async listClaimDisputes(claimId: string, actor: AuthenticatedUser): Promise<ClaimDisputeDetailDto[]> {
+    // Dispute identity/reason is private adjudication material, not branch queue metadata.
+    if (!actor?.roles?.includes(Role.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin can inspect claim disputes');
+    }
+    uuid(claimId, 'claim ID');
+    if (!await this.claimRepo.findById(claimId)) throw new NotFoundException('Claim record not found');
+    const records = await this.claimRepo.findDisputesByClaimId(claimId);
+    return records.map(record => ({
+      id: record.id, claimId: record.claim_id, disputantUserId: record.disputant_user_id,
+      reason: record.reason, status: record.status,
+      resolutionNotes: record.resolution_notes || undefined,
+      resolvedByUserId: record.resolved_by || undefined, resolvedAt: record.resolved_at || undefined,
+      createdAt: record.created_at, updatedAt: record.updated_at,
+    }));
+  }
+
   async resolveDispute(
     disputeId: string,
     actor: AuthenticatedUser,
-    dto: { decision: 'DISMISSED' | 'RESOLVED'; notes: string },
+    dto: ResolveClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
     if (!actor.roles.includes(Role.SUPER_ADMIN)) {
       throw new ForbiddenException('Only Super Admin can resolve claim disputes');

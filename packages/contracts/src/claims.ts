@@ -113,3 +113,9 @@ export interface ClaimDisputeDetailDto {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Existing adjudication outcomes; RESOLVED upholds the dispute and safely unlinks the claim. */
+export interface ResolveClaimDisputeDto {
+  decision: 'DISMISSED' | 'RESOLVED';
+  notes: string;
+}

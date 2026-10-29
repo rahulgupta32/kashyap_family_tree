@@ -319,12 +319,17 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       roleAssignments: [{ role: Role.SUPER_ADMIN, branchId: null }],
     } as any;
 
+    const inspected = await claimsService.listClaimDisputes(claimId, superAdminUser);
+    expect(inspected).toEqual(expect.arrayContaining([expect.objectContaining({ id: dispute.id, status: DisputeStatus.OPEN, reason: dispute.reason })]));
+    await expect(claimsService.listClaimDisputes(claimId, { id: verifier1Id, roles: [Role.BRANCH_VERIFIER] } as any)).rejects.toMatchObject({ status: 403 });
+
     const resolved = await claimsService.resolveDispute(dispute.id, superAdminUser, {
       decision: 'DISMISSED',
       notes: 'Dispute lacks valid evidence; claim restored to APPROVED',
     });
 
     expect(resolved.status).toBe(DisputeStatus.DISMISSED);
+    expect((await claimsService.listClaimDisputes(claimId, superAdminUser))[0]).toMatchObject({ id: dispute.id, status: DisputeStatus.DISMISSED, resolutionNotes: resolved.resolutionNotes, resolvedByUserId: superAdminId });
 
     const claimRestored = await claimsService.getClaimById(claimId, superAdminUser);
     expect(claimRestored.status).toBe(ClaimStatus.APPROVED);

@@ -25,6 +25,8 @@ import {
   ParentType,
   SpouseStatus,
   ClaimDetailDto,
+  ClaimDisputeDetailDto,
+  ResolveClaimDisputeDto,
   ChangeRequestDetailDto,
   CalendarEventDetailDto,
   UpdateProfileDto,
@@ -454,7 +456,15 @@ export class ApiClient {
     return data;
   }
 
-  static async resolveDispute(token: string, disputeId: string, dto: { decision: 'UPHELD' | 'DISMISSED'; notes?: string }): Promise<any> {
+  static async listClaimDisputes(token: string, claimId: string): Promise<ClaimDisputeDetailDto[]> {
+    const res = await fetch(`${API_BASE}/claims/${encodeURIComponent(claimId)}/disputes`, {
+      headers: this.getHeaders(token), credentials: 'include', cache: 'no-store',
+    });
+    if (!res.ok) throw new Error('Claim disputes unavailable');
+    return res.json();
+  }
+
+  static async resolveDispute(token: string, disputeId: string, dto: ResolveClaimDisputeDto): Promise<ClaimDisputeDetailDto> {
     const res = await fetch(`${API_BASE}/claims/disputes/${disputeId}/resolve`, {
       method: 'POST',
       headers: this.getHeaders(token),

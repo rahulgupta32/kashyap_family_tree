@@ -20,6 +20,7 @@ import {
   RequestClaimCorrectionDto,
   ResubmitClaimDto,
   FileClaimDisputeDto,
+  ResolveClaimDisputeDto,
   ClaimDisputeDetailDto,
   ClaimStatus,
   Role,
@@ -156,13 +157,21 @@ export class ClaimsController {
     return this.claimsService.fileDispute(id, user.id, dto);
   }
 
+  @Get(':id/disputes')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  async listDisputes(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<ClaimDisputeDetailDto[]> {
+    return this.claimsService.listClaimDisputes(id, user);
+  }
+
   @Post('disputes/:disputeId/resolve')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN)
   async resolveDispute(
     @Param('disputeId') disputeId: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { decision: 'DISMISSED' | 'RESOLVED'; notes: string },
+    @Body() body: ResolveClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
     return this.claimsService.resolveDispute(disputeId, user, body);
   }

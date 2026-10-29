@@ -1,3 +1,13 @@
+# Current authoritative continuation — 29 October 2026
+
+Recovery source: `97fac9696d5715c831eafe314ec4c599a17e12f3`, tree `0dd2533ab0219e11bcbf3f0368c75d9d7a471ff9`. GitHub PR #5 independently checked draft/open/unmerged on `feat/m4-governed-workflows`. Main CI40914939890 and iOS40914939914 completed SUCCESS on that exact source. Android performed three real emulator/live-API cases including deletion; iOS verified startup/Keychain/unsigned compilation, not live deletion/signing/physical devices. These outcomes supersede the obsolete publication-blocked/local-only entries retained below. Owner-approved Apache2.0 publication has succeeded; no new publication HOLD is inferred from historical rejection text.
+
+Current meaningful batch adds private Super Admin dispute inspection, a typed existing RESOLVED/DISMISSED contract and an admin adjudication panel; claimant-only mobile rejection feedback and a real-device correction/resubmission journey extend the same lifecycle batch. `UPHELD` was an incompatible client-only decision; no backend state semantics changed. Existing server recusal, terminal replay, audit transaction and conditional identity unlinking remain in force. New-source validation and automatic CI must be observed separately; older green runs do not validate this batch. See `docs/execution/CLAIM_DISPUTE_ADMIN_COMPLETION_20261029.md` and PR #5 for exact published SHA/tree and outcomes.
+
+Frozen scope:260 mandatory requirements,260 independent edge cases,2924 supplemental source records. Signed acceptances0; RG-01..RG-12 OPEN; production NO-GO. No merge, production deployment, store submission, real data or unapproved cultural activation. Hosting/signing/providers/physical devices/legal/domain/UAT approvals are not invented.
+
+## Historical checkpoints (source-specific; superseded where stated above)
+
 # Owner-selected Apache 2.0 — 28 October 2026
 
 Read `APACHE2_PUBLICATION_DECISION_20261028.md` first. Jyphra owner explicitly approved open-source publication and selected Apache2.0. LICENSE/NOTICE/package/README now reflect that choice. New exact-payload GitHub review is required; prior rejection is historical and not bypassed. No merge/deploy; production gates remain OPEN/NO-GO.

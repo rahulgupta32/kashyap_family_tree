@@ -22,6 +22,7 @@ const claimLabels={
  'statusUnavailable':'दाबी स्थिति उपलब्ध भएन। पुनः प्रयास गर्नुहोस् (Claim status unavailable; retry)',
  'correctionReview':'समीक्षकले सच्याउन अनुरोध गरेका छन्। तलको निर्देशन पढ्नुहोस् (The reviewer requested corrections; read the instructions below)',
  'otherPending':'पहिलेको दाबी समाधान गर्न मेरा दाबी खोल्नुहोस् (Open My claims to resolve the previous submission)',
+ 'rejectedNext':'समीक्षाको कारण पढ्नुहोस्। सही व्यक्ति खोज्न अघिल्लो पृष्ठमा फर्कनुहोस् वा सहयोगका लागि प्रशासकलाई सम्पर्क गर्नुहोस्। (Read the review reason. Go back to search for the correct person, or contact an administrator for help.)',
  'check':'दाबी स्थिति जाँच्नुहोस् (Check claim status)',
  'retry':'मूल दाबी पुनः प्रयास (Retry original claim)',
  'retained':'मूल विवरण राखिएको छ (Original draft retained; retry the same submission)',

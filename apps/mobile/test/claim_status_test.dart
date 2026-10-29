@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,39 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 
 void main() {
+  for (final tier in ['tier1', 'tier2']) {
+    testWidgets('$tier rejection shows claimant feedback and safe next action without reviewer identity', (tester) async {
+      final jwt = 'fixture.${base64Url.encode(utf8.encode(jsonEncode({'sub':'owner'})))}.fixture';
+      final api = GenealogyApiService(client: MockClient((_) async => jsonResponse({
+        'id':'claim', 'claimantUserId':'owner', 'status':'REJECTED',
+        '${tier}Decision':'REJECTED', '${tier}Notes':'Fictional rejection reason',
+        '${tier}ReviewedBy':'private-reviewer', 'claimantPhoneNumber':'private-phone',
+        'evidenceAttachments':[{'mediaUrl':'private-evidence'}],
+      })))..setAuthToken(jwt);
+      addTearDown(api.dispose);
+      await tester.pumpWidget(MaterialApp(home: ClaimStatusScreen(claimId:'claim',api:api)));
+      await tester.pumpAndSettle();
+      expect(find.text('Fictional rejection reason'), findsOneWidget);
+      expect(find.text(claimLabels['rejectedNext']!), findsOneWidget);
+      expect(find.textContaining('private-'), findsNothing);
+      expect(find.widgetWithText(ElevatedButton,claimLabels['resubmit']!), findsNothing);
+      api.setAuthToken('replacement'); await tester.pumpAndSettle();
+      expect(find.text('Fictional rejection reason'), findsNothing);
+      expect(find.text(claimLabels['session']!), findsOneWidget);
+    });
+  }
+  testWidgets('malformed rejection feedback fails closed without rendering stale status', (tester) async {
+    final jwt = 'fixture.${base64Url.encode(utf8.encode(jsonEncode({'sub':'owner'})))}.fixture';
+    final api = GenealogyApiService(client: MockClient((_) async => jsonResponse({
+      'id':'claim','claimantUserId':'owner','status':'REJECTED','tier1Decision':'REJECTED','tier1Notes':42,
+    })))..setAuthToken(jwt);
+    addTearDown(api.dispose);
+    await tester.pumpWidget(MaterialApp(home: ClaimStatusScreen(claimId:'claim',api:api)));
+    await tester.pumpAndSettle();
+    expect(find.text(claimStatusLabels['REJECTED']!), findsNothing);
+    expect(find.text(claimLabels['statusUnavailable']!), findsOneWidget);
+  });
+
   testWidgets('fresh authorized claim shows correction instructions without private reviewer metadata', (tester) async {
     final api = GenealogyApiService(client: MockClient((request) async {
       expect(request.method, 'GET');

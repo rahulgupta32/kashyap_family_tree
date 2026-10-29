@@ -28,7 +28,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
   bool _expired = false, _loading = false, _saving = false, _truth = false;
   bool _claimant = false, _needsReload = false;
   int? _version;
-  String? _status, _correction, _error;
+  String? _status, _correction, _feedback, _error;
   bool get _current => mounted && !_expired && identical(widget.api, _api) &&
       _api.authToken != null && _api.pushSessionGeneration == _generation;
   bool get _canCorrect => _current && _claimant && _status == 'CORRECTION_REQUESTED' &&
@@ -42,7 +42,7 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
     _load();
   }
   void _clear({bool preserveDraft = false}) {
-    _status = _correction = _error = null;
+    _status = _correction = _feedback = _error = null;
     _version = null;
     _claimant = _truth = false;
     _notice = false;
@@ -84,7 +84,13 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
           (version is! int || version < 1 || result['relationshipDescription'] is! String)) {
         throw const FormatException('Unavailable correction revision');
       }
+      final feedback = claimant && result['status'] == 'REJECTED'
+          ? (result['tier2Decision'] == 'REJECTED' ? result['tier2Notes']
+              : result['tier1Decision'] == 'REJECTED' ? result['tier1Notes'] : null)
+          : null;
+      if (feedback != null && feedback is! String) throw const FormatException('Unavailable review feedback');
       setState(() {
+        _feedback = feedback is String && feedback.trim().isNotEmpty ? feedback : null;
         _status = result['status'] as String;
         _correction = _status == 'CORRECTION_REQUESTED' ? notes as String? : null;
         _claimant = claimant;
@@ -185,6 +191,10 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
             ],
             if (_status != null) ...[
               Semantics(liveRegion: true, child: Text(claimStatusLabels[_status]!)),
+              if (_status == 'REJECTED' && _claimant) ...[
+                if (_feedback != null) Text(_feedback!),
+                Text(claimLabels['rejectedNext']!),
+              ],
               if (_status == 'CORRECTION_REQUESTED') ...[
                 Text(claimLabels['correctionReview']!),
                 if (_correction != null && _correction!.trim().isNotEmpty) Text(_correction!),
