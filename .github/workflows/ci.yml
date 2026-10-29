@@ -293,7 +293,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      ANDROID_USER_HOME: ${{ runner.temp }}/kashyap-android-user
       NODE_ENV: test
       RUN_IMAGE_WORKER: 'true'
       USE_REAL_POSTGRES: 'true'
@@ -359,6 +358,8 @@ jobs:
           node scripts/seed-m4-device-fixtures.cjs
       - name: Verify SDK packages with bounded archive recovery and retained diagnostics
         run: |
+          export ANDROID_USER_HOME="$RUNNER_TEMP/kashyap-android-user"
+          printf 'ANDROID_USER_HOME=%s\n' "$ANDROID_USER_HOME" >> "$GITHUB_ENV"
           python3 -m unittest discover -s scripts -p test_android_sdk_preflight.py
           python3 scripts/android-sdk-preflight.py
       - name: Enable KVM and cap Gradle memory for the disposable runner
