@@ -7,7 +7,7 @@ import { NotificationFollowsService } from './notification-follows.service';
 import { broadcastEligibility } from './broadcast-eligibility';
 import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
-import { notificationCategoryEnabled } from './notification-policy';
+import { claimDisputeNotice, notificationCategoryEnabled } from './notification-policy';
 import { notificationGatewayUrl } from './notification-gateway.policy';
 import { PushTokensService } from './push-tokens.service';
 import { PushDeliveryService } from './push-delivery.service';
@@ -159,7 +159,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       const recipients=await this.db.query(`SELECT u.id FROM audit_outbox o JOIN community_posts p ON p.id::text=o.entity_id
         JOIN user_accounts u ON u.id=p.author_user_id WHERE o.id=$1 AND ${communityNoticeEligibility()}`,[record.id]);
       recipientUserIds.push(...recipients.rows.map(r=>r.id));
-    } else if (action.startsWith('CLAIM_') || action === 'DISPUTE_FILED') {
+    } else if (action.startsWith('CLAIM_') || claimDisputeNotice(action)) {
       if (record.entity_type === 'PROFILE_CLAIM' && isUuid(record.entity_id)) {
         const claimRes = await this.db.query('SELECT claimant_user_id FROM profile_claims WHERE id = $1', [record.entity_id]);
         if (claimRes.rows[0]?.claimant_user_id) {
@@ -592,6 +592,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         return 'तपाईंको प्रोफाइल दाबी दर्ता गरिएको छ। (Your profile claim has been submitted)';
       case 'CLAIM_TIER1_VOUCHED':
         return 'तपाईंको दाबी तह १ बाट सिफारिस भएको छ। (Claim vouched at Tier 1)';
+      case 'CLAIM_CORRECTION_REQUESTED':
+      case 'CLAIM_TIER1_CORRECTION_REQUESTED':
       case 'CLAIM_TIER1_CORRECTION_REQUIRED':
       case 'CLAIM_TIER2_CORRECTION_REQUIRED':
         return 'दाबीमा संशोधन आवश्यक छ। (Correction requested for your claim)';
@@ -602,6 +604,9 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         return 'तपाईंको दाबी उच्च तहमा पठाइएको छ। (Your claim has been escalated)';
       case 'CLAIM_APPROVED_AND_LINKED':
         return 'बधाई छ! तपाईंको प्रोफाइल दाबी स्वीकृत भई खाता जोडिएको छ। (Profile claim approved and linked)';
+      case 'DISPUTE_RESOLVED':
+      case 'DISPUTE_DISMISSED':
+        return 'दाबी विवादको समीक्षा अपडेट उपलब्ध छ। (A claim dispute review update is available)';
       case 'CLAIM_DISPUTED':
       case 'CLAIM_DISPUTE':
       case 'DISPUTE_FILED':

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DatabaseService } from '../../database/database.service';
 import { broadcastEligibility } from './broadcast-eligibility';
 import { calendarNoticeEligibility } from '../calendar/calendar-eligibility';
-import { notificationCategoryEnabled } from './notification-policy';
+import { claimDisputeNotice, notificationCategoryEnabled } from './notification-policy';
 
 import { communityNoticeEligibility } from '../community/community-notice-eligibility';
 import { eligibleDirectConversationIds } from '../chat/direct-chat-safety';
@@ -31,7 +31,7 @@ export class NotificationInboxService {
         : action === 'CALENDAR_EVENT_REMINDER_DUE' ? 'कार्यक्रमको सम्झना उपलब्ध छ। (An event reminder is available)'
         : 'कार्यक्रम अपडेट उपलब्ध छ। (An event update is available)',
     };
-    if (/^(CLAIM_|DISPUTE_FILED|DISPUTE_RESOLVED)/.test(action)) return {
+    if (action.startsWith('CLAIM_') || claimDisputeNotice(action)) return {
       category: 'WORKFLOW', destination: '/claims',
       message: 'दाबी सम्बन्धी अपडेट छ। (A claim has an update)',
     };

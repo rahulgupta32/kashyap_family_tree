@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
+import { NotificationDispatcherService } from '../src/modules/notifications/notification-dispatcher.service';
 import { ClaimsService } from '../src/modules/claims/claims.service';
 import { ClaimStatus, DisputeStatus, Role, ErrorCode } from '@kashyap/contracts';
 import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
@@ -330,6 +331,23 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
 
     expect(resolved.status).toBe(DisputeStatus.DISMISSED);
     expect((await claimsService.listClaimDisputes(claimId, superAdminUser))[0]).toMatchObject({ id: dispute.id, status: DisputeStatus.DISMISSED, resolutionNotes: resolved.resolutionNotes, resolvedByUserId: superAdminId });
+
+    // Actual transactional adjudication event must reach BOTH parties, not just its actor.
+    // Disable all external channels explicitly; this proves durable inbox routing, not providers.
+    for (const userId of [claimant1Id, claimant2Id, superAdminId]) {
+      await db.query(`INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled)
+        VALUES($1,FALSE,FALSE,FALSE) ON CONFLICT(user_id) DO UPDATE
+        SET push_enabled=FALSE,sms_enabled=FALSE,email_enabled=FALSE`, [userId]);
+    }
+    const notice = (await db.query(`SELECT * FROM audit_outbox WHERE entity_type='CLAIM_DISPUTE'
+      AND entity_id=$1 AND action='DISPUTE_DISMISSED'`, [dispute.id])).rows[0];
+    expect(notice).toBeDefined();
+    const dispatcher = moduleRef.get(NotificationDispatcherService);
+    await dispatcher.processRecord(notice);
+    await dispatcher.processRecord(notice);
+    const inbox = await db.query('SELECT recipient_user_id,message FROM notification_inbox WHERE outbox_id=$1', [notice.id]);
+    expect(inbox.rows.map(row => row.recipient_user_id).sort()).toEqual([claimant1Id, claimant2Id, superAdminId].sort());
+    expect(inbox.rows.every(row => !row.message.includes(dispute.reason) && !row.message.includes(resolved.resolutionNotes))).toBe(true);
 
     const claimRestored = await claimsService.getClaimById(claimId, superAdminUser);
     expect(claimRestored.status).toBe(ClaimStatus.APPROVED);

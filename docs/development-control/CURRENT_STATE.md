@@ -1,3 +1,11 @@
+# Terminal dispute notification correction — 29 October 2026
+
+Meaningful follow-on batch to published dbade5bb0158e73febb6525c6cc2dd8d58399716/tree76cbdf5afa264266db966f397c0cecff2a32e50f. Failing focused tests demonstrated that terminal resolution notified only its actor and dismissal notified nobody. Shared exact action classification now routes both parties with existing preferences/deduplication/privacy controls; generic correction-action messaging is aligned. Actual committed-dispute inbox/replay PostgreSQL assertion added. See `docs/execution/DISPUTE_NOTIFICATION_ROUTING_20261029.md`.
+
+Exact-source automatic CI remains required; do not credit parent results to this correction. Preserve PR5 draft/open/unmerged, existing base, no force-push. All260 signed acceptances/RG01..12 OPEN; NO-GO. Resolve canonical batch SHA/tree and actual workflow conclusions from PR5 before continuing. Next: inspect platform/browser/device results, then governed member dispute initiation/discovery and native rejection evidence. Independent approved hosting/signing/providers/data/domain/privacy/security/UAT/operations gates remain required.
+
+## Previous batch checkpoint
+
 # Current authoritative continuation — 29 October 2026
 
 Recovery source: `97fac9696d5715c831eafe314ec4c599a17e12f3`, tree `0dd2533ab0219e11bcbf3f0368c75d9d7a471ff9`. GitHub PR #5 independently checked draft/open/unmerged on `feat/m4-governed-workflows`. Main CI40914939890 and iOS40914939914 completed SUCCESS on that exact source. Android performed three real emulator/live-API cases including deletion; iOS verified startup/Keychain/unsigned compilation, not live deletion/signing/physical devices. These outcomes supersede the obsolete publication-blocked/local-only entries retained below. Owner-approved Apache2.0 publication has succeeded; no new publication HOLD is inferred from historical rejection text.

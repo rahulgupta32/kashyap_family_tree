@@ -9,3 +9,7 @@ Demonstrated gap: admin resolver advertised UPHELD while the API requires RESOLV
 Local runtime provisioning: PostgreSQL/Redis package setup failed because the managed runner cannot switch apt users/groups. No root/isolation workaround attempted; authorized GitHub CI supplies actual disposable PostgreSQL16/Redis7/browser services. Local default pnpm11 was rejected by repository engine constraints; installation uses pinned pnpm9.15.9 without lockfile upgrades.
 
 Frozen inventories validated:260 requirements/260 edge cases/2924 supplemental records/14 workbook sheets. No independent acceptance or release gate closed. No merge/deployment.
+
+## Terminal dispute notification follow-on
+
+Reproduced two routing failures on published dbade5bb. Corrected exact terminal-action routing and generic correction messages through the existing notification architecture, preserving preferences/durable deduplication/provider privacy. Local31 focused tests and API typecheck PASS; final additional assertions/source-bound PostgreSQL and full CI must be observed. Report: docs/execution/DISPUTE_NOTIFICATION_ROUTING_20261029.md. No requirement/gate accepted.
