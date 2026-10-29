@@ -74,7 +74,7 @@ test('tier 2 correction returns to the claimant and resubmission requires indepe
     expect(resubmitted.status).toBe('PENDING_TIER1');
     expect(resubmitted.resubmissionCount).toBe(1);
     const bypass = await api.post(`${API}/claims/${claim.id}/tier2-review`, {
-      headers: adminHeaders, data: { decision: 'APPROVED', notes: 'Must not bypass first-tier re-review' },
+      headers: await headers(page), data: { decision: 'APPROVED', notes: 'Must not bypass first-tier re-review' },
     });
     expect(bypass.status()).toBe(400);
     const unauthorized = await api.post(`${API}/claims/${claim.id}/tier2-review`, {

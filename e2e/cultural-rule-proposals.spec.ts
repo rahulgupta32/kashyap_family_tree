@@ -19,7 +19,6 @@ async function inspect(page: import('@playwright/test').Page) {
 test('authenticated proposer records a bounded private proposal and reloads its persisted history without activation', async ({ page }) => {
   await login(page);
   const user = await page.evaluate(() => JSON.parse(localStorage.getItem('kashyap_admin_user')!));
-  const auth = await headers(page);
   await page.goto('/cultural');
   await page.getByRole('link', { name: /Cultural rule proposals and decisions/ }).click();
   await expect(page).toHaveURL(/\/cultural\/rule-proposals$/);
@@ -46,7 +45,7 @@ test('authenticated proposer records a bounded private proposal and reloads its 
   await card.getByRole('button', { name: /Details and decision history/ }).click();
   await expect(detail).toContainText(result.id);
   await expect(detail).toContainText(user.id);
-  const persisted = await page.request.get(`${API}${routePath}/${result.id}`, { headers: auth });
+  const persisted = await page.request.get(`${API}${routePath}/${result.id}`, { headers: await headers(page) });
   expect(persisted.ok()).toBeTruthy();
   expect(persisted.headers()['cache-control']).toContain('no-store');
   expect((await persisted.json()).status).toBe('PROPOSED');
@@ -108,7 +107,7 @@ test('server authority denial removes private decisions and requires reload with
   await expect(page.getByText(/Super Admin alone grants no cultural authority/)).toBeVisible();
   await page.getByLabel('निर्णय टिप्पणी (Decision notes)', { exact: true }).fill('Explicit request subject to actual server authority');
   await page.getByRole('button', { name: /Request review endorsement/ }).click();
-  await expect(page.getByRole('alert')).toContainText('Action unconfirmed');
+  await expect(page.getByRole('alert').filter({ hasText: 'Action unconfirmed' })).toContainText('Action unconfirmed');
   await expect(page.getByText('Private authority and authenticator diagnostics', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Selected rule proposal' })).toHaveCount(0);
   await expect(page.getByText(fixture.rationale, { exact: true })).toHaveCount(0);
@@ -190,7 +189,7 @@ for (const invalid of ['wrong-detail-id', 'oversized-history', 'malformed-status
     await expect(page.getByRole('article')).toHaveCount(1);
     invalidate = true;
     await page.getByRole('button', { name: /Details and decision history/ }).click();
-    await expect(page.getByRole('alert')).toContainText('Action unconfirmed');
+    await expect(page.getByRole('alert').filter({ hasText: 'Action unconfirmed' })).toContainText('Action unconfirmed');
     await expect(page.getByRole('article')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Selected rule proposal' })).toHaveCount(0);
     await expect(page.getByRole('form', { name: 'New rule proposal' }).getByRole('button')).toBeDisabled();
@@ -212,7 +211,7 @@ for (const invalid of ['acknowledgement', 'reload'] as const) {
     await page.goto(routePath); await inspect(page);
     await page.getByLabel('निर्णय टिप्पणी (Decision notes)', { exact: true }).fill('Fictional identity mismatch regression');
     await page.getByRole('button', { name: /Request review endorsement/ }).click();
-    await expect(page.getByRole('alert')).toContainText('Action unconfirmed');
+    await expect(page.getByRole('alert').filter({ hasText: 'Action unconfirmed' })).toContainText('Action unconfirmed');
     await expect(page.getByRole('region', { name: 'Selected rule proposal' })).toHaveCount(0);
     await expect(page.getByRole('article')).toHaveCount(0);
   });
