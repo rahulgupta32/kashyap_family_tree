@@ -55,7 +55,7 @@ class _AccountDeletionScreenState extends State<AccountDeletionScreen> {
     try {
       await _api.deleteOwnAccount(challengeId: _challenge!, otp: _code.text);
       if (!mounted || !identical(widget.api, _api) || _api.authToken != null ||
-          _api.pushSessionGeneration != _generation + 1) return;
+          _api.pushSessionGeneration != _generation + 1) { return; }
       _code.clear();
       setState(() { _completed = true; _challenge = null; _confirmed = false; _error = null; });
     } catch (_) { if (_current) setState(() => _error = accountDeletionLabels['unconfirmed']); }
