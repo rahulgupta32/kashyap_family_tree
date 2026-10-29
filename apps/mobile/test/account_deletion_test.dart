@@ -31,7 +31,7 @@ Future<void> ready(WidgetTester tester) async {
 }
 void main() {
   testWidgets('requires code and explicit confirmation; confirmed result clears credentials and outbox', (tester) async {
-    final session=MemorySession(), outbox=MemoryOutbox(); final bodies=<dynamic>[];
+    final session=MemorySession(); final outbox=MemoryOutbox(); final bodies=<dynamic>[];
     final api=GenealogyApiService(sessionStore:session,chatOutboxStore:outbox,client:MockClient((r) async {
       if(r.url.path.endsWith('delete-challenge')) return jsonResponse(challenge());
       bodies.add(jsonDecode(r.body));return jsonResponse({'success':true,'genealogyPreserved':true,'deletedAt':DateTime.now().toIso8601String()});

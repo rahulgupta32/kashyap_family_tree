@@ -4,6 +4,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -47,7 +48,7 @@ def build(log: str, head: str, tree: str) -> dict:
                           'not_verified': ['approved legal retention policy', 'physical devices', 'independent acceptance', 'full audit/privacy acceptance', 'admin deletion UI']}])
         output.append(item)
     return dict(kind='SOURCE_BOUND_RUNTIME_ACCEPTANCE_MATRIX', source_sha=head, source_tree=tree,
-                android_log_sha256=hashlib.sha256(log.encode()).hexdigest(), requirements=output,
+                android_log_normalized_text_sha256=hashlib.sha256(log.encode()).hexdigest(), requirements=output,
                 inputs={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in (matrix_path, assessment_path)},
                 productionAcceptance=False, independentlyAcceptedRequirements=0,
                 release_gates={f'RG-{i:02}': 'OPEN' for i in range(1, 13)},
@@ -61,7 +62,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=ROOT, text=True).strip()
-    result = build((ROOT / args.log).read_text(), head, tree)
+    expected = os.environ.get('KASHYAP_SOURCE_HEAD_SHA')
+    if expected and expected != head:
+        raise ValueError('Checked-out source does not match the workflow source')
+    log_path = ROOT / args.log
+    result = build(log_path.read_text(), head, tree)
+    result['android_log_sha256'] = hashlib.sha256(log_path.read_bytes()).hexdigest()
+    result['workflow_run_id'] = os.environ.get('GITHUB_RUN_ID')
     target = ROOT / args.output
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
