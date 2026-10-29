@@ -60,6 +60,8 @@ test('live claim reads enforce ownership and branch authority without private ca
     const reviewer = await reviewerContext.newPage();
     await login(reviewer, '9800000002');
     await reviewer.goto('/claims');
+    // The list renders only after cookie restoration and its replacement token settle.
+    await expect(reviewer.getByRole('cell', { name: markers[0], exact: true })).toBeVisible();
     const token = (await headers(reviewer)).Authorization.replace('Bearer ', '');
     const allowed = await read(reviewer, `/claims/${claims[0].id}`, token);
     expect(allowed.status).toBe(200); expect(allowed.cache).toContain('private'); expect(allowed.cache).toContain('no-store');
