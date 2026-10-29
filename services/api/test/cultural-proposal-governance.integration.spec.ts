@@ -82,7 +82,7 @@ describe('Durable cultural proposals: fictional authority assignments only',()=>
   const reviewed=await Promise.allSettled([review(p.id),review(p.id)]);expect(reviewed.filter(x=>x.status==='fulfilled')).toHaveLength(1);
   const approved=await Promise.allSettled([decide(p.id),decide(p.id)]);expect(approved.filter(x=>x.status==='fulfilled')).toHaveLength(1);
   const counts=(await db.query(`SELECT (SELECT count(*) FROM cultural_rule_proposal_events WHERE proposal_id=$1) AS events,
-    (SELECT count(*) FROM audit_outbox WHERE entity_id=$1 AND entity_type='CULTURAL_RULE_PROPOSAL') AS audits`,[p.id])).rows[0];
+    (SELECT count(*) FROM audit_outbox WHERE entity_id=$1::text AND entity_type='CULTURAL_RULE_PROPOSAL') AS audits`,[p.id])).rows[0];
   expect(Number(counts.events)).toBe(3);expect(Number(counts.audits)).toBe(3);
  });
  it('rolls back proposal state and history when same-transaction audit evidence cannot be recorded',async()=>{

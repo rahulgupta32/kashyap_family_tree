@@ -33,7 +33,7 @@ describe('Claim initial-create resolution with real account locking and immutabl
   (SELECT count(*) FROM claim_creation_receipts WHERE account_id=$1 AND creation_key=$2) AS receipts,
   (SELECT count(*) FROM claim_creation_closures WHERE account_id=$1 AND creation_key=$2) AS closures,
   (SELECT count(*) FROM profile_claims WHERE claimant_user_id=$1) AS claims,
-  (SELECT count(*) FROM audit_outbox WHERE actor_id=$1 AND entity_id=$2 AND action='PROFILE_CLAIM_CREATION_ABANDONED') AS audits`,[u.id,key])).rows[0];}
+  (SELECT count(*) FROM audit_outbox WHERE actor_id=$1::text AND entity_id=$2::text AND action='PROFILE_CLAIM_CREATION_ABANDONED') AS audits`,[u.id,key])).rows[0];}
  beforeAll(async()=>{
   iso=await createDisposableDatabase('claim_creation_resolution');await assertDatabaseIsolation(iso.client,iso.dbName);
   const module=await Test.createTestingModule({imports:[AppModule]}).compile();app=module.createNestApplication();await app.init();

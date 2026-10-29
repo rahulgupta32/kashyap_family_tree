@@ -131,7 +131,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
     try {
       // Only this explicit action retries the original durable identity/body.
       final result = await _api.retryPendingProfileClaim();
-      if (!_current) return;
+      if (!mounted || !_current) return;
       final id = result['id'];
       if (id is! String || id.isEmpty) throw const FormatException('Unavailable claim confirmation');
       confirmed = true;
@@ -169,7 +169,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
       if (!_current || accepted != true) return;
       setState(() => _confirming = false);
       final result = await _api.resolvePendingProfileClaim();
-      if (!_current) return;
+      if (!mounted || !_current) return;
       abandoned = result['outcome'] == 'ABANDONED';
       if (!abandoned) {
         final id = result['claimId'];
