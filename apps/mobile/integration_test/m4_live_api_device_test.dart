@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:kashyap_mobile/localization/claim_labels.dart';
 import 'package:crypto/crypto.dart';
@@ -8,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:kashyap_mobile/main.dart';
 import 'package:kashyap_mobile/screens/person_detail_screen.dart';
+import 'package:kashyap_mobile/screens/account_deletion_screen.dart';
 import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
@@ -37,6 +39,28 @@ class LoseFirstChatResponseClient extends http.BaseClient {
   }
   @override
   void close()=>_inner.close();
+}
+
+// Observe the explicit test-mode OTP from an unchanged REAL server response.
+// This transport never fabricates status, headers, body or authentication.
+class CaptureDeletionChallengeClient extends http.BaseClient {
+  final http.Client _inner = http.Client();
+  String? deletionOtp;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = await _inner.send(request);
+    if (request.url.path == '/me/delete-challenge') {
+      final bytes = await response.stream.toBytes();
+      final body = jsonDecode(utf8.decode(bytes));
+      if (body is Map && body['otp'] is String) deletionOtp = body['otp'] as String;
+      return http.StreamedResponse(Stream.value(bytes), response.statusCode,
+        headers: response.headers, request: response.request, reasonPhrase: response.reasonPhrase,
+        isRedirect: response.isRedirect, persistentConnection: response.persistentConnection);
+    }
+    return response;
+  }
+  @override
+  void close() => _inner.close();
 }
 
 Future<dynamic> api(String path, {String? token, Map<String, dynamic>? data}) async {
@@ -406,5 +430,55 @@ void main() {
     debugPrint('[MFA DEVICE] Used recovery code rejected; separate code and encrypted-session refresh proof passed');
     await tester.pumpWidget(const SizedBox.shrink());
   }, timeout: const Timeout(Duration(minutes: 5)));
+
+  testWidgets('Member deletes account through real UI, revokes all sessions and preserves genealogy', (tester) async {
+    await SecureSessionStore().clear();
+    final observer = CaptureDeletionChallengeClient();
+    final service = GenealogyApiService(client: observer);
+    addTearDown(service.dispose);
+    final independentToken = await reviewerLogin(phone);
+    await tester.pumpWidget(KashyapApp(apiService: service));
+    await until(tester, find.byKey(const Key('sign-in-phone')));
+    await api('/auth/test-clear-cooldown', data: {'phoneNumber':phone});
+    await tester.enterText(find.byKey(const Key('sign-in-phone')), phone);
+    await press(tester, find.byKey(const Key('sign-in-submit')));
+    await until(tester, find.byKey(const Key('sign-in-code')));
+    final otp = await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(phone)}');
+    await tester.enterText(find.byKey(const Key('sign-in-code')), otp['otp'] as String);
+    await press(tester, find.byKey(const Key('sign-in-submit')));
+    await until(tester, find.byType(PersonSearchScreen));
+    expect((await service.getMyProfile())['personId'], rootId);
+    final oldToken = service.authToken!;
+    expect((await api('/profile/me',token:independentToken))['personId'],rootId);
+    await drawer(tester, 'प्रोफाइल तथा गोपनीयता (Profile Privacy)');
+    await press(tester, find.byKey(const Key('account-deletion-open')));
+    await until(tester, find.byType(AccountDeletionScreen));
+    await press(tester, find.byKey(const Key('deletion-request')));
+    await until(tester, find.byKey(const Key('deletion-code')));
+    expect(observer.deletionOtp, matches(RegExp(r'^\d{6}$')));
+    await tester.enterText(find.byKey(const Key('deletion-code')), observer.deletionOtp!);
+    expect(tester.widget<ElevatedButton>(find.byKey(const Key('deletion-submit'))).onPressed,isNull);
+    await press(tester, find.byKey(const Key('deletion-confirm')));
+    await press(tester, find.byKey(const Key('deletion-submit')));
+    await until(tester, find.textContaining('Account deleted; genealogy preserved'));
+    expect(service.authToken,isNull);
+    expect(await SecureSessionStore().read(),isNull);
+    expect(await SecureChatOutboxStore().read(),isNull);
+    for(final token in [oldToken,independentToken]) {
+      final response = await http.get(Uri.parse('$base/profile/me'),headers:{'Authorization':'Bearer $token'});
+      expect(response.statusCode,401);
+    }
+    final admin = await reviewerLogin('9800000001');
+    final retained = await api('/genealogy/people/$rootId',token:admin);
+    expect(retained['id'],rootId);expect(retained['isClaimed'],isFalse);expect(retained['claimedByUserId'],isNull);
+    final reader = GenealogyApiService(baseUrl:base)..setAuthToken(admin);
+    addTearDown(reader.dispose);
+    final preservedTree = await reader.getTree(rootId);
+    expect(preservedTree.ancestors.any((p) => p.id == parentId),isTrue);
+    expect(preservedTree.children.any((p) => p.id == childId),isTrue);
+    await until(tester,find.byKey(const Key('sign-in-phone')));
+    debugPrint('[ACCOUNT DELETE DEVICE] Real OTP confirmation, two revoked sessions, cleared secure stores and retained unclaimed genealogy verified');
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, timeout: const Timeout(Duration(minutes:3)));
 
 }

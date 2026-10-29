@@ -1,4 +1,5 @@
 import '../widgets/profile_photo_editor.dart';
+import 'account_deletion_screen.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -103,6 +104,9 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('प्रोफाइल तथा गोपनीयता (Privacy)'),
+        actions: [IconButton(key: const Key('account-deletion-open'), tooltip: 'Account deletion',
+          icon: const Icon(Icons.person_remove_outlined), onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => AccountDeletionScreen(api: widget.apiService))))],
       ),
       body: _loading ? const Center(child: CircularProgressIndicator())
           : !_loaded ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [

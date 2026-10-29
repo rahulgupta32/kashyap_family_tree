@@ -29,6 +29,7 @@ class GenealogyApiService {
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
+  void Function()? onAccountDeleted;
 
   GenealogyApiService({
     this.baseUrl = mobileApiBaseUrl,
@@ -269,6 +270,23 @@ class GenealogyApiService {
       } on FormatException { /* Non-JSON denials remain ordinary errors. */ }
     }
     return response;
+  }
+
+  /// Deletion is confirmed only by a valid response for this exact session.
+  Future<void> deleteOwnAccount({required String challengeId, required String otp}) async {
+    final generation = _sessionGeneration;
+    final result = await requestJson('/me/delete', method: 'POST',
+      data: {'challengeId': challengeId, 'otp': otp});
+    if (generation != _sessionGeneration) { throw StateError('Session changed'); }
+    if (result is! Map || result['success'] != true || result['genealogyPreserved'] != true ||
+        result['deletedAt'] is! String || DateTime.tryParse(result['deletedAt'] as String) == null) {
+      throw const FormatException('Deletion outcome unconfirmed');
+    }
+    await _clearSession();
+    if (_sessionGeneration != generation + 1 || _authToken != null) {
+      throw StateError('Session changed');
+    }
+    onAccountDeleted?.call();
   }
 
   Future<void> logout() async {

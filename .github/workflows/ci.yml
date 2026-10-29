@@ -372,12 +372,15 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: bash scripts/run-m4-device-acceptance.sh
+      - name: Bind completed device journeys to frozen acceptance without granting approvals
+        run: python3 scripts/build-runtime-acceptance-matrix.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: android-live-api-${{ github.run_id }}
           path: |
             test-results/android-*
+            test-results/runtime-acceptance-matrix.json
             test-results/m4-device-*.json
             test-results/kashyap-m4-debug.apk
           retention-days: 14

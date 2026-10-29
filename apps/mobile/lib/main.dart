@@ -40,6 +40,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   NativePushInboxRouter? _pushInbox;
   bool _loading = true;
   bool _browsePublic = false;
+  bool _accountDeleted = false;
   int _sessionEpoch = 0;
 
   @override
@@ -51,9 +52,10 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
     if (firebaseSource != null) { _push = NativePushLifecycle(_apiService, firebaseSource); }
     final inboxSource = widget.pushInboxSource ?? firebaseSource;
     if (inboxSource != null) { _pushInbox = NativePushInboxRouter(_apiService, inboxSource); }
+    _apiService.onAccountDeleted = () { if (mounted) setState(() => _accountDeleted = true); };
     _apiService.onSessionExpired = () {
       if (_push != null) { unawaited(_push!.signOut().then<void>((_) {}, onError: (Object _) {})); }
-      if (mounted) { setState(() { _browsePublic = false; _sessionEpoch++; }); }
+      if (mounted) { setState(() { _browsePublic = false; _accountDeleted = false; _sessionEpoch++; }); }
     };
     _apiService.onMfaRequired = () {
       if (mounted) { setState(() => _sessionEpoch++); }
@@ -95,6 +97,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
     if (_push != null) { unawaited(_push!.close().then<void>((_) {}, onError: (Object _) {})); }
     if (_pushInbox != null) { unawaited(_pushInbox!.close().then<void>((_) {}, onError: (Object _) {})); }
     _apiService.onSessionExpired = null;
+    _apiService.onAccountDeleted = null;
     _apiService.onMfaRequired = null;
     if (widget.apiService == null) { _apiService.dispose(); }
     super.dispose();
@@ -112,9 +115,9 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
           ? (_apiService.authToken != null
               ? AuthenticatorScreen(apiService: _apiService, child: () => _authenticatedSearch())
               : _personSearch())
-          : SignInScreen(apiService: _apiService,
-              onSignedIn: () { setState(() { _browsePublic = false; _sessionEpoch++; }); _resumePush(); },
-              onBrowsePublic: () => setState(() => _browsePublic = true)),
+          : SignInScreen(apiService: _apiService, accountDeletionConfirmed: _accountDeleted,
+              onSignedIn: () { setState(() { _browsePublic = false; _accountDeleted = false; _sessionEpoch++; }); _resumePush(); },
+              onBrowsePublic: () => setState(() { _browsePublic = true; _accountDeleted = false; })),
     );
   }
 
