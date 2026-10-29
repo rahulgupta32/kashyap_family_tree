@@ -1,3 +1,7 @@
+# Browser failure correction — 29 October 2026
+
+Parent dbade5bb main40922610825 failed at browser verification:607 unit/591 general PostgreSQL cases PASS,85 browser PASS/two FAIL. Corrected actual review modal viewport overflow and a new fixture token captured before legitimate browser session rotation. Follow-on3228857 retains the same pre-correction browser code; do not claim its browser acceptance until actual results are inspected. See CI_FAILURES.md and claim-dispute report. Current correction must pass exact-source automatic CI; preserve all assertions/timeouts/security controls. No gate/requirement accepted; NO-GO. Continue closure before next feature.
+
 # Terminal dispute notification correction — 29 October 2026
 
 Meaningful follow-on batch to published dbade5bb0158e73febb6525c6cc2dd8d58399716/tree76cbdf5afa264266db966f397c0cecff2a32e50f. Failing focused tests demonstrated that terminal resolution notified only its actor and dismissal notified nobody. Shared exact action classification now routes both parties with existing preferences/deduplication/privacy controls; generic correction-action messaging is aligned. Actual committed-dispute inbox/replay PostgreSQL assertion added. See `docs/execution/DISPUTE_NOTIFICATION_ROUTING_20261029.md`.

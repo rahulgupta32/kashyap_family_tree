@@ -219,10 +219,10 @@ export default function ClaimsAdminPage() {
       {/* Review Modal */}
       {activeClaim && loadedScope===scope && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl border border-slate-100">
+          <div role="dialog" aria-modal="true" aria-labelledby="claim-review-title" className="bg-white rounded-2xl max-w-2xl w-full max-h-[90dvh] overflow-y-auto p-6 space-y-6 shadow-2xl border border-slate-100">
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">दाबी विवरण तथा समीक्षा (Claim Review)</h3>
+                <h3 id="claim-review-title" className="text-lg font-bold text-slate-900">दाबी विवरण तथा समीक्षा (Claim Review)</h3>
                 <p className="text-xs text-slate-500">ID: {activeClaim.id}</p>
               </div>
               <button

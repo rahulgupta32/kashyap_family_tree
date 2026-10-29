@@ -1,3 +1,14 @@
+# Claim lifecycle browser failures — 29 October 2026
+
+Source dbade5bb0158e73febb6525c6cc2dd8d58399716/tree76cbdf5afa264266db966f397c0cecff2a32e50f, main40922610825 platform123619594277 FAILED. Actual607 unit/56 suites PASS; real PostgreSQL591 PASS/10 dedicated-storage skips. Browser85 PASS/2 FAIL. This workflow remains failed, not green.
+
+1. New claim-dispute-adjudication: browser UI successfully resolved the dispute, but subsequent fixture GET /claims/:id/disputes used a token captured before page.goto/auth-restoration rotation and correctly received401. Fixture now reads the current browser token for each Super Admin call, retaining denial/replay/linkage assertions.
+2. Existing tier2-correction: Close button was outside the viewport despite Playwright scroll attempts. New dispute-panel content exposed the existing unbounded fixed dialog layout. Review dialog now has90dvh max height and vertical overflow; no force clicks or timeout increases. New real dispute journey exercises600px viewport and checks Close can scroll into viewport.
+
+Follow-on3228857 main40923602818/iOS40923602753 may reproduce the same pre-correction browser failures; record their actual conclusions separately. Corrected source requires exact-source automatic CI. No backend authorization/privacy rule weakened. RG01..12/all260 final acceptances remain OPEN; NO-GO.
+
+## Historical failures
+
 # CI failure and verification register
 
 Every conclusion belongs to its recorded SHA and run, not to the current branch in general. Pending runs are never successful evidence. Failed runs remain failed even where later source succeeds. Full history remains in existing execution reports and PR #5; this register indexes the current recovery sequence.
