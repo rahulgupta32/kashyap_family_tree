@@ -8,6 +8,7 @@ describe('External notification metadata privacy', () => {
   afterEach(() => { process.env = { ...originalEnv }; jest.restoreAllMocks(); });
   function setup() {
     const query = jest.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('SELECT id FROM notification_dispatches')) return { rows: [{ id: 'dispatch' }] };
       if (sql.includes('FROM user_accounts u')) return { rows: [{ id: 'owner', email_enabled: true }] };
       if (sql.includes('SELECT phone_number')) return { rows: [{ phone_number: secret }] };
       if (sql.includes('notification_preferences')) return { rows: [{ sms_enabled: true }] };

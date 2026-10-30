@@ -1,3 +1,15 @@
+# Published runtime closure and next boundary corrections — 30 October 2026
+
+Exact owner authorization cleared publication of the27-file/two-commit payload and PR body. Published source commits bc6e38794d2ce9f7a350dfb83e04cd58b954dbbe (original da3151f) and1fd1121f0c357faaacc9f3dd28fa60ce2f643e16 (original20d4e86); final tree4876b0ae9b1d1a7fe5535cca538e6cf0f6e9638b exactly matches approved source. Fetched/tree-compared/fsck; second fresh GitHub-only clone verified27file hashes. Both original commits remain independently recoverable in the previously verified private bundle. Historical HOLD entries below do not describe current clearance of that exact payload.
+
+Source1fd main41080111695 FAILED overall solely Android fourth journey. Platform124146637334 SUCCESS:650unit,600real PostgreSQL16/Redis7 integration, migration067,87live browser and retained receipt/closure restore. Flutter124146637828 SUCCESS:clean analysis/322tests. S3/scanner/search SUCCESS. iOS41080111346/job124146638567 SUCCESS:simulator/9Keychain-startup markers and unsigned compilation; no physical/signing/provider acceptance.
+
+Android124146637656 passed3real cases (M4/correction,MFA,deletion), fourth failed StateError No element at native test571 while scrolling for OPEN after asynchronous recovery. Artifact12989831513 digest75a1e3d25053fc65384e94d4ef86846eafc747e7a8ab76c9883630ee1df99445 downloaded/verified; API log has migrations067 and no handler exception around failure. Current fixture explicitly requires authoritative pending-intent acknowledgement and settles visible reload before scrolling. Assertions/deadlines unchanged; correction needs actual new-source device result.
+
+Current meaningful follow-on fixes source-demonstrated stale profile A->B form leakage/mutation and notification retry/stranded queue lease expiry-before-send.660unit/61suites,API typecheck/build and frozen controls PASS locally. Added7profile widget and6realPG lease cases PENDING; no local Flutter/PG runner. Details: docs/execution/PROFILE_SESSION_AND_NOTIFICATION_LEASE_REPORT_20261030.md. Canonical follow-on source/workflow results resolve from PR5/git log; no parent green result credited to changed code.
+
+All260signed requirements and RG01..12 OPEN;NO-GO. No staging:accessible linked inventory0projects/no approved target/credentials. PR5draft/baseM4;PR4open->develop; no submitted PR5review,merge,production,stores,real data or cultural activation.
+
 # Privacy boundary correction checkpoint — 30 October 2026
 
 Fresh GitHub clone verified published dec4d512cec092cc2459f6ee9f6beedbaf839da9/tree b6d6fe4960052bc051d6408a49a463d5df3eb65e. Retrieved the durable recovery ZIP, verified SHA256 0b7cd7bd60f0b30ed70c9c02f37e78ea0aa778bf3a23f69ebcabfbe2899584eb, bundle prerequisites/history, restored exact da3151f7b5607bcd9619c6e203b4f15adbcca2f6/tree db30e3b28efc2ab234558eb61927b45ce088766f and all20 file hashes. Original approved payload remains unchanged in that commit.

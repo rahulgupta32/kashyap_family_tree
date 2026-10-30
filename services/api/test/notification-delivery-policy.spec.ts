@@ -24,16 +24,24 @@ describe('Notification delivery boundary', () => {
     ['revoked chat access', [{ push_enabled: true }], 'CHAT_MESSAGE_CREATED'],
   ])('skips a failed job after %s without contacting its provider', async (_label, rows, action) => {
     const job = { id: 'job', channel: 'PUSH', recipient_user_id: 'recipient', payload: { action, entityId: 'entity' } };
-    const query = jest.fn().mockResolvedValueOnce({ rows: [job] }).mockResolvedValueOnce({ rows });
-    if (action === 'CHAT_MESSAGE_CREATED') query.mockResolvedValueOnce({ rows: [] });
-    query.mockResolvedValue({ rows: [{ id: 'job' }] });
+    let claimed = false;
+    const query = jest.fn(async (sql: string, args?: any[]) => {
+      if (sql.includes('RETURNING *')) {
+        if (claimed) return { rows: [] };
+        claimed = true; return { rows: [job] };
+      }
+      if (sql.includes('FROM user_accounts u')) return { rows };
+      if (sql.includes('FROM chat_messages')) return { rows: [] };
+      if (sql.includes('dispatched_at')) return { rows: [{ id: 'job' }] };
+      return { rows: [] };
+    });
     const dispatcher = new NotificationDispatcherService({ query } as any);
     const gateway = jest.spyOn(global, 'fetch');
     try {
       expect(await dispatcher.retryFailedDispatches()).toBe(1);
       expect(gateway).not.toHaveBeenCalled();
       const update = query.mock.calls.find(call => call[0].includes('dispatched_at'));
-      expect(update?.[1][0]).toBe('SKIPPED');
+      expect(update?.[1]?.[0]).toBe('SKIPPED');
     } finally { gateway.mockRestore(); }
   });
 });

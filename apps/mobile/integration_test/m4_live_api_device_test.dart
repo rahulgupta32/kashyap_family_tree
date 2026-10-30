@@ -567,6 +567,18 @@ void main() {
         await press(tester,find.text(disputeLabels['resolve']!));
       }
 
+      // The native HTTP/storage acknowledgement and subsequent history GET
+      // outlive a single pump. Do not drag a lazy list for an absent row while
+      // that transition is still running; require the immutable intent to be
+      // confirmed, then settle the visible loading indicator at the list top.
+      final acknowledgementDeadline=DateTime.now().add(const Duration(seconds:30));
+      while(service.hasPendingDispute&&DateTime.now().isBefore(acknowledgementDeadline)){
+        await tester.pump(const Duration(milliseconds:100));
+      }
+      expect(service.hasPendingDispute,isFalse,reason:'The original dispute must have an authoritative acknowledgement');
+      tester.state<ScrollableState>(scroll).position.jumpTo(0);await tester.pump();
+      await until(tester,find.byKey(const ValueKey('dispute-reason')));
+      expect(find.text(disputeLabels['unavailable']!),findsNothing);
       final status=find.text(disputeStatuses['OPEN']!);
       await tester.scrollUntilVisible(status,200,scrollable:scroll);
       await until(tester,status);

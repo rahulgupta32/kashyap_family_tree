@@ -69,7 +69,7 @@ void main() {
     });
 
     testWidgets('failed profile loading cannot overwrite fields with empty defaults', (tester) async {
-      final service = GenealogyApiService(client: MockClient((_) async => jsonResponse({}, 503)));
+      final service = GenealogyApiService(client: MockClient((_) async => jsonResponse({}, 503)))..setAuthToken('mock-access');
       addTearDown(service.dispose);
       await tester.pumpWidget(MaterialApp(home: ProfilePrivacyScreen(apiService: service)));
       await tester.pumpAndSettle();

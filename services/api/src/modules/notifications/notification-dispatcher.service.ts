@@ -16,6 +16,7 @@ import { directParticipantsEligible } from '../chat/direct-chat-safety';
 
 // Never persist/log external exception text: providers may echo credentials or private payloads.
 const DELIVERY_FAILURE = 'NOTIFICATION_DELIVERY_UNAVAILABLE';
+class NotificationLeaseLost extends Error {}
 
 export interface NotificationDispatchResult {
   outboxId: string;
@@ -342,60 +343,73 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
    * with exponential backoff, worker leases, and max 5 attempts.
    */
   async retryFailedDispatches(maxRetries: number = 5): Promise<number> {
-    // Transactionally claim jobs eligible for retry whose lease has expired and next_retry_at is reached
-    const claimRes = await this.db.query(
-      `UPDATE notification_dispatches
-       SET worker_id = $1,
-           lease_expires_at = NOW() + INTERVAL '60 seconds',
-           delivery_status = 'PROCESSING'
-       WHERE id IN (
-         SELECT id FROM notification_dispatches
-         WHERE delivery_status = 'FAILED'
-           AND retry_count < $2
-           AND (next_retry_at IS NULL OR next_retry_at <= NOW())
-           AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
-         ORDER BY created_at ASC
-         LIMIT 50
-         FOR UPDATE SKIP LOCKED
-       )
-       RETURNING *`,
-      [this.workerId, maxRetries],
-    );
-
     let retried = 0;
-    for (const job of claimRes.rows) {
+    // Claim immediately before each job. A slow provider must not consume the
+    // leases of another 49 jobs waiting in this process's memory.
+    for (let index = 0; index < 50; index++) {
+      const claimId = `${this.workerId}:${randomUUID()}`;
+      const claimRes = await this.db.query(
+        `UPDATE notification_dispatches
+         SET worker_id = $1,
+             lease_expires_at = clock_timestamp() + INTERVAL '60 seconds',
+             delivery_status = 'PROCESSING'
+         WHERE id IN (
+           SELECT id FROM notification_dispatches
+           WHERE delivery_status = 'FAILED'
+             AND retry_count < $2
+             AND (next_retry_at IS NULL OR next_retry_at <= clock_timestamp())
+             AND (lease_expires_at IS NULL OR lease_expires_at < clock_timestamp())
+           ORDER BY created_at ASC,id
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING *`,
+        [claimId, maxRetries],
+      );
+      const job = claimRes.rows[0];
+      if (!job) break;
       try {
-        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
+        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id, false, claimId);
         const finalStatus = this.deliveryStatus(providerOutcome);
+        // A known late acknowledgement may complete this exact unreplaced claim.
+        // Expiry forbids starting a send; a replacement token forbids finishing it.
         const finalized = await this.db.query(
-          `UPDATE notification_dispatches 
-           SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2 
+          `UPDATE notification_dispatches
+           SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2
            WHERE id = $3 AND worker_id = $4 AND delivery_status = 'PROCESSING' RETURNING id`,
-          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, this.workerId],
+          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, claimId],
         );
-        retried+=finalized.rows.length;
+        retried += finalized.rows.length;
       } catch (err: any) {
+        if (err instanceof NotificationLeaseLost) continue;
         const newRetryCount = (job.retry_count || 0) + 1;
-        const backoffSec = Math.min(Math.pow(2, newRetryCount), 300); // 2s, 4s, 8s, 16s... max 5m
-        const newStatus = 'FAILED';
+        const backoffSec = Math.min(Math.pow(2, newRetryCount), 300);
         await this.db.query(
-          `UPDATE notification_dispatches 
+          `UPDATE notification_dispatches
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL,
                provider_response = $5
            WHERE id = $6 AND worker_id = $7 AND delivery_status = 'PROCESSING'`,
-          [newStatus, newRetryCount, DELIVERY_FAILURE, String(backoffSec), JSON.stringify({ error: DELIVERY_FAILURE, timestamp: new Date().toISOString() }), job.id, this.workerId],
+          ['FAILED', newRetryCount, DELIVERY_FAILURE, String(backoffSec), JSON.stringify({ error: DELIVERY_FAILURE, timestamp: new Date().toISOString() }), job.id, claimId],
         );
       }
     }
     return retried;
   }
 
+  private async requireDeliveryLease(dispatchId?: string, owner?: string): Promise<void> {
+    if (!owner) return; // Initial delivery uses its existing durable insert path.
+    const current = await this.db.query(`SELECT id FROM notification_dispatches
+      WHERE id=$1 AND worker_id=$2 AND delivery_status='PROCESSING'
+        AND lease_expires_at>clock_timestamp()`, [dispatchId, owner]);
+    if (!current.rows.length) throw new NotificationLeaseLost();
+  }
+
   private deliveryStatus(outcome: any): NotificationDispatchResult['status'] {
     return outcome?.status==='RECONCILIATION_REQUIRED'?'RECONCILIATION_REQUIRED':outcome?.status==='SIMULATED'?'SIMULATED':outcome?.status==='SKIPPED'?'SKIPPED':'SENT';
   }
 
-  private async deliverNotification(channel: string, userId: string, payload: any, dispatchId?: string, eligibilityOnly=false): Promise<any> {
+  private async deliverNotification(channel: string, userId: string, payload: any, dispatchId?: string, eligibilityOnly=false, leaseOwner?: string): Promise<any> {
     if (!['PUSH', 'SMS', 'EMAIL'].includes(channel)) throw new Error(DELIVERY_FAILURE);
     // Recheck at the last delivery boundary, including retries and stranded jobs.
     // A saved job is not continuing permission to contact a former participant.
@@ -441,6 +455,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
         [payload.entityId, userId]);
       if (!eligible.rows.length) return { status: 'SKIPPED', reason: 'Audience membership revoked' };
     }
+    await this.requireDeliveryLease(dispatchId, leaseOwner);
     if (eligibilityOnly) return {status:'ELIGIBLE'};
     if (channel === 'SMS') {
       if (!this.smsProvider) {
@@ -451,6 +466,8 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if (!phone) {
         throw new Error(`User account ${userId} does not have a phone number for SMS delivery`);
       }
+      // Recipient lookup may have waited on the database after the prior check.
+      await this.requireDeliveryLease(dispatchId, leaseOwner);
       const result = await this.smsProvider.sendNotification(phone, payload.message);
       if (!result || !result.success) {
         throw new Error(DELIVERY_FAILURE);
@@ -468,7 +485,7 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
       if (process.env.PUSH_PROVIDER==='fcm') {
         if (!this.pushDelivery || !dispatchId) throw new Error(DELIVERY_FAILURE);
         return this.pushDelivery.send(userId,dispatchId,async()=>
-          (await this.deliverNotification('PUSH',userId,payload,dispatchId,true)).status==='ELIGIBLE');
+          (await this.deliverNotification('PUSH',userId,payload,dispatchId,true,leaseOwner)).status==='ELIGIBLE');
       }
       // Unverified user-ID proxy acknowledgements are not production provider evidence.
       if (process.env.NODE_ENV==='production') throw new Error(DELIVERY_FAILURE);
@@ -538,44 +555,48 @@ export class NotificationDispatcherService implements OnModuleInit, OnModuleDest
    * and resets or retries them.
    */
   async recoverStrandedJobs(): Promise<number> {
-    const strandedRes = await this.db.query(
-      `UPDATE notification_dispatches
-       SET worker_id = $1,
-           lease_expires_at = NOW() + INTERVAL '60 seconds',
-           delivery_status = 'PROCESSING'
-       WHERE id IN (
-         SELECT id FROM notification_dispatches 
-         WHERE (delivery_status = 'PROCESSING' AND lease_expires_at < NOW())
-            OR (delivery_status = 'PENDING' AND created_at < NOW() - INTERVAL '2 minutes' AND (lease_expires_at IS NULL OR lease_expires_at < NOW()))
-         ORDER BY created_at ASC
-         LIMIT 50
-         FOR UPDATE SKIP LOCKED
-       )
-       RETURNING *`,
-      [this.workerId],
-    );
-
     let recovered = 0;
-    for (const job of strandedRes.rows) {
+    for (let index = 0; index < 50; index++) {
+      const claimId = `${this.workerId}:${randomUUID()}`;
+      const strandedRes = await this.db.query(
+        `UPDATE notification_dispatches
+         SET worker_id = $1,
+             lease_expires_at = clock_timestamp() + INTERVAL '60 seconds',
+             delivery_status = 'PROCESSING'
+         WHERE id IN (
+           SELECT id FROM notification_dispatches
+           WHERE (delivery_status = 'PROCESSING' AND lease_expires_at < clock_timestamp())
+              OR (delivery_status = 'PENDING' AND created_at < clock_timestamp() - INTERVAL '2 minutes' AND (lease_expires_at IS NULL OR lease_expires_at < clock_timestamp()))
+           ORDER BY created_at ASC,id
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING *`,
+        [claimId],
+      );
+      const job = strandedRes.rows[0];
+      if (!job) break;
       try {
-        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id);
+        const providerOutcome = await this.deliverNotification(job.channel, job.recipient_user_id, job.payload, job.id, false, claimId);
         const finalStatus = this.deliveryStatus(providerOutcome);
+        // A known late acknowledgement may complete this exact unreplaced claim.
+        // Expiry forbids starting a send; a replacement token forbids finishing it.
         const finalized = await this.db.query(
           `UPDATE notification_dispatches SET delivery_status = $1, dispatched_at = NOW(), worker_id = NULL, lease_expires_at = NULL, provider_response = $2
            WHERE id = $3 AND worker_id = $4 AND delivery_status = 'PROCESSING' RETURNING id`,
-          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, this.workerId],
+          [finalStatus, providerOutcome ? JSON.stringify(providerOutcome) : null, job.id, claimId],
         );
-        recovered+=finalized.rows.length;
+        recovered += finalized.rows.length;
       } catch (err: any) {
+        if (err instanceof NotificationLeaseLost) continue;
         const nextRetry = (job.retry_count || 0) + 1;
         const backoffSec = Math.min(Math.pow(2, nextRetry), 300);
-        const newStatus = 'FAILED';
         await this.db.query(
-          `UPDATE notification_dispatches 
+          `UPDATE notification_dispatches
            SET delivery_status = $1, retry_count = $2, error_message = $3, worker_id = NULL, lease_expires_at = NULL,
                next_retry_at = NOW() + ($4 || ' seconds')::INTERVAL
            WHERE id = $5 AND worker_id = $6 AND delivery_status = 'PROCESSING'`,
-          [newStatus, nextRetry, DELIVERY_FAILURE, String(backoffSec), job.id, this.workerId],
+          ['FAILED', nextRetry, DELIVERY_FAILURE, String(backoffSec), job.id, claimId],
         );
       }
     }

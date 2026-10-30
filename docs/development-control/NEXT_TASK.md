@@ -1,3 +1,11 @@
+# Next execution — profile/session, dispatch leases and real fourth Android closure
+
+The exact27-file payload is now published as1fd1121f/tree4876b0ae (original20d4e86), parentbc6e387 (originalda3151f). Fresh GitHub-only recovery PASS. Main41080111695 platform650unit/600realPG/87browser/restore andFlutter322analysis pass; S3/scanner/search pass; iOS41080111346 PASS. Main remainsFAILED:Android fourthcase No element while scrolling before asynchronous recovery/history render;3other actual cases passed. Do not rerun successful parent jobs without cause.
+
+Current meaningful correction requires authoritative acknowledgement before OPEN scroll and adds captured-session profile guards plus just-in-time unique notification lease/start fences with safe known-outcome completion. Local660unit/APIchecks/frozencontrolsPASS; new profile7widgets/lease6PG/native correction NOT EXECUTED. First inspect source-bound automatic new-source CI once published; require all4Android completion markers, migration067/606expected actualPG cases (counts are expectations until observed),329expectedFlutter with clean analysis,87browser,restore andiOS. Fix demonstrated failures without weakening assertions or increasing deadlines.
+
+Continue complete F1-F6/assurance backlog after this closure; all frozen requirements remain mandatory, no signed acceptance from aggregateCI. Approved staging target/services/budget/ops owners, data/consent/domain/legal authorities, independent security/accessibility/load/translation/UAT,signing/providers/devices andJyphra release signoff remain external handoffs. Keep PR5draft/currentbase;reviewPR4->develop before authorized integration. No production/real data/rules/stores/merge.
+
 # Next executable task — exact-source runtime and disclosure clearance
 
 Recover the latest private checkpoint and verify exact source/tree before any write. Public prerequisite remains dec4d512; da3151f original20-file payload is preserved unchanged, followed by the demonstrated legacy-dispute and omitted-privacy fixes. Both public source and exact PR body writes were rejected again by automatic review despite attachment-based specific owner authorization. Do not retry through another transport or publish security details as a workaround. Current aggregate source requires its exact manifest/security review before publication.

@@ -1,3 +1,11 @@
+# Current release status — 30 October 2026: NO-GO
+
+Exact27-file publication andPR update SUCCEEDED; canonical1fd1121f/tree4876b0ae retrieved fromGitHub and verified. Main41080111695 FAILED solely fourthAndroid fixture; source-bound650unit/600PG/87browser/322Flutter/restore/S3/scanner/search passed. iOS41080111346 SUCCESS on1fd1121f (simulator/Keychain/unsigned only).
+
+Current follow-on addresses Android asynchronous status wait, stale cross-account native profile form and retry/stranded dispatch lease loss.660unit/APItype/build/frozencontrolsPASS locally; its realPG/browser/Flutter/Android/iOS/restore evidence remainsPENDING. Preserve source exact SHA and required new-source results; never call parent tests proof for changed code.
+
+All RG01..12 OPEN and260signed acceptances0. Approved staging/services,fullmandatory functional/edge acceptance,independentsecurity/privacy/localization/accessibility/load,UAT,governeddata/domain approvals,signing/liveproviders/physicaldevices andproduction-like PITR/rollback/monitoring/Jyphra authority remain. No stagingdeployed/mainmerge/production/stores/realdata/unapprovedrules.
+
 # Current decision — 30 October 2026: NO-GO
 
 Two demonstrated privacy/authorization corrections now pass650unit tests, API build/typecheck and frozen controls; see PRIVACY_BOUNDARY_CORRECTIONS_20261030.md. Full real-service/native acceptance for this unpublished source is PENDING. Parent dec4d512 CI41019523222 remains FAILED overall; iOS41019523206 SUCCESS is limited to that source. Source/PR publication was again rejected by automatic review; no public write succeeded. Private durable checkpoint required for follow-on work.

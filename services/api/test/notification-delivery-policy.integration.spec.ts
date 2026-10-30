@@ -192,6 +192,57 @@ describe('Delivery preferences and revoked chat access (real PostgreSQL)', () =>
     } finally {if(previous===undefined)delete process.env.PUSH_PROVIDER;else process.env.PUSH_PROVIDER=previous;}
   });
 
+  it.each(['retry','stranded'])('does not send a later %s row after another worker takes ownership',async path=>{
+    const first=await failedJob(),second=await failedJob();
+    await db.query("UPDATE notification_dispatches SET created_at=clock_timestamp()-INTERVAL '10 seconds' WHERE id=$1",[first]);
+    await db.query("UPDATE notification_dispatches SET created_at=clock_timestamp()-INTERVAL '5 seconds' WHERE id=$1",[second]);
+    if(path==='stranded')await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=ANY($1::uuid[])",[[first,second]]);
+    sms.sendNotification.mockImplementationOnce(async()=>{
+      // Another process may take a queued row while this process sends an earlier one.
+      await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',worker_id='replacement-worker',lease_expires_at=clock_timestamp()+INTERVAL '5 minutes' WHERE id=$1",[second]);
+      return {success:true,provider:'TestSmsProviderAdapter',simulated:true};
+    });
+    expect(path==='retry'?await dispatcher.retryFailedDispatches():await dispatcher.recoverStrandedJobs()).toBe(1);
+    expect(sms.sendNotification).toHaveBeenCalledTimes(1);
+    expect((await db.query('SELECT delivery_status,worker_id FROM notification_dispatches WHERE id=$1',[second])).rows[0])
+      .toMatchObject({delivery_status:'PROCESSING',worker_id:'replacement-worker'});
+  });
+
+  it.each(['retry','stranded'])('checks %s ownership again after the final SMS recipient lookup',async path=>{
+    const job=await failedJob();
+    if(path==='stranded')await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1",[job]);
+    const original=db.query.bind(db) as any;
+    let changed=false;
+    const query=jest.spyOn(db,'query').mockImplementation(async(sql:any,values?:any,client?:any)=>{
+      const result=await original(sql,values,client);
+      if(!changed&&typeof sql==='string'&&sql.includes('SELECT phone_number')){
+        changed=true;
+        await original("UPDATE notification_dispatches SET worker_id='replacement-worker',lease_expires_at=clock_timestamp()+INTERVAL '5 minutes' WHERE id=$1",[job]);
+      }
+      return result;
+    });
+    try{
+      expect(path==='retry'?await dispatcher.retryFailedDispatches():await dispatcher.recoverStrandedJobs()).toBe(0);
+      expect(changed).toBe(true);expect(sms.sendNotification).not.toHaveBeenCalled();
+    }finally{query.mockRestore();}
+    expect((await db.query('SELECT delivery_status,worker_id FROM notification_dispatches WHERE id=$1',[job])).rows[0])
+      .toMatchObject({delivery_status:'PROCESSING',worker_id:'replacement-worker'});
+  });
+
+  it.each(['retry','stranded'])('persists a known late %s SMS outcome under the same unreplaced token',async path=>{
+    const job=await failedJob();
+    if(path==='stranded')await db.query("UPDATE notification_dispatches SET delivery_status='PROCESSING',lease_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1",[job]);
+    sms.sendNotification.mockImplementationOnce(async()=>{
+      // The adapter starts under a valid lease; expire the retained claim before its synthetic acknowledgement.
+      await db.query("UPDATE notification_dispatches SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id=$1",[job]);
+      return {success:true,provider:'TestSmsProviderAdapter',simulated:true};
+    });
+    expect(path==='retry'?await dispatcher.retryFailedDispatches():await dispatcher.recoverStrandedJobs()).toBe(1);
+    expect(sms.sendNotification).toHaveBeenCalledTimes(1);
+    expect((await db.query('SELECT delivery_status,worker_id,lease_expires_at FROM notification_dispatches WHERE id=$1',[job])).rows[0])
+      .toMatchObject({delivery_status:'SIMULATED',worker_id:null,lease_expires_at:null});
+  });
+
   it.each(['accepted','rejected_then_retry'])('keeps actual SMS adapter formatting and durable %s outcomes separate from OTP', async path => {
     const priorToken=process.env.SPARROW_SMS_TOKEN;
     process.env.SPARROW_SMS_TOKEN='fictional-sms-provider-token';

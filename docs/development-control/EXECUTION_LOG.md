@@ -1,3 +1,9 @@
+# 30 October 2026 — public recovery delivered; real-runtime evidence and next corrections
+
+Retrieved exact27-fileZIP; checksums/history/20d4e86tree4876 verified. Owner's direct exact authorization cleared existing GitHub workflow; two source trees published in order asbc6e387/1fd1121f withoutforce. ExactapprovedPRbody applied; fetched/tree-compared/fsck and separate freshGitHub-onlyclone verified27hashes. Current-source main41080111695 failedfourthAndroidwait but650unit/600actualPG/87browser/322Flutter/restore/S3/scanner/searchpassed;iOS41080111346passed.
+
+Investigated Androidjob124146637656+verifiedartifact12989831513;3realcasespassed,fourthhitNoelement at571duringasyncstatusscroll. Addedack/reload synchronization preservingexistingdeadlines/assertions. Independentisolatedreviews found staleprofileA->B form actions andqueued dispatch leases expiredbeforeproviderstart. Capturednativegeneration/privacyclearing andjust-in-time uniquejobclaims/startfences implemented; knownlateoutcomespersistwhensametoken,butreplacementclaimsprotected. Baseline6lease testsfailed; interimactive-timecompletionfailed2slowsuccess controls; corrected660unit/61suites/APIchecksPASS.7newwidget/6newPG casesPENDING. Scope/edge/registers unchanged;allRGOPEN/NO-GO.
+
 # 30 October 2026 — recovered exact source; corrected demonstrated privacy boundaries
 
 Restored da3151f from independently retrieved durable ZIP against fresh GitHub dec4d512; exact commit/tree/history/20hashes verified. Specific attachment authorization was presented through existing approved connector; automatic review rejected both original20-file public source upload and exact PR body replacement. No alternate route or successful public write.

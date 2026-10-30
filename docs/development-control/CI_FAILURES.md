@@ -1,3 +1,9 @@
+# 30 October 2026 — source1fd1121f Android status-scroll failure
+
+Main41080111695 isFAILED,notrelabeledgreen. Androidjob124146637656 successfully installedSDK/emulator and passedthreeactualjourneys;newdisputejourneythrewStateError Noelement inWidgetController.scrollUntilVisible at m4_live_api_device_test.dart571 after recoveryaction. Artifact12989831513 ZIP digest75a1e3d25053fc65384e94d4ef86846eafc747e7a8ab76c9883630ee1df99445 verified;servermigrations067applied, nohandlerexceptionaroundfailure. Fixture nowrequires pendingintent authoritativeacknowledgement, scrollstopthen settlesvisibleloading beforefindinglazyOPENcard. Existing30s waits/3mincase timeout andallbusinessassertionspreserved. ActualcorrectedAndroidresultPENDING; donotretryoldsourceasifconfigfailure.
+
+Otherexact-sourcejobsSUCCESS:650unit/600actualPG/87browser/restore;Flutterclean322;S3/scanner/search;iOS41080111346simulator/Keychain/unsigned. These remain1fd-onlyevidence. Currentprofile/session/dispatchleasecode needsnew-sourceCI. LocalnewmockTSsignatureissuewasfixed,660unitpass; noassertionremoved. AllreleasegatesOPEN.
+
 # 30 October 2026 — member dispute initial CI failures
 
 Source dec4d512cec092cc2459f6ee9f6beedbaf839da9/treeb6d6fe4960052bc051d6408a49a463d5df3eb65e, main41019523222. Platform123943417540 SUCCESS:623unit/58suites,595real PostgreSQL/Redis cases,87live browser cases and expanded disposable restore passed;10general storage skips covered by successful dedicated storage. Do not infer full success: Flutter123943417269 FAILED analyze on two curly-brace lint findings, before widget tests. Android123943417534 passed3existing cases but its new fourth case failed waiting for Person dispute action.
