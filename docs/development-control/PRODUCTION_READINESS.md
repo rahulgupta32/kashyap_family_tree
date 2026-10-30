@@ -1,3 +1,9 @@
+# Current decision — 30 October 2026: NO-GO
+
+Two demonstrated privacy/authorization corrections now pass650unit tests, API build/typecheck and frozen controls; see PRIVACY_BOUNDARY_CORRECTIONS_20261030.md. Full real-service/native acceptance for this unpublished source is PENDING. Parent dec4d512 CI41019523222 remains FAILED overall; iOS41019523206 SUCCESS is limited to that source. Source/PR publication was again rejected by automatic review; no public write succeeded. Private durable checkpoint required for follow-on work.
+
+RG01..12 all OPEN;260 signed requirement acceptances0. No approved staging deployment exists in this session. Required runtime, independent privacy/security/functional acceptance, data/domain approvals, operational PITR/rollback/monitoring/load, signing/live providers/physical devices/UAT and Jyphra sign-off remain. No merge/production/store/real-family-data/cultural-rule activation.
+
 # Authoritative dispute closure and CI corrections — 30 October 2026
 
 Follow-on to published/fetched dec4d512/treeb6d6fe49. Parent platform41019523222 passed623unit/595PG/87browser and receipt restore; Flutter failed2lint blocks before widgets, and Android passed3cases but denied an unverified fixture reader of default VERIFIED_COMMUNITY (correct privacy). Lints and fixture corrected without policy/role/timeout/assertion weakening. See CI_FAILURES.md. Parent iOS must be checked by its actual source/run.

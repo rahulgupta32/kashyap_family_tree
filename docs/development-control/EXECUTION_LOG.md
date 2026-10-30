@@ -1,3 +1,9 @@
+# 30 October 2026 — recovered exact source; corrected demonstrated privacy boundaries
+
+Restored da3151f from independently retrieved durable ZIP against fresh GitHub dec4d512; exact commit/tree/history/20hashes verified. Specific attachment authorization was presented through existing approved connector; automatic review rejected both original20-file public source upload and exact PR body replacement. No alternate route or successful public write.
+
+Parallel isolated reviews identified legacy claim-ID privacy bypass and omitted-DOB widening. Baseline regressions:13failed/1passed after correcting one test-only baseline type-access issue; integrated fixes:53focused PASS and650unit/60suites PASS, API typecheck/build/shared build PASS,3frozen validators PASS. New PG tests prepared but not run; non-root PG/Redis/Flutter/browser runtime unavailable. Preserve original20-file commit plus new correction in durable private checkpoint. All gates OPEN/NO-GO.
+
 # 30 October 2026 — fresh-source member dispute engineering
 
 Recovered via new GitHub clone,14a07da/tree03c73a16; git fsck passed. Verified main40924465323 SUCCESS and iOS40924465244 attempt2/job123635539304 SUCCESS. Implemented the bounded Person-to-member-dispute cross-layer batch in docs/execution/MEMBER_DISPUTE_INITIATION_20261030.md. Preserve all historical results/failures and source/control changes through canonical GitHub commit/tree verification. Actual new-source results belong in PR5, not inferred here. No requirement/gate accepted or deployment performed.

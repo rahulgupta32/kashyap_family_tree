@@ -60,7 +60,7 @@ describe('Account-owned claim discovery', () => {
     expect(query).not.toHaveBeenCalled();
   });
   it('controller preserves legacy mode and refuses a cursor outside explicit page mode', async () => {
-    const controller = new ClaimsController(service);
+    const controller = new ClaimsController(service, {} as any);
     await expect(controller.listOwnClaims({id:'owner'} as any)).resolves.toHaveLength(1);
     await expect(controller.listOwnClaims({id:'owner'} as any,'true')).resolves.toHaveProperty('items');
     await expect(controller.listOwnClaims({id:'owner'} as any,'false','cursor')).rejects.toBeInstanceOf(BadRequestException);

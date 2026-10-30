@@ -26,6 +26,7 @@ import {
   Role,
 } from '@kashyap/contracts';
 import { ClaimsService } from './claims.service';
+import { MemberDisputesService } from './member-disputes.service';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -35,7 +36,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('claims')
 export class ClaimsController {
-  constructor(private readonly claimsService: ClaimsService) {}
+  constructor(private readonly claimsService: ClaimsService, private readonly memberDisputes: MemberDisputesService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -148,13 +149,14 @@ export class ClaimsController {
   }
 
   @Post(':id/dispute')
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard)
   async fileDispute(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: FileClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
-    return this.claimsService.fileDispute(id, user.id, dto);
+    return this.memberDisputes.submitForClaim(id, user, dto);
   }
 
   @Get(':id/disputes')

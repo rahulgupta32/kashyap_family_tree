@@ -96,6 +96,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     }));
 
     let personDetail: any = null;
+    let personDobVisibility: string | undefined;
     if (user.person_id) {
       let person = await this.personRepo.findById(user.person_id, false, client);
       if (!person) {
@@ -103,6 +104,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
         person = resolved.person;
       }
       if (person) {
+        personDobVisibility = person.dob_visibility;
         const names = await this.personRepo.findNamesByPersonId(person.id, client);
         const primaryNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name || names[0]?.full_name;
         const primaryEn = names.find((n) => n.language === 'en' && n.is_primary)?.full_name || names[0]?.full_name;
@@ -153,10 +155,11 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     };
 
     const rawPrivacy = user.privacy_settings || {};
-    const privacy: PrivacySettingsDto = {
+    const privacy: PrivacySettingsDto & { dobVisibility: string } = {
       profileVisibility: rawPrivacy.profileVisibility || 'VERIFIED_COMMUNITY',
       contactVisibility: rawPrivacy.contactVisibility || 'IMMEDIATE_FAMILY',
       addressVisibility: rawPrivacy.addressVisibility || 'IMMEDIATE_FAMILY',
+      dobVisibility: personDobVisibility ?? rawPrivacy.dobVisibility ?? 'VERIFIED_COMMUNITY',
     };
 
     let avatarUrl: string | undefined;
@@ -291,12 +294,44 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     dto: PrivacySettingsDto & { dobVisibility?: string },
     client?: any,
   ): Promise<PrivacySettingsDto> {
+    const fields = ['profileVisibility', 'contactVisibility', 'addressVisibility', 'dobVisibility'];
+    const scopes = ['PUBLIC', 'VERIFIED_COMMUNITY', 'IMMEDIATE_FAMILY', 'PRIVATE'];
+    allowedFields(dto, fields);
+    for (const field of Object.keys(dto)) {
+      if (!scopes.includes((dto as any)[field])) {
+        throw new BadRequestException('Choose a valid privacy scope');
+      }
+    }
     const runner = async (txClient: any) => {
+      // Ordinary clients omit DOB. Serialize with profile/account lifecycle
+      // writes and preserve each omitted scope instead of expanding it to a default.
+      const existingRes = await txClient.query(
+        'SELECT person_id, privacy_settings FROM user_accounts WHERE id = $1 FOR UPDATE', [userId],
+      );
+      const existing = existingRes.rows[0];
+      if (!existing) throw new NotFoundException('User not found');
+      const person = existing.person_id ? (await txClient.query(
+        'SELECT profile_visibility, phone_visibility, address_visibility, dob_visibility FROM persons WHERE id = $1 FOR UPDATE',
+        [existing.person_id],
+      )).rows[0] : undefined;
+      const saved = existing.privacy_settings || {};
+      const previous = {
+        profileVisibility: person?.profile_visibility ?? saved.profileVisibility ?? 'VERIFIED_COMMUNITY',
+        contactVisibility: person?.phone_visibility ?? saved.contactVisibility ?? 'IMMEDIATE_FAMILY',
+        addressVisibility: person?.address_visibility ?? saved.addressVisibility ?? 'IMMEDIATE_FAMILY',
+        dobVisibility: person?.dob_visibility ?? saved.dobVisibility ?? 'VERIFIED_COMMUNITY',
+      };
+      const effective = {
+        profileVisibility: dto.profileVisibility ?? previous.profileVisibility,
+        contactVisibility: dto.contactVisibility ?? previous.contactVisibility,
+        addressVisibility: dto.addressVisibility ?? previous.addressVisibility,
+        dobVisibility: dto.dobVisibility ?? previous.dobVisibility,
+      };
       const updatedUserRes = await txClient.query(
         `UPDATE user_accounts 
          SET privacy_settings = $1, updated_at = NOW() 
          WHERE id = $2 RETURNING person_id`,
-        [JSON.stringify(dto), userId],
+        [JSON.stringify(effective), userId],
       );
       const user = updatedUserRes.rows[0];
       if (!user) throw new NotFoundException('User not found');
@@ -311,10 +346,10 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
                updated_at = NOW()
            WHERE id = $5`,
           [
-            dto.contactVisibility || 'IMMEDIATE_FAMILY',
-            dto.addressVisibility || 'IMMEDIATE_FAMILY',
-            dto.profileVisibility || 'VERIFIED_COMMUNITY',
-            dto.dobVisibility || 'VERIFIED_COMMUNITY',
+            effective.contactVisibility,
+            effective.addressVisibility,
+            effective.profileVisibility,
+            effective.dobVisibility,
             user.person_id,
           ],
         );
@@ -327,16 +362,17 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
           entityId: userId,
           actorId: userId,
           actorRole: 'MEMBER',
-          oldValue: null,
-          newValue: dto,
+          oldValue: previous,
+          newValue: effective,
         },
         txClient,
       );
 
       return {
-        profileVisibility: dto.profileVisibility,
-        contactVisibility: dto.contactVisibility,
-        addressVisibility: dto.addressVisibility,
+        profileVisibility: effective.profileVisibility,
+        contactVisibility: effective.contactVisibility,
+        addressVisibility: effective.addressVisibility,
+        dobVisibility: effective.dobVisibility,
       };
     };
 

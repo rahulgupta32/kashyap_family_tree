@@ -1,3 +1,13 @@
+# Privacy boundary correction checkpoint — 30 October 2026
+
+Fresh GitHub clone verified published dec4d512cec092cc2459f6ee9f6beedbaf839da9/tree b6d6fe4960052bc051d6408a49a463d5df3eb65e. Retrieved the durable recovery ZIP, verified SHA256 0b7cd7bd60f0b30ed70c9c02f37e78ea0aa778bf3a23f69ebcabfbe2899584eb, bundle prerequisites/history, restored exact da3151f7b5607bcd9619c6e203b4f15adbcca2f6/tree db30e3b28efc2ab234558eb61927b45ce088766f and all20 file hashes. Original approved payload remains unchanged in that commit.
+
+The attached owner instruction specifically authorized the original20-file manifest and PR body, but automatic review again rejected BOTH public writes for insufficient trusted exact-payload disclosure authorization. No tree/commit/ref or PR update succeeded; no alternate publication attempted. Public HEAD is still dec4d512. This restriction supersedes earlier text saying publication was cleared.
+
+Independent engineering fixed two demonstrated gaps: legacy claim-ID initiation bypassed Person visibility/current identity checks; ordinary privacy saves widened omitted private DOB. Actor-aware legacy boundary and locked privacy merge/readback now have53focused passing tests and650full unit tests/60suites. Shared builds/API typecheck/API build and all3frozen validators pass. Real PG negative/concurrency cases added but NOT executed here. The positive dispute race fixture is now explicitly synthetic PUBLIC; restricted/default privacy assertions remain.
+
+Current source is UNPUBLISHED; use git log/latest recovery manifest for exact source/tree. Preserve privately before leaving. Current runner only maps UID0 and has no PG/Redis/Flutter/container runtime. New-source migration067/browser/Flutter/native CI remains blocked, not passed. No approved linked staging target was found; none deployed. All260 signed acceptances and RG01..12 OPEN; NO-GO. Details: docs/execution/PRIVACY_BOUNDARY_CORRECTIONS_20261030.md.
+
 # Authoritative dispute closure and CI corrections — 30 October 2026
 
 Follow-on to published/fetched dec4d512/treeb6d6fe49. Parent platform41019523222 passed623unit/595PG/87browser and receipt restore; Flutter failed2lint blocks before widgets, and Android passed3cases but denied an unverified fixture reader of default VERIFIED_COMMUNITY (correct privacy). Lints and fixture corrected without policy/role/timeout/assertion weakening. See CI_FAILURES.md. Parent iOS must be checked by its actual source/run.

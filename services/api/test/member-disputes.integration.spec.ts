@@ -52,8 +52,20 @@ describe('Member disputes, real PostgreSQL/Redis/HTTP and private adjudication',
   await submit(owner).expect(400);
   await submit(challenger,{...body,reason:'x'.repeat(4001)}).expect(400);
   await submit(challenger,{...body,actorId:admin.id}).expect(400);
+  await request(app.getHttpServer()).post(`/claims/${claimId}/dispute`).set(auth(challenger)).send({reason:'x'.repeat(4001)}).expect(400);
   await db.query("UPDATE persons SET profile_visibility='PRIVATE' WHERE id=$1",[person]);
-  try{await submit(challenger).expect(403);}finally{await db.query("UPDATE persons SET profile_visibility='PUBLIC' WHERE id=$1",[person]);}
+  try{
+   await submit(challenger).expect(403);
+   await request(app.getHttpServer()).post(`/claims/${claimId}/dispute`).set(auth(challenger)).send({reason:'Fictional known private claim UUID'}).expect(403);
+   await db.query('UPDATE user_roles SET branch_id=$1 WHERE user_id=$2 AND role=$3',[foreignBranch,branchReviewer.id,Role.BRANCH_VERIFIER]);
+   try{
+    await submit(branchReviewer).expect(403);
+    await request(app.getHttpServer()).post(`/claims/${claimId}/dispute`).set(auth(branchReviewer)).send({reason:'Fictional foreign branch reviewer'}).expect(403);
+   }finally{await db.query('UPDATE user_roles SET branch_id=$1 WHERE user_id=$2 AND role=$3',[branch,branchReviewer.id,Role.BRANCH_VERIFIER]);}
+  }finally{await db.query("UPDATE persons SET profile_visibility='PUBLIC' WHERE id=$1",[person]);}
+  expect((await db.query('SELECT status FROM profile_claims WHERE id=$1',[claimId])).rows[0].status).toBe('APPROVED');
+  expect((await db.query('SELECT count(*) FROM claim_disputes')).rows[0].count).toBe('0');
+  expect((await db.query("SELECT count(*) FROM audit_outbox WHERE action='CLAIM_DISPUTED'")).rows[0].count).toBe('0');
   expect((await db.query('SELECT count(*) FROM member_dispute_receipts')).rows[0].count).toBe('0');
  });
  it('atomically rolls back audit failure and accepts concurrent identical retry once',async()=>{
@@ -127,7 +139,7 @@ describe('Member disputes, real PostgreSQL/Redis/HTTP and private adjudication',
   await expect(db.query(down)).rejects.toThrow('MEMBER_DISPUTE_CLOSURES_RETAINED');
  });
  it('serializes creation against closure and normalizes UUID casing without contradictory outcomes',async()=>{
-  const target=(await db.query("INSERT INTO persons(gender,living_status,generation,branch_id,is_claimed,claimed_user_id) VALUES('MALE','LIVING',3,$1,TRUE,$2) RETURNING id",[branch,owner.id])).rows[0].id;
+  const target=(await db.query("INSERT INTO persons(gender,living_status,generation,branch_id,is_claimed,claimed_user_id,profile_visibility) VALUES('MALE','LIVING',3,$1,TRUE,$2,'PUBLIC') RETURNING id",[branch,owner.id])).rows[0].id;
   await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2',[target,owner.id]);
   const claim=(await db.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description,statement_of_truth,status) VALUES($1,$2,'Fictional closure race',TRUE,'APPROVED') RETURNING id",[target,owner.id])).rows[0].id;
   const pending={submissionKey:randomUUID(),reason:'Fictional creation versus closure'};
@@ -142,6 +154,18 @@ describe('Member disputes, real PostgreSQL/Redis/HTTP and private adjudication',
   const state=(await db.query('SELECT status FROM profile_claims WHERE id=$1',[claim])).rows[0].status;
   if(resolved.body.outcome==='CREATED'){expect(created.status).toBe(201);expect(created.body.id).toBe(resolved.body.dispute.id);expect(state).toBe('DISPUTED');}
   else{expect(created.status).toBe(409);expect(state).toBe('APPROVED');}
+ });
+ it('preserves authorized legacy initiation while denying stale account/Person bindings',async()=>{
+  const target=(await db.query("INSERT INTO persons(gender,living_status,generation,branch_id,is_claimed,claimed_user_id,profile_visibility) VALUES('FEMALE','LIVING',3,$1,TRUE,$2,'PUBLIC') RETURNING id",[foreignBranch,unrelated.id])).rows[0].id;
+  const claim=(await db.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description,statement_of_truth,status) VALUES($1,$2,'Fictional legacy compatibility',TRUE,'APPROVED') RETURNING id",[target,unrelated.id])).rows[0].id;
+  const initiate=()=>request(app.getHttpServer()).post(`/claims/${claim}/dispute`).set(auth(challenger)).send({reason:'Fictional eligible legacy request'});
+  await initiate().expect(409);
+  expect((await db.query('SELECT status FROM profile_claims WHERE id=$1',[claim])).rows[0].status).toBe('APPROVED');
+  await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2',[target,unrelated.id]);
+  const result=(await initiate().expect('Cache-Control','private, no-store').expect(201)).body;
+  expect(result).toMatchObject({claimId:claim,disputantUserId:challenger.id,status:'OPEN'});
+  expect((await db.query('SELECT status FROM profile_claims WHERE id=$1',[claim])).rows[0].status).toBe('DISPUTED');
+  expect((await db.query('SELECT count(*) FROM claim_disputes WHERE claim_id=$1',[claim])).rows[0].count).toBe('1');
  });
 
 });

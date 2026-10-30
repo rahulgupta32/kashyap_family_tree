@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { PoolClient } from 'pg';
 import { createHash } from 'crypto';
@@ -7,7 +7,7 @@ import { GenealogyService } from '../genealogy/genealogy.service';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { allowedFields, textField, uuid } from '../community/community-policy';
 import { ClaimsService } from './claims.service';
-import { FileClaimDisputeDto, SubmitMemberDisputeDto, MemberDisputeSummaryDto, MemberDisputePageDto, MemberDisputeResolutionDto, Role } from '@kashyap/contracts';
+import { FileClaimDisputeDto, SubmitMemberDisputeDto, MemberDisputeSummaryDto, MemberDisputePageDto, MemberDisputeResolutionDto, ClaimDisputeDetailDto, Role } from '@kashyap/contracts';
 
 @Injectable()
 export class MemberDisputesService {
@@ -58,6 +58,35 @@ export class MemberDisputesService {
     if(!saved)throw new ConflictException('Retained dispute outcome unavailable');
     return this.summary(saved);
   }
+  private async authorizeCurrentPerson(personId:string,claimantId:string,actor:AuthenticatedUser,client:PoolClient) {
+    // The raw claim mutation already holds the claim lock. Both HTTP entry paths
+    // then hold the target Person lock while rechecking identity and visibility.
+    const person=(await client.query(`SELECT p.id,p.claimed_user_id,p.is_claimed,u.person_id AS claimant_person_id
+      FROM persons p JOIN user_accounts u ON u.id=$2 WHERE p.id=$1 FOR SHARE OF p`,[personId,claimantId])).rows[0];
+    if(!person?.is_claimed||person.claimed_user_id!==claimantId||person.claimant_person_id!==personId){
+      throw new ConflictException('Reload current claim state');
+    }
+    const latest=await this.genealogy.getPersonById(personId,this.viewer(actor));
+    if(latest.id!==personId)throw new ForbiddenException('Person unavailable for dispute');
+  }
+
+  // Compatibility entry point for clients with a previously known claim UUID.
+  // Knowing that UUID never confers permission to mutate a private Person.
+  async submitForClaim(claimId:string,actor:AuthenticatedUser,body:FileClaimDisputeDto):Promise<ClaimDisputeDetailDto> {
+    claimId=uuid(claimId,'claim ID').toLowerCase();allowedFields(body,['reason','evidenceAttachments']);
+    const reason=textField(body.reason,'Dispute reason',4000);
+    return this.db.transaction(async client=>{
+      const claim=(await client.query('SELECT target_person_id FROM profile_claims WHERE id=$1',[claimId])).rows[0];
+      if(!claim)throw new NotFoundException('Claim record not found');
+      const personId=claim.target_person_id;
+      const visible=await this.genealogy.getPersonById(personId,this.viewer(actor));
+      if(visible.id!==personId)throw new ConflictException('Reload the current Person before disputing');
+      return this.claims.fileDispute(claimId,actor.id,{...body,reason},{client,authorize:async(locked,tx)=>{
+        if(locked.target_person_id!==personId)throw new ConflictException('Reload current claim state');
+        await this.authorizeCurrentPerson(personId,locked.claimant_user_id,actor,tx);
+      }});
+    });
+  }
   async resolve(personId:string,actor:AuthenticatedUser,body:SubmitMemberDisputeDto): Promise<MemberDisputeResolutionDto> {
     const prepared=this.input(personId,body);personId=prepared.personId;const {key,hash}=prepared;
     return this.db.transaction(async client=>{
@@ -95,11 +124,8 @@ export class MemberDisputesService {
         ORDER BY c.updated_at DESC,c.id DESC LIMIT 1`, [personId])).rows[0];
       if (!current) throw new BadRequestException('No eligible approved claim for this Person');
       const result = await this.claims.fileDispute(current.id,actor.id,dto,{ client, authorize: async (claim,tx) => {
-        // Consistent lock order: claim, then target Person. Recheck visibility before any dispute write.
-        const person = (await tx.query('SELECT id,claimed_user_id,is_claimed FROM persons WHERE id=$1 FOR SHARE',[personId])).rows[0];
-        if (!person?.is_claimed || person.claimed_user_id !== claim.claimant_user_id) throw new ConflictException('Reload current claim state');
-        const latest = await this.genealogy.getPersonById(personId,this.viewer(actor));
-        if (latest.id !== personId) throw new ForbiddenException('Person unavailable for dispute');
+        if(claim.target_person_id!==personId)throw new ConflictException('Reload current claim state');
+        await this.authorizeCurrentPerson(personId,claim.claimant_user_id,actor,tx);
       }});
       await client.query(`INSERT INTO member_dispute_receipts(account_id,submission_key,target_person_id,payload_hash,dispute_id)
         VALUES($1,$2,$3,$4,$5)`,[actor.id,key,personId,hash,result.id]);

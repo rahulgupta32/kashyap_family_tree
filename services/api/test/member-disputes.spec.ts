@@ -24,6 +24,39 @@ describe('Account-owned member dispute boundaries',()=>{
   expect(claims.fileDispute).not.toHaveBeenCalled();
   expect(tx.query.mock.calls.some(([sql]:[string])=>sql.includes('FROM profile_claims'))).toBe(false);
  });
+ it.each([null,{}, {reason:''},{reason:'x'.repeat(4001)},{reason:'valid',actorId:'another'}])('rejects malformed legacy requests before a transaction: %p',async body=>{
+  await expect(service.submitForClaim(key,actor,body as any)).rejects.toMatchObject({status:400});
+  expect(db.transaction).not.toHaveBeenCalled();expect(claims.fileDispute).not.toHaveBeenCalled();
+ });
+ it('does not let knowledge of a private claim UUID bypass Person visibility',async()=>{
+  tx.query.mockResolvedValue({rows:[{target_person_id:person}]});genealogy.getPersonById.mockRejectedValue(new ForbiddenException());
+  await expect(service.submitForClaim(key,actor,{reason:'Fictional private target'})).rejects.toMatchObject({status:403});
+  expect(claims.fileDispute).not.toHaveBeenCalled();expect(tx.query).toHaveBeenCalledTimes(1);
+ });
+ it.each([
+  {is_claimed:false,claimed_user_id:'claimant',claimant_person_id:person},
+  {is_claimed:true,claimed_user_id:'new-owner',claimant_person_id:person},
+  {is_claimed:true,claimed_user_id:'claimant',claimant_person_id:'another-person'},
+ ])('rechecks the locked legacy Person and current claimant binding before writes: %p',async binding=>{
+  tx.query.mockImplementation(async(sql:string)=>({rows:[sql.includes('FROM profile_claims')?{target_person_id:person}:binding]}));
+  const persist=jest.fn();claims.fileDispute.mockImplementation(async(_id:string,_actor:string,_body:any,context:any)=>{
+   await context.authorize({target_person_id:person,claimant_user_id:'claimant'},tx);persist();
+  });
+  await expect(service.submitForClaim(key,actor,{reason:'Fictional stale binding'})).rejects.toMatchObject({status:409});
+  expect(persist).not.toHaveBeenCalled();
+ });
+ it('rechecks legacy visibility after the claim lock and preserves the authorized detail response',async()=>{
+  tx.query.mockImplementation(async(sql:string)=>({rows:[sql.includes('FROM profile_claims')?{target_person_id:person}:{is_claimed:true,claimed_user_id:'claimant',claimant_person_id:person}]}));
+  const saved={id:key,claimId:key,disputantUserId:actor.id,status:'OPEN'};
+  claims.fileDispute.mockImplementation(async(_id:string,_actor:string,_body:any,context:any)=>{
+   await context.authorize({target_person_id:person,claimant_user_id:'claimant'},tx);return saved;
+  });
+  genealogy.getPersonById.mockResolvedValueOnce({id:person}).mockRejectedValueOnce(new ForbiddenException());
+  await expect(service.submitForClaim(key,actor,{reason:'Fictional changed visibility'})).rejects.toMatchObject({status:403});
+  genealogy.getPersonById.mockResolvedValue({id:person});
+  expect(await service.submitForClaim(key,actor,{reason:' Fictional allowed target '})).toEqual(saved);
+  expect(claims.fileDispute).toHaveBeenLastCalledWith(key,actor.id,{reason:'Fictional allowed target'},expect.objectContaining({client:tx,authorize:expect.any(Function)}));
+ });
  it('rejects a foreign/missing history cursor before returning any history',async()=>{
   await expect(service.list(actor,key)).rejects.toMatchObject({status:400});expect(db.query).toHaveBeenCalledTimes(1);
   expect(db.query.mock.calls[0][1]).toEqual([key,actor.id]);

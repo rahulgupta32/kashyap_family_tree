@@ -1,3 +1,11 @@
+# Next executable task — exact-source runtime and disclosure clearance
+
+Recover the latest private checkpoint and verify exact source/tree before any write. Public prerequisite remains dec4d512; da3151f original20-file payload is preserved unchanged, followed by the demonstrated legacy-dispute and omitted-privacy fixes. Both public source and exact PR body writes were rejected again by automatic review despite attachment-based specific owner authorization. Do not retry through another transport or publish security details as a workaround. Current aggregate source requires its exact manifest/security review before publication.
+
+Local650unit/60suites,53focused, shared/API build/typecheck and3frozen validators PASS. New PostgreSQL tests are NOT executed. Next approved runner must execute migration066/067, private/foreign-branch legacy and Person initiation/no-write checks, current claimant binding, creation/closure concurrency, DOB omission and concurrent partial privacy saves, restore, live browser, Flutter and all4Android journeys, plus iOS. Do not credit parent CI to new source.
+
+Once permitted, publish reviewed source without force, fetch/tree-verify, inspect one automatic source-bound CI set and fix demonstrated failures. Continue F1-F6 remaining mandatory requirements with independent acceptance; no gate closes from aggregate CI. Approved staging target/services/budget/owners, data/domain/privacy inputs, signing/providers/devices, security/accessibility/load/translation/UAT and final Jyphra release approval remain missing. Preserve PR5 draft/base and PR4->develop integration review sequence; no merge/production/data/cultural activation/store submission.
+
 # Authoritative dispute closure and CI corrections — 30 October 2026
 
 Follow-on to published/fetched dec4d512/treeb6d6fe49. Parent platform41019523222 passed623unit/595PG/87browser and receipt restore; Flutter failed2lint blocks before widgets, and Android passed3cases but denied an unverified fixture reader of default VERIFIED_COMMUNITY (correct privacy). Lints and fixture corrected without policy/role/timeout/assertion weakening. See CI_FAILURES.md. Parent iOS must be checked by its actual source/run.

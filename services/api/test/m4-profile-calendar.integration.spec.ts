@@ -171,6 +171,30 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
       expect(prefRow.rows[0].sms_enabled).toBe(true);
     });
 
+    it('preserves restrictive DOB through ordinary privacy and combined-profile saves', async () => {
+      const beforePerson = (await db.query('SELECT phone_visibility,address_visibility,dob_visibility,profile_visibility,occupation FROM persons WHERE id=$1', [testPersonId])).rows[0];
+      const beforeUser = (await db.query('SELECT privacy_settings FROM user_accounts WHERE id=$1', [testUserId])).rows[0];
+      try {
+        await db.query("UPDATE persons SET dob_visibility='PRIVATE' WHERE id=$1", [testPersonId]);
+        await db.query("UPDATE user_accounts SET privacy_settings=privacy_settings || '{\"dobVisibility\":\"PUBLIC\"}'::jsonb WHERE id=$1", [testUserId]);
+        await profileService.updatePrivacySettings(testUserId, {
+          profileVisibility: 'VERIFIED_COMMUNITY', contactVisibility: 'PRIVATE', addressVisibility: 'PRIVATE',
+        });
+        await profileService.updateProfile(testUserId, {
+          occupation: 'Fictional privacy-preserving edit',
+          privacy: { profileVisibility: 'PRIVATE', contactVisibility: 'PRIVATE', addressVisibility: 'PRIVATE' },
+        });
+        const row = (await db.query('SELECT p.dob_visibility,u.privacy_settings FROM persons p JOIN user_accounts u ON u.person_id=p.id WHERE u.id=$1', [testUserId])).rows[0];
+        expect(row.dob_visibility).toBe('PRIVATE');
+        expect(row.privacy_settings.dobVisibility).toBe('PRIVATE');
+        expect((await profileService.getMe(testUserId)).privacy.dobVisibility).toBe('PRIVATE');
+      } finally {
+        await db.query('UPDATE persons SET phone_visibility=$1,address_visibility=$2,dob_visibility=$3,profile_visibility=$4,occupation=$5 WHERE id=$6',
+          [beforePerson.phone_visibility,beforePerson.address_visibility,beforePerson.dob_visibility,beforePerson.profile_visibility,beforePerson.occupation,testPersonId]);
+        await db.query('UPDATE user_accounts SET privacy_settings=$1 WHERE id=$2', [JSON.stringify(beforeUser.privacy_settings), testUserId]);
+      }
+    });
+
     it('3. should update privacy settings and authoritatively propagate to persons table', async () => {
       const privacy = await profileService.updatePrivacySettings(testUserId, {
         profileVisibility: 'VERIFIED_COMMUNITY',
@@ -189,6 +213,28 @@ describe('Milestone 4: Profile Self-Service, Privacy, Deletion & Calendar Integr
       expect(pRow.rows[0].phone_visibility).toBe('IMMEDIATE_FAMILY');
       expect(pRow.rows[0].address_visibility).toBe('PRIVATE');
       expect(pRow.rows[0].dob_visibility).toBe('VERIFIED_COMMUNITY');
+    });
+
+    it('serializes concurrent partial privacy edits without losing another omitted scope', async () => {
+      const beforePerson = (await db.query('SELECT phone_visibility,address_visibility,dob_visibility,profile_visibility FROM persons WHERE id=$1', [testPersonId])).rows[0];
+      const beforeUser = (await db.query('SELECT privacy_settings FROM user_accounts WHERE id=$1', [testUserId])).rows[0];
+      try {
+        await profileService.updatePrivacySettings(testUserId, {
+          profileVisibility: 'PRIVATE', contactVisibility: 'PRIVATE', addressVisibility: 'PRIVATE', dobVisibility: 'PRIVATE',
+        });
+        await Promise.all([
+          profileService.updatePrivacySettings(testUserId, { contactVisibility: 'IMMEDIATE_FAMILY' } as any),
+          profileService.updatePrivacySettings(testUserId, { addressVisibility: 'IMMEDIATE_FAMILY' } as any),
+        ]);
+        const row = (await db.query('SELECT phone_visibility,address_visibility,dob_visibility,profile_visibility FROM persons WHERE id=$1', [testPersonId])).rows[0];
+        expect(row).toEqual({ phone_visibility: 'IMMEDIATE_FAMILY', address_visibility: 'IMMEDIATE_FAMILY', dob_visibility: 'PRIVATE', profile_visibility: 'PRIVATE' });
+        const saved = (await db.query('SELECT privacy_settings FROM user_accounts WHERE id=$1', [testUserId])).rows[0].privacy_settings;
+        expect(saved).toEqual({ profileVisibility: 'PRIVATE', contactVisibility: 'IMMEDIATE_FAMILY', addressVisibility: 'IMMEDIATE_FAMILY', dobVisibility: 'PRIVATE' });
+      } finally {
+        await db.query('UPDATE persons SET phone_visibility=$1,address_visibility=$2,dob_visibility=$3,profile_visibility=$4 WHERE id=$5',
+          [beforePerson.phone_visibility,beforePerson.address_visibility,beforePerson.dob_visibility,beforePerson.profile_visibility,testPersonId]);
+        await db.query('UPDATE user_accounts SET privacy_settings=$1 WHERE id=$2', [JSON.stringify(beforeUser.privacy_settings), testUserId]);
+      }
     });
 
     it('4. should upload photo, verify magic bytes, release clean file, and verify HMAC signed access', async () => {
