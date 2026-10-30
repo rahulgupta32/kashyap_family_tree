@@ -13,6 +13,7 @@ MARKERS = (
     '[M4 DEVICE] Persisted RSVP, native refresh and logout passed. Live acceptance complete.',
     '[MFA DEVICE] Used recovery code rejected; separate code and encrypted-session refresh proof passed',
     '[ACCOUNT DELETE DEVICE] Real OTP confirmation, two revoked sessions, cleared secure stores and retained unclaimed genealogy verified',
+    '[MEMBER DISPUTE DEVICE] Real Person initiation, independent dismissal/upholding, own private status and retained genealogy verified',
 )
 
 
@@ -46,6 +47,13 @@ def build(log: str, head: str, tree: str) -> dict:
                           'path': 'apps/mobile/integration_test/m4_live_api_device_test.dart',
                           'scope': 'OTP reauthentication, explicit confirmation, outcome, two revoked sessions, secure-store cleanup, retained unclaimed Person and tree links',
                           'not_verified': ['approved legal retention policy', 'physical devices', 'independent acceptance', 'full audit/privacy acceptance', 'admin deletion UI']}])
+        if row['requirement_id'] in ('CLAIM-FR-008', 'CLAIM-FR-010'):
+            item.update(status='BOUNDED_RUNTIME_VERIFIED_NOT_ACCEPTED', basis='Actual Android dispute form with live API/PostgreSQL and independent API adjudicator',
+                        current_runtime_evidence=[{'source_sha': head, 'source_tree': tree,
+                          'case': 'Member initiates private dispute by Person, sees both terminal decisions and retained genealogy',
+                          'path': 'apps/mobile/integration_test/m4_live_api_device_test.dart',
+                          'scope': 'Person initiation, member form, own status after dismissal/upholding and preserved Person',
+                          'not_verified': ['independent acceptance', 'full appeal/governance acceptance', 'physical devices', 'live providers', 'full privacy review']}])
         output.append(item)
     return dict(kind='SOURCE_BOUND_RUNTIME_ACCEPTANCE_MATRIX', source_sha=head, source_tree=tree,
                 android_log_normalized_text_sha256=hashlib.sha256(log.encode()).hexdigest(), requirements=output,
@@ -72,4 +80,4 @@ if __name__ == '__main__':
     target = ROOT / args.output
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
-    print('Verified 260 frozen rows, three completed device journeys; all release gates remain OPEN.')
+    print('Verified 260 frozen rows, four completed device journeys; all release gates remain OPEN.')

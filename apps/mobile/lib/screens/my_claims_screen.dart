@@ -3,6 +3,7 @@ import '../localization/claim_labels.dart';
 import '../localization/my_claim_labels.dart';
 import '../services/genealogy_api_service.dart';
 import 'claim_status_screen.dart';
+import 'member_disputes_screen.dart';
 
 class MyClaimsScreen extends StatefulWidget {
   final GenealogyApiService api;
@@ -204,7 +205,7 @@ class _MyClaimsScreenState extends State<MyClaimsScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(myClaimLabels['title']!)),
+    appBar: AppBar(title: Text(myClaimLabels['title']!), actions:[IconButton(tooltip:'मेरा विवाद (My disputes)', icon:const Icon(Icons.flag_outlined), onPressed:_current?()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>MemberDisputesScreen(api:_api))):null)]),
     body: !_current
         ? Center(child: Text(myClaimLabels['session']!))
         : ListView(padding: const EdgeInsets.all(16), children: [

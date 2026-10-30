@@ -153,6 +153,11 @@ async function run() {
   const reviewerId = (await source.query("INSERT INTO user_accounts(phone_number,is_phone_verified) VALUES('+9779800000098',true) RETURNING id")).rows[0].id;
   await source.query("INSERT INTO audit_delivery_recovery_requests(id,outbox_id,proposed_by,reason_code) VALUES($1,$2,$3,'DEPENDENCY_RECOVERED')", [recoveryId, exhausted.id, userId]);
   await source.query("INSERT INTO audit_delivery_recovery_decisions(request_id,approved_by,outcome) VALUES($1,$2,'FAILED')", [recoveryId, reviewerId]);
+  const disputantId=(await source.query("INSERT INTO user_accounts(phone_number,is_phone_verified) VALUES('+9779800000097',true) RETURNING id")).rows[0].id;
+  const restoreClaim=(await source.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description,statement_of_truth,status) VALUES($1,$2,'Fictional restored history',TRUE,'SUPERSEDED') RETURNING id",[child,userId])).rows[0].id;
+  const restoreDispute=(await source.query("INSERT INTO claim_disputes(claim_id,disputant_user_id,reason,status,resolution_notes,resolved_by,resolved_at) VALUES($1,$2,'Fictional restored dispute','RESOLVED','Independent fixture decision',$3,NOW()) RETURNING id",[restoreClaim,disputantId,reviewerId])).rows[0].id;
+  const disputeReceiptKey=randomUUID();
+  await source.query('INSERT INTO member_dispute_receipts(account_id,submission_key,target_person_id,payload_hash,dispute_id) VALUES($1,$2,$3,$4,$5)',[disputantId,disputeReceiptKey,child,digest('Fictional restored dispute payload'),restoreDispute]);
   assert.equal((await audit.verifyIntegrity()).status, 'VERIFIED');
   const before = await manifest(source);
   stage = 'DUMP_AND_RESTORE';
@@ -214,6 +219,13 @@ async function run() {
   await assert.rejects(target.query('UPDATE audit_delivery_recovery_requests SET reason_code=reason_code'), /immutable/i);
   await assert.rejects(target.query('DELETE FROM audit_delivery_recovery_decisions'), /immutable/i);
   result.retainedRecoveryEvidence = 'VERIFIED';
+  const restoredReceipt=(await target.query('SELECT * FROM member_dispute_receipts WHERE account_id=$1 AND submission_key=$2',[disputantId,disputeReceiptKey])).rows[0];
+  assert.equal(restoredReceipt.dispute_id,restoreDispute);assert.equal(restoredReceipt.target_person_id,child);
+  assert.equal((await target.query('SELECT status FROM claim_disputes WHERE id=$1',[restoreDispute])).rows[0].status,'RESOLVED');
+  await assert.rejects(target.query('UPDATE member_dispute_receipts SET payload_hash=payload_hash WHERE account_id=$1',[disputantId]),/MEMBER_DISPUTE_RECEIPT_RETAINED/);
+  await assert.rejects(target.query('DELETE FROM member_dispute_receipts WHERE account_id=$1',[disputantId]),/MEMBER_DISPUTE_RECEIPT_RETAINED/);
+  result.retainedMemberDisputeReceipt='VERIFIED';
+
   const familyRows=(await target.query('SELECT session_family_id,revoked_at,owner_revoked_at FROM user_sessions WHERE session_family_id=$1',[endedFamily])).rows;
   assert.equal(familyRows.length,2);assert.ok(familyRows.every(row=>row.revoked_at&&row.owner_revoked_at));
   assert.equal((await target.query('SELECT revoked_at FROM user_sessions WHERE id=$1',[liveSession])).rows[0].revoked_at,null);

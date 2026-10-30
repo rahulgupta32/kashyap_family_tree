@@ -184,7 +184,7 @@ export class ClaimsService {
       isAuthorized = true;
     } else {
       const claimEvidenceRes = await this.db.query(
-        `SELECT pc.target_person_id, p.branch_id
+        `SELECT pc.target_person_id, p.branch_id, cea.dispute_id
            FROM claim_evidence_attachments cea
            JOIN profile_claims pc ON pc.id = cea.claim_id
            JOIN persons p ON p.id = pc.target_person_id
@@ -193,7 +193,7 @@ export class ClaimsService {
         [assetId],
       );
       const branchId = claimEvidenceRes.rows[0]?.branch_id;
-      isAuthorized = this.hasBranchAuthority(viewer, branchId);
+      isAuthorized = !claimEvidenceRes.rows[0]?.dispute_id && this.hasBranchAuthority(viewer, branchId);
     }
 
     if (!isAuthorized) {
@@ -892,6 +892,7 @@ export class ClaimsService {
     claimId: string,
     disputantUserId: string,
     dto: FileClaimDisputeDto,
+    context?: { client: PoolClient; authorize: (claim: ClaimRecord, client: PoolClient) => Promise<void> },
   ): Promise<ClaimDisputeDetailDto> {
     allowedFields(dto, ['reason', 'evidenceAttachments']);
     if (typeof dto.reason !== 'string' || !dto.reason.trim()) {
@@ -899,7 +900,7 @@ export class ClaimsService {
     }
 
     const reason = dto.reason.trim();
-    return this.db.transaction(async (client) => {
+    const operation = async (client: PoolClient) => {
       const claimRes = await client.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1 FOR UPDATE', [claimId]);
       const claim = claimRes.rows[0];
       if (!claim) {
@@ -917,6 +918,7 @@ export class ClaimsService {
         throw new BadRequestException('Claimant cannot dispute their own approved claim');
       }
 
+      await context?.authorize(claim, client);
       await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
 
       const disputeRes = await client.query<ClaimDisputeRecord>(
@@ -972,7 +974,8 @@ export class ClaimsService {
         createdAt: dispute.created_at,
         updatedAt: dispute.updated_at,
       };
-    });
+    };
+    return context ? operation(context.client) : this.db.transaction(operation);
   }
 
   async listClaimDisputes(claimId: string, actor: AuthenticatedUser): Promise<ClaimDisputeDetailDto[]> {
@@ -1322,7 +1325,7 @@ export class ClaimsService {
     }
 
     const rawEvidence = canViewEvidence ? await this.claimRepo.findEvidenceByClaimId(claim.id, client) : [];
-    const evidenceAttachments = rawEvidence.map((e) => ({
+    const evidenceAttachments = rawEvidence.filter(e => !e.dispute_id || viewer?.roles?.includes(Role.SUPER_ADMIN)).map((e) => ({
       id: e.id,
       mediaAssetId: e.media_asset_id,
       mediaUrl: this.generatePresignedUrl(e.media_asset_id, claim.claimant_user_id),

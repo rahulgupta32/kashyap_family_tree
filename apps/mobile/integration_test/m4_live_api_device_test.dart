@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:kashyap_mobile/main.dart';
 import 'package:kashyap_mobile/screens/person_detail_screen.dart';
 import 'package:kashyap_mobile/screens/account_deletion_screen.dart';
+import 'package:kashyap_mobile/screens/member_disputes_screen.dart';
 import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
@@ -498,5 +499,59 @@ void main() {
     debugPrint('[ACCOUNT DELETE DEVICE] Real OTP confirmation, two revoked sessions, cleared secure stores and retained unclaimed genealogy verified');
     await tester.pumpWidget(const SizedBox.shrink());
   }, timeout: const Timeout(Duration(minutes:3)));
+
+  testWidgets('Member initiates private dispute by Person, sees both terminal decisions and retained genealogy', (tester) async {
+    final tier1 = await reviewerLogin('+9779800000002');
+    final admin = await reviewerLogin('+9779800000001');
+    final owner = await reviewerLogin('+9779847100087');
+    final branch = (await api('/genealogy/people/$rootId',token:admin))['branchId'];
+    final target = await api('/genealogy/people',token:admin,data:{
+      'names':[{'language':'ne','firstName':'काल्पनिक विवाद','lastName':'अधिकारी','fullName':'काल्पनिक विवाद अधिकारी','isPrimary':true},
+        {'language':'en','firstName':'Fictional device dispute','lastName':'Adhikari','fullName':'Fictional device dispute Adhikari','isPrimary':true}],
+      'gender':'MALE','livingStatus':'LIVING','generation':3,'birthYearBs':2040,'branchId':branch,
+      'justificationReason':'Synthetic device dispute acceptance only','allowDuplicateOverride':true,
+    });
+    final claim = await api('/claims',token:owner,data:{'targetPersonId':target['id'],'relationshipDescription':'Fictional independently reviewed identity','statementOfTruth':true});
+    await api('/claims/${claim['id']}/tier1-review',token:tier1,data:{'decision':'VOUCHED','notes':'Independent synthetic review'});
+    await api('/claims/${claim['id']}/tier2-review',token:admin,data:{'decision':'APPROVED','notes':'Separate synthetic final review'});
+    const challengerPhone='+9779847100088';
+    await api('/auth/test-clear-cooldown',data:{'phoneNumber':challengerPhone});
+    final challenge=await api('/auth/otp/request',data:{'phoneNumber':challengerPhone});
+    final code=await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(challengerPhone)}');
+    final service=GenealogyApiService();
+    await service.verifyOtp(challenge['otpSessionId'] as String,code['otp'] as String);
+    addTearDown(()async{try{await service.logout();}finally{service.dispose();}});
+    await tester.pumpWidget(MaterialApp(home:PersonDetailScreen(personId:target['id'] as String,apiService:service)));
+    await until(tester,find.byTooltip('दाबी विवाद (Dispute claim)'));
+    await press(tester,find.byTooltip('दाबी विवाद (Dispute claim)'));
+    await until(tester,find.byKey(const ValueKey('dispute-reason')));
+    for(final decision in ['DISMISSED','RESOLVED']){
+      final scroll=find.descendant(of:find.byType(ListView),matching:find.byType(Scrollable)).first;
+      tester.state<ScrollableState>(scroll).position.jumpTo(0);await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('dispute-reason')),'Fictional device dispute $decision');
+      await press(tester,find.byKey(const ValueKey('dispute-confirm')));
+      final submit=find.text(disputeLabels['submit']!);
+      await tester.scrollUntilVisible(submit,200,scrollable:scroll);
+      await press(tester,submit);
+      final status=find.text(disputeStatuses['OPEN']!);
+      await tester.scrollUntilVisible(status,200,scrollable:scroll);
+      await until(tester,status);
+      expect(service.hasPendingDispute,isFalse);
+      final owned=await api('/claims/disputes/mine',token:service.authToken);
+      final open=(owned['items'] as List).singleWhere((item)=>item['status']=='OPEN');
+      expect(open.containsKey('claimId'),isFalse);expect(open.containsKey('disputantUserId'),isFalse);
+      final notes='Independent fictional $decision decision';
+      await api('/claims/disputes/${open['id']}/resolve',token:admin,data:{'decision':decision,'notes':notes});
+      final refresh=find.text(disputeLabels['refresh']!);
+      await tester.scrollUntilVisible(refresh,-200,scrollable:scroll);await press(tester,refresh);
+      await tester.scrollUntilVisible(find.text(notes),200,scrollable:scroll);
+      await until(tester,find.text(notes));expect(find.text(disputeStatuses[decision]!),findsOneWidget);
+      final ownerProfile=await api('/profile/me',token:owner);
+      expect(ownerProfile['personId'],decision=='DISMISSED'?target['id']:isNull);
+      expect((await api('/genealogy/people/${target['id']}',token:admin))['id'],target['id']);
+    }
+    debugPrint('[MEMBER DISPUTE DEVICE] Real Person initiation, independent dismissal/upholding, own private status and retained genealogy verified');
+    await tester.pumpWidget(const SizedBox.shrink());
+  },timeout:const Timeout(Duration(minutes:3)));
 
 }

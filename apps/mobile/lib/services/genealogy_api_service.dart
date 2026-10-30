@@ -26,6 +26,8 @@ class GenealogyApiService {
   bool _calendarCreateBusy = false;
   Map<String, dynamic>? _pendingProfileClaim;
   bool _profileClaimBusy = false;
+  Map<String,dynamic>? _pendingDispute;
+  bool _disputeBusy = false;
   Future<void> _sessionStorageWork = Future<void>.value();
   void Function()? onSessionExpired;
   void Function()? onMfaRequired;
@@ -47,6 +49,7 @@ class GenealogyApiService {
   int _advanceSessionGeneration() {
     _pendingCalendarCreate = null;
     _pendingProfileClaim = null;
+    _pendingDispute = null;
     final generation = ++_sessionGeneration;
     if (!_disposed) { _sessionChanges.value = generation; }
     return generation;
@@ -65,11 +68,12 @@ class GenealogyApiService {
   Listenable get sessionChanges => _sessionChanges;
   bool get pushRemovalPending => _pushRemovalPending;
 
-  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true, bool includeProfileClaim = true}) => {
+  Map<String, dynamic> _storedSession(String access, String refresh, {required bool removalPending, bool includeCalendar = true, bool includeProfileClaim = true, bool includeDispute = true}) => {
     'accessToken': access, 'refreshToken': refresh,
     if (removalPending) 'pushRemovalPending': true,
     if (includeCalendar && _pendingCalendarCreate != null) 'pendingCalendarCreate': _pendingCalendarCreate,
     if (includeProfileClaim && _pendingProfileClaim != null) 'pendingProfileClaim': _pendingProfileClaim,
+    if (includeDispute && _pendingDispute != null) 'pendingDispute': _pendingDispute,
   };
 
   /// The flag shares the secure credential record and its serialized writes.
@@ -130,7 +134,7 @@ class GenealogyApiService {
     await _serializeSessionStorage(() async {
       if (generation != _sessionGeneration) { throw StateError('Session changed before storage'); }
       await _sessionStore.write(json.encode(_storedSession(access, refresh,
-        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement, includeProfileClaim: !replacement)));
+        removalPending: !replacement && _pushRemovalPending, includeCalendar: !replacement, includeProfileClaim: !replacement, includeDispute: !replacement)));
       if (generation != _sessionGeneration) { throw StateError('Session changed during storage'); }
       // Requests may have begun with the prior access token while sign-in was
       // pending. Activation is a second boundary, separate from token rotation.
@@ -187,6 +191,17 @@ class GenealogyApiService {
         }
         _validateProfileClaimBody(claim['body'] as Map<String, dynamic>);
         _pendingProfileClaim = claim;
+      }
+      if (data.containsKey('pendingDispute')) {
+        final pending = data['pendingDispute'];
+        if (pending is! Map<String,dynamic> || pending.length != 4 ||
+            !pending.keys.toSet().containsAll({'key','owner','server','body'}) ||
+            pending['owner'] is! String || (pending['owner'] as String).isEmpty ||
+            pending['owner'] != chatAccountId || pending['server'] != baseUrl ||
+            pending['key'] is! String || !_claimCreationKey.hasMatch(pending['key'] as String) ||
+            pending['body'] is! Map<String,dynamic>) throw const FormatException('Unavailable pending dispute');
+        _validateDisputeBody(pending['body'] as Map<String,dynamic>);
+        _pendingDispute = pending;
       }
       return await _refreshSession();
     } on FormatException {
@@ -571,6 +586,73 @@ class GenealogyApiService {
       });
       return result;
     } finally { _profileClaimBusy = false; }
+  }
+
+  static final _disputeId = RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$',caseSensitive:false);
+  bool get hasPendingDispute => _pendingDispute != null;
+  String? get pendingDisputePersonId => (_pendingDispute?['body'] as Map<String,dynamic>?)?['targetPersonId'] as String?;
+
+  static void _validateDisputeBody(Map<String,dynamic> body) {
+    if (body.keys.any((key) => !{'targetPersonId','reason','evidenceAttachments'}.contains(key)) ||
+        body['targetPersonId'] is! String || !_disputeId.hasMatch(body['targetPersonId'] as String) ||
+        body['reason'] is! String || (body['reason'] as String).trim().isEmpty || (body['reason'] as String).length > 4000) {
+      throw const FormatException('Unavailable dispute details');
+    }
+    final evidence = body['evidenceAttachments'];
+    if (body.containsKey('evidenceAttachments')) {
+      if (evidence is! List || evidence.length > 5) throw const FormatException('Unavailable dispute evidence');
+      final ids = <String>{};
+      for (final item in evidence) {
+        if (item is! Map || item.length != 2 || item['mediaAssetId'] is! String ||
+            !_disputeId.hasMatch(item['mediaAssetId'] as String) || !ids.add(item['mediaAssetId'] as String) ||
+            !{'family_photo','event_invitation','clan_record'}.contains(item['documentType'])) {
+          throw const FormatException('Unavailable dispute evidence');
+        }
+      }
+    }
+  }
+
+  Future<Map<String,dynamic>> submitMemberDispute(Map<String,dynamic> body) async {
+    if (_authToken == null || chatAccountId == null || _disputeBusy || _pendingDispute != null) throw StateError('Dispute unavailable');
+    final copied = json.decode(json.encode(body)) as Map<String,dynamic>;
+    _validateDisputeBody(copied);
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2,'0')).join();
+    final key = '${hex.substring(0,8)}-${hex.substring(8,12)}-${hex.substring(12,16)}-${hex.substring(16,20)}-${hex.substring(20)}';
+    _pendingDispute = {'key':key,'owner':chatAccountId,'server':baseUrl,'body':copied};
+    return retryMemberDispute();
+  }
+
+  Future<Map<String,dynamic>> retryMemberDispute() async {
+    if (_authToken == null || _disputeBusy || _pendingDispute == null) throw StateError('Dispute retry unavailable');
+    final generation = _sessionGeneration, pending = _pendingDispute!;
+    if (pending['owner'] != chatAccountId || pending['server'] != baseUrl) throw StateError('Session changed');
+    _disputeBusy = true;
+    try {
+      await _serializeSessionStorage(() async {
+        if (generation != _sessionGeneration || _authToken == null) throw StateError('Session changed');
+        if (_refreshToken != null) await _sessionStore.write(json.encode(_storedSession(_authToken!,_refreshToken!,removalPending:_pushRemovalPending)));
+        if (generation != _sessionGeneration) throw StateError('Session changed');
+      });
+      final body = pending['body'] as Map<String,dynamic>;
+      final result = await requestJson('/claims/people/${body['targetPersonId']}/dispute', method:'POST',
+        boundAccountId:pending['owner'] as String, data:{'submissionKey':pending['key'],'reason':body['reason'],
+          if (body.containsKey('evidenceAttachments')) 'evidenceAttachments':body['evidenceAttachments']});
+      if (generation != _sessionGeneration) throw StateError('Session changed');
+      if (result is! Map<String,dynamic> || result['id'] is! String || !_disputeId.hasMatch(result['id'] as String) ||
+          result['targetPersonId'] != body['targetPersonId'] || !{'OPEN','UNDER_REVIEW','DISMISSED','RESOLVED'}.contains(result['status'])) {
+        throw const FormatException('Unconfirmed dispute');
+      }
+      await _serializeSessionStorage(() async {
+        if (generation != _sessionGeneration || _authToken == null || _pendingDispute?['key'] != pending['key']) throw StateError('Session changed');
+        if (_refreshToken != null) await _sessionStore.write(json.encode(_storedSession(_authToken!,_refreshToken!,removalPending:_pushRemovalPending,includeDispute:false)));
+        if (generation != _sessionGeneration) throw StateError('Session changed');
+        _pendingDispute = null;
+      });
+      return result;
+    } finally { _disputeBusy = false; }
   }
 
   // SDK permission and token acquisition are separate from this authenticated

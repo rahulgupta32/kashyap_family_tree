@@ -44,7 +44,12 @@ test('Super Admin inspects and adjudicates disputes while non-adjudicators canno
 
     for (const decision of ['DISMISSED', 'RESOLVED'] as const) {
       const reason = `Private fictional dispute ${decision} ${randomUUID()}`;
-      const dispute = await checked(await api.post(`${API}/claims/${claim.id}/dispute`, { headers: verifierHeaders, data: { reason } }));
+      const intent = { submissionKey: randomUUID(), reason };
+      const dispute = await checked(await api.post(`${API}/claims/people/${person.id}/dispute`, { headers: verifierHeaders, data: intent }));
+      expect(dispute).not.toHaveProperty('claimId');
+      const history = await checked(await api.get(`${API}/claims/disputes/mine`, { headers: verifierHeaders }));
+      expect(history.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: dispute.id, reason, status:'OPEN' })]));
+      expect(JSON.stringify(history)).not.toContain(member.user.id);
       const endpoint = `${API}/claims/${claim.id}/disputes`;
       const inspection = await api.get(endpoint, { headers: await headers(page) });
       expect(inspection.headers()['cache-control']).toContain('private');
@@ -89,6 +94,10 @@ test('Super Admin inspects and adjudicates disputes while non-adjudicators canno
       const replay = await checked(await api.post(`${API}/claims/disputes/${dispute.id}/resolve`, { headers: await headers(page),
         data: { decision: decision === 'DISMISSED' ? 'RESOLVED' : 'DISMISSED', notes: 'Must not overwrite terminal decision' } }));
       expect(replay.status).toBe(decision); expect(replay.resolutionNotes).toBe(notes);
+      const retainedIntent = await checked(await api.post(`${API}/claims/people/${person.id}/dispute`, { headers: verifierHeaders, data:intent }));
+      expect(retainedIntent).toMatchObject({ id:dispute.id, status:decision });
+      const updatedHistory = await checked(await api.get(`${API}/claims/disputes/mine`, { headers: verifierHeaders }));
+      expect(updatedHistory.items.find((item:any)=>item.id===dispute.id)).toMatchObject({status:decision,resolutionNotes:notes});
     }
   } finally { await verifierContext.close(); await api.dispose(); }
 });

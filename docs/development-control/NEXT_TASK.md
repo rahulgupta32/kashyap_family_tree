@@ -1,3 +1,21 @@
+# Member dispute initiation batch — 30 October 2026
+
+Fresh GitHub recovery14a07da4c13e94fca8c14786574d167f1dd8c7d3/tree03c73a16b34608f59609429d7bad276ef5e0df3b integrity verified; main40924465323 and iOS40924465244 attempt2/job123635539304 independently SUCCESS. No older successful source is credited to this new batch.
+
+Current meaningful implementation: migration066 immutable account-bound dispute replay receipts; authorized Person initiation; minimized owner-paged status/history; opponent/branch-only dispute evidence privacy fix; native form/private evidence/persisted immutable retry/session fencing; existing admin/browser journey extended to legitimate member entry; fourth real Android acceptance journey/matrix proof. See docs/execution/MEMBER_DISPUTE_INITIATION_20261030.md. Exact canonical published SHA/tree and automatic CI results are recorded in PR5; resolve source identity with git log for that report. New-source runtime verification remains pending until actually inspected.
+
+All260 signed requirements/RG01..12 OPEN; NO-GO. No merge/deploy/store/real data/cultural activation. Owner approvals and current-source acceptance remain necessary. Public Apache2 publication is authorized; historical HOLDs below are not current restrictions.
+
+## Exact next execution
+
+1. Inspect actual new HEAD automatic migration066/PG/member-dispute HTTP, browser, Flutter/four-device-case and iOS jobs. Require source-bound success; fix demonstrated failures only, preserving recusal/privacy/assertions/timeouts. Do not repeat successful parent14a verification.
+2. Complete safe governed resolution/abandonment of permanently rejected uncertain dispute intents with retained tombstones, and test process interruption/session replacement. Never discard an unknown body/key or infer an appeal outcome.
+3. Continue full frozen F1-F6/assurance/operations queue, including remaining claim/reviewer/correction/rejection/guardian/privacy/notification acceptance and other incomplete workflows. No mandatory scope deferred because one device case passed.
+4. Approved infrastructure handoff: current repository-filtered Vercel inventory returned zero accessible projects. Obtain approved isolated staging target/managed PostgreSQL/Redis/private storage/worker/TLS/monitoring credentials and budget, plus actual PITR/rollback/restore owners. Do not create or deploy to an unapproved target.
+5. Keep data/domain/privacy/signing/providers/physical-device/security/accessibility/load/translation/UAT/Jyphra approvals active in parallel. PR4->develop and PR5 existing M4 base remain review-gated; do not retarget/merge automatically.
+
+## Earlier queue
+
 # Terminal dispute notification correction — 29 October 2026
 
 Meaningful follow-on batch to published dbade5bb0158e73febb6525c6cc2dd8d58399716/tree76cbdf5afa264266db966f397c0cecff2a32e50f. Failing focused tests demonstrated that terminal resolution notified only its actor and dismissal notified nobody. Shared exact action classification now routes both parties with existing preferences/deduplication/privacy controls; generic correction-action messaging is aligned. Actual committed-dispute inbox/replay PostgreSQL assertion added. See `docs/execution/DISPUTE_NOTIFICATION_ROUTING_20261029.md`.

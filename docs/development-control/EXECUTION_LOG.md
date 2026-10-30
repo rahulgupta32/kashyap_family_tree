@@ -1,3 +1,9 @@
+# 30 October 2026 — fresh-source member dispute engineering
+
+Recovered via new GitHub clone,14a07da/tree03c73a16; git fsck passed. Verified main40924465323 SUCCESS and iOS40924465244 attempt2/job123635539304 SUCCESS. Implemented the bounded Person-to-member-dispute cross-layer batch in docs/execution/MEMBER_DISPUTE_INITIATION_20261030.md. Preserve all historical results/failures and source/control changes through canonical GitHub commit/tree verification. Actual new-source results belong in PR5, not inferred here. No requirement/gate accepted or deployment performed.
+
+## Earlier execution log
+
 # Execution log
 
 ## 29 October 2026 — dispute-administration completion

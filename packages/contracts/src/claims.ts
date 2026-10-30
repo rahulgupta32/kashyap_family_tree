@@ -119,3 +119,17 @@ export interface ResolveClaimDisputeDto {
   decision: 'DISMISSED' | 'RESOLVED';
   notes: string;
 }
+
+/** A member supplies a visible Person, never an opponent's private claim ID. */
+export interface SubmitMemberDisputeDto extends FileClaimDisputeDto { submissionKey: string; }
+/** Only the submitting account's case; opponent/reviewer identities and evidence URLs are excluded. */
+export interface MemberDisputeSummaryDto {
+  id: string;
+  targetPersonId: string;
+  reason: string;
+  status: DisputeStatus;
+  resolutionNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface MemberDisputePageDto { items: MemberDisputeSummaryDto[]; nextCursor: string | null; }

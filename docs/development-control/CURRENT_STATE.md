@@ -1,3 +1,13 @@
+# Member dispute initiation batch — 30 October 2026
+
+Fresh GitHub recovery14a07da4c13e94fca8c14786574d167f1dd8c7d3/tree03c73a16b34608f59609429d7bad276ef5e0df3b integrity verified; main40924465323 and iOS40924465244 attempt2/job123635539304 independently SUCCESS. No older successful source is credited to this new batch.
+
+Current meaningful implementation: migration066 immutable account-bound dispute replay receipts; authorized Person initiation; minimized owner-paged status/history; opponent/branch-only dispute evidence privacy fix; native form/private evidence/persisted immutable retry/session fencing; existing admin/browser journey extended to legitimate member entry; fourth real Android acceptance journey/matrix proof. See docs/execution/MEMBER_DISPUTE_INITIATION_20261030.md. Exact canonical published SHA/tree and automatic CI results are recorded in PR5; resolve source identity with git log for that report. New-source runtime verification remains pending until actually inspected.
+
+All260 signed requirements/RG01..12 OPEN; NO-GO. No merge/deploy/store/real data/cultural activation. Owner approvals and current-source acceptance remain necessary. Public Apache2 publication is authorized; historical HOLDs below are not current restrictions.
+
+## Earlier source-bound checkpoints
+
 # Browser failure correction — 29 October 2026
 
 Parent dbade5bb main40922610825 failed at browser verification:607 unit/591 general PostgreSQL cases PASS,85 browser PASS/two FAIL. Corrected actual review modal viewport overflow and a new fixture token captured before legitimate browser session rotation. Follow-on3228857 retains the same pre-correction browser code; do not claim its browser acceptance until actual results are inspected. See CI_FAILURES.md and claim-dispute report. Current correction must pass exact-source automatic CI; preserve all assertions/timeouts/security controls. No gate/requirement accepted; NO-GO. Continue closure before next feature.
