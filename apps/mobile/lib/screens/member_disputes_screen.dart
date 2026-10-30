@@ -9,6 +9,8 @@ const disputeLabels = {
   'confirm':'स्वतन्त्र समीक्षा चाहन्छु; यसले खाता स्वतः सार्दैन। (Request independent review; no automatic account transfer.)',
   'submit':'विवाद पेश गर्नुहोस् (Submit dispute)',
   'retry':'मूल विवाद पुनः प्रयास (Retry original dispute)',
+  'resolve':'मूल अनुरोध समाधान (Resolve original submission)',
+  'closeConfirm':'पहिले दर्ता भएको विवाद पुनः प्राप्त गर्नुहोस्; नभए मूल अनुरोध स्थायी बन्द गर्नुहोस्। कुनै दर्ता भएको विवाद फिर्ता हुँदैन। (Recover a recorded dispute; otherwise permanently close this submission. Existing disputes are never withdrawn.)',
   'refresh':'विवाद स्थिति पुनः लोड (Reload dispute status)',
   'older':'अघिल्ला विवाद (Older disputes)',
   'unavailable':'विवाद कार्य पुष्टि भएन। मूल अनुरोध पुनः प्रयास वा स्थिति पुनः लोड गर्नुहोस्। (Unconfirmed; retry the original request or reload status.)',
@@ -28,15 +30,15 @@ class _MemberDisputesScreenState extends State<MemberDisputesScreen> {
   late final int _generation;
   final _reason=TextEditingController();
   final _evidence=<Map<String,dynamic>>[];
-  bool _expired=false,_loading=false,_saving=false,_uploading=false,_confirm=false,_notice=false;
-  String? _error,_cursor;
+  bool _expired=false,_loading=false,_saving=false,_uploading=false,_confirm=false,_notice=false,_closeConfirmed=false;
+  String? _error,_cursor,_resultNotice;
   String _type='family_photo';
   List<Map<String,dynamic>> _items=[];
   bool get _current=>mounted&&!_expired&&identical(widget.api,_api)&&_api.authToken!=null&&_api.pushSessionGeneration==_generation;
   bool get _editable=>_current&&!_saving&&!_uploading&&!_api.hasPendingDispute;
   @override
   void initState(){super.initState();_api=widget.api;_generation=_api.pushSessionGeneration;_api.sessionChanges.addListener(_changed);_load();}
-  void _changed(){if(mounted&&!_current)setState((){_expired=true;_items=[];_evidence.clear();_reason.clear();_cursor=_error=null;_confirm=_notice=false;});}
+  void _changed(){if(mounted&&!_current)setState((){_expired=true;_items=[];_evidence.clear();_reason.clear();_cursor=_error=_resultNotice=null;_confirm=_notice=_closeConfirmed=false;});}
   @override
   void didUpdateWidget(covariant MemberDisputesScreen oldWidget){super.didUpdateWidget(oldWidget);if(!identical(oldWidget.api,widget.api)||oldWidget.personId!=widget.personId){_expired=true;_changed();}}
   Future<void> _load([String? cursor])async{
@@ -49,7 +51,7 @@ class _MemberDisputesScreenState extends State<MemberDisputesScreen> {
       final rows=<Map<String,dynamic>>[];
       for(final value in data['items']){
         if(value is! Map||value['id'] is! String||value['reason'] is! String||!disputeStatuses.containsKey(value['status'])||
-          (value['resolutionNotes']!=null&&value['resolutionNotes'] is! String))throw const FormatException('Unavailable dispute state');
+          (value['resolutionNotes']!=null&&value['resolutionNotes'] is! String)){throw const FormatException('Unavailable dispute state');}
         rows.add(Map<String,dynamic>.from(value));
       }
       setState((){_items=rows;_cursor=data['nextCursor'] as String?;});
@@ -75,7 +77,7 @@ class _MemberDisputesScreenState extends State<MemberDisputesScreen> {
     if(!_current||_saving||_loading||_uploading)return;
     final retry=_api.hasPendingDispute;
     if(!retry&&(!_confirm||widget.personId==null||_reason.text.trim().isEmpty||_reason.text.length>4000))return;
-    setState((){_saving=true;_error=null;});
+    setState((){_saving=true;_error=null;_resultNotice=null;});
     var confirmed=false;
     try{
       if(retry){await _api.retryMemberDispute();}
@@ -86,6 +88,18 @@ class _MemberDisputesScreenState extends State<MemberDisputesScreen> {
     }catch(_){if(_current)setState(()=>_error=disputeLabels['unavailable']);}
     finally{if(_current){setState(()=>_saving=false);if(confirmed)await _load();}}
   }
+  Future<void> _resolve()async{
+    if(!_current||_saving||_loading||_uploading||!_closeConfirmed||!_api.hasPendingDispute)return;
+    setState((){_saving=true;_error=null;_resultNotice=null;});var confirmed=false;
+    try{
+      final result=await _api.resolveMemberDispute();if(!_current)return;
+      confirmed=true;_reason.clear();_evidence.clear();_confirm=_notice=_closeConfirmed=false;
+      _resultNotice=result['outcome']=='ABANDONED'
+        ?'मूल अनुरोध स्थायी बन्द भयो; दर्ता भएको कुनै विवाद फिर्ता भएको छैन। (Original submission permanently closed; no recorded dispute was withdrawn.)'
+        :'दर्ता भएको विवाद पुनः प्राप्त भयो। (Recorded dispute recovered.)';
+    }catch(_){if(_current)setState(()=>_error=disputeLabels['unavailable']);}
+    finally{if(_current){setState(()=>_saving=false);if(confirmed)await _load();}}
+  }
   @override
   void dispose(){_api.sessionChanges.removeListener(_changed);_reason.dispose();_evidence.clear();super.dispose();}
   @override
@@ -93,7 +107,12 @@ class _MemberDisputesScreenState extends State<MemberDisputesScreen> {
     body:!_current?Center(child:Text(claimLabels['session']!)):ListView(padding:const EdgeInsets.all(16),children:[
       if(_loading||_saving||_uploading)const Center(child:CircularProgressIndicator()),
       if(_error!=null)Semantics(liveRegion:true,child:Text(_error!)),
-      if(_api.hasPendingDispute)ElevatedButton(onPressed:_saving||_loading||_uploading?null:_submit,child:Text(disputeLabels['retry']!)),
+      if(_resultNotice!=null)Semantics(liveRegion:true,child:Text(_resultNotice!)),
+      if(_api.hasPendingDispute)...[
+        ElevatedButton(onPressed:_saving||_loading||_uploading?null:_submit,child:Text(disputeLabels['retry']!)),
+        CheckboxListTile(key:const ValueKey('dispute-close-confirm'),value:_closeConfirmed,onChanged:_saving||_loading||_uploading?null:(value){if(_current)setState(()=>_closeConfirmed=value??false);},title:Text(disputeLabels['closeConfirm']!)),
+        OutlinedButton(onPressed:_closeConfirmed&&!_saving&&!_loading&&!_uploading?_resolve:null,child:Text(disputeLabels['resolve']!)),
+      ],
       if(widget.personId!=null&&!_api.hasPendingDispute)...[
         TextField(key:const ValueKey('dispute-reason'),controller:_reason,enabled:_editable,maxLength:4000,maxLines:3,decoration:InputDecoration(labelText:disputeLabels['reason'])),
         CheckboxListTile(key:const ValueKey('dispute-confirm'),value:_confirm,onChanged:_editable?(value){if(_editable)setState(()=>_confirm=value??false);}:null,title:Text(disputeLabels['confirm']!)),

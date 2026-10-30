@@ -41,6 +41,23 @@ class LoseFirstChatResponseClient extends http.BaseClient {
   void close()=>_inner.close();
 }
 
+// Real server commits the first member dispute; only its transport acknowledgement is lost.
+class LoseFirstDisputeResponseClient extends http.BaseClient {
+  final http.Client _inner=http.Client();
+  bool _lost=false;
+  Map<String,dynamic>? lastSubmission;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request)async{
+    final isSubmission=request.method=='POST'&&request.url.path.startsWith('/claims/people/')&&request.url.path.endsWith('/dispute');
+    if(isSubmission&&request is http.Request){lastSubmission=jsonDecode(request.body) as Map<String,dynamic>;}
+    final response=await _inner.send(request);
+    if(isSubmission&&!_lost&&response.statusCode>=200&&response.statusCode<300){_lost=true;await response.stream.drain<void>();throw http.ClientException('Fictional lost dispute acknowledgement');}
+    return response;
+  }
+  @override
+  void close()=>_inner.close();
+}
+
 // Observe the explicit test-mode OTP from an unchanged REAL server response.
 // This transport never fabricates status, headers, body or authentication.
 class CaptureDeletionChallengeClient extends http.BaseClient {
@@ -518,8 +535,18 @@ void main() {
     await api('/auth/test-clear-cooldown',data:{'phoneNumber':challengerPhone});
     final challenge=await api('/auth/otp/request',data:{'phoneNumber':challengerPhone});
     final code=await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(challengerPhone)}');
-    final service=GenealogyApiService();
+    final transport=LoseFirstDisputeResponseClient();
+    final service=GenealogyApiService(client:transport);
     await service.verifyOtp(challenge['otpSessionId'] as String,code['otp'] as String);
+    // Default VERIFIED_COMMUNITY correctly denies an unverified outsider. Only
+    // this synthetic owner explicitly publishes its own fixture for the positive path.
+    final hidden=await http.get(Uri.parse('$base/genealogy/people/${target['id']}'),headers:{'Authorization':'Bearer ${service.authToken}'});
+    expect(hidden.statusCode,403);
+    final consent=await http.put(Uri.parse('$base/profile/privacy'),headers:{'Content-Type':'application/json','Authorization':'Bearer $owner'},
+      body:jsonEncode({'profileVisibility':'PUBLIC','contactVisibility':'PRIVATE','addressVisibility':'PRIVATE','dobVisibility':'PRIVATE'}));
+    expect(consent.statusCode,200);
+    final visible=await service.getPerson(target['id'] as String);expect(visible.isClaimed,isTrue);expect(visible.claimedByUserId,isNull);
+
     addTearDown(()async{try{await service.logout();}finally{service.dispose();}});
     await tester.pumpWidget(MaterialApp(home:PersonDetailScreen(personId:target['id'] as String,apiService:service)));
     await until(tester,find.byTooltip('दाबी विवाद (Dispute claim)'));
@@ -533,6 +560,13 @@ void main() {
       final submit=find.text(disputeLabels['submit']!);
       await tester.scrollUntilVisible(submit,200,scrollable:scroll);
       await press(tester,submit);
+      if(decision=='DISMISSED'){
+        await until(tester,find.text(disputeLabels['resolve']!));
+        expect(service.hasPendingDispute,isTrue);
+        await press(tester,find.byKey(const ValueKey('dispute-close-confirm')));
+        await press(tester,find.text(disputeLabels['resolve']!));
+      }
+
       final status=find.text(disputeStatuses['OPEN']!);
       await tester.scrollUntilVisible(status,200,scrollable:scroll);
       await until(tester,status);
@@ -550,7 +584,18 @@ void main() {
       expect(ownerProfile['personId'],decision=='DISMISSED'?target['id']:isNull);
       expect((await api('/genealogy/people/${target['id']}',token:admin))['id'],target['id']);
     }
-    debugPrint('[MEMBER DISPUTE DEVICE] Real Person initiation, independent dismissal/upholding, own private status and retained genealogy verified');
+    final scroll=find.descendant(of:find.byType(ListView),matching:find.byType(Scrollable)).first;
+    tester.state<ScrollableState>(scroll).position.jumpTo(0);await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('dispute-reason')),'Fictional unavailable claim closure');
+    await press(tester,find.byKey(const ValueKey('dispute-confirm')));
+    final submit=find.text(disputeLabels['submit']!);await tester.scrollUntilVisible(submit,200,scrollable:scroll);await press(tester,submit);
+    await until(tester,find.text(disputeLabels['resolve']!));expect(service.hasPendingDispute,isTrue);
+    final lateBody=Map<String,dynamic>.from(transport.lastSubmission!);
+    await press(tester,find.byKey(const ValueKey('dispute-close-confirm')));await press(tester,find.text(disputeLabels['resolve']!));
+    await until(tester,find.textContaining('Original submission permanently closed'));expect(service.hasPendingDispute,isFalse);
+    final late=await http.post(Uri.parse('$base/claims/people/${target['id']}/dispute'),headers:{'Content-Type':'application/json','Authorization':'Bearer ${service.authToken}'},body:jsonEncode(lateBody));
+    expect(late.statusCode,409);expect(((await api('/claims/disputes/mine',token:service.authToken))['items'] as List).length,2);
+    debugPrint('[MEMBER DISPUTE DEVICE] Real Person initiation, lost-response recovery, independent decisions, permanent closure and retained genealogy verified');
     await tester.pumpWidget(const SizedBox.shrink());
   },timeout:const Timeout(Duration(minutes:3)));
 

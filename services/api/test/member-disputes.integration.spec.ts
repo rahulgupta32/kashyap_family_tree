@@ -104,4 +104,44 @@ describe('Member disputes, real PostgreSQL/Redis/HTTP and private adjudication',
   const down=fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/066_member_dispute_receipts.down.sql'),'utf8');
   await expect(db.query(down)).rejects.toThrow('MEMBER_DISPUTE_RECEIPTS_RETAINED');
  });
+ it('safely recovers committed cases or permanently closes absent identities with rollback and immutable evidence',async()=>{
+  const resolve=(target:string,data:any)=>request(app.getHttpServer()).post(`/claims/people/${target}/dispute-resolution`).set(auth(challenger)).send(data);
+  expect((await resolve(person,body).expect(201)).body).toMatchObject({outcome:'CREATED',dispute:{id:dispute.id,status:'DISMISSED'}});
+  const unknownTarget=randomUUID(),pending={submissionKey:randomUUID(),reason:'Fictional permanently unavailable target'};
+  const failure=jest.spyOn(audit,'recordAuditIntent').mockRejectedValueOnce(new Error('Fictional closure audit outage'));
+  try{await resolve(unknownTarget,pending).expect(500);}finally{failure.mockRestore();}
+  expect((await db.query('SELECT count(*) FROM member_dispute_closures WHERE submission_key=$1',[pending.submissionKey])).rows[0].count).toBe('0');
+  const results=await Promise.all([1,2].map(()=>resolve(unknownTarget,pending).expect(201)));
+  expect(results.map(r=>r.body)).toEqual([{outcome:'ABANDONED'},{outcome:'ABANDONED'}]);
+  await resolve(unknownTarget,{...pending,reason:'Changed pending content'}).expect(409);
+  await request(app.getHttpServer()).post(`/claims/people/${unknownTarget}/dispute`).set(auth(challenger)).send(pending).expect(409);
+  const closed=(await db.query('SELECT * FROM member_dispute_closures WHERE account_id=$1 AND submission_key=$2',[challenger.id,pending.submissionKey])).rows[0];
+  await expect(db.query('UPDATE member_dispute_closures SET payload_hash=payload_hash WHERE submission_key=$1',[pending.submissionKey])).rejects.toThrow('MEMBER_DISPUTE_CLOSURE_RETAINED');
+  await expect(db.query('DELETE FROM member_dispute_closures WHERE submission_key=$1',[pending.submissionKey])).rejects.toThrow('MEMBER_DISPUTE_CLOSURE_RETAINED');
+  await expect(db.query('INSERT INTO member_dispute_receipts(account_id,submission_key,target_person_id,payload_hash,dispute_id) VALUES($1,$2,$3,$4,$5)',[challenger.id,pending.submissionKey,person,closed.payload_hash,dispute.id])).rejects.toThrow('MEMBER_DISPUTE_ALREADY_ABANDONED');
+  const receipt=(await db.query('SELECT * FROM member_dispute_receipts WHERE account_id=$1 AND submission_key=$2',[challenger.id,key])).rows[0];
+  await expect(db.query('INSERT INTO member_dispute_closures(account_id,submission_key,target_person_id,payload_hash) VALUES($1,$2,$3,$4)',[challenger.id,key,person,receipt.payload_hash])).rejects.toThrow('MEMBER_DISPUTE_ALREADY_CREATED');
+  const events=(await db.query("SELECT new_value FROM audit_outbox WHERE action='MEMBER_DISPUTE_SUBMISSION_ABANDONED' AND entity_id=$1",[pending.submissionKey])).rows;
+  expect(events).toHaveLength(1);expect(events[0].new_value).toEqual({outcome:'ABANDONED'});
+  const down=fs.readFileSync(path.resolve(__dirname,'../../../database/migrations/067_member_dispute_closures.down.sql'),'utf8');
+  await expect(db.query(down)).rejects.toThrow('MEMBER_DISPUTE_CLOSURES_RETAINED');
+ });
+ it('serializes creation against closure and normalizes UUID casing without contradictory outcomes',async()=>{
+  const target=(await db.query("INSERT INTO persons(gender,living_status,generation,branch_id,is_claimed,claimed_user_id) VALUES('MALE','LIVING',3,$1,TRUE,$2) RETURNING id",[branch,owner.id])).rows[0].id;
+  await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2',[target,owner.id]);
+  const claim=(await db.query("INSERT INTO profile_claims(target_person_id,claimant_user_id,relationship_description,statement_of_truth,status) VALUES($1,$2,'Fictional closure race',TRUE,'APPROVED') RETURNING id",[target,owner.id])).rows[0].id;
+  const pending={submissionKey:randomUUID(),reason:'Fictional creation versus closure'};
+  const [created,resolved]=await Promise.all([
+    request(app.getHttpServer()).post(`/claims/people/${target.toUpperCase()}/dispute`).set(auth(challenger)).send({...pending,submissionKey:pending.submissionKey.toUpperCase()}),
+    request(app.getHttpServer()).post(`/claims/people/${target}/dispute-resolution`).set(auth(challenger)).send(pending),
+  ]);
+  expect(resolved.status).toBe(201);
+  const receipts=Number((await db.query('SELECT count(*) FROM member_dispute_receipts WHERE account_id=$1 AND submission_key=$2',[challenger.id,pending.submissionKey])).rows[0].count);
+  const closures=Number((await db.query('SELECT count(*) FROM member_dispute_closures WHERE account_id=$1 AND submission_key=$2',[challenger.id,pending.submissionKey])).rows[0].count);
+  expect(receipts+closures).toBe(1);
+  const state=(await db.query('SELECT status FROM profile_claims WHERE id=$1',[claim])).rows[0].status;
+  if(resolved.body.outcome==='CREATED'){expect(created.status).toBe(201);expect(created.body.id).toBe(resolved.body.dispute.id);expect(state).toBe('DISPUTED');}
+  else{expect(created.status).toBe(409);expect(state).toBe('APPROVED');}
+ });
+
 });

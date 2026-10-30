@@ -16,6 +16,47 @@ class FailingDisputeStore extends MemorySessionStore {
  @override Future<void> write(String value)async{if(fail)throw StateError('Fictional unavailable storage');await super.write(value);}
 }
 void main(){
+ test('authoritative closure reuses immutable body and survives uncertain durable cleanup',()async{
+  final store=FailingDisputeStore();final sent=<Map<String,dynamic>>[];var failCleanup=true;
+  final api=GenealogyApiService(sessionStore:store,chatOutboxStore:MemoryChatOutboxStore(),client:MockClient((r)async{
+   if(r.url.path=='/auth/native/verify')return jsonResponse({'accessToken':token('owner'),'refreshToken':'refresh'});
+   sent.add(jsonDecode(r.body) as Map<String,dynamic>);
+   if(r.url.path.endsWith('/dispute'))return http.Response('{}',503);
+   expect(r.url.path,'/claims/people/$person/dispute-resolution');
+   if(failCleanup){store.fail=true;failCleanup=false;}
+   return jsonResponse({'outcome':'ABANDONED'});
+  }));addTearDown(api.dispose);await api.verifyOtp('challenge','123456');
+  await expectLater(api.submitMemberDispute({'targetPersonId':person,'reason':'Original private reason'}),throwsException);
+  await expectLater(api.resolveMemberDispute(),throwsA(anything));expect(api.hasPendingDispute,isTrue);
+  store.fail=false;expect(await api.resolveMemberDispute(),{'outcome':'ABANDONED'});
+  expect(sent[1],sent[0]);expect(sent[2],sent[0]);expect(api.hasPendingDispute,isFalse);
+ });
+ test('malformed closure cannot discard pending intent; a recorded case is recovered instead of withdrawn',()async{
+  var resolves=0;
+  final api=GenealogyApiService(client:MockClient((r)async{
+   if(r.url.path.endsWith('/dispute'))return http.Response('{}',503);
+   resolves++;return jsonResponse(resolves==1?{'outcome':'ABANDONED','extra':'invalid'}:
+    {'outcome':'CREATED','dispute':{'id':dispute,'targetPersonId':person,'status':'DISMISSED'}});
+  }))..setAuthToken(token('owner'));addTearDown(api.dispose);
+  await expectLater(api.submitMemberDispute({'targetPersonId':person,'reason':'Original reason'}),throwsException);
+  await expectLater(api.resolveMemberDispute(),throwsFormatException);expect(api.hasPendingDispute,isTrue);
+  expect((await api.resolveMemberDispute())['outcome'],'CREATED');expect(api.hasPendingDispute,isFalse);
+ });
+ testWidgets('permanent closure requires explicit confirmation and clears only an authoritative outcome',(tester)async{
+  final api=GenealogyApiService(client:MockClient((r)async{
+   if(r.method=='GET')return jsonResponse({'items':[],'nextCursor':null});
+   if(r.url.path.endsWith('/dispute'))return http.Response('{}',503);
+   return jsonResponse({'outcome':'ABANDONED'});
+  }))..setAuthToken(token('owner'));addTearDown(api.dispose);
+  await expectLater(api.submitMemberDispute({'targetPersonId':person,'reason':'Original reason'}),throwsException);
+  await tester.pumpWidget(MaterialApp(home:MemberDisputesScreen(api:api)));await tester.pumpAndSettle();
+  final button=find.widgetWithText(OutlinedButton,disputeLabels['resolve']!);
+  expect(tester.widget<OutlinedButton>(button).onPressed,isNull);
+  await tester.tap(find.byKey(const ValueKey('dispute-close-confirm')));await tester.pumpAndSettle();
+  await tester.tap(button);await tester.pumpAndSettle();expect(api.hasPendingDispute,isFalse);
+  expect(find.textContaining('Original submission permanently closed'),findsOneWidget);
+ });
+
  testWidgets('Person entry discards a late private response after account replacement',(tester)async{
   final response=Completer<http.Response>();
   final api=GenealogyApiService(client:MockClient((_)=>response.future))..setAuthToken(token('owner'));addTearDown(api.dispose);

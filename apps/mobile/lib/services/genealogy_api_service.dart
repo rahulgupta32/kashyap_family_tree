@@ -199,7 +199,7 @@ class GenealogyApiService {
             pending['owner'] is! String || (pending['owner'] as String).isEmpty ||
             pending['owner'] != chatAccountId || pending['server'] != baseUrl ||
             pending['key'] is! String || !_claimCreationKey.hasMatch(pending['key'] as String) ||
-            pending['body'] is! Map<String,dynamic>) throw const FormatException('Unavailable pending dispute');
+            pending['body'] is! Map<String,dynamic>) { throw const FormatException('Unavailable pending dispute'); }
         _validateDisputeBody(pending['body'] as Map<String,dynamic>);
         _pendingDispute = pending;
       }
@@ -625,7 +625,9 @@ class GenealogyApiService {
     return retryMemberDispute();
   }
 
-  Future<Map<String,dynamic>> retryMemberDispute() async {
+  Future<Map<String,dynamic>> retryMemberDispute() => _sendPendingDispute(resolving:false);
+  Future<Map<String,dynamic>> resolveMemberDispute() => _sendPendingDispute(resolving:true);
+  Future<Map<String,dynamic>> _sendPendingDispute({required bool resolving}) async {
     if (_authToken == null || _disputeBusy || _pendingDispute == null) throw StateError('Dispute retry unavailable');
     final generation = _sessionGeneration, pending = _pendingDispute!;
     if (pending['owner'] != chatAccountId || pending['server'] != baseUrl) throw StateError('Session changed');
@@ -637,12 +639,15 @@ class GenealogyApiService {
         if (generation != _sessionGeneration) throw StateError('Session changed');
       });
       final body = pending['body'] as Map<String,dynamic>;
-      final result = await requestJson('/claims/people/${body['targetPersonId']}/dispute', method:'POST',
+      final result = await requestJson('/claims/people/${body['targetPersonId']}/${resolving?'dispute-resolution':'dispute'}', method:'POST',
         boundAccountId:pending['owner'] as String, data:{'submissionKey':pending['key'],'reason':body['reason'],
           if (body.containsKey('evidenceAttachments')) 'evidenceAttachments':body['evidenceAttachments']});
       if (generation != _sessionGeneration) throw StateError('Session changed');
-      if (result is! Map<String,dynamic> || result['id'] is! String || !_disputeId.hasMatch(result['id'] as String) ||
-          result['targetPersonId'] != body['targetPersonId'] || !{'OPEN','UNDER_REVIEW','DISMISSED','RESOLVED'}.contains(result['status'])) {
+      final abandoned=resolving&&result is Map&&result.length==1&&result['outcome']=='ABANDONED';
+      final saved=resolving&&result is Map?result['dispute']:result;
+      final created=!resolving||(result is Map&&result.length==2&&result['outcome']=='CREATED');
+      if (!abandoned && (!created || saved is! Map<String,dynamic> || saved['id'] is! String || !_disputeId.hasMatch(saved['id'] as String) ||
+          saved['targetPersonId'] != body['targetPersonId'] || !{'OPEN','UNDER_REVIEW','DISMISSED','RESOLVED'}.contains(saved['status']))) {
         throw const FormatException('Unconfirmed dispute');
       }
       await _serializeSessionStorage(() async {

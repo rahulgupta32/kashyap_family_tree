@@ -158,6 +158,8 @@ async function run() {
   const restoreDispute=(await source.query("INSERT INTO claim_disputes(claim_id,disputant_user_id,reason,status,resolution_notes,resolved_by,resolved_at) VALUES($1,$2,'Fictional restored dispute','RESOLVED','Independent fixture decision',$3,NOW()) RETURNING id",[restoreClaim,disputantId,reviewerId])).rows[0].id;
   const disputeReceiptKey=randomUUID();
   await source.query('INSERT INTO member_dispute_receipts(account_id,submission_key,target_person_id,payload_hash,dispute_id) VALUES($1,$2,$3,$4,$5)',[disputantId,disputeReceiptKey,child,digest('Fictional restored dispute payload'),restoreDispute]);
+  const disputeClosureKey=randomUUID();
+  await source.query('INSERT INTO member_dispute_closures(account_id,submission_key,target_person_id,payload_hash) VALUES($1,$2,$3,$4)',[disputantId,disputeClosureKey,child,digest('Fictional closed dispute intent')]);
   assert.equal((await audit.verifyIntegrity()).status, 'VERIFIED');
   const before = await manifest(source);
   stage = 'DUMP_AND_RESTORE';
@@ -225,6 +227,13 @@ async function run() {
   await assert.rejects(target.query('UPDATE member_dispute_receipts SET payload_hash=payload_hash WHERE account_id=$1',[disputantId]),/MEMBER_DISPUTE_RECEIPT_RETAINED/);
   await assert.rejects(target.query('DELETE FROM member_dispute_receipts WHERE account_id=$1',[disputantId]),/MEMBER_DISPUTE_RECEIPT_RETAINED/);
   result.retainedMemberDisputeReceipt='VERIFIED';
+  const restoredClosure=(await target.query('SELECT * FROM member_dispute_closures WHERE account_id=$1 AND submission_key=$2',[disputantId,disputeClosureKey])).rows[0];
+  assert.equal(restoredClosure.target_person_id,child);assert.equal(restoredClosure.payload_hash,digest('Fictional closed dispute intent'));
+  await assert.rejects(target.query('UPDATE member_dispute_closures SET payload_hash=payload_hash WHERE submission_key=$1',[disputeClosureKey]),/MEMBER_DISPUTE_CLOSURE_RETAINED/);
+  await assert.rejects(target.query('DELETE FROM member_dispute_closures WHERE submission_key=$1',[disputeClosureKey]),/MEMBER_DISPUTE_CLOSURE_RETAINED/);
+  await assert.rejects(target.query('INSERT INTO member_dispute_receipts(account_id,submission_key,target_person_id,payload_hash,dispute_id) VALUES($1,$2,$3,$4,$5)',[disputantId,disputeClosureKey,child,restoredClosure.payload_hash,restoreDispute]),/MEMBER_DISPUTE_ALREADY_ABANDONED/);
+  result.retainedMemberDisputeClosure='VERIFIED';
+
 
   const familyRows=(await target.query('SELECT session_family_id,revoked_at,owner_revoked_at FROM user_sessions WHERE session_family_id=$1',[endedFamily])).rows;
   assert.equal(familyRows.length,2);assert.ok(familyRows.every(row=>row.revoked_at&&row.owner_revoked_at));

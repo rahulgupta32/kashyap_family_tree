@@ -133,3 +133,6 @@ export interface MemberDisputeSummaryDto {
   updatedAt: string;
 }
 export interface MemberDisputePageDto { items: MemberDisputeSummaryDto[]; nextCursor: string | null; }
+export type MemberDisputeResolutionDto =
+  | { outcome: 'CREATED'; dispute: MemberDisputeSummaryDto }
+  | { outcome: 'ABANDONED' };

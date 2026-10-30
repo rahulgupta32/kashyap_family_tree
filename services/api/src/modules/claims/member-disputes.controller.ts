@@ -15,4 +15,10 @@ export class MemberDisputesController {
   @Header('Cache-Control', 'private, no-store')
   submit(@Param('personId') personId: string, @CurrentUser() actor: AuthenticatedUser,
     @Body() body: SubmitMemberDisputeDto) { return this.disputes.submit(personId,actor,body); }
+  @Post('people/:personId/dispute-resolution')
+  @Header('Cache-Control', 'private, no-store')
+  resolve(@Param('personId') personId:string,@CurrentUser() actor:AuthenticatedUser,@Body() body:SubmitMemberDisputeDto){
+    return this.disputes.resolve(personId,actor,body);
+  }
+
 }

@@ -19,3 +19,7 @@ Frozen inventories validated:260 requirements/260 edge cases/2924 supplemental r
 ## Terminal dispute notification follow-on
 
 Reproduced two routing failures on published dbade5bb. Corrected exact terminal-action routing and generic correction messages through the existing notification architecture, preserving preferences/durable deduplication/provider privacy. Local31 focused tests and API typecheck PASS; final additional assertions/source-bound PostgreSQL and full CI must be observed. Report: docs/execution/DISPUTE_NOTIFICATION_ROUTING_20261029.md. No requirement/gate accepted.
+
+## Authoritative closure follow-on
+
+Parent dec4d512 real platform623unit/595PG/87browser/receipt restore PASS; Flutter2lint failures and Android restricted-reader fixture failure retained. Added migration067 no-create tombstones/cross-table exclusion, UUID normalization, native explicit confirmation/secure cleanup, lost real-response recovery/late-submit and restore controls. Ordered shared-build/API typecheck/45focused backend controls PASS locally; new-source runtime CI required. See MEMBER_DISPUTE_CLOSURE_20261030.md and PR5. All gates remain OPEN/NO-GO.

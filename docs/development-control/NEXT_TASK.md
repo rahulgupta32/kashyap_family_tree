@@ -1,3 +1,21 @@
+# Authoritative dispute closure and CI corrections — 30 October 2026
+
+Follow-on to published/fetched dec4d512/treeb6d6fe49. Parent platform41019523222 passed623unit/595PG/87browser and receipt restore; Flutter failed2lint blocks before widgets, and Android passed3cases but denied an unverified fixture reader of default VERIFIED_COMMUNITY (correct privacy). Lints and fixture corrected without policy/role/timeout/assertion weakening. See CI_FAILURES.md. Parent iOS must be checked by its actual source/run.
+
+Current batch adds migration067 immutable no-create closures, database receipt/tombstone exclusion, same-key authoritative CREATED/ABANDONED recovery, canonical UUID lock identity, explicit native confirmation and durable cleanup fencing, actual lost-response/recovery/late-submit device assertions and closure-bearing restore controls. Shared packages/API typecheck/45focused backend tests PASS locally. Exact-source actual runtime CI remains required. Full report: docs/execution/MEMBER_DISPUTE_CLOSURE_20261030.md; canonical source SHA/tree and workflow conclusions are in PR5.
+
+All260 signed acceptances/RG01..12 OPEN; production NO-GO. No merge/deploy/store/real data/cultural activation. Public publication is authorized and recoverable on the integration branch; historical HOLDs below are not current.
+
+## Next executable sequence
+
+1. Fetch actual HEAD and all automatic source-bound CI/iOS conclusions. Require migration066/067 HTTP/concurrency/private-evidence/restore controls, browser journey, Flutter analysis/widgets and four actual Android cases, including restricted-default403, explicit synthetic owner visibility choice, real lost-response recovery, terminal decisions, closure and late409. No test discovery/older green result counts as current execution.
+2. Fix demonstrated failures and publish reviewed corrections without changing scope/assertions/timeouts. Confirm retrieval and update PR5; no documentation-only CI loop.
+3. Continue frozen F1-F6/assurance backlog beyond disputes: complete policy/guardian/consent/recovery and reviewer/appeal/retention semantics with actual requirement/edge evidence, then remaining genealogy/community/calendar/admin/import behavior and exact NFR assurance. No mandatory feature or gate silently deferred.
+4. Approved staging handoff remains unavailable: accessible Vercel repository-filtered inventory returned0projects. Jyphra must provide approved isolated target/service access, budget and operations/security owners; no unapproved provisioning/deployment. Continue independent engineering while these and data/domain/privacy/signing/provider/device/UAT approvals are pending.
+5. Review PR4 into develop before the documented PR5 integration sequence; preserve current base/draft and require checks/reviews/scope authority before any merge. No main/production release until all mandatory gates and Jyphra approval.
+
+## Previous queue
+
 # Member dispute initiation batch — 30 October 2026
 
 Fresh GitHub recovery14a07da4c13e94fca8c14786574d167f1dd8c7d3/tree03c73a16b34608f59609429d7bad276ef5e0df3b integrity verified; main40924465323 and iOS40924465244 attempt2/job123635539304 independently SUCCESS. No older successful source is credited to this new batch.

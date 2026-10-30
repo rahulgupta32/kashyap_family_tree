@@ -1,3 +1,13 @@
+# 30 October 2026 — member dispute initial CI failures
+
+Source dec4d512cec092cc2459f6ee9f6beedbaf839da9/treeb6d6fe4960052bc051d6408a49a463d5df3eb65e, main41019523222. Platform123943417540 SUCCESS:623unit/58suites,595real PostgreSQL/Redis cases,87live browser cases and expanded disposable restore passed;10general storage skips covered by successful dedicated storage. Do not infer full success: Flutter123943417269 FAILED analyze on two curly-brace lint findings, before widget tests. Android123943417534 passed3existing cases but its new fourth case failed waiting for Person dispute action.
+
+Exact Android cause: fixture created a Person with the default VERIFIED_COMMUNITY visibility, then tried to view it as an unverified registered challenger. Existing privacy authorization correctly denied access. Corrected fixture proves that403, then its synthetic OWNER explicitly updates only its own profile visibility through the real privacy API to PUBLIC (contact/address/DOB stay PRIVATE), and requires a real authorized member read with claimed-account identity still redacted before opening the UI. No production defaults, user roles or authorization were relaxed. Timeouts/assertions retained.
+
+Two missing curly-brace blocks corrected. A separate failing focused UUID-case regression demonstrated that advisory-lock text did not normalize semantically identical UUID keys; Person/key are now canonicalized before locking/fingerprinting. Latest-source full verification remains required, not borrowed from this failed run. Parent iOS41019523206 must be inspected separately.
+
+## Earlier failures
+
 # Claim lifecycle browser failures — 29 October 2026
 
 Source dbade5bb0158e73febb6525c6cc2dd8d58399716/tree76cbdf5afa264266db966f397c0cecff2a32e50f, main40922610825 platform123619594277 FAILED. Actual607 unit/56 suites PASS; real PostgreSQL591 PASS/10 dedicated-storage skips. Browser85 PASS/2 FAIL. This workflow remains failed, not green.
