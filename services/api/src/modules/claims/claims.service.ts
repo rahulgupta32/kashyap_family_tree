@@ -1,21 +1,28 @@
-import * as fs from 'fs';
+import { allowedFields, uuid } from '../community/community-policy';
+import { MediaStorageService } from '../../media/media-storage.service';
 import {
   Injectable,
+  Optional,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
   ConflictException,
   UnauthorizedException,
+  HttpException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import {
   SubmitClaimDto,
+  ResolveClaimCreationDto,
+  ClaimCreationResolutionDto,
   ClaimDetailDto,
   Tier1ReviewClaimDto,
   Tier2ReviewClaimDto,
   RequestClaimCorrectionDto,
   ResubmitClaimDto,
   FileClaimDisputeDto,
+  ResolveClaimDisputeDto,
   ClaimDisputeDetailDto,
   ClaimStatus,
   DisputeStatus,
@@ -24,12 +31,19 @@ import {
 } from '@kashyap/contracts';
 import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { DatabaseService } from '../../database/database.service';
+import { RedisService } from '../../redis/redis.service';
 import { ClaimRepository, ClaimRecord, ClaimDisputeRecord } from '../../database/repositories/claim.repository';
 import { PersonRepository } from '../../database/repositories/person.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { UserRepository } from '../../database/repositories/user.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import * as crypto from 'crypto';
+
+export interface OwnClaimSummary {
+  id: string; targetPersonId: string; status: ClaimStatus;
+  version: number; createdAt: string | Date; updatedAt: string | Date;
+}
+export interface OwnClaimPage { items: OwnClaimSummary[]; nextCursor: string | null; }
 
 @Injectable()
 export class ClaimsService {
@@ -40,6 +54,8 @@ export class ClaimsService {
     private readonly branchRepo: BranchRepository,
     private readonly userRepo: UserRepository,
     private readonly auditOutboxRepo: AuditOutboxRepository,
+    @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   private generatePresignedUrl(mediaAssetId: string, claimantUserId?: string): string {
@@ -56,10 +72,16 @@ export class ClaimsService {
     uploaderUserId: string,
     attachments?: Array<{ mediaAssetId: string; documentType: any; description?: string }>,
   ): Promise<void> {
-    if (!attachments || attachments.length === 0) return;
+    if(attachments===undefined)return;
+    if(!Array.isArray(attachments)||attachments.length>5)throw new BadRequestException('Choose up to five evidence attachments');
+    const seen=new Set<string>();
     for (const att of attachments) {
+      allowedFields(att,['mediaAssetId','documentType','description']);uuid(att.mediaAssetId,'evidence');
+      if(seen.has(att.mediaAssetId)||!['family_photo','event_invitation','elder_voucher','address_receipt','clan_record','other'].includes(att.documentType))throw new BadRequestException('Invalid or duplicate evidence attachment');
+      seen.add(att.mediaAssetId);
+      if(att.description!==undefined&&(typeof att.description!=='string'||att.description.length>1000))throw new BadRequestException('Evidence description exceeds limit');
       const res = await client.query(
-        'SELECT id, uploader_user_id, quarantine_status, retention_status FROM media_assets WHERE id = $1',
+        'SELECT id, uploader_user_id, bucket, quarantine_status, retention_status FROM media_assets WHERE id = $1',
         [att.mediaAssetId],
       );
       const asset = res.rows[0];
@@ -69,6 +91,7 @@ export class ClaimsService {
           message: `Evidence media asset not found: ${att.mediaAssetId}`,
         });
       }
+      if (asset.bucket !== 'private-profiles') throw new BadRequestException('Choose a private profile evidence upload');
       if (asset.uploader_user_id !== uploaderUserId) {
         throw new ForbiddenException({
           errorCode: ErrorCode.FORBIDDEN,
@@ -96,7 +119,7 @@ export class ClaimsService {
     queryUser?: string,
     queryExpires?: string,
     querySig?: string,
-  ): Promise<{ filePath: string; fileName: string; mimeType: string; byteSize: number }> {
+  ): Promise<{ buffer: Buffer; fileName: string; mimeType: string; byteSize: number }> {
     if (!viewer || !viewer.id) {
       throw new UnauthorizedException('Authentication required to access evidence asset');
     }
@@ -106,6 +129,8 @@ export class ClaimsService {
     if (!asset) {
       throw new NotFoundException('Evidence media asset not found');
     }
+
+    if (asset.bucket !== 'private-profiles') throw new NotFoundException('Evidence media asset not found');
 
     if (asset.quarantine_status !== 'CLEAN') {
       throw new ForbiddenException('Media asset failed malware scan and has been quarantined');
@@ -159,7 +184,7 @@ export class ClaimsService {
       isAuthorized = true;
     } else {
       const claimEvidenceRes = await this.db.query(
-        `SELECT pc.target_person_id, p.branch_id
+        `SELECT pc.target_person_id, p.branch_id, cea.dispute_id
            FROM claim_evidence_attachments cea
            JOIN profile_claims pc ON pc.id = cea.claim_id
            JOIN persons p ON p.id = pc.target_person_id
@@ -168,26 +193,16 @@ export class ClaimsService {
         [assetId],
       );
       const branchId = claimEvidenceRes.rows[0]?.branch_id;
-      if (branchId) {
-        const hasBranchRole = (viewer.roleAssignments || []).some(
-          (ra) => (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) && ra.branchId === branchId,
-        );
-        if (hasBranchRole) {
-          isAuthorized = true;
-        }
-      }
+      isAuthorized = !claimEvidenceRes.rows[0]?.dispute_id && this.hasBranchAuthority(viewer, branchId);
     }
 
     if (!isAuthorized) {
       throw new ForbiddenException('You do not have permission to access or stream this evidence asset');
     }
 
-    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
-      throw new NotFoundException('Physical media file not found on storage volume');
-    }
-
+    const buffer = await this.storage.read(asset);
     return {
-      filePath: asset.storage_path,
+      buffer,
       fileName: asset.file_name,
       mimeType: asset.mime_type,
       byteSize: asset.byte_size,
@@ -195,13 +210,15 @@ export class ClaimsService {
   }
 
   async submitClaim(claimantUserId: string, dto: SubmitClaimDto): Promise<ClaimDetailDto> {
-    if (!dto.statementOfTruth) {
+    if(dto?.creationKey!==undefined){uuid(dto.creationKey,'creation key');allowedFields(dto,['creationKey','targetPersonId','relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth']);}
+    if (dto?.statementOfTruth!==true) {
       throw new BadRequestException({
         errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
         message: 'Must agree to statement of truth',
       });
     }
 
+    if(typeof dto.relationshipDescription!=='string'||!dto.relationshipDescription.trim()||dto.relationshipDescription.trim().length>2000)throw new BadRequestException('Relationship description must contain 1–2000 characters');
     return this.db.transaction(async (client) => {
       // 1. Check if claimant account is already linked
       const userRes = await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [claimantUserId]);
@@ -211,6 +228,19 @@ export class ClaimsService {
           errorCode: ErrorCode.UNAUTHORIZED,
           message: 'Claimant user account not found',
         });
+      }
+      if(!user.is_active||user.is_suspended||user.deleted_at)throw new ForbiddenException('Active account required');
+      if(dto.creationKey){
+        const receipt=(await client.query('SELECT payload_hash,claim_id FROM claim_creation_receipts WHERE account_id=$1 AND creation_key=$2',[claimantUserId,dto.creationKey])).rows[0];
+        if(receipt){
+          if(receipt.payload_hash!==claimCreationFingerprint(dto))throw new ConflictException('Creation key already used with a different claim');
+          const original=(await client.query('SELECT * FROM profile_claims WHERE id=$1 AND claimant_user_id=$2',[receipt.claim_id,claimantUserId])).rows[0];
+          if(!original)throw new ConflictException('Original claim unavailable');
+          return this.mapToDetailDto(original,client);
+        }
+        const closure=(await client.query('SELECT payload_hash FROM claim_creation_closures WHERE account_id=$1 AND creation_key=$2',[claimantUserId,dto.creationKey])).rows[0];
+        if(closure)throw new ConflictException(closure.payload_hash===claimCreationFingerprint(dto)
+          ? 'Claim creation attempt is permanently closed' : 'Creation key already used with a different claim');
       }
       if (user.person_id) {
         throw new ConflictException({
@@ -322,7 +352,58 @@ export class ClaimsService {
         client,
       );
 
+      if(dto.creationKey)await client.query('INSERT INTO claim_creation_receipts(account_id,creation_key,payload_hash,claim_id) VALUES($1,$2,$3,$4)',[claimantUserId,dto.creationKey,claimCreationFingerprint(dto),claim.id]);
       return this.mapToDetailDto(claim, client);
+    });
+  }
+
+  /** Recover an owned create receipt or permanently close its unused account/key identity. */
+  async resolveClaimCreation(claimantUserId: string, dto: ResolveClaimCreationDto): Promise<ClaimCreationResolutionDto> {
+    validateClaimResolutionIntent(dto);
+    const fingerprint = claimCreationFingerprint(dto);
+    // Bound immutable closure/audit growth across keys, sessions and API replicas.
+    // Redis failure cannot silently enable unbounded permanent writes.
+    let attempts: number;
+    try {
+      if (!this.redis?.isReady()) throw new Error('Admission unavailable');
+      attempts = Number(await this.redis.eval(`
+        local attempts = redis.call('INCR', KEYS[1])
+        if attempts == 1 or redis.call('TTL', KEYS[1]) < 0 then
+          redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return attempts
+      `, 1, `claims:creation-resolution:account:${claimantUserId}`, 600));
+      if (!Number.isSafeInteger(attempts) || attempts < 1) throw new Error('Admission unconfirmed');
+    } catch {
+      throw new ServiceUnavailableException('Claim resolution temporarily unavailable');
+    }
+    if (attempts > 10) throw new HttpException('Too many claim resolution requests. Try again later.', 429);
+    return this.db.transaction(async client => {
+      // The same account lock serializes this resolution against submitClaim, including unknown commit outcomes.
+      const user = (await client.query('SELECT * FROM user_accounts WHERE id = $1 FOR UPDATE', [claimantUserId])).rows[0];
+      if (!user) throw new NotFoundException('Claimant user account not found');
+      if (!user.is_active || user.is_suspended || user.deleted_at) throw new ForbiddenException('Active account required');
+      const receipt = (await client.query('SELECT payload_hash,claim_id FROM claim_creation_receipts WHERE account_id=$1 AND creation_key=$2',
+        [claimantUserId,dto.creationKey])).rows[0];
+      if (receipt) {
+        if (receipt.payload_hash !== fingerprint) throw new ConflictException('Creation key already used with a different claim');
+        const original = (await client.query('SELECT id FROM profile_claims WHERE id=$1 AND claimant_user_id=$2', [receipt.claim_id,claimantUserId])).rows[0];
+        if (!original) throw new ConflictException('Original claim unavailable');
+        return {outcome:'CREATED',claimId:original.id};
+      }
+      const closure = (await client.query('SELECT payload_hash FROM claim_creation_closures WHERE account_id=$1 AND creation_key=$2',
+        [claimantUserId,dto.creationKey])).rows[0];
+      if (closure) {
+        if (closure.payload_hash !== fingerprint) throw new ConflictException('Creation key already used with a different claim');
+        return {outcome:'ABANDONED'};
+      }
+      // Metadata is bound to its original hash. Current target/evidence eligibility is deliberately not re-run:
+      // closing a rejected attempt must remain possible after a target disappears or an upload is retired.
+      await client.query('INSERT INTO claim_creation_closures(account_id,creation_key,payload_hash) VALUES($1,$2,$3)',
+        [claimantUserId,dto.creationKey,fingerprint]);
+      await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_CLAIM_CREATION_ABANDONED',entityType:'CLAIM_CREATION_ATTEMPT',
+        entityId:dto.creationKey,actorId:claimantUserId,newValue:{outcome:'ABANDONED'}},client);
+      return {outcome:'ABANDONED'};
     });
   }
 
@@ -398,11 +479,22 @@ export class ClaimsService {
     claimantUserId: string,
     dto: ResubmitClaimDto,
   ): Promise<ClaimDetailDto> {
-    if (!dto.statementOfTruth) {
+    if (dto?.statementOfTruth !== true) {
       throw new BadRequestException({
         errorCode: ErrorCode.INSUFFICIENT_EVIDENCE,
         message: 'Must agree to statement of truth',
       });
+    }
+
+    allowedFields(dto, ['relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth','expectedVersion']);
+    if (dto.relationshipDescription !== undefined &&
+        (typeof dto.relationshipDescription !== 'string' || !dto.relationshipDescription.trim() || dto.relationshipDescription.trim().length > 2000)) {
+      throw new BadRequestException('Relationship description must contain 1–2000 characters');
+    }
+    if (dto.knownFamilyMembers !== undefined &&
+        (!Array.isArray(dto.knownFamilyMembers) || dto.knownFamilyMembers.length > 100 ||
+          dto.knownFamilyMembers.some(member => typeof member !== 'string' || member.length > 200))) {
+      throw new BadRequestException('Invalid family member references');
     }
 
     return this.db.transaction(async (client) => {
@@ -419,12 +511,23 @@ export class ClaimsService {
         });
       }
 
+      if (dto.expectedVersion !== undefined) {
+        if (!Number.isSafeInteger(dto.expectedVersion) || dto.expectedVersion < 1) {
+          throw new BadRequestException('Current claim version must be a positive integer');
+        }
+        if (dto.expectedVersion !== claim.version) {
+          throw new ConflictException('Claim changed; reload before resubmitting');
+        }
+      }
+
       if (claim.status !== ClaimStatus.CORRECTION_REQUESTED) {
         throw new BadRequestException({
           errorCode: ErrorCode.INVALID_CLAIM_STATE,
           message: 'Claim is not in CORRECTION_REQUESTED status',
         });
       }
+
+      await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
 
       // Hardening: Reset both Tier 1 and Tier 2 decisions upon resubmission
       const updatedRes = await client.query<ClaimRecord>(
@@ -454,7 +557,6 @@ export class ClaimsService {
       const updatedClaim = updatedRes.rows[0];
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
-        await this.validateEvidenceAttachments(client, claimantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description)
@@ -770,6 +872,14 @@ export class ClaimsService {
           [claimId, claim.status, actor.id, dto.notes],
         );
 
+        await this.auditOutboxRepo.recordAuditIntent(
+          {action: 'CLAIM_TIER2_CORRECTION_REQUIRED', entityType: 'PROFILE_CLAIM', entityId: claimId,
+            actorId: actor.id, actorRole: Role.SUPER_ADMIN,
+            oldValue: {status: claim.status, version: claim.version},
+            newValue: {status: 'CORRECTION_REQUESTED', version: updatedClaim.version, notes: dto.notes}},
+          client,
+        );
+
         const mapped = await this.mapToDetailDto(updatedClaim, client);
         return { claim: mapped, alreadyApproved: false };
       } else {
@@ -782,12 +892,15 @@ export class ClaimsService {
     claimId: string,
     disputantUserId: string,
     dto: FileClaimDisputeDto,
+    context?: { client: PoolClient; authorize: (claim: ClaimRecord, client: PoolClient) => Promise<void> },
   ): Promise<ClaimDisputeDetailDto> {
-    if (!dto.reason || !dto.reason.trim()) {
+    allowedFields(dto, ['reason', 'evidenceAttachments']);
+    if (typeof dto.reason !== 'string' || !dto.reason.trim()) {
       throw new BadRequestException('Dispute reason is required');
     }
 
-    return this.db.transaction(async (client) => {
+    const reason = dto.reason.trim();
+    const operation = async (client: PoolClient) => {
       const claimRes = await client.query<ClaimRecord>('SELECT * FROM profile_claims WHERE id = $1 FOR UPDATE', [claimId]);
       const claim = claimRes.rows[0];
       if (!claim) {
@@ -805,10 +918,13 @@ export class ClaimsService {
         throw new BadRequestException('Claimant cannot dispute their own approved claim');
       }
 
+      await context?.authorize(claim, client);
+      await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
+
       const disputeRes = await client.query<ClaimDisputeRecord>(
         `INSERT INTO claim_disputes (claim_id, disputant_user_id, reason, status)
          VALUES ($1, $2, $3, 'OPEN') RETURNING *`,
-        [claimId, disputantUserId, dto.reason],
+        [claimId, disputantUserId, reason],
       );
       const dispute = disputeRes.rows[0];
 
@@ -818,7 +934,6 @@ export class ClaimsService {
       );
 
       if (dto.evidenceAttachments && dto.evidenceAttachments.length > 0) {
-        await this.validateEvidenceAttachments(client, disputantUserId, dto.evidenceAttachments);
         for (const att of dto.evidenceAttachments) {
           await client.query(
             `INSERT INTO claim_evidence_attachments (claim_id, media_asset_id, document_type, description, dispute_id)
@@ -831,7 +946,7 @@ export class ClaimsService {
       await client.query(
         `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
          VALUES ('PROFILE_CLAIM', $1, 'APPROVED', 'DISPUTED', $2, $3)`,
-        [claimId, disputantUserId, dto.reason],
+        [claimId, disputantUserId, reason],
       );
 
       await this.auditOutboxRepo.recordAuditIntent(
@@ -842,7 +957,7 @@ export class ClaimsService {
           actorId: disputantUserId,
           actorRole: 'MEMBER',
           oldValue: { claimStatus: 'APPROVED' },
-          newValue: { claimStatus: 'DISPUTED', disputeId: dispute.id, reason: dto.reason },
+          newValue: { claimStatus: 'DISPUTED', disputeId: dispute.id, reason },
         },
         client,
       );
@@ -859,17 +974,42 @@ export class ClaimsService {
         createdAt: dispute.created_at,
         updatedAt: dispute.updated_at,
       };
-    });
+    };
+    return context ? operation(context.client) : this.db.transaction(operation);
+  }
+
+  async listClaimDisputes(claimId: string, actor: AuthenticatedUser): Promise<ClaimDisputeDetailDto[]> {
+    // Dispute identity/reason is private adjudication material, not branch queue metadata.
+    if (!actor?.roles?.includes(Role.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin can inspect claim disputes');
+    }
+    uuid(claimId, 'claim ID');
+    if (!await this.claimRepo.findById(claimId)) throw new NotFoundException('Claim record not found');
+    const records = await this.claimRepo.findDisputesByClaimId(claimId);
+    return records.map(record => ({
+      id: record.id, claimId: record.claim_id, disputantUserId: record.disputant_user_id,
+      reason: record.reason, status: record.status,
+      resolutionNotes: record.resolution_notes || undefined,
+      resolvedByUserId: record.resolved_by || undefined, resolvedAt: record.resolved_at || undefined,
+      createdAt: record.created_at, updatedAt: record.updated_at,
+    }));
   }
 
   async resolveDispute(
     disputeId: string,
     actor: AuthenticatedUser,
-    dto: { decision: 'DISMISSED' | 'RESOLVED'; notes: string },
+    dto: ResolveClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
     if (!actor.roles.includes(Role.SUPER_ADMIN)) {
       throw new ForbiddenException('Only Super Admin can resolve claim disputes');
     }
+
+    allowedFields(dto, ['decision', 'notes']);
+    if (!['DISMISSED', 'RESOLVED'].includes(dto.decision) || typeof dto.notes !== 'string' ||
+        !dto.notes.trim() || dto.notes.length > 4000) {
+      throw new BadRequestException('Choose a valid dispute decision and provide 1–4000 characters of resolution notes');
+    }
+    const notes = dto.notes.trim();
 
     return this.db.transaction(async (client) => {
       const dispRes = await client.query<ClaimDisputeRecord>('SELECT * FROM claim_disputes WHERE id = $1 FOR UPDATE', [disputeId]);
@@ -917,7 +1057,7 @@ export class ClaimsService {
         `UPDATE claim_disputes 
          SET status = $1, resolution_notes = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
          WHERE id = $4`,
-        [newDisputeStatus, dto.notes, actor.id, disputeId],
+        [newDisputeStatus, notes, actor.id, disputeId],
       );
 
       if (dto.decision === 'DISMISSED') {
@@ -928,7 +1068,7 @@ export class ClaimsService {
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('PROFILE_CLAIM', $1, 'DISPUTED', 'APPROVED', $2, $3)`,
-          [claim.id, actor.id, `Dispute dismissed: ${dto.notes}`],
+          [claim.id, actor.id, `Dispute dismissed: ${notes}`],
         );
       } else {
         await client.query(
@@ -951,7 +1091,7 @@ export class ClaimsService {
         await client.query(
           `INSERT INTO workflow_state_transitions (entity_type, entity_id, from_state, to_state, actor_user_id, reason_notes)
            VALUES ('PROFILE_CLAIM', $1, 'DISPUTED', 'SUPERSEDED', $2, $3)`,
-          [claim.id, actor.id, `Dispute upheld: ${dto.notes}`],
+          [claim.id, actor.id, `Dispute upheld: ${notes}`],
         );
       }
 
@@ -963,7 +1103,7 @@ export class ClaimsService {
           actorId: actor.id,
           actorRole: Role.SUPER_ADMIN,
           oldValue: { disputeStatus: dispute.status, claimStatus: claim.status },
-          newValue: { disputeStatus: newDisputeStatus, resolutionNotes: dto.notes },
+          newValue: { disputeStatus: newDisputeStatus, resolutionNotes: notes },
         },
         client,
       );
@@ -974,7 +1114,7 @@ export class ClaimsService {
         disputantUserId: dispute.disputant_user_id,
         reason: dispute.reason,
         status: newDisputeStatus,
-        resolutionNotes: dto.notes,
+        resolutionNotes: notes,
         resolvedByUserId: actor.id,
         resolvedAt: new Date().toISOString(),
         createdAt: dispute.created_at,
@@ -1049,11 +1189,7 @@ export class ClaimsService {
       const person = await this.personRepo.findById(claim.target_person_id);
       const targetBranchId = person?.branch_id;
 
-      const hasAuthority = (actor.roleAssignments || []).some(
-        (ra) =>
-          (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
-          ra.branchId === targetBranchId,
-      );
+      const hasAuthority = this.hasBranchAuthority(actor, targetBranchId);
 
       if (!hasAuthority) {
         throw new ForbiddenException({
@@ -1066,30 +1202,70 @@ export class ClaimsService {
     return this.mapToDetailDto(claim, undefined, actor);
   }
 
+  /** Account-owned history, independent of any reviewer role or branch filter.
+   * The optional page envelope preserves the original bounded-array contract.
+   */
+  async listOwnClaims(actor: AuthenticatedUser): Promise<OwnClaimSummary[]>;
+  async listOwnClaims(actor: AuthenticatedUser, page: { cursor?: unknown }): Promise<OwnClaimPage>;
+  async listOwnClaims(actor: AuthenticatedUser, page?: { cursor?: unknown }): Promise<OwnClaimSummary[] | OwnClaimPage> {
+    if (!actor?.id) throw new UnauthorizedException('Authentication required');
+    let after: { createdAt: string; id: string } | undefined;
+    if (page?.cursor !== undefined) {
+      try {
+        const cursor = page.cursor;
+        if (typeof cursor !== 'string' || cursor.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
+        const bytes = Buffer.from(cursor, 'base64url');
+        if (bytes.toString('base64url') !== cursor) throw new Error();
+        const value = JSON.parse(bytes.toString('utf8'));
+        if (!value || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'createdAt,id,owner' ||
+            value.owner !== actor.id || typeof value.createdAt !== 'string' || value.createdAt.startsWith('0000') ||
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value.createdAt)) throw new Error();
+        // Date is validation only. Never round the cursor's six fractional digits.
+        if (new Date(value.createdAt).toISOString().slice(0, 19) !== value.createdAt.slice(0, 19)) throw new Error();
+        after = { createdAt: value.createdAt, id: uuid(value.id, 'claim cursor ID') };
+      } catch (_) { throw new BadRequestException('Invalid claim history cursor'); }
+    }
+    const result = await this.db.query(
+      `SELECT id, target_person_id, status, version, created_at, updated_at,
+              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at
+       FROM profile_claims WHERE claimant_user_id = $1
+       ${after ? 'AND (created_at, id) < ($2::timestamptz, $3::uuid)' : ''}
+       ORDER BY created_at DESC, id DESC LIMIT ${page ? 101 : 100}`,
+      after ? [actor.id, after.createdAt, after.id] : [actor.id],
+    );
+    const records = page ? result.rows.slice(0, 100) : result.rows;
+    const items = records.map(row => ({
+      id: row.id, targetPersonId: row.target_person_id, status: row.status,
+      version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
+    if (!page) return items;
+    const last = records[records.length - 1];
+    // SQL text retains PostgreSQL microseconds, unlike pg's JavaScript Date.
+    const nextCursor = result.rows.length > 100 ? Buffer.from(JSON.stringify({
+      owner: actor.id, createdAt: last.cursor_created_at, id: last.id,
+    })).toString('base64url') : null;
+    return { items, nextCursor };
+  }
+
   async listClaims(
     actor?: AuthenticatedUser,
     options?: { status?: ClaimStatus; claimantUserId?: string; branchId?: string },
   ): Promise<ClaimDetailDto[]> {
-    const isReviewer = actor
-      ? (actor.roles?.includes(Role.SUPER_ADMIN) ||
-        (actor.roleAssignments || []).some(
-          (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
-        ))
-      : true;
-
     let claimantFilter = options?.claimantUserId;
     let branchFilter = options?.branchId;
-
-    if (actor && !isReviewer) {
-      // Regular members can only view their own claims
-      claimantFilter = actor.id;
-    } else if (actor && !actor.roles?.includes(Role.SUPER_ADMIN)) {
-      const branchAssignments = (actor.roleAssignments || [])
-        .filter((ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER)
-        .map((ra) => ra.branchId)
-        .filter((b): b is string => b !== null);
-      if (branchAssignments.length > 0 && !branchFilter) {
-        branchFilter = branchAssignments[0];
+    if (actor && !actor.roles?.includes(Role.SUPER_ADMIN)) {
+      const hasReviewerRole = actor.roles?.some(role => role === Role.BRANCH_ADMIN || role === Role.BRANCH_VERIFIER);
+      if (!hasReviewerRole) {
+        claimantFilter = actor.id;
+      } else {
+        const assignments = (actor.roleAssignments || [])
+          .filter(assignment => this.hasBranchAuthority(actor, assignment.branchId))
+          .map(assignment => assignment.branchId as string);
+        if (!assignments.length || (branchFilter !== undefined && !assignments.includes(branchFilter))) {
+          throw new ForbiddenException({errorCode: ErrorCode.BRANCH_MISMATCH,
+            message: 'You are not authorized to review claims for this branch'});
+        }
+        branchFilter = branchFilter ?? assignments[0];
       }
     }
 
@@ -1141,9 +1317,7 @@ export class ClaimsService {
     // Phone and evidence redaction if viewer is not claimant and not reviewer
     let canViewEvidence = true;
     if (viewer && !viewer.roles?.includes(Role.SUPER_ADMIN) && viewer.id !== claim.claimant_user_id) {
-      const isReviewer = (viewer.roleAssignments || []).some(
-        (ra) => ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER,
-      );
+      const isReviewer = this.hasBranchAuthority(viewer, person?.branch_id);
       if (!isReviewer) {
         claimantPhone = claimantPhone.substring(0, 4) + '****' + claimantPhone.slice(-2);
         canViewEvidence = false;
@@ -1151,7 +1325,7 @@ export class ClaimsService {
     }
 
     const rawEvidence = canViewEvidence ? await this.claimRepo.findEvidenceByClaimId(claim.id, client) : [];
-    const evidenceAttachments = rawEvidence.map((e) => ({
+    const evidenceAttachments = rawEvidence.filter(e => !e.dispute_id || viewer?.roles?.includes(Role.SUPER_ADMIN)).map((e) => ({
       id: e.id,
       mediaAssetId: e.media_asset_id,
       mediaUrl: this.generatePresignedUrl(e.media_asset_id, claim.claimant_user_id),
@@ -1198,17 +1372,20 @@ export class ClaimsService {
     };
   }
 
+  private hasBranchAuthority(actor: AuthenticatedUser, branchId: unknown): boolean {
+    return typeof branchId === 'string' && branchId.trim().length > 0 &&
+      (actor.roleAssignments || []).some(assignment =>
+        (assignment.role === Role.BRANCH_ADMIN || assignment.role === Role.BRANCH_VERIFIER) &&
+        actor.roles?.includes(assignment.role) && assignment.branchId === branchId);
+  }
+
   private async validateBranchAuthority(client: any, actor: AuthenticatedUser, targetPersonId: string) {
     if (actor.roles.includes(Role.SUPER_ADMIN)) return;
 
     const personRes = await client.query('SELECT branch_id FROM persons WHERE id = $1', [targetPersonId]);
     const targetBranchId = personRes.rows[0]?.branch_id;
 
-    const hasAuthority = (actor.roleAssignments || []).some(
-      (ra) =>
-        (ra.role === Role.BRANCH_ADMIN || ra.role === Role.BRANCH_VERIFIER) &&
-        ra.branchId === targetBranchId,
-    );
+    const hasAuthority = this.hasBranchAuthority(actor, targetBranchId);
 
     if (!hasAuthority) {
       throw new ForbiddenException({
@@ -1249,6 +1426,34 @@ export class ClaimsService {
         errorCode: ErrorCode.SELF_VERIFICATION_PROHIBITED,
         message: 'Family recusal: Reviewer cannot verify claims for immediate family members (parent, child, spouse, sibling)',
       });
+    }
+  }
+}
+
+export function claimCreationFingerprint(dto:SubmitClaimDto):string{
+ const canonical=(v:any):any=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().filter(k=>k!=='creationKey'&&v[k]!==undefined).map(k=>[k,canonical(v[k])])):v;
+ return crypto.createHash('sha256').update(JSON.stringify(canonical(dto))).digest('hex');
+}
+
+/** Syntax-only validation: resolution must not depend on the current availability of referenced records. */
+function validateClaimResolutionIntent(dto: ResolveClaimCreationDto): void {
+  allowedFields(dto,['creationKey','targetPersonId','relationshipDescription','knownFamilyMembers','evidenceAttachments','statementOfTruth']);
+  uuid(dto.creationKey,'creation key'); uuid(dto.targetPersonId,'target person');
+  if (dto.statementOfTruth !== true) throw new BadRequestException('Must agree to statement of truth');
+  if (typeof dto.relationshipDescription !== 'string' || !dto.relationshipDescription.trim() || dto.relationshipDescription.trim().length > 2000)
+    throw new BadRequestException('Relationship description must contain 1–2000 characters');
+  if (dto.knownFamilyMembers !== undefined && (!Array.isArray(dto.knownFamilyMembers) || dto.knownFamilyMembers.length > 100 ||
+      dto.knownFamilyMembers.some(member => typeof member !== 'string' || member.length > 200))) throw new BadRequestException('Invalid family member references');
+  if (dto.evidenceAttachments !== undefined) {
+    if (!Array.isArray(dto.evidenceAttachments) || dto.evidenceAttachments.length > 5) throw new BadRequestException('Choose up to five evidence attachments');
+    const seen = new Set<string>();
+    for (const att of dto.evidenceAttachments) {
+      allowedFields(att,['mediaAssetId','documentType','description']);uuid(att.mediaAssetId,'evidence');
+      const identity = att.mediaAssetId.toLowerCase();
+      if (seen.has(identity) || !['family_photo','event_invitation','elder_voucher','address_receipt','clan_record','other'].includes(att.documentType))
+        throw new BadRequestException('Invalid or duplicate evidence attachment');
+      seen.add(identity);
+      if (att.description !== undefined && (typeof att.description !== 'string' || att.description.length > 1000)) throw new BadRequestException('Evidence description exceeds limit');
     }
   }
 }

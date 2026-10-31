@@ -1,14 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
+import '../localization/account_deletion_labels.dart';
 
 class SignInScreen extends StatefulWidget {
   final GenealogyApiService apiService;
   final VoidCallback onSignedIn;
   final VoidCallback onBrowsePublic;
+  final bool accountDeletionConfirmed;
 
   const SignInScreen({super.key, required this.apiService,
-    required this.onSignedIn, required this.onBrowsePublic});
+    required this.onSignedIn, required this.onBrowsePublic, this.accountDeletionConfirmed = false});
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -54,6 +56,7 @@ class _SignInScreenState extends State<SignInScreen> {
     body: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24),
       child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440),
         child: Form(key: _form, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (widget.accountDeletionConfirmed) Semantics(liveRegion: true, child: Text(accountDeletionLabels['done']!, key: const Key('account-deletion-confirmed'))),
           const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 24),
           TextFormField(key: const Key('sign-in-phone'), controller: _phone,

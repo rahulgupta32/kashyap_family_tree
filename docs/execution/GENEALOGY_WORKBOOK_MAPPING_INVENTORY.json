@@ -1,0 +1,1688 @@
+{
+  "version": 1,
+  "sourceWorkbook": "docs/baseline/v1.1/Kashyap_Adhikari_Initial_Genealogy_Data_Collection_Import_Template_v0.1.xlsx",
+  "sourceSha256": "b1e8342f66499fa8f0032e8f8e1e2f0cc7aeaa91864cda19b9358883569c96d7",
+  "approval": "OPEN",
+  "productionImportAllowed": false,
+  "unrepresentedAdapterInputs": [
+    "persons[].generation",
+    "persons[].targetPersonId",
+    "branchId",
+    "datasetKey",
+    "sourceDescription"
+  ],
+  "sheets": [
+    {
+      "ordinal": 1,
+      "name": "Read Me",
+      "role": "REFERENCE_ONLY",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Control",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Requirement",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Operational rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 2,
+      "name": "Branches",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Branch ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Branch Name Nepali*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].nameNepali",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Branch Name English",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].nameEnglish",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Parent Branch ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].parentSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Historical Origin",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].historicalOrigin",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "District",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].district",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Municipality",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].municipality",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Ward",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].ward",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Authority Person ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].authorityPersonSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Authority Role",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].authorityRole",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].status",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Evidence Source ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].sourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Approved By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].approvedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Approval Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "branches[].approvalDate",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 3,
+      "name": "Persons",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Branch ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.branchSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Given Name Nepali*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.givenNepali",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Middle Name Nepali",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.middleNepali",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Family Name Nepali*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.familyNepali",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Given Name English",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.givenEnglish",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Middle Name English",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.middleEnglish",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Family Name English",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.familyEnglish",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Known As / Alias",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceNames.knownAs",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Gender*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].gender",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Living Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].livingStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Birth Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].birth.value",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Birth Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].birth.calendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Birth Precision",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].birth.precision",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Death Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].death.value",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Death Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].death.calendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Death Precision",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].death.precision",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 18,
+          "sourceColumn": "Birth Place",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.birthPlace",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 19,
+          "sourceColumn": "Current District",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.currentDistrict",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 20,
+          "sourceColumn": "Current Municipality",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.currentMunicipality",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 21,
+          "sourceColumn": "Current Ward",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.currentWard",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 22,
+          "sourceColumn": "Country",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.country",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 23,
+          "sourceColumn": "Occupation",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.occupation",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 24,
+          "sourceColumn": "Education",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.education",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 25,
+          "sourceColumn": "Gotra",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.gotra",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 26,
+          "sourceColumn": "Lineage Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.lineageNotes",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 27,
+          "sourceColumn": "Profile Photo Ref",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.profilePhotoRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 28,
+          "sourceColumn": "Record Visibility*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].visibility",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 29,
+          "sourceColumn": "Consent Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].consent",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 30,
+          "sourceColumn": "Consent Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.consentDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 31,
+          "sourceColumn": "Verification Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].verification",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 32,
+          "sourceColumn": "Primary Source ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 33,
+          "sourceColumn": "Created By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.createdBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 34,
+          "sourceColumn": "Created Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.createdDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 35,
+          "sourceColumn": "Last Updated",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.lastUpdated",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 36,
+          "sourceColumn": "Data Steward",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.dataSteward",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 37,
+          "sourceColumn": "Restriction Reason",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "persons[].sourceMetadata.restrictionReason",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 4,
+      "name": "Parent Child Links",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Relationship ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Parent Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].parentSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Child Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].childSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Parent Role*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.parentRole",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Relationship Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].type",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Legal Status",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.legalStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Start Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.startDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Start Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.startCalendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "End Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.endDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "End Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.endCalendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Certainty*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.certainty",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Relationship Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.relationshipStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Primary Source ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Visibility*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.visibility",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Proposed By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.proposedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Reviewed By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.reviewedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Review Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.reviewDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 18,
+          "sourceColumn": "Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "parentLinks[].sourceDetails.notes",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 5,
+      "name": "Unions Marriages",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Union ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Partner 1 Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].partner1SourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Partner 2 Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].partner2SourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Union Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].unionType",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].status",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Start Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].startDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Start Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].startCalendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Start Precision",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].startPrecision",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "End Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].endDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "End Calendar",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].endCalendar",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "End Precision",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].endPrecision",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Ceremony Place",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].ceremonyPlace",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Registration Ref",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].registrationRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Primary Source ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].sourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Visibility*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].visibility",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Consent/Legal Review",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].consentLegalReview",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Proposed By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].proposedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 18,
+          "sourceColumn": "Reviewed By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].reviewedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 19,
+          "sourceColumn": "Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "unions[].notes",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 6,
+      "name": "Residences",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Residence ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].personSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Residence Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].residenceType",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Country*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].country",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Province",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].province",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "District",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].district",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Municipality",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].municipality",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Ward",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].ward",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Locality",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].locality",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Exact Address",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].exactAddress",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Latitude",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].latitude",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Longitude",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].longitude",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Start Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].startDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "End Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].endDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Current?*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].current",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Visibility*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].visibility",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Source ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "residences[].sourceRef",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 7,
+      "name": "Private Contacts",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Contact ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Person ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].personSourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Contact Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].contactType",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Contact Value*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].contactValue",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Primary?*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].primary",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Verified?*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].verified",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Verification Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].verificationDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Consent Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].consentStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Consent Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].consentDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Access Class*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].accessClass",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Retention Review Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].retentionReviewDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "privateContacts[].notes",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 8,
+      "name": "Sources Evidence",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Source ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Source Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceType",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Title / Description*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].description",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Custodian / Informant",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].custodian",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Source Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].sourceDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Recorded Date*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].recordedDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Language",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].language",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Repository / Location",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].repository",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "File Reference",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].fileReference",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "URL",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].url",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Reliability*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reliability",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Consent / Permission*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].permission",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Access Class*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].accessClass",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Related Branch ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].relatedBranchId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Recorded By*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].recordedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Reviewed By",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reviewedBy",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Review Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].reviewStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 18,
+          "sourceColumn": "Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "evidenceSources[].notes",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 9,
+      "name": "Claims Disputes",
+      "role": "RECORDS",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Case ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].sourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Entity Type*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].entityType",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Entity ID*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].entitySourceId",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Field / Relationship*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].fieldOrRelationship",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Claim A",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].claimA",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Claim A Source ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].claimASourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Claim B",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].claimB",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Claim B Source ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].claimBSourceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Risk Level*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].riskLevel",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Visibility*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].visibility",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Status*",
+          "required": true,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].status",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Assigned Authority",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].assignedAuthority",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Decision",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].decision",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Decision Evidence ID",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].decisionEvidenceRef",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 15,
+          "sourceColumn": "Decision Date",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].decisionDate",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 16,
+          "sourceColumn": "Appeal Status",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].appealStatus",
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 17,
+          "sourceColumn": "Audit Notes",
+          "required": false,
+          "disposition": "PARTIAL_ADAPTER_REQUIRES_APPROVED_TRANSFORM",
+          "adapterTarget": "claims[].auditNotes",
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 10,
+      "name": "Controlled Values",
+      "role": "REFERENCE_ONLY",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Domain",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Value/Field",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Allowed format/value",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Meaning",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Validation rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 11,
+      "name": "Data Dictionary",
+      "role": "REFERENCE_ONLY",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Entity",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Field",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Required?",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Data Type",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Example Format",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Definition",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Validation",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Sensitivity",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "API/Migration Rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Owner",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 12,
+      "name": "Import Mapping",
+      "role": "MAPPING_GOVERNANCE",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Mapping ID*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Source Dataset*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Source Sheet/Table*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Source Column*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Target Entity*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Target Field*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Source Data Type",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Target Data Type",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 9,
+          "sourceColumn": "Transformation Rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 10,
+          "sourceColumn": "Default Value",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 11,
+          "sourceColumn": "Null Rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 12,
+          "sourceColumn": "Validation Rule",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 13,
+          "sourceColumn": "Owner",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 14,
+          "sourceColumn": "Status*",
+          "required": true,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 13,
+      "name": "Example Records",
+      "role": "TRAINING_ONLY",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Example Type",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "ID",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Related ID",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 4,
+          "sourceColumn": "Name / Description",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 5,
+          "sourceColumn": "Type/Status",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 6,
+          "sourceColumn": "Source ID",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 7,
+          "sourceColumn": "Expected Validation",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 8,
+          "sourceColumn": "Notes",
+          "required": false,
+          "disposition": "NEVER_IMPORT_TRAINING",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    },
+    {
+      "ordinal": 14,
+      "name": "Readiness Dashboard",
+      "role": "REFERENCE_ONLY",
+      "headerRow": 4,
+      "columns": [
+        {
+          "ordinal": 1,
+          "sourceColumn": "Metric",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 2,
+          "sourceColumn": "Count",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        },
+        {
+          "ordinal": 3,
+          "sourceColumn": "Production import gate",
+          "required": false,
+          "disposition": "GOVERNANCE_METADATA_ONLY",
+          "adapterTarget": null,
+          "approval": "OPEN"
+        }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
 import { ChangeRequestDetailDto, ChangeRequestStatus } from '@kashyap/contracts';
 
 export default function ChangeRequestsAdminPage() {
-  const { accessToken } = useAuth();
+  const { accessToken,user } = useAuth();
+  const identity=JSON.stringify([user?.id,user?.roles?.slice().sort()]);
+  const scope=JSON.stringify([identity,accessToken]);
+  const identityRef=useRef(identity);identityRef.current=identity;
+  const scopeRef=useRef(scope);scopeRef.current=scope;
+  const listSequence=useRef(0);
   const [requests, setRequests] = useState<ChangeRequestDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('PENDING');
@@ -15,23 +20,28 @@ export default function ChangeRequestsAdminPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  useLayoutEffect(()=>{setRequests([]);setActiveRequest(null);setReviewNotes('');setMessage(null);setActionLoading(false);},[identity]);
+
   useEffect(() => {
     loadRequests();
-  }, [accessToken, selectedStatus]);
+  }, [accessToken, selectedStatus,identity]);
 
   async function loadRequests() {
     if (!accessToken) return;
+    const sequence=++listSequence.current;
     setLoading(true);
     try {
       const data = await ApiClient.listChangeRequests(
         accessToken,
         selectedStatus === 'ALL' ? undefined : { status: selectedStatus },
       );
+      if(scopeRef.current!==scope||listSequence.current!==sequence)return;
       setRequests(data);
     } catch (err: any) {
+      if(scopeRef.current!==scope||listSequence.current!==sequence)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setLoading(false);
+      if(scopeRef.current===scope&&listSequence.current===sequence)setLoading(false);
     }
   }
 
@@ -41,14 +51,16 @@ export default function ChangeRequestsAdminPage() {
     setMessage(null);
     try {
       await ApiClient.reviewChangeRequest(accessToken, activeRequest.id, { status, reviewNotes });
+      if(identityRef.current!==identity)return;
       setMessage({ type: 'success', text: `Change request ${status.toLowerCase()} successfully` });
       setActiveRequest(null);
       setReviewNotes('');
       await loadRequests();
     } catch (err: any) {
+      if(identityRef.current!==identity)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setActionLoading(false);
+      if(identityRef.current===identity)setActionLoading(false);
     }
   }
 

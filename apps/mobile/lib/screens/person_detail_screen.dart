@@ -3,6 +3,7 @@ import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
 import '../theme/app_theme.dart';
 import 'read_only_tree_screen.dart';
+import 'member_disputes_screen.dart';
 
 class PersonDetailScreen extends StatefulWidget {
   final String personId;
@@ -16,31 +17,42 @@ class PersonDetailScreen extends StatefulWidget {
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   PersonDetail? _person;
+  late final GenealogyApiService _api;
+  late final int _generation;
+  bool _expired=false;
+  bool get _current=>mounted&&!_expired&&identical(widget.apiService,_api)&&_api.pushSessionGeneration==_generation;
+  void _sessionChanged(){if(mounted&&!_current)setState((){_expired=true;_person=null;_isLoading=false;_error='सत्र बदलियो; विवरण फेरि खोल्नुहोस्। (Session changed; reopen Person details.)';});}
   bool _isLoading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _api=widget.apiService;_generation=_api.pushSessionGeneration;_api.sessionChanges.addListener(_sessionChanged);
     _fetchDetail();
   }
 
   Future<void> _fetchDetail() async {
     try {
-      final data = await widget.apiService.getPerson(widget.personId);
-      if (!mounted) { return; }
+      final data = await _api.getPerson(widget.personId);
+      if (!_current) { return; }
       setState(() {
         _person = data;
         _isLoading = false;
       });
-    } catch (e) {
-      if (!mounted) { return; }
+    } catch (_) {
+      if (!_current) { return; }
       setState(() {
-        _error = e.toString();
+        _error = 'विवरण उपलब्ध छैन। (Person details unavailable.)';
         _isLoading = false;
       });
     }
   }
+
+  @override
+  void didUpdateWidget(covariant PersonDetailScreen oldWidget){super.didUpdateWidget(oldWidget);if(!identical(oldWidget.apiService,widget.apiService)||oldWidget.personId!=widget.personId){_expired=true;_sessionChanged();}}
+  @override
+  void dispose(){_api.sessionChanges.removeListener(_sessionChanged);super.dispose();}
 
   @override
   Widget build(BuildContext context) {
@@ -64,10 +76,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       appBar: AppBar(
         title: Text(p.primaryNameNepali, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if(p.isClaimed && widget.apiService.authToken!=null)IconButton(icon:const Icon(Icons.flag_outlined),
+            tooltip:'दाबी विवाद (Dispute claim)',onPressed:(){if(_current)Navigator.push(context,MaterialPageRoute(builder:(_)=>MemberDisputesScreen(api:_api,personId:p.id)));}),
           IconButton(
             icon: const Icon(Icons.account_tree),
             tooltip: 'रुख हेर्नुहोस्',
             onPressed: () {
+              if(!_current)return;
               Navigator.push(
                 context,
                 MaterialPageRoute(

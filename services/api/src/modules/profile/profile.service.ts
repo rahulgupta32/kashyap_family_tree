@@ -1,5 +1,11 @@
+import { allowedFields, uuid } from '../community/community-policy';
+import { getMediaHmacSecret } from '../../common/utils/media-hmac.config';
+import { ImageDerivativesService } from '../../media/image-derivatives.service';
+import { ImageProcessorService, validateImageCrop } from '../../media/image-processor.service';
 import {
   Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
@@ -24,8 +30,7 @@ import {
   Role,
 } from '@kashyap/contracts';
 import * as crypto from 'crypto';
-import * as path from 'path';
-import * as fs from 'fs';
+import { MediaStorageService } from '../../media/media-storage.service';
 
 export interface MediaUploadResult {
   assetId: string;
@@ -48,9 +53,19 @@ export interface UserSessionDto {
 }
 
 @Injectable()
-export class ProfileService {
+export class ProfileService implements OnModuleInit, OnModuleDestroy {
+  private deletionTimer?: NodeJS.Timeout;
+  private deletionWork?: Promise<number>;
+  onModuleInit() {
+    if (process.env.NODE_ENV !== 'test') {
+      this.deletionTimer = setInterval(() => {
+        if (!this.deletionWork) this.deletionWork = this.processMediaDeletionQueue().finally(() => { this.deletionWork = undefined; });
+      }, 60000);
+      this.deletionTimer.unref();
+    }
+  }
+  async onModuleDestroy() { if (this.deletionTimer) clearInterval(this.deletionTimer); await this.deletionWork; }
   private readonly logger = new Logger(ProfileService.name);
-  private readonly storageBaseDir: string;
   private readonly hmacSecret: string;
 
   constructor(
@@ -61,12 +76,12 @@ export class ProfileService {
     private readonly auditOutboxRepo: AuditOutboxRepository,
     private readonly malwareScanner: MalwareScannerService,
     @Optional() @Inject(SMS_PROVIDER) private readonly smsProvider?: ISmsProvider,
+    @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
+    @Optional() private readonly images?: ImageDerivativesService,
+    @Optional() private readonly processor: ImageProcessorService = new ImageProcessorService(),
   ) {
-    this.storageBaseDir = process.env.STORAGE_PATH || path.resolve(process.cwd(), 'storage/uploads');
-    this.hmacSecret = process.env.MEDIA_HMAC_SECRET || 'kashyap_secure_media_hmac_secret_key_minimum_32_chars';
-    if (!fs.existsSync(this.storageBaseDir)) {
-      fs.mkdirSync(this.storageBaseDir, { recursive: true });
-    }
+    this.hmacSecret = getMediaHmacSecret();
+
   }
 
   async getMe(userId: string, client?: any) {
@@ -81,6 +96,7 @@ export class ProfileService {
     }));
 
     let personDetail: any = null;
+    let personDobVisibility: string | undefined;
     if (user.person_id) {
       let person = await this.personRepo.findById(user.person_id, false, client);
       if (!person) {
@@ -88,6 +104,7 @@ export class ProfileService {
         person = resolved.person;
       }
       if (person) {
+        personDobVisibility = person.dob_visibility;
         const names = await this.personRepo.findNamesByPersonId(person.id, client);
         const primaryNe = names.find((n) => n.language === 'ne' && n.is_primary)?.full_name || names[0]?.full_name;
         const primaryEn = names.find((n) => n.language === 'en' && n.is_primary)?.full_name || names[0]?.full_name;
@@ -138,15 +155,16 @@ export class ProfileService {
     };
 
     const rawPrivacy = user.privacy_settings || {};
-    const privacy: PrivacySettingsDto = {
+    const privacy: PrivacySettingsDto & { dobVisibility: string } = {
       profileVisibility: rawPrivacy.profileVisibility || 'VERIFIED_COMMUNITY',
       contactVisibility: rawPrivacy.contactVisibility || 'IMMEDIATE_FAMILY',
       addressVisibility: rawPrivacy.addressVisibility || 'IMMEDIATE_FAMILY',
+      dobVisibility: personDobVisibility ?? rawPrivacy.dobVisibility ?? 'VERIFIED_COMMUNITY',
     };
 
     let avatarUrl: string | undefined;
     if (user.avatar_asset_id) {
-      avatarUrl = this.generateSignedMediaUrl(user.avatar_asset_id, userId, 3600);
+      avatarUrl = this.generateSignedMediaUrl(user.avatar_asset_id, userId, 3600)+'&variant=display';
     }
 
     return {
@@ -276,12 +294,44 @@ export class ProfileService {
     dto: PrivacySettingsDto & { dobVisibility?: string },
     client?: any,
   ): Promise<PrivacySettingsDto> {
+    const fields = ['profileVisibility', 'contactVisibility', 'addressVisibility', 'dobVisibility'];
+    const scopes = ['PUBLIC', 'VERIFIED_COMMUNITY', 'IMMEDIATE_FAMILY', 'PRIVATE'];
+    allowedFields(dto, fields);
+    for (const field of Object.keys(dto)) {
+      if (!scopes.includes((dto as any)[field])) {
+        throw new BadRequestException('Choose a valid privacy scope');
+      }
+    }
     const runner = async (txClient: any) => {
+      // Ordinary clients omit DOB. Serialize with profile/account lifecycle
+      // writes and preserve each omitted scope instead of expanding it to a default.
+      const existingRes = await txClient.query(
+        'SELECT person_id, privacy_settings FROM user_accounts WHERE id = $1 FOR UPDATE', [userId],
+      );
+      const existing = existingRes.rows[0];
+      if (!existing) throw new NotFoundException('User not found');
+      const person = existing.person_id ? (await txClient.query(
+        'SELECT profile_visibility, phone_visibility, address_visibility, dob_visibility FROM persons WHERE id = $1 FOR UPDATE',
+        [existing.person_id],
+      )).rows[0] : undefined;
+      const saved = existing.privacy_settings || {};
+      const previous = {
+        profileVisibility: person?.profile_visibility ?? saved.profileVisibility ?? 'VERIFIED_COMMUNITY',
+        contactVisibility: person?.phone_visibility ?? saved.contactVisibility ?? 'IMMEDIATE_FAMILY',
+        addressVisibility: person?.address_visibility ?? saved.addressVisibility ?? 'IMMEDIATE_FAMILY',
+        dobVisibility: person?.dob_visibility ?? saved.dobVisibility ?? 'VERIFIED_COMMUNITY',
+      };
+      const effective = {
+        profileVisibility: dto.profileVisibility ?? previous.profileVisibility,
+        contactVisibility: dto.contactVisibility ?? previous.contactVisibility,
+        addressVisibility: dto.addressVisibility ?? previous.addressVisibility,
+        dobVisibility: dto.dobVisibility ?? previous.dobVisibility,
+      };
       const updatedUserRes = await txClient.query(
         `UPDATE user_accounts 
          SET privacy_settings = $1, updated_at = NOW() 
          WHERE id = $2 RETURNING person_id`,
-        [JSON.stringify(dto), userId],
+        [JSON.stringify(effective), userId],
       );
       const user = updatedUserRes.rows[0];
       if (!user) throw new NotFoundException('User not found');
@@ -296,10 +346,10 @@ export class ProfileService {
                updated_at = NOW()
            WHERE id = $5`,
           [
-            dto.contactVisibility || 'IMMEDIATE_FAMILY',
-            dto.addressVisibility || 'IMMEDIATE_FAMILY',
-            dto.profileVisibility || 'VERIFIED_COMMUNITY',
-            dto.dobVisibility || 'VERIFIED_COMMUNITY',
+            effective.contactVisibility,
+            effective.addressVisibility,
+            effective.profileVisibility,
+            effective.dobVisibility,
             user.person_id,
           ],
         );
@@ -312,16 +362,17 @@ export class ProfileService {
           entityId: userId,
           actorId: userId,
           actorRole: 'MEMBER',
-          oldValue: null,
-          newValue: dto,
+          oldValue: previous,
+          newValue: effective,
         },
         txClient,
       );
 
       return {
-        profileVisibility: dto.profileVisibility,
-        contactVisibility: dto.contactVisibility,
-        addressVisibility: dto.addressVisibility,
+        profileVisibility: effective.profileVisibility,
+        contactVisibility: effective.contactVisibility,
+        addressVisibility: effective.addressVisibility,
+        dobVisibility: effective.dobVisibility,
       };
     };
 
@@ -331,13 +382,28 @@ export class ProfileService {
     return this.db.transaction(runner);
   }
 
-  async uploadPhoto(userId: string, mimeType: string, base64Data: string): Promise<MediaUploadResult> {
+  async uploadClaimEvidence(userId:string,body:any){
+    allowedFields(body,['mimeType','dataBase64','documentType','evidenceNoticeAccepted']);
+    if(body.evidenceNoticeAccepted!==true||!['family_photo','event_invitation','clan_record'].includes(body.documentType))
+      throw new BadRequestException('Choose permitted limited evidence and acknowledge the collection notice');
+    const result=await this.storeProfileImage(userId,body.mimeType,body.dataBase64,undefined,body.documentType);
+    return {mediaAssetId:result.assetId,documentType:body.documentType,sha256:result.sha256,quarantineStatus:result.quarantineStatus};
+  }
+
+  async uploadPhoto(userId: string, mimeType: string, base64Data: string, cropInput?: unknown): Promise<MediaUploadResult> {
+    return this.storeProfileImage(userId,mimeType,base64Data,cropInput);
+  }
+
+  private async storeProfileImage(userId: string, mimeType: string, base64Data: string, cropInput?: unknown, evidenceType?:string): Promise<MediaUploadResult> {
+    const crop = validateImageCrop(cropInput);
     const validMimes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validMimes.includes(mimeType)) {
       throw new BadRequestException('Invalid image MIME type. Supported formats: JPEG, PNG, WebP');
     }
 
+    if(typeof base64Data!=='string'||!base64Data.length||base64Data.length>Math.ceil(10*1024*1024/3)*4||base64Data.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(base64Data))throw new BadRequestException('Invalid or oversized image data');
     const buffer = Buffer.from(base64Data, 'base64');
+    if(buffer.toString('base64')!==base64Data)throw new BadRequestException('Invalid image data');
     if (buffer.length === 0) {
       throw new BadRequestException('Empty file data provided');
     }
@@ -366,63 +432,61 @@ export class ProfileService {
     const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
     const assetId = crypto.randomUUID();
     const ext = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/png' ? 'png' : 'webp';
-    const fileName = `avatar_${assetId}.${ext}`;
-    const storagePath = path.join(this.storageBaseDir, fileName);
-
-    fs.writeFileSync(storagePath, buffer);
-
+    const fileName = `${evidenceType?'evidence':'avatar'}_${assetId}.${ext}`;
     const scanResult = await this.malwareScanner.scanFile(buffer, fileName);
+    if(scanResult.status==='CLEAN') await this.processor.inspect(buffer,mimeType);
+    const storagePath = await this.storage.put('private-profiles', fileName, buffer, mimeType,userId);
 
-    if (scanResult.status === ScanResultStatus.INFECTED) {
-      await this.db.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'QUARANTINED', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
-
-      throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName || 'Malware detected'}`);
+    try {
+      const quarantineStatus=scanResult.status===ScanResultStatus.CLEAN?'CLEAN':scanResult.status===ScanResultStatus.INFECTED?'QUARANTINED':'SCANNER_FAILED';
+      await this.db.transaction(async client=>{
+        const account=(await client.query('SELECT is_active,is_suspended,deleted_at FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+        if(!account?.is_active||account.is_suspended||account.deleted_at)throw new ForbiddenException('Active account required to upload a photo');
+        await client.query(`INSERT INTO media_assets(id,uploader_user_id,storage_key,bucket,file_name,mime_type,byte_size,sha256_checksum,is_private,quarantine_status,retention_status,storage_path,scan_evidence)
+          VALUES($1,$2,$3,'private-profiles',$3,$4,$5,$6,TRUE,$7,'ACTIVE',$8,$9)`,
+          [assetId,userId,fileName,mimeType,buffer.length,sha256,quarantineStatus,storagePath,JSON.stringify(scanResult.evidence)]);
+        if(quarantineStatus==='CLEAN'&&!evidenceType){
+          if(this.images)await this.images.enqueue(client,assetId,crop);
+          await client.query('UPDATE user_accounts SET avatar_asset_id=$1,updated_at=NOW() WHERE id=$2',[assetId,userId]);
+        }
+        await this.auditOutboxRepo.recordAuditIntent({action:evidenceType?'PROFILE_CLAIM_EVIDENCE_UPLOADED':'PROFILE_PHOTO_UPLOADED',entityType:'MEDIA_ASSET',entityId:assetId,actorId:userId,actorRole:'MEMBER',newValue:{quarantineStatus,sha256,...(evidenceType?{documentType:evidenceType}:{})}},client);
+      });
+      if(quarantineStatus==='QUARANTINED')throw new BadRequestException(`File failed security scan and was quarantined: ${scanResult.threatName||'Malware detected'}`);
+      if(quarantineStatus!=='CLEAN')throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
+      return {assetId,url:this.generateSignedMediaUrl(assetId,userId,3600),sha256,sizeBytes:buffer.length,mimeType,quarantineStatus:'CLEAN',scanEvidence:scanResult.evidence};
+    } catch (error) {
+      // A missing commit acknowledgement must never remove committed bytes.
+      try { const stored = await this.db.query('SELECT id FROM media_assets WHERE id=$1', [assetId]);
+        if (!stored.rows.length) await this.storage.remove({bucket:'private-profiles',file_name:fileName,storage_key:fileName,storage_path:storagePath});
+      } catch {}
+      throw error;
     }
+  }
 
-    if (scanResult.status === ScanResultStatus.SCANNER_FAILED) {
-      await this.db.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'SCANNER_FAILED', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
+  async imageProcessing(assetId:string,viewer:any,retry=false) {
+    await this.authorizedProfileAsset(assetId,viewer);
+    if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');
+    return retry?this.images.retry(assetId):this.images.status(assetId);
+  }
 
-      throw new ServiceUnavailableException('Malware scanner engine is currently unavailable. File kept inaccessible in quarantine (fail-closed).');
-    }
-
-    const signedUrl = this.generateSignedMediaUrl(assetId, userId, 3600);
-
-    await this.db.transaction(async (client) => {
-      await client.query(
-        `INSERT INTO media_assets (
-          id, uploader_user_id, storage_key, bucket, file_name, mime_type,
-          byte_size, sha256_checksum, is_private, quarantine_status, retention_status, storage_path, scan_evidence
-        ) VALUES ($1, $2, $3, 'private-profiles', $4, $5, $6, $7, TRUE, 'CLEAN', 'ACTIVE', $8, $9)`,
-        [assetId, userId, fileName, fileName, mimeType, buffer.length, sha256, storagePath, JSON.stringify(scanResult.evidence)],
-      );
-
-      await client.query(
-        'UPDATE user_accounts SET avatar_asset_id = $1, updated_at = NOW() WHERE id = $2',
-        [assetId, userId],
-      );
+  async removePhoto(userId:string) {
+    const result=await this.db.transaction(async client=>{
+      const account=(await client.query('SELECT avatar_asset_id FROM user_accounts WHERE id=$1 FOR UPDATE',[userId])).rows[0];
+      if(!account)throw new NotFoundException('User account not found');
+      if(!account.avatar_asset_id)return {removed:true,retainedForEvidence:false};
+      const asset=(await client.query('SELECT * FROM media_assets WHERE id=$1 FOR UPDATE',[account.avatar_asset_id])).rows[0];
+      if(!asset||asset.uploader_user_id!==userId||asset.bucket!=='private-profiles')throw new ForbiddenException('Photo ownership mismatch');
+      const evidence=await client.query('SELECT 1 FROM claim_evidence_attachments WHERE media_asset_id=$1 LIMIT 1',[asset.id]);
+      const retainedForEvidence=evidence.rows.length>0||asset.retention_status==='LEGAL_HOLD';
+      await client.query('UPDATE user_accounts SET avatar_asset_id=NULL,updated_at=NOW() WHERE id=$1',[userId]);
+      if(!retainedForEvidence){
+        await client.query("UPDATE media_assets SET retention_status='DELETED' WHERE id=$1",[asset.id]);
+        await client.query("INSERT INTO media_deletion_queue(asset_id,storage_path,status) VALUES($1,$2,'PENDING')",[asset.id,asset.storage_path]);
+      }
+      await this.auditOutboxRepo.recordAuditIntent({action:'PROFILE_PHOTO_REMOVED',entityType:'MEDIA_ASSET',entityId:asset.id,actorId:userId,actorRole:'MEMBER',newValue:{retainedForEvidence}},client);
+      return {removed:true,retainedForEvidence};
     });
-
-    return {
-      assetId,
-      url: signedUrl,
-      sha256,
-      sizeBytes: buffer.length,
-      mimeType,
-      quarantineStatus: 'CLEAN',
-      scanEvidence: scanResult.evidence,
-    };
+    await this.processMediaDeletionQueue();return result;
   }
 
   generateSignedMediaUrl(assetId: string, userId: string, expiresInSec: number = 3600): string {
@@ -442,7 +506,7 @@ export class ProfileService {
     return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
   }
 
-  async getMediaAsset(
+  private async authorizedProfileAsset(
     assetId: string,
     viewer?: { id: string; roles: string[] },
     queryUser?: string,
@@ -453,9 +517,14 @@ export class ProfileService {
       throw new UnauthorizedException('Authentication required to access media asset');
     }
 
+    uuid(assetId,'media asset');
     const assetRes = await this.db.query('SELECT * FROM media_assets WHERE id = $1', [assetId]);
     const asset = assetRes.rows[0];
     if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+
+    if (asset.bucket !== 'private-profiles') {
       throw new NotFoundException('Media asset not found');
     }
 
@@ -491,12 +560,15 @@ export class ProfileService {
     }
 
 
-    if (!asset.storage_path || !fs.existsSync(asset.storage_path)) {
-      throw new NotFoundException('Physical media file not found on storage volume');
-    }
+    return asset;
+  }
 
+  async getMediaAsset(assetId:string,viewer?:{id:string;roles:string[]},queryUser?:string,queryExpires?:string,querySig?:string,variant='original') {
+    const asset=await this.authorizedProfileAsset(assetId,viewer,queryUser,queryExpires,querySig);
+    if (variant !== 'original') { if(!this.images)throw new ServiceUnavailableException('Image processing unavailable');return this.images.read(asset,variant); }
+    const buffer = await this.storage.read(asset);
     return {
-      filePath: asset.storage_path,
+      buffer,
       fileName: asset.file_name,
       mimeType: asset.mime_type,
       byteSize: asset.byte_size,
@@ -655,7 +727,7 @@ export class ProfileService {
 
       const nonHeldRes = await client.query(
         `SELECT id, storage_path FROM media_assets 
-         WHERE uploader_user_id = $1 AND id != ALL($2::uuid[])`,
+         WHERE uploader_user_id = $1 AND bucket <> 'private-derivatives' AND id != ALL($2::uuid[])`,
         [userId, heldAssetIds.length > 0 ? heldAssetIds : ['00000000-0000-0000-0000-000000000000']],
       );
 
@@ -671,6 +743,9 @@ export class ProfileService {
           );
         }
       }
+
+      // Withdraw map consent and remove generalized coordinates on account deletion.
+      await client.query("UPDATE household_locations SET map_consent=false,approx_latitude=NULL,approx_longitude=NULL,status='WITHDRAWN',version=version+1,updated_at=now() WHERE owner_user_id=$1",[userId]);
 
       // Revoke all active sessions for the user atomically
       await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
@@ -722,22 +797,28 @@ export class ProfileService {
     let processed = 0;
     try {
       const pendingRes = await this.db.query(
-        `SELECT id, storage_path FROM media_deletion_queue WHERE status = 'PENDING' FOR UPDATE SKIP LOCKED LIMIT 50`,
+        "SELECT id FROM media_deletion_queue WHERE status = 'PENDING' ORDER BY attempts, created_at LIMIT 50",
       );
-      for (const row of pendingRes.rows) {
+      for (const pending of pendingRes.rows) {
         try {
-          if (row.storage_path && fs.existsSync(row.storage_path)) {
-            fs.unlinkSync(row.storage_path);
-          }
-          await this.db.query(
-            `UPDATE media_deletion_queue SET status = 'PROCESSED', processed_at = NOW() WHERE id = $1`,
-            [row.id],
-          );
-          processed++;
+          const removed = await this.db.transaction(async client => {
+            // Serialize both retention changes and other cleanup workers until bytes are removed.
+            const row = (await client.query(
+              `SELECT a.*, q.id AS queue_id, q.storage_path AS queued_path FROM media_deletion_queue q
+               JOIN media_assets a ON a.id=q.asset_id WHERE q.id=$1 AND q.status='PENDING'
+               FOR UPDATE OF q,a SKIP LOCKED`, [pending.id],
+            )).rows[0];
+            if (!row) return false;
+            if (row.queued_path !== row.storage_path || !['DELETED','PURGED'].includes(row.retention_status)) throw new Error('Media deletion location or retention mismatch');
+            await this.storage.remove(row);
+            await client.query("UPDATE media_deletion_queue SET status='PROCESSED', processed_at=NOW(), error_message=NULL WHERE id=$1", [row.queue_id]);
+            return true;
+          });
+          if (removed) processed++;
         } catch (err: any) {
           await this.db.query(
-            `UPDATE media_deletion_queue SET attempts = attempts + 1, error_message = $1 WHERE id = $2`,
-            [err.message, row.id],
+            "UPDATE media_deletion_queue SET attempts=attempts+1, error_message=$1 WHERE id=$2 AND status='PENDING'",
+            [String(err.message).slice(0,1000), pending.id],
           );
         }
       }

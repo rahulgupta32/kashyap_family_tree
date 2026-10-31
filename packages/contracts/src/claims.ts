@@ -6,6 +6,8 @@ import { ClaimStatus, DisputeStatus } from './enums.js';
 import { PersonSummaryDto } from './genealogy.js';
 
 export interface SubmitClaimDto {
+  /** Account-bound retry identity for initial claim creation. */
+  creationKey?: string;
   targetPersonId: string;
   relationshipDescription: string;
   knownFamilyMembers?: string[];
@@ -16,6 +18,15 @@ export interface SubmitClaimDto {
   }>;
   statementOfTruth: boolean;
 }
+
+/** Resolves one retained initial-create identity; the complete original body is required. */
+export interface ResolveClaimCreationDto extends SubmitClaimDto {
+  creationKey: string;
+}
+
+export type ClaimCreationResolutionDto =
+  | { outcome: 'CREATED'; claimId: string }
+  | { outcome: 'ABANDONED' };
 
 export interface ClaimEvidenceAttachmentDto {
   id: string;
@@ -68,6 +79,8 @@ export interface RequestClaimCorrectionDto {
 }
 
 export interface ResubmitClaimDto {
+  /** Current claim version observed by the client; omitted only by legacy callers. */
+  expectedVersion?: number;
   relationshipDescription?: string;
   knownFamilyMembers?: string[];
   evidenceAttachments?: Array<{
@@ -100,3 +113,26 @@ export interface ClaimDisputeDetailDto {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Existing adjudication outcomes; RESOLVED upholds the dispute and safely unlinks the claim. */
+export interface ResolveClaimDisputeDto {
+  decision: 'DISMISSED' | 'RESOLVED';
+  notes: string;
+}
+
+/** A member supplies a visible Person, never an opponent's private claim ID. */
+export interface SubmitMemberDisputeDto extends FileClaimDisputeDto { submissionKey: string; }
+/** Only the submitting account's case; opponent/reviewer identities and evidence URLs are excluded. */
+export interface MemberDisputeSummaryDto {
+  id: string;
+  targetPersonId: string;
+  reason: string;
+  status: DisputeStatus;
+  resolutionNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface MemberDisputePageDto { items: MemberDisputeSummaryDto[]; nextCursor: string | null; }
+export type MemberDisputeResolutionDto =
+  | { outcome: 'CREATED'; dispute: MemberDisputeSummaryDto }
+  | { outcome: 'ABANDONED' };

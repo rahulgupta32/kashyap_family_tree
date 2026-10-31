@@ -30,6 +30,7 @@ import {
   Role,
   ErrorCode,
 } from '@kashyap/contracts';
+import { OtpIngressGuard } from './guards/otp-ingress.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -83,6 +84,7 @@ export class AuthController {
   ) {}
 
   @Post('otp/request')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request OTP verification code for mobile number (AUTH-FR-001, AUTH-FR-002)' })
   @ApiResponse({ status: 200, description: 'OTP challenge initiated successfully' })
@@ -92,6 +94,7 @@ export class AuthController {
   }
 
   @Post('otp/verify')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify OTP code and retrieve access token with HttpOnly refresh cookie (AUTH-FR-003, AUTH-FR-005)' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully' })
@@ -115,6 +118,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Renew session using HttpOnly cookie with rotation & reuse detection (AUTH-FR-006, EC-0020)' })
   @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
@@ -147,6 +151,7 @@ export class AuthController {
   }
 
   @Post('native/verify')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Native platform OTP verification with token body transport' })
   @ApiResponse({ status: 200, description: 'Authenticated successfully with token body transport' })
@@ -168,6 +173,7 @@ export class AuthController {
   }
 
   @Post('native/refresh')
+  @UseGuards(OtpIngressGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Native platform token rotation with token body transport' })
   @ApiResponse({ status: 200, description: 'Token rotated successfully with token body transport' })
@@ -222,10 +228,10 @@ export class AuthController {
           audience: JWT_AUDIENCE,
           algorithms: [JWT_ALGORITHM],
         });
-      } catch (err: any) {
+      } catch {
         throw new UnauthorizedException({
           errorCode: ErrorCode.UNAUTHORIZED,
-          message: `Authentication required for logout: invalid or expired Bearer token (${err.message})`,
+          message: 'Authentication required for logout: invalid or expired Bearer token',
         });
       }
 
