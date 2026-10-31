@@ -16,6 +16,39 @@ class FailingDisputeStore extends MemorySessionStore {
  @override Future<void> write(String value)async{if(fail)throw StateError('Fictional unavailable storage');await super.write(value);}
 }
 void main(){
+ testWidgets('pending controls wait for the original HTTP outcome and explicit confirmation before recovery',(tester)async{
+  await tester.binding.setSurfaceSize(const Size(1000,1800));
+  addTearDown(()=>tester.binding.setSurfaceSize(null));
+  final response=Completer<http.Response>();var resolutions=0;
+  final api=GenealogyApiService(client:MockClient((r)async{
+   if(r.method=='GET')return jsonResponse({'items':[],'nextCursor':null});
+   if(r.url.path.endsWith('/dispute'))return response.future;
+   resolutions++;return jsonResponse({'outcome':'CREATED','dispute':{'id':dispute,'targetPersonId':person,'status':'OPEN'}});
+  }))..setAuthToken(token('owner'));addTearDown(api.dispose);
+  await tester.pumpWidget(MaterialApp(home:MemberDisputesScreen(api:api,personId:person)));await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const ValueKey('dispute-reason')),'Original synthetic reason');
+  await tester.tap(find.byKey(const ValueKey('dispute-confirm')));await tester.pump();
+  final submit=find.widgetWithText(ElevatedButton,disputeLabels['submit']!);
+  await tester.ensureVisible(submit);await tester.tap(submit);await tester.pump();await tester.pump();
+  final confirmation=find.byKey(const ValueKey('dispute-close-confirm'));
+  final recovery=find.widgetWithText(OutlinedButton,disputeLabels['resolve']!);
+  expect(api.hasPendingDispute,isTrue);
+  expect(tester.widget<CheckboxListTile>(confirmation).onChanged,isNull);
+  expect(tester.widget<OutlinedButton>(recovery).onPressed,isNull);
+  expect(resolutions,0);
+  response.complete(http.Response('{}',503));await tester.pumpAndSettle();
+  expect(tester.widget<CheckboxListTile>(confirmation).onChanged,isNotNull);
+  expect(tester.widget<CheckboxListTile>(confirmation).value,isFalse);
+  expect(tester.widget<OutlinedButton>(recovery).onPressed,isNull);
+  await tester.ensureVisible(confirmation);await tester.tap(confirmation);await tester.pumpAndSettle();
+  expect(tester.widget<CheckboxListTile>(confirmation).value,isTrue);
+  expect(tester.widget<OutlinedButton>(recovery).onPressed,isNotNull);
+  await tester.ensureVisible(recovery);await tester.tap(recovery);await tester.pumpAndSettle();
+  expect(resolutions,1);expect(api.hasPendingDispute,isFalse);
+  expect(find.textContaining('Recorded dispute recovered'),findsOneWidget);
+  expect(find.text(disputeStatuses['OPEN']!),findsOneWidget);
+ });
+
  test('authoritative closure reuses immutable body and survives uncertain durable cleanup',()async{
   final store=FailingDisputeStore();final sent=<Map<String,dynamic>>[];var failCleanup=true;
   final api=GenealogyApiService(sessionStore:store,chatOutboxStore:MemoryChatOutboxStore(),client:MockClient((r)async{

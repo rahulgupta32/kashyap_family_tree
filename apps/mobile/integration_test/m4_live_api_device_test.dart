@@ -100,12 +100,13 @@ Future<String> reviewerLogin(String number) async {
   return session['accessToken'] as String;
 }
 
-Future<void> until(WidgetTester tester, Finder finder) async {
+Future<void> until(WidgetTester tester, Finder finder, {bool Function()? ready}) async {
   final deadline = DateTime.now().add(const Duration(seconds: 30));
-  while (finder.evaluate().isEmpty && DateTime.now().isBefore(deadline)) {
+  while ((finder.evaluate().isEmpty || (ready != null && !ready())) && DateTime.now().isBefore(deadline)) {
     await tester.pump(const Duration(milliseconds: 100));
   }
   expect(finder, findsWidgets);
+  if (ready != null) { expect(ready(), isTrue, reason: 'The action must be enabled before interaction'); }
   await tester.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 10));
 }
 
@@ -563,8 +564,13 @@ void main() {
       if(decision=='DISMISSED'){
         await until(tester,find.text(disputeLabels['resolve']!));
         expect(service.hasPendingDispute,isTrue);
-        await press(tester,find.byKey(const ValueKey('dispute-close-confirm')));
-        await press(tester,find.text(disputeLabels['resolve']!));
+        final confirmation=find.byKey(const ValueKey('dispute-close-confirm'));
+        await until(tester,confirmation,ready:()=>tester.widget<CheckboxListTile>(confirmation).onChanged!=null);
+        await press(tester,confirmation);
+        expect(tester.widget<CheckboxListTile>(confirmation).value,isTrue);
+        final recovery=find.widgetWithText(OutlinedButton,disputeLabels['resolve']!);
+        await until(tester,recovery,ready:()=>tester.widget<OutlinedButton>(recovery).onPressed!=null);
+        await press(tester,recovery);
       }
 
       // The native HTTP/storage acknowledgement and subsequent history GET
@@ -603,7 +609,13 @@ void main() {
     final submit=find.text(disputeLabels['submit']!);await tester.scrollUntilVisible(submit,200,scrollable:scroll);await press(tester,submit);
     await until(tester,find.text(disputeLabels['resolve']!));expect(service.hasPendingDispute,isTrue);
     final lateBody=Map<String,dynamic>.from(transport.lastSubmission!);
-    await press(tester,find.byKey(const ValueKey('dispute-close-confirm')));await press(tester,find.text(disputeLabels['resolve']!));
+    final confirmation=find.byKey(const ValueKey('dispute-close-confirm'));
+    await until(tester,confirmation,ready:()=>tester.widget<CheckboxListTile>(confirmation).onChanged!=null);
+    await press(tester,confirmation);
+    expect(tester.widget<CheckboxListTile>(confirmation).value,isTrue);
+    final recovery=find.widgetWithText(OutlinedButton,disputeLabels['resolve']!);
+    await until(tester,recovery,ready:()=>tester.widget<OutlinedButton>(recovery).onPressed!=null);
+    await press(tester,recovery);
     await until(tester,find.textContaining('Original submission permanently closed'));expect(service.hasPendingDispute,isFalse);
     final late=await http.post(Uri.parse('$base/claims/people/${target['id']}/dispute'),headers:{'Content-Type':'application/json','Authorization':'Bearer ${service.authToken}'},body:jsonEncode(lateBody));
     expect(late.statusCode,409);expect(((await api('/claims/disputes/mine',token:service.authToken))['items'] as List).length,2);
