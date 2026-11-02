@@ -22,6 +22,7 @@ val releaseStorePassword = releaseInput("storePassword", "KASHYAP_ANDROID_STORE_
 val releaseKeyAlias = releaseInput("keyAlias", "KASHYAP_ANDROID_KEY_ALIAS")?.trim()
 val releaseKeyPassword = releaseInput("keyPassword", "KASHYAP_ANDROID_KEY_PASSWORD")
 val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val internalPreview = providers.environmentVariable("KASHYAP_INTERNAL_PREVIEW").orNull == "true"
 val releaseConfigurationValid =
     releaseApplicationId?.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) == true &&
     !releaseApplicationId.orEmpty().startsWith("com.example.", ignoreCase = true) &&
@@ -42,6 +43,7 @@ android {
     }
 
     defaultConfig {
+        manifestPlaceholders["appLabel"] = "@string/app_name"
         // Development identity only; release variants receive the approved private ID.
         applicationId = "com.example.kashyap_mobile"
         // You can update the following values to match your application needs.
@@ -70,6 +72,10 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("approvedRelease")
+            if (internalPreview) {
+                resValue("string", "internal_preview_name", "कश्यप अधिकारी — Preview")
+                manifestPlaceholders["appLabel"] = "@string/internal_preview_name"
+            }
         }
     }
 }
@@ -99,6 +105,9 @@ tasks.configureEach {
                 throw GradleException(
                     "Release requires an approved application ID and private non-debug signing configuration."
                 )
+            }
+            if (internalPreview && !releaseApplicationId.orEmpty().endsWith(".preview")) {
+                throw GradleException("Internal preview requires a separate approved .preview application ID.")
             }
         }
     }

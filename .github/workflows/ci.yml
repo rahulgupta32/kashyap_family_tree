@@ -14,6 +14,54 @@ env:
   KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  deployment-containers:
+    name: Build and boot isolated API and admin containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: container_fixture
+          POSTGRES_PASSWORD: synthetic_container_password
+          POSTGRES_DB: container_fixture
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: python3 scripts/verify_ci_checkout.py
+      - name: Build runtime images from frozen source
+        run: |
+          docker build -f infra/docker/api.Dockerfile -t kashyap-api:fixture .
+          docker build -f infra/docker/admin.Dockerfile --build-arg NEXT_PUBLIC_API_URL=https://staging.invalid -t kashyap-admin:fixture .
+      - name: Verify non-root startup, real database migrations and admin HTTP
+        run: bash scripts/verify-runtime-containers.sh
+      - name: Retain container diagnostics and remove disposable containers
+        if: always()
+        run: |
+          mkdir -p test-results
+          docker logs kashyap-api-fixture > test-results/container-api.log 2>&1 || true
+          docker logs kashyap-admin-fixture > test-results/container-admin.log 2>&1 || true
+          docker rm -f kashyap-api-fixture kashyap-admin-fixture || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-containers-${{ github.run_id }}
+          path: test-results/container-*
+          if-no-files-found: warn
+          retention-days: 14
+
+  internal-preview:
+    if: vars.KASHYAP_PREVIEW_APPROVED == 'true'
+    uses: ./.github/workflows/internal-preview.yml
+    secrets: inherit
+
   search-scale:
     name: Fictional million-Person search repository benchmark
     runs-on: ubuntu-latest
@@ -96,7 +144,9 @@ jobs:
         run: python3 scripts/verify_ci_checkout.py
 
       - name: Test conservative fast validation planning
-        run: python3 -m unittest discover -s scripts -p 'test_fast_ci.py'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_fast_ci.py'
+          python3 -m unittest discover -s scripts -p 'test_internal_preview.py'
       - name: Validate frozen requirements readiness matrix
         run: |
           python3 scripts/validate_requirements_matrix.py

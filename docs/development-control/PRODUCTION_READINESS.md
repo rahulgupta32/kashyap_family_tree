@@ -1,3 +1,7 @@
+# Current release candidate — 2 November 2026
+
+See `RELEASE_CANDIDATE.md` for current engineering evidence, APK limitations, canonical blockers and approved-preview preparation. RG-01 through RG-12 remain OPEN. No deployed staging, signed internal preview, complete dispute acceptance or production readiness is claimed. Historical results below apply only to their recorded sources.
+
 # Current release status — 30 October 2026: NO-GO
 
 Exact27-file publication andPR update SUCCEEDED; canonical1fd1121f/tree4876b0ae retrieved fromGitHub and verified. Main41080111695 FAILED solely fourthAndroid fixture; source-bound650unit/600PG/87browser/322Flutter/restore/S3/scanner/search passed. iOS41080111346 SUCCESS on1fd1121f (simulator/Keychain/unsigned only).

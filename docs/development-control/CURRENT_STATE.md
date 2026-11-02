@@ -1,3 +1,7 @@
+# Current release-candidate sprint — 2 November 2026
+
+Read `RELEASE_CANDIDATE.md` for the canonical current blocker register, verified recovery/publication, signed-preview preparation, exact-source CI and infrastructure/signing limitations. Historical records below remain source-specific. Final SHA/tree/results resolve from PR5 and GitHub; pending is not passed. All260 signed acceptances/RG01..12 OPEN; production NO-GO.
+
 # Published runtime closure and next boundary corrections — 30 October 2026
 
 Exact owner authorization cleared publication of the27-file/two-commit payload and PR body. Published source commits bc6e38794d2ce9f7a350dfb83e04cd58b954dbbe (original da3151f) and1fd1121f0c357faaacc9f3dd28fa60ce2f643e16 (original20d4e86); final tree4876b0ae9b1d1a7fe5535cca538e6cf0f6e9638b exactly matches approved source. Fetched/tree-compared/fsck; second fresh GitHub-only clone verified27file hashes. Both original commits remain independently recoverable in the previously verified private bundle. Historical HOLD entries below do not describe current clearance of that exact payload.

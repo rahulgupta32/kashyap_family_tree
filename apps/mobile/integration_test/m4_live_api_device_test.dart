@@ -553,13 +553,19 @@ void main() {
     final claim = await api('/claims',token:owner,data:{'targetPersonId':target['id'],'relationshipDescription':'Fictional independently reviewed identity','statementOfTruth':true});
     await api('/claims/${claim['id']}/tier1-review',token:tier1,data:{'decision':'VOUCHED','notes':'Independent synthetic review'});
     await api('/claims/${claim['id']}/tier2-review',token:admin,data:{'decision':'APPROVED','notes':'Separate synthetic final review'});
-    const challengerPhone='+9779847100088';
+    // The earlier MFA journey promotes/enrolls ...0088. A fresh ordinary
+    // challenger must not inherit that authority account or its MFA requirement.
+    const challengerPhone='+9779847100086';
     await api('/auth/test-clear-cooldown',data:{'phoneNumber':challengerPhone});
     final challenge=await api('/auth/otp/request',data:{'phoneNumber':challengerPhone});
     final code=await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(challengerPhone)}');
     final transport=LoseFirstDisputeResponseClient();
     final service=GenealogyApiService(client:transport);
     await service.verifyOtp(challenge['otpSessionId'] as String,code['otp'] as String);
+    final challengerAccount=await service.requestJson('/auth/me');
+    expect((challengerAccount['roles'] as List).map((item)=>item['role']).toList(),['REGISTERED_USER']);
+    final challengerMfa=await service.requestJson('/auth/mfa/status');
+    expect(challengerMfa['required'],isFalse);expect(challengerMfa['eligible'],isFalse);expect(challengerMfa['enrolled'],isFalse);
     // Default VERIFIED_COMMUNITY correctly denies an unverified outsider. Only
     // this synthetic owner explicitly publishes its own fixture for the positive path.
     final hidden=await http.get(Uri.parse('$base/genealogy/people/${target['id']}'),headers:{'Authorization':'Bearer ${service.authToken}'});

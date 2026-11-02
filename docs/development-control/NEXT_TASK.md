@@ -1,3 +1,7 @@
+# Current next execution — release-candidate sprint, 2 November 2026
+
+Use `RELEASE_CANDIDATE.md` as the current blocker register. Inspect actual latest branch/source-bound CI, especially Android real HTTP acknowledgement diagnostics and corrected widget analysis. Preserve original assertions; correct only the demonstrated failure. Independently obtain approved isolated staging target/access/domains/budget and preview signing/environment inputs; execute prepared signed-preview build, install/startup/staged-connectivity acceptance once supplied. Continue frozen F1–F6/assurance work; no production GO, merge, real data or cultural activation is inferred.
+
 # Next execution — profile/session, dispatch leases and real fourth Android closure
 
 The exact27-file payload is now published as1fd1121f/tree4876b0ae (original20d4e86), parentbc6e387 (originalda3151f). Fresh GitHub-only recovery PASS. Main41080111695 platform650unit/600realPG/87browser/restore andFlutter322analysis pass; S3/scanner/search pass; iOS41080111346 PASS. Main remainsFAILED:Android fourthcase No element while scrolling before asynchronous recovery/history render;3other actual cases passed. Do not rerun successful parent jobs without cause.

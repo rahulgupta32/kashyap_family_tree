@@ -201,6 +201,17 @@ describe('Milestone 2 Acceptance Hardening & Security Regressions', () => {
       expect(factor.pending_ciphertext).toBeNull(); expect(factor.recovery_hashes).not.toContain(result.recoveryCodes[0]);
       const next = await loginUser(phone);
       expect((await call(next.accessToken, '/audit/dashboard')).status).toBe(403);
+      // A fresh OTP session for an enrolled authority must not masquerade as
+      // an ordinary dispute challenger or close an intent without MFA.
+      const target = crypto.randomUUID();
+      for (const suffix of ['dispute', 'dispute-resolution']) {
+        const denied = await call(next.accessToken, `/claims/people/${target}/${suffix}`,
+          { submissionKey: crypto.randomUUID(), reason: 'Synthetic MFA boundary regression' });
+        expect(denied.status).toBe(403);
+        expect((await denied.json() as any).errorCode).toBe('MFA_REQUIRED');
+      }
+      expect((await dbService.query('SELECT count(*) FROM member_dispute_receipts WHERE account_id=$1', [user.userId])).rows[0].count).toBe('0');
+      expect((await dbService.query('SELECT count(*) FROM member_dispute_closures WHERE account_id=$1', [user.userId])).rows[0].count).toBe('0');
       expect((await call(next.accessToken, '/auth/mfa/verify', { code })).status).toBe(403);
       expect((await call(next.accessToken, '/auth/mfa/recover', { code: result.recoveryCodes[0] })).status).toBe(201);
       expect((await call(next.accessToken, '/audit/dashboard')).status).toBe(200);
