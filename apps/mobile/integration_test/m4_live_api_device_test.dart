@@ -46,11 +46,32 @@ class LoseFirstDisputeResponseClient extends http.BaseClient {
   final http.Client _inner=http.Client();
   bool _lost=false;
   Map<String,dynamic>? lastSubmission;
+  int? submissionStatus, resolutionStatus;
+  bool? resolutionMatchesIntent;
+  String? lastSubmissionTarget;
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request)async{
     final isSubmission=request.method=='POST'&&request.url.path.startsWith('/claims/people/')&&request.url.path.endsWith('/dispute');
-    if(isSubmission&&request is http.Request){lastSubmission=jsonDecode(request.body) as Map<String,dynamic>;}
+    if(isSubmission&&request is http.Request){lastSubmission=jsonDecode(request.body) as Map<String,dynamic>;lastSubmissionTarget=request.url.pathSegments[2];resolutionStatus=null;resolutionMatchesIntent=null;}
     final response=await _inner.send(request);
+    if(isSubmission){submissionStatus=response.statusCode;}
+    if(request.method=='POST'&&request.url.path.endsWith('/dispute-resolution')){
+      final bytes=await response.stream.toBytes();
+      resolutionStatus=response.statusCode;
+      try{
+        final result=jsonDecode(utf8.decode(bytes));
+        final saved=result is Map?result['dispute']:null;
+        resolutionMatchesIntent=result is Map&&(
+          (result.length==1&&result['outcome']=='ABANDONED')||
+          (result.length==2&&result['outcome']=='CREATED'&&saved is Map&&
+            saved['targetPersonId']==lastSubmissionTarget&&saved['id'] is String&&
+            RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$',caseSensitive:false).hasMatch(saved['id'])&&
+            {'OPEN','UNDER_REVIEW','DISMISSED','RESOLVED'}.contains(saved['status'])));
+      }catch(_){resolutionMatchesIntent=false;}
+      return http.StreamedResponse(Stream.value(bytes),response.statusCode,headers:response.headers,
+        request:response.request,reasonPhrase:response.reasonPhrase,isRedirect:response.isRedirect,
+        persistentConnection:response.persistentConnection);
+    }
     if(isSubmission&&!_lost&&response.statusCode>=200&&response.statusCode<300){_lost=true;await response.stream.drain<void>();throw http.ClientException('Fictional lost dispute acknowledgement');}
     return response;
   }
@@ -581,6 +602,7 @@ void main() {
       while(service.hasPendingDispute&&DateTime.now().isBefore(acknowledgementDeadline)){
         await tester.pump(const Duration(milliseconds:100));
       }
+      debugPrint('[MEMBER DISPUTE BOUNDARY] submissionStatus=${transport.submissionStatus} resolutionStatus=${transport.resolutionStatus} responseMatchesIntent=${transport.resolutionMatchesIntent} pending=${service.hasPendingDispute}');
       expect(service.hasPendingDispute,isFalse,reason:'The original dispute must have an authoritative acknowledgement');
       tester.state<ScrollableState>(scroll).position.jumpTo(0);await tester.pump();
       await until(tester,find.byKey(const ValueKey('dispute-reason')));

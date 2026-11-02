@@ -21,7 +21,9 @@ void main(){
   addTearDown(()=>tester.binding.setSurfaceSize(null));
   final response=Completer<http.Response>();var resolutions=0;
   final api=GenealogyApiService(client:MockClient((r)async{
-   if(r.method=='GET')return jsonResponse({'items':[],'nextCursor':null});
+   if(r.method=='GET')return jsonResponse({'items':resolutions==0?[]:[{
+    'id':dispute,'targetPersonId':person,'reason':'Original synthetic reason','status':'OPEN',
+   }],'nextCursor':null});
    if(r.url.path.endsWith('/dispute'))return response.future;
    resolutions++;return jsonResponse({'outcome':'CREATED','dispute':{'id':dispute,'targetPersonId':person,'status':'OPEN'}});
   }))..setAuthToken(token('owner'));addTearDown(api.dispose);
