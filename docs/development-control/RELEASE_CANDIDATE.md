@@ -45,6 +45,12 @@ Added multi-stage API/admin Dockerfiles, non-root runtime users, readiness/HTTP 
 
 The consolidated CI now builds both images and boots them against disposable PostgreSQL16/Redis7, checking non-root image configuration, real-PostgreSQL readiness after bootstrap and admin HTTP. Test mode is explicitly synthetic; this does not verify production settings, S3/scanner/live providers/TLS, staged browser connectivity, PITR or deployment. Local container execution is unavailable (no daemon). Locally, frozen pnpm production deployment and loading Nest/contracts/localization/test-fixtures/sharp/pg/ioredis succeeded; the packager emitted non-runtime dev-bin warnings. Image build/startup results remain PENDING until source-bound CI actually runs. No infrastructure provisioned or deployed.
 
+## Production dependency correction after packaging
+
+An actual prod-only dependency deployment loaded Nest/contracts/sharp/pg/Redis, but importing the complete API module failed with `Cannot find module pg-mem`. DatabaseService eagerly imported this development dependency even when configured for real PostgreSQL. The follow-on makes the type import compile-only and loads pg-mem only inside the already guarded, explicitly enabled non-production memory path. Production memory mode remains prohibited before that load. This is a runtime deployment defect correction, not a database fallback or policy change.
+
+After correction, rebuilding and copying the compiled DatabaseService into the actual prod-only package allowed full AppModule import without pg-mem.13 focused tests across3 suites passed, including missing-dev-dependency module loading, production memory rejection, explicit test-path admission, database privacy and Nest DI. All663backend unit tests/62suites and API typecheck then passed locally. New-source container/realPG acceptance must be observed separately; no local database/container startup claimed.
+
 ## Acceptance and continuity
 
 RG-01 OPEN; RG-02 OPEN; RG-03 OPEN; RG-04 OPEN; RG-05 OPEN; RG-06 OPEN; RG-07 OPEN; RG-08 OPEN; RG-09 OPEN; RG-10 OPEN; RG-11 OPEN; RG-12 OPEN. Required evidence/owners remain in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). No reviewer approval is inferred. Production GO requires their actual closure and Jyphra signoff.

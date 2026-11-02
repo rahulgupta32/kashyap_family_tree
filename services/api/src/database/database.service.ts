@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
-import { newDb, IMemoryDb } from 'pg-mem';
+import type { IMemoryDb } from 'pg-mem';
 
 // Preserve useful failure classes without echoing server messages, SQL, values or stacks.
 const DIAGNOSTIC_SQLSTATES = new Set(['23505','23503','23502','23514','40001','40P01','57014','53300','57P01','08006','08001','28P01','42P01','42703','42501']);
@@ -92,6 +92,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   }
 
   private initMemoryDb() {
+    // The dev-only engine is absent from production dependency deployments.
+    // Load it only after onModuleInit admitted explicit non-production test mode.
+    const { newDb } = require('pg-mem') as typeof import('pg-mem');
     this.memDb = newDb();
     this.isMemoryDb = true;
 
