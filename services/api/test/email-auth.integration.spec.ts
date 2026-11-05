@@ -2,6 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { EmailProvider, CaptureEmailProvider } from '../src/modules/auth/email/email-provider';
+import { ProfileService } from '../src/modules/profile/profile.service';
 import { RedisService } from '../src/redis/redis.service';
 import { createDisposableDatabase, DisposableDatabase } from './helpers/disposable-db';
 import { createHmac, randomUUID } from 'crypto';
@@ -144,9 +145,21 @@ describe('Email OTP with PostgreSQL, Redis and the existing session pipeline', (
     expect(session.rows[0].device_platform).toBe('android');
     const deletion = await post('/profile/delete-challenge', {}, signed.body.accessToken);
     expect(deletion.status).toBe(201);
-    expect(capture.takeCode(c.email)).toMatch(/^\d{6}$/);
+    const deletionCode = capture.takeCode(c.email)!;
+    expect(deletionCode).toMatch(/^\d{6}$/);
     const challenge = await db.client.query('SELECT phone_number,email_destination FROM auth_challenges WHERE challenge_id=$1', [deletion.body.challengeId]);
     expect(challenge.rows[0]).toEqual({ phone_number: null, email_destination: c.email });
+    const deleted = await post('/profile/delete', {
+      challengeId: deletion.body.challengeId, otp: deletionCode,
+    }, signed.body.accessToken);
+    expect(deleted.status).toBe(201);
+    expect((await db.client.query('SELECT * FROM account_email_identities WHERE user_id=$1', [signed.body.user.id])).rows).toHaveLength(0);
+    const retained = await db.client.query('SELECT consumed_at,email_destination FROM auth_challenges WHERE challenge_id=$1', [deletion.body.challengeId]);
+    expect(retained.rows[0].consumed_at).not.toBeNull();
+    expect(retained.rows[0].email_destination).toBeNull();
+    await expect(app.get(ProfileService).deleteAccount(signed.body.user.id, {
+      challengeId: deletion.body.challengeId, otp: deletionCode,
+    })).rejects.toThrow('already been consumed');
   });
 
   it('rejects browser token-body transport and unexpected body fields', async () => {

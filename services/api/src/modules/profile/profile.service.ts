@@ -768,7 +768,10 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
 
       await client.query('DELETE FROM notification_preferences WHERE user_id = $1', [userId]);
       await client.query('DELETE FROM account_email_identities WHERE user_id = $1', [userId]);
-      await client.query('DELETE FROM auth_challenges WHERE user_id = $1', [userId]);
+      await client.query(
+        'UPDATE auth_challenges SET email_destination=NULL, consumed_at=COALESCE(consumed_at,NOW()) WHERE user_id=$1',
+        [userId],
+      );
 
       const anonPhone = `+DEL_${crypto.randomBytes(6).toString('hex').slice(0, 14)}`;
       await client.query(
