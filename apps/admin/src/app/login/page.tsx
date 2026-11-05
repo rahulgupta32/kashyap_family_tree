@@ -11,6 +11,7 @@ export default function LoginPage() {
   const { login, user, isAdmin } = useAuth();
 
   const [step, setStep] = useState<'PHONE' | 'OTP' | 'ACCESS_DENIED'>('PHONE');
+  const [emailMethod, setEmailMethod] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSessionId, setOtpSessionId] = useState('');
@@ -51,7 +52,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const res = await ApiClient.requestOtp({ phoneNumber });
+      const res = await ApiClient.requestOtp(emailMethod ? { email: phoneNumber.trim() } : { phoneNumber });
       setOtpSessionId(res.otpSessionId);
       setCooldown(res.cooldownSeconds || 60);
       setStep('OTP');
@@ -76,7 +77,7 @@ export default function LoginPage() {
           platform: 'web',
           appVersion: '1.0.0',
         },
-      });
+      }, emailMethod);
 
       const hasAdminPrivilege =
         session.user.roles.includes(Role.SUPER_ADMIN) ||
@@ -107,7 +108,7 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const res = await ApiClient.requestOtp({ phoneNumber });
+      const res = await ApiClient.requestOtp(emailMethod ? { email: phoneNumber.trim() } : { phoneNumber });
       setOtpSessionId(res.otpSessionId);
       setCooldown(res.cooldownSeconds || 60);
     } catch (err: any) {
@@ -138,32 +139,37 @@ export default function LoginPage() {
 
         {step === 'PHONE' && (
           <form onSubmit={handleRequestOtp} aria-busy={isSubmitting} className="space-y-6">
+            <button type="button" disabled={isSubmitting} onClick={() => {
+              setEmailMethod(!emailMethod); setPhoneNumber(''); setError(null);
+            }} className="text-sm underline">
+              {emailMethod ? 'मोबाइलबाट प्रवेश (Continue with mobile)' : 'इमेलबाट प्रवेश (Continue with email)'}
+            </button>
             <div>
               <label htmlFor="login-phone" className="block text-sm font-semibold text-slate-700 mb-2">
-                मोबाइल नम्बर (Mobile Number)
+                {emailMethod ? 'इमेल (Email address)' : 'मोबाइल नम्बर (Mobile Number)'}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 text-sm font-medium">
-                  +977
+                  {emailMethod ? '@' : '+977'}
                 </span>
                 <input
                   id="login-phone"
                   ref={phoneInput}
-                  autoComplete="tel-national"
-                  inputMode="tel"
+                  autoComplete={emailMethod ? "email" : "tel-national"}
+                  inputMode={emailMethod ? "email" : "tel"}
                   aria-describedby={error ? 'phone-help login-error' : 'phone-help'}
                   aria-invalid={Boolean(error)}
                   disabled={isSubmitting}
-                  type="tel"
+                  type={emailMethod ? "email" : "tel"}
                   required
-                  placeholder="98XXXXXXXX"
-                  value={phoneNumber.replace(/^\+977/, '')}
+                  placeholder={emailMethod ? "name@example.com" : "98XXXXXXXX"}
+                  value={emailMethod ? phoneNumber : phoneNumber.replace(/^\+977/, '')}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   className="w-full pl-16 pr-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-saffron-500 focus:border-transparent text-slate-900 font-mono text-base"
                 />
               </div>
               <p id="phone-help" className="text-xs text-slate-600 mt-2">
-                नेपालको १०-अंकीय मोबाइल नम्बर प्रविष्ट गर्नुहोस् (९८ वा ९७ बाट सुरु भएको)।
+                {emailMethod ? 'प्रमाणित इमेलबाट प्रवेश गर्नुहोस् (Use your verified email).' : 'नेपालको १०-अंकीय मोबाइल नम्बर प्रविष्ट गर्नुहोस् (९८ वा ९७ बाट सुरु भएको)।'}
               </p>
             </div>
 

@@ -1308,10 +1308,10 @@ export class ClaimsService {
       }
     }
 
-    let claimantPhone = '9841000001';
+    let claimantPhone = '';
     const user = await this.userRepo.findById(claim.claimant_user_id);
     if (user) {
-      claimantPhone = user.phone_number;
+      claimantPhone = user.phone_number || '';
     }
 
     // Phone and evidence redaction if viewer is not claimant and not reviewer

@@ -346,9 +346,23 @@ class GenealogyApiService {
     }
   }
 
-  Future<String> verifyOtp(String otpSessionId, String code, {String? platform}) async {
+  Future<Map<String, dynamic>> requestEmailOtp(String email, {bool link = false}) async {
+    final response = await _send('POST', Uri.parse('$baseUrl/auth/email/${link ? 'link/request' : 'request'}'),
+      body: json.encode({'email': email}), authenticated: link);
+    if (response.statusCode != 200) {
+      throw Exception('इमेल कोड अनुरोध असफल भयो (Email code request failed)');
+    }
+    return json.decode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> verifyEmailLink(String otpSessionId, String code) async {
+    await requestJson('/auth/email/link/verify', method: 'POST',
+      data: {'otpSessionId': otpSessionId, 'code': code}, boundAccountId: chatAccountId);
+  }
+
+  Future<String> verifyOtp(String otpSessionId, String code, {String? platform, bool email = false}) async {
     final generation = _advanceSessionGeneration();
-    final uri = Uri.parse('$baseUrl/auth/native/verify');
+    final uri = Uri.parse(email ? '$baseUrl/auth/email/native/verify' : '$baseUrl/auth/native/verify');
     final body = json.encode({
       'otpSessionId': otpSessionId, 'code': code,
       'deviceInfo': {'deviceId': 'mobile-${DateTime.now().microsecondsSinceEpoch}',

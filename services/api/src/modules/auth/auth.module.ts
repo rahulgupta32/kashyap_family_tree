@@ -1,3 +1,6 @@
+import { EmailAuthController } from './email/email-auth.controller';
+import { EmailAuthService } from './email/email-auth.service';
+import { BrevoEmailProvider, CaptureEmailProvider, EmailProvider } from './email/email-provider';
 import { SessionManagementController } from './session-management.controller';
 import { SessionManagementService } from './session-management.service';
 import { MfaService } from './mfa.service';
@@ -46,8 +49,10 @@ const isProd = process.env.NODE_ENV === 'production';
       }),
     }),
   ],
-  controllers: [AuthController, MfaController, SessionManagementController],
+  controllers: [EmailAuthController, AuthController, MfaController, SessionManagementController],
   providers: [
+    EmailAuthService,
+    { provide: EmailProvider, useClass: ['development', 'test'].includes(process.env.NODE_ENV || '') && process.env.EMAIL_PROVIDER === 'capture' ? CaptureEmailProvider : BrevoEmailProvider },
     SessionManagementService,
     AuthService,
     OtpIngressGuard,
@@ -64,6 +69,7 @@ const isProd = process.env.NODE_ENV === 'production';
     },
   ],
   exports: [
+    EmailProvider,
     AuthService,
     MfaService,
     JwtStrategy,

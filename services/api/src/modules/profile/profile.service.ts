@@ -1,3 +1,4 @@
+import { EmailProvider } from '../auth/email/email-provider';
 import { allowedFields, uuid } from '../community/community-policy';
 import { getMediaHmacSecret } from '../../common/utils/media-hmac.config';
 import { ImageDerivativesService } from '../../media/image-derivatives.service';
@@ -79,6 +80,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly storage: MediaStorageService = new MediaStorageService(),
     @Optional() private readonly images?: ImageDerivativesService,
     @Optional() private readonly processor: ImageProcessorService = new ImageProcessorService(),
+    @Optional() private readonly emailProvider?: EmailProvider,
   ) {
     this.hmacSecret = getMediaHmacSecret();
 
@@ -169,10 +171,10 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
 
     return {
       id: user.id,
-      phoneNumber: user.phone_number,
+      phoneNumber: user.phone_number || '',
       isActive: user.is_active ?? true,
       isVerified: true,
-      isPhoneVerified: true,
+      isPhoneVerified: user.is_phone_verified,
       personId: user.person_id || undefined,
       avatarAssetId: (user as any).avatar_asset_id || undefined,
       avatarUrl,
@@ -580,6 +582,13 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     const user = userRes.rows[0];
     if (!user) throw new NotFoundException('User account not found');
 
+    let email: string | null = null;
+    if (!user.phone_number) {
+      const identity = await this.db.query('SELECT email FROM account_email_identities WHERE user_id=$1', [userId]);
+      email = identity.rows[0]?.email || null;
+      if (!email || !this.emailProvider) throw new ServiceUnavailableException('Email reauthentication unavailable');
+    }
+
     const recentRes = await this.db.query(
       `SELECT created_at FROM auth_challenges 
        WHERE user_id = $1 AND action = 'ACCOUNT_DELETION' AND created_at > NOW() - INTERVAL '60 seconds'
@@ -601,12 +610,19 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
 
     await this.db.query(
       `INSERT INTO auth_challenges (
-        user_id, action, challenge_id, code_hash, salt, phone_number, attempts, max_attempts, expires_at
-      ) VALUES ($1, 'ACCOUNT_DELETION', $2, $3, $4, $5, 0, 5, $6)`,
-      [userId, challengeId, codeHash, salt, user.phone_number, expiresAtDate.toISOString()],
+        user_id, action, challenge_id, code_hash, salt, phone_number, email_destination, attempts, max_attempts, expires_at
+      ) VALUES ($1, 'ACCOUNT_DELETION', $2, $3, $4, $5, $7, 0, 5, $6)`,
+      [userId, challengeId, codeHash, salt, user.phone_number, expiresAtDate.toISOString(), email],
     );
 
-    if (this.smsProvider) {
+    if (email) {
+      try {
+        await this.emailProvider!.sendCode(email, otpCode, challengeId);
+      } catch {
+        await this.db.query('UPDATE auth_challenges SET consumed_at=NOW() WHERE challenge_id=$1', [challengeId]);
+        throw new ServiceUnavailableException('Email reauthentication unavailable');
+      }
+    } else if (this.smsProvider) {
       try {
         await this.smsProvider.sendOtp(user.phone_number, otpCode);
       } catch (e: any) {
@@ -751,6 +767,8 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
       await client.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
       await client.query('DELETE FROM notification_preferences WHERE user_id = $1', [userId]);
+      await client.query('DELETE FROM account_email_identities WHERE user_id = $1', [userId]);
+      await client.query('DELETE FROM auth_challenges WHERE user_id = $1', [userId]);
 
       const anonPhone = `+DEL_${crypto.randomBytes(6).toString('hex').slice(0, 14)}`;
       await client.query(

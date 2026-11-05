@@ -108,8 +108,8 @@ export class ApiClient {
     return headers;
   }
 
-  static async requestOtp(dto: RequestOtpDto): Promise<RequestOtpResponse> {
-    const res = await fetch(`${API_BASE}/auth/otp/request`, {
+  static async requestOtp(dto: RequestOtpDto | { email: string }): Promise<RequestOtpResponse> {
+    const res = await fetch(`${API_BASE}/auth/${'email' in dto ? 'email/request' : 'otp/request'}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -123,12 +123,12 @@ export class ApiClient {
     return data;
   }
 
-  static async verifyOtp(dto: VerifyOtpDto): Promise<AuthSessionDto> {
-    const res = await fetch(`${API_BASE}/auth/otp/verify`, {
+  static async verifyOtp(dto: VerifyOtpDto, email = false): Promise<AuthSessionDto> {
+    const res = await fetch(`${API_BASE}/auth/${email ? 'email/verify' : 'otp/verify'}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dto),
+      body: JSON.stringify(email ? { otpSessionId: dto.otpSessionId, code: dto.code } : dto),
     });
 
     const data = await res.json();

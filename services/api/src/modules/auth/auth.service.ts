@@ -26,7 +26,7 @@ import {
   AuditAction,
 } from '@kashyap/contracts';
 import { RedisService } from '../../redis/redis.service';
-import { UserRepository } from '../../database/repositories/user.repository';
+import { UserAccountRecord, UserRepository } from '../../database/repositories/user.repository';
 import { SessionRepository, SessionRotationResult } from '../../database/repositories/session.repository';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditRepository } from '../../database/repositories/audit.repository';
@@ -569,6 +569,19 @@ export class AuthService {
       await this.userRepo.setPhoneVerified(user.id, true);
     }
 
+    return this.createVerifiedSession(user, dto, clientIp, userAgent, operationId);
+  }
+
+  async createVerifiedSession(
+    user: UserAccountRecord, dto: VerifyOtpDto, clientIp: string, userAgent: string, operationId: string,
+  ): Promise<AuthSessionDto> {
+    if (user.is_suspended || !user.is_active || user.deleted_at) {
+      throw new ForbiddenException({
+        errorCode: ErrorCode.ACCOUNT_SUSPENDED,
+        message: 'This account is unavailable.',
+        messageNepali: 'यो खाता उपलब्ध छैन।',
+      });
+    }
     // Retrieve database roles
     let roleRecords = await this.userRepo.getUserRoles(user.id);
     if (roleRecords.length === 0) {
@@ -629,7 +642,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user.id,
       sid: session.id,
-      phoneNumber: user.phone_number,
+      phoneNumber: user.phone_number || '',
       tokenType: 'access',
       roles,
       branchIds,
@@ -649,7 +662,7 @@ export class AuthService {
       expiresIn: 900, // 15 minutes
       user: {
         id: user.id,
-        phoneNumber: user.phone_number,
+        phoneNumber: user.phone_number || '',
         roles,
         personId: user.person_id,
         isClaimed: user.person_id !== null,
@@ -788,7 +801,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user.id,
       sid: newSession.id,
-      phoneNumber: user.phone_number,
+      phoneNumber: user.phone_number || '',
       tokenType: 'access',
       roles,
       branchIds,
@@ -808,7 +821,7 @@ export class AuthService {
       expiresIn: 900,
       user: {
         id: user.id,
-        phoneNumber: user.phone_number,
+        phoneNumber: user.phone_number || '',
         roles,
         personId: user.person_id,
         isClaimed: user.person_id !== null,
@@ -960,7 +973,7 @@ export class AuthService {
 
     return {
       id: user.id,
-      phoneNumber: user.phone_number,
+      phoneNumber: user.phone_number || '',
       isPhoneVerified: user.is_phone_verified,
       isActive: user.is_active,
       isSuspended: user.is_suspended,

@@ -1,3 +1,4 @@
+import 'sign_in_screen.dart';
 import '../localization/my_claim_labels.dart';
 import 'my_claims_screen.dart';
 import 'policy_acknowledgements_screen.dart';
@@ -219,6 +220,14 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
             if (widget.apiService.authToken != null)
               ListTile(leading: const Icon(Icons.menu_book), title: const Text('संस्कृति (Culture)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => CulturalContentScreen(apiService: widget.apiService))); }),
             ListTile(leading: const Icon(Icons.map), title: const Text('परिवारको स्थान (Localities)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdMapScreen(apiService: widget.apiService))); }),
+            if (widget.apiService.chatAccountId != null)
+              ListTile(leading: const Icon(Icons.email), title: const Text('इमेल जोड्नुहोस् (Link email)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (screenContext) =>
+                    SignInScreen(apiService: widget.apiService, linkEmail: true,
+                      onSignedIn: () { Navigator.pop(screenContext); }, onBrowsePublic: () {})));
+                }),
             ListTile(leading: const Icon(Icons.chat), title: const Text('सन्देश (Messages)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(apiService: widget.apiService))); }),
             if (widget.apiService.authToken != null)
               ListTile(leading: const Icon(Icons.notifications), title: const Text('सूचनाहरू (Notifications)'), onTap: () {

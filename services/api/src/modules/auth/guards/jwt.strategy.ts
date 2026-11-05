@@ -123,7 +123,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     return {
       id: user.id,
-      phoneNumber: user.phone_number,
+      phoneNumber: user.phone_number || '',
       roles,
       branchIds,
       roleAssignments,
