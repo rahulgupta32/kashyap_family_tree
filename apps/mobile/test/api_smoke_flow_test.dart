@@ -162,7 +162,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify search results rendered
-      expect(find.text('Kashyap Adhikari'), findsOneWidget);
+      expect(find.text('Nepali Bansawali'), findsOneWidget);
       expect(find.text('कृष्ण बहादुर अधिकारी (परीक्षण)'), findsOneWidget);
       expect(find.text('हरि प्रसाद अधिकारी (परीक्षण)'), findsOneWidget);
 

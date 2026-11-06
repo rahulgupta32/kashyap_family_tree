@@ -34,6 +34,7 @@ val releaseConfigurationValid =
     !releaseKeyAlias.isNullOrBlank() && releaseStorePassword != null && releaseKeyPassword != null
 
 android {
+    buildFeatures { resValues = true }
     namespace = "com.example.kashyap_mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -74,14 +75,14 @@ android {
         debug {
             if (usbTest) {
                 applicationIdSuffix = ".usbtest"
-                resValue("string", "usb_test_name", "Kashyap — USB Test")
+                resValue("string", "usb_test_name", "Nepali Bansawali — USB Test")
                 manifestPlaceholders["appLabel"] = "@string/usb_test_name"
             }
         }
         release {
             signingConfig = signingConfigs.getByName("approvedRelease")
             if (internalPreview) {
-                resValue("string", "internal_preview_name", "कश्यप अधिकारी — Preview")
+                resValue("string", "internal_preview_name", "नेपाली वंशावली — Preview")
                 manifestPlaceholders["appLabel"] = "@string/internal_preview_name"
             }
         }

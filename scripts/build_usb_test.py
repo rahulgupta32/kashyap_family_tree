@@ -49,7 +49,7 @@ def main():
     env = {**os.environ, 'KASHYAP_USB_TEST': 'true', 'CI': 'true', 'BOT': 'true'}
     subprocess.run(['flutter', 'build', 'apk', '--debug', '--dart-define=API_BASE_URL=' + ORIGIN],
                    cwd=mobile, env=env, check=True)
-    apk = output / f'kashyap-usb-test-{sha[:12]}.apk'
+    apk = output / f'nepali-bansawali-usb-test-{sha[:12]}.apk'
     shutil.copyfile(mobile / 'build/app/outputs/flutter-apk/app-debug.apk', apk)
     sdk = Path(os.environ.get('ANDROID_HOME') or os.environ['ANDROID_SDK_ROOT'])
     versions = sorted((sdk / 'build-tools').glob('*/apksigner'),

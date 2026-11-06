@@ -96,7 +96,7 @@ class _AuthenticatorScreenState extends State<AuthenticatorScreen> {
           ElevatedButton(onPressed: _busy || !valid ? null : () => _submit(requestedOperation: 'recovery-codes/renew'), child: const Text('Renew recovery codes')),
           ElevatedButton(onPressed: _busy || !valid ? null : () => _submit(requestedOperation: 'replace/start'), child: const Text('Replace authenticator')),
         ] else if (_status != null) ...[
-          Text(setup ? 'Set up a time-based authenticator for Kashyap.' : 'Enter your authenticator code to continue.'),
+          Text(setup ? 'Set up a time-based authenticator for Nepali Bansawali.' : 'Enter your authenticator code to continue.'),
           if (_secret != null) ...[
             const Text('Enter this setup key in your authenticator. Setup expires after 10 minutes.'),
             Text(_secret!),

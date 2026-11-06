@@ -259,7 +259,7 @@ void main() {
       await tester.pumpWidget(KashyapApp(apiService: service));
       await tester.pumpAndSettle();
       expect(find.byType(SignInScreen), findsOneWidget);
-      expect(find.text('Kashyap Adhikari'), findsOneWidget);
+      expect(find.text('Nepali Bansawali'), findsOneWidget);
     });
   });
 }

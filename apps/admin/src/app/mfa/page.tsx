@@ -56,7 +56,7 @@ export default function VerificationPage() {
       <button onClick={() => { setCodes([]); router.replace(destination()); }}>I saved the codes — continue</button>
     </section> : status && <section className="space-y-3">
       {!status.enrolled && !secret && <button disabled={busy} onClick={() => submit('enroll')}>Set up authenticator</button>}
-      {secret && <div><p>In your authenticator app, add a time-based account named Kashyap. Enter this setup key:</p><code className="break-all">{secret}</code><p>Setup expires after 10 minutes. Keep this key private.</p><button disabled={busy} onClick={() => { setSecret(null); setCode(''); if (replacement) setReplacement(false); else void submit('enroll'); }}>Restart expired setup</button></div>}
+      {secret && <div><p>In your authenticator app, add a time-based account with the existing issuer label shown by your setup (Kashyap). Enter this setup key:</p><code className="break-all">{secret}</code><p>Setup expires after 10 minutes. Keep this key private.</p><button disabled={busy} onClick={() => { setSecret(null); setCode(''); if (replacement) setReplacement(false); else void submit('enroll'); }}>Restart expired setup</button></div>}
       {(status.enrolled || secret) && <form onSubmit={event => { event.preventDefault(); void submit(secret ? replacement ? 'replace/confirm' : 'confirm' : status.verified ? 'recovery-codes/renew' : recovery ? 'recover' : 'verify'); }}>
         {status.verified && !secret && <p>Enter a fresh code from your current authenticator. Renewal or replacement invalidates old recovery codes and signs out other sessions.</p>}
         <label htmlFor="verification-code">{recovery ? 'Recovery code' : 'Authenticator code'}</label>

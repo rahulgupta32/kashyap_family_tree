@@ -34,7 +34,7 @@ describe('FCM HTTP v1 provider boundary',()=>{
     const [sendUrl,sendInit]=fetchSpy.mock.calls[1];
     expect(sendUrl).toBe('https://fcm.googleapis.com/v1/projects/fictional-family/messages:send');
     expect(sendInit.redirect).toBe('error');
-    expect(JSON.parse(sendInit.body)).toEqual({message:{token,notification:{title:'Kashyap Adhikari',body:'You have a new update / नयाँ सूचना'},data:{deliveryId:id}}});
+    expect(JSON.parse(sendInit.body)).toEqual({message:{token,notification:{title:'Nepali Bansawali',body:'You have a new update / नयाँ सूचना'},data:{deliveryId:id}}});
   });
   it('does not contact FCM when authorization changes during OAuth',async()=>{
     fetchSpy.mockResolvedValueOnce(oauth());

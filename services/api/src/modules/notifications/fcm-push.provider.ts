@@ -75,7 +75,7 @@ export class FcmPushProvider implements PushNotificationProvider {
     try {
       const result=await this.request(`https://fcm.googleapis.com/v1/projects/${credentials.project}/messages:send`,{
         method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+access},
-        body:JSON.stringify({message:{token,notification:{title:'Kashyap Adhikari',body:'You have a new update / नयाँ सूचना'},
+        body:JSON.stringify({message:{token,notification:{title:'Nepali Bansawali',body:'You have a new update / नयाँ सूचना'},
           data:{deliveryId}}}),
       });
       if (result.ok) {

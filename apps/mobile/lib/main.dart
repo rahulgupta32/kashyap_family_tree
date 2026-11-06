@@ -107,7 +107,7 @@ class _KashyapAppState extends State<KashyapApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MaterialApp(
       key: ValueKey(_sessionEpoch),
-      title: 'कश्यप अधिकारी वंशावली',
+      title: 'Nepali Bansawali — नेपाली वंशावली',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: _loading ? const Scaffold(body: Center(child: CircularProgressIndicator()))

@@ -125,7 +125,7 @@ export default function LoginPage() {
         <div className="w-16 h-16 rounded-full bg-saffron-600 text-white text-2xl font-bold flex items-center justify-center mx-auto shadow-md mb-3">
           क
         </div>
-        <h1 id="login-heading" className="text-2xl font-bold text-slate-800">कश्यप अधिकारी वंशावली</h1>
+        <h1 id="login-heading" className="text-2xl font-bold text-slate-800">नेपाली वंशावली</h1>
         <p className="text-sm text-slate-500 mt-1">प्रशासनिक पोर्टल (Central Administration Portal)</p>
       </div>
 
@@ -278,7 +278,7 @@ export default function LoginPage() {
 
       <div className="mt-8 text-center text-xs text-slate-400">
         <p>सुरक्षित खाता पहुँच (Secure account access)</p>
-        <p className="mt-1">Kashyap Adhikari Family Tree Administration</p>
+        <p className="mt-1">Nepali Bansawali Administration</p>
       </div>
     </section>
   );

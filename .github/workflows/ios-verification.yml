@@ -41,7 +41,7 @@ jobs:
           from pathlib import Path
           import plistlib
           info = plistlib.loads(Path('apps/mobile/ios/Runner/Info.plist').read_bytes())
-          assert info['CFBundleDisplayName'] == 'कश्यप अधिकारी वंशावली'
+          assert info['CFBundleDisplayName'] == 'नेपाली वंशावली'
           ats = info.get('NSAppTransportSecurity', {})
           assert not any(ats.get(key) for key in ['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsInWebContent', 'NSAllowsArbitraryLoadsForMedia'])
           PYIOS

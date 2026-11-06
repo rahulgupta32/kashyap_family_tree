@@ -49,8 +49,8 @@ void main() {
       await tester.pumpAndSettle(const Duration(milliseconds: 100),
         EnginePhase.sendSemanticsUpdate, const Duration(seconds: 30));
       expect(find.byType(SignInScreen), findsOneWidget);
-      expect(find.text('Kashyap Adhikari'), findsOneWidget);
-      expect(find.text('वंशावली तथा समुदाय · Lineage & Community'), findsOneWidget);
+      expect(find.text('Nepali Bansawali'), findsOneWidget);
+      expect(find.text('नेपाली वंशावली · Lineage & Community'), findsOneWidget);
       expect(find.text('फोन नम्बर (Phone number)'), findsOneWidget);
       expect(requests, 0);
       expect(Firebase.apps, isEmpty);

@@ -19,7 +19,7 @@ describe('Separate notification SMS and OTP delivery', () => {
     const form=new URLSearchParams(request.body as string);
     expect(form.get('to')).toBe('9779847312222');
     expect(form.get('token')).toBe('fictional-provider-token');
-    expect(form.get('text')).toBe(method==='sendOtp'?`Your Kashyap Adhikari Family Tree verification code is ${message}. Valid for 5 minutes. Do not share.`:message);
+    expect(form.get('text')).toBe(method==='sendOtp'?`Your Nepali Bansawali verification code is ${message}. Valid for 5 minutes. Do not share.`:message);
     expect(request.signal).toBeInstanceOf(AbortSignal);
   });
   it.each(['sendOtp','sendNotification'] as const)('%s aborts a stalled delivery and releases its timeout',async method=>{

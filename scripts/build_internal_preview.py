@@ -64,14 +64,14 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, 'KASHYAP_INTERNAL_PREVIEW': 'true'}
     mobile = root / 'apps' / 'mobile'
-    with tempfile.TemporaryDirectory(prefix='kashyap-preview-') as temp:
+    with tempfile.TemporaryDirectory(prefix='nepali-bansawali-preview-') as temp:
         defines = Path(temp) / 'defines.json'
         defines.write_text(json.dumps({'API_BASE_URL': endpoint}))
         subprocess.run(['flutter', 'pub', 'get', '--enforce-lockfile'], cwd=mobile, env=env, check=True)
         subprocess.run(['flutter', 'build', 'apk', '--release', '--build-name=1.0.0',
                         '--build-number=' + build, '--dart-define-from-file=' + str(defines)],
                        cwd=mobile, env=env, check=True)
-    apk = output / ('kashyap-preview-' + sha[:12] + '.apk')
+    apk = output / ('nepali-bansawali-preview-' + sha[:12] + '.apk')
     shutil.copyfile(mobile / 'build/app/outputs/flutter-apk/app-release.apk', apk)
     sdk = Path(os.environ.get('ANDROID_HOME') or os.environ['ANDROID_SDK_ROOT'])
     tools = sorted((sdk / 'build-tools').glob('*/apksigner'), key=lambda p: tuple(int(x) for x in p.parent.name.split('.') if x.isdigit()))

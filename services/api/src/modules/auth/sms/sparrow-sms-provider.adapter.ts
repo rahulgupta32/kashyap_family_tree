@@ -21,7 +21,7 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
   }
 
   async sendOtp(phoneNumber: string, otp: string): Promise<SmsSendResult> {
-    return this.sendMessage(phoneNumber, `Your Kashyap Adhikari Family Tree verification code is ${otp}. Valid for 5 minutes. Do not share.`);
+    return this.sendMessage(phoneNumber, `Your Nepali Bansawali verification code is ${otp}. Valid for 5 minutes. Do not share.`);
   }
 
   async sendNotification(phoneNumber: string, message: string): Promise<SmsSendResult> {

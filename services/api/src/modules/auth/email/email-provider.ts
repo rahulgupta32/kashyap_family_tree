@@ -17,9 +17,9 @@ export class BrevoEmailProvider extends EmailProvider {
         signal: AbortSignal.timeout(10000),
         headers: { 'api-key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: { name: 'Kashyap Adhikari', email: sender },
+          sender: { name: 'Nepali Bansawali', email: sender },
           to: [{ email }],
-          subject: 'कश्यप अधिकारी — Verification code',
+          subject: 'नेपाली वंशावली — Verification code',
           textContent: 'तपाईंको प्रमाणीकरण कोड / Your verification code: ' + code +
             '\n५ मिनेटमा म्याद सकिन्छ। / Expires in five minutes. Never share this code.',
           headers: { 'X-Mailin-custom': 'challenge:' + requestId },

@@ -60,8 +60,8 @@ async function bootstrap() {
 
   // OpenAPI Documentation per ADR-007
   const config = new DocumentBuilder()
-    .setTitle('Kashyap Adhikari Family Tree API')
-    .setDescription('Official REST API specification for Kashyap Adhikari Family Tree Platform')
+    .setTitle('Nepali Bansawali API')
+    .setDescription('Official REST API specification for Nepali Bansawali Platform')
     .setVersion('1.0.0')
     .addBearerAuth()
     .build();
@@ -71,6 +71,6 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  logger.log(`🚀 Kashyap Platform API running on port ${port} (Swagger docs at /api/docs)`);
+  logger.log(`🚀 Nepali Bansawali API running on port ${port} (Swagger docs at /api/docs)`);
 }
 bootstrap();

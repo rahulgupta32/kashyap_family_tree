@@ -5,7 +5,7 @@ import { AuthProvider } from '../context/auth-context';
 import { AdminHeader } from '../components/AdminHeader';
 
 export const metadata: Metadata = {
-  title: 'Kashyap Adhikari Administration Portal',
+  title: 'Nepali Bansawali Administration Portal',
   description: 'Governance, verification, and genealogy administration portal',
 };
 
@@ -27,10 +27,10 @@ export default function RootLayout({
               <div>
                 <div className="flex items-center gap-3 px-2 py-4 border-b border-slate-800">
                   <div className="w-8 h-8 rounded-full bg-saffron-500 flex items-center justify-center font-bold text-white">
-                    क
+                    ने
                   </div>
                   <div>
-                    <h1 className="font-bold text-sm leading-tight text-saffron-400">कश्यप अधिकारी</h1>
+                    <h1 className="font-bold text-sm leading-tight text-saffron-400">नेपाली वंशावली</h1>
                     <p className="text-xs text-slate-400">प्रशासनिक पोर्टल (Admin)</p>
                   </div>
                 </div>

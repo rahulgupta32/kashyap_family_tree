@@ -7,8 +7,8 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
   test('1. Regular user gets bilingual Access Denied state (BR-GOV-004)', async ({ page }) => {
     // 1. Load login page
     await page.goto('/login');
-    await expect(page).toHaveTitle(/Kashyap Adhikari/i);
-    await expect(page.getByRole('heading', { name: 'कश्यप अधिकारी वंशावली' })).toBeVisible();
+    await expect(page).toHaveTitle(/Nepali Bansawali/i);
+    await expect(page.getByRole('heading', { name: 'नेपाली वंशावली' })).toBeVisible();
 
     // 2. Enter non-admin mobile number
     const nonAdminPhone = '9841234567';

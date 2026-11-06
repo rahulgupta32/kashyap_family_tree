@@ -107,7 +107,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               title: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Kashyap Adhikari',
+                    Text('Nepali Bansawali',
                         style: AppTheme.editorial
                             .copyWith(color: AppTheme.saffron, fontSize: 19)),
                     const Text('वंशावली · LINEAGE & COMMUNITY',
@@ -190,7 +190,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'कश्यप अधिकारी वंशावली',
+                    'नेपाली वंशावली',
                     style: TextStyle(
                         color: AppTheme.heritageBrown,
                         fontSize: 18,

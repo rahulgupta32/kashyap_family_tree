@@ -10,7 +10,7 @@ spec.loader.exec_module(usb)
 
 class UsbBuildTests(unittest.TestCase):
     def test_identity_rejects_ordinary_or_preview_artifact(self):
-        good = "package: name='com.example.kashyap_mobile.usbtest'\napplication-label:'Kashyap — USB Test'\nsdkVersion:'24'\n"
+        good = "package: name='com.example.kashyap_mobile.usbtest'\napplication-label:'Nepali Bansawali — USB Test'\nsdkVersion:'24'\n"
         self.assertEqual(usb.inspect_badging(good), 24)
         for bad in [good.replace('.usbtest', '.preview'), good.replace('USB Test', 'Preview'), good.replace("sdkVersion:'24'", '')]:
             with self.assertRaises(ValueError):

@@ -154,12 +154,12 @@ class _SignInScreenState extends State<SignInScreen> {
                                           : 70,
                                       fit: BoxFit.cover))),
                           const SizedBox(height: 12),
-                          Text('Kashyap Adhikari',
+                          Text('Nepali Bansawali',
                               textAlign: TextAlign.center,
                               style: AppTheme.editorial.copyWith(
                                   color: AppTheme.saffron, fontSize: 27)),
                           const SizedBox(height: 6),
-                          const Text('वंशावली तथा समुदाय · Lineage & Community',
+                          const Text('नेपाली वंशावली · Lineage & Community',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   color: AppTheme.textMuted, fontSize: 12)),
