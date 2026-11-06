@@ -390,4 +390,19 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
     expect(link.provenance.changeRequestId).toBe(req.id);
     expect(link.provenance.approvedBy).toBe(superAdminId);
   });
+  it('retains terminal decisions on resubmission and permits only owned requested corrections/conflicts', async()=>{
+    for(const status of ['PENDING','APPROVED','REJECTED','ESCALATED']) {
+      const req=await changeRequestsService.submitRequest(requesterId,{targetPersonId:personId,type:ChangeRequestType.EDIT_PERSON,proposedChanges:{birthPlace:'Synthetic place'},reason:'Synthetic state guard regression'});
+      await db.query('UPDATE genealogy_change_requests SET status=$2 WHERE id=$1',[req.id,status]);
+      const before=(await db.query('SELECT status,version,resubmission_count FROM genealogy_change_requests WHERE id=$1',[req.id])).rows[0];
+      await expect(changeRequestsService.resubmit(req.id,requesterId,{proposedChanges:{birthPlace:'Should not apply'}})).rejects.toThrow('Only correction-requested');
+      expect((await db.query('SELECT status,version,resubmission_count FROM genealogy_change_requests WHERE id=$1',[req.id])).rows[0]).toEqual(before);
+    }
+    const req=await changeRequestsService.submitRequest(requesterId,{targetPersonId:personId,type:ChangeRequestType.EDIT_PERSON,proposedChanges:{birthPlace:'Synthetic original'},reason:'Synthetic correction regression'});
+    await db.query("UPDATE genealogy_change_requests SET status='CORRECTION_REQUESTED' WHERE id=$1",[req.id]);
+    await expect(changeRequestsService.resubmit(req.id,otherUserId,{proposedChanges:{birthPlace:'Foreign'}})).rejects.toThrow('Only the requester');
+    const saved=await changeRequestsService.resubmit(req.id,requesterId,{proposedChanges:{birthPlace:'Synthetic corrected'},reason:'Requested correction'});
+    expect(saved.status).toBe('PENDING');expect(saved.resubmissionCount).toBe(1);
+  });
+
 });

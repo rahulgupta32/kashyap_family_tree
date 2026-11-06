@@ -239,6 +239,14 @@ export class ChangeRequestsService {
         throw new ForbiddenException('Only the requester can resubmit this change request');
       }
 
+      if (![ChangeRequestStatus.CORRECTION_REQUESTED, ChangeRequestStatus.CONFLICT_DETECTED].includes(gcr.status)) {
+        throw new BadRequestException('Only correction-requested or conflicted proposals can be resubmitted');
+      }
+      if (!dto || !dto.proposedChanges || typeof dto.proposedChanges !== 'object' || Array.isArray(dto.proposedChanges) ||
+          (dto.reason !== undefined && (typeof dto.reason !== 'string' || !dto.reason.trim()))) {
+        throw new BadRequestException('A proposed changes object and valid optional reason are required');
+      }
+
       let refreshedBaseVersion = gcr.base_version;
       let snapshot = gcr.current_snapshot;
       if (gcr.target_person_id) {

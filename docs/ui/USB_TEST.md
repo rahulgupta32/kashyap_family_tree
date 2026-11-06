@@ -1,13 +1,13 @@
 # Physical Android connection evaluation
 
-The separate `com.example.kashyap_mobile.usbtest` debug app is labelled **Kashyap — USB Test** and compiles `API_BASE_URL=http://127.0.0.1:3010`. It can coexist with the prior app and approved `.preview` release. Release builds reject the USB flag. The normal signed preview still requires HTTPS and its approved private signing key.
+The separate `com.example.kashyap_mobile.usbtest` debug app is labelled **Nepali Bansawali — USB Test** and compiles `API_BASE_URL=http://127.0.0.1:3010`. It can coexist with the prior app and approved `.preview` release. Release builds reject the USB flag. The normal signed preview still requires HTTPS and its approved private signing key.
 
 This APK depends on a synthetic backend running on the connected laptop. It has no hosted backend, real-email acceptance or production approval. `adb reverse` forwards the phone's loopback port to the laptop; it does not expose database, Redis or email capture publicly.
 
 Download the source-bound Android Actions artifact and extract `usb-test`. In Windows PowerShell, with a trusted USB-debugging phone connected and the isolated laptop API already ready on port3010:
 
 ```powershell
-.\connect-usb-test.ps1 -Apk .\kashyap-usb-test-<commit>.apk
+.\connect-usb-test.ps1 -Apk .\nepali-bansawali-usb-test-<commit>.apk
 ```
 
 The helper checks the artifact checksum, exact embedded-origin manifest, laptop readiness and selected authorized device before installing. With more than one device, pass `-Serial <adb-serial>`. It does not uninstall an existing app or delete data. Retain the laptop process and cable throughout testing. Remove forwarding afterwards with `adb -s <serial> reverse --remove tcp:3010`.

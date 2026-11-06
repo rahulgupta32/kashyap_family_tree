@@ -4,6 +4,7 @@ import 'calendar_session_guard.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'calendar_period_screen.dart';
+import 'calendar_event_detail_screen.dart';
 import 'calendar_recurrence_screen.dart';
 import '../services/genealogy_api_service.dart';
 import '../localization/calendar_labels.dart';
@@ -325,6 +326,14 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                           margin: const EdgeInsets.only(bottom: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           child: ListTile(
+                            key: ValueKey('calendar-event-${ev['id']}'),
+                            onTap: () async {
+                              if (!checkCalendarSession()) return;
+                              await Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarEventDetailScreen(
+                                api: widget.apiService, eventId: ev['id'] as String,
+                                onEdit: (event) => _manage(event), onCancel: (event) => _manage(event, cancel: true))));
+                              if (checkCalendarSession()) await _loadEvents();
+                            },
                             leading: const CircleAvatar(
                               backgroundColor: AppTheme.softPeach,
                               child: Icon(Icons.event, color: AppTheme.saffron),
@@ -412,7 +421,7 @@ class _CalendarBrowseScreenState extends State<CalendarBrowseScreen> with Calend
   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Apply calendar filters')),
   if(_error!=null)...[Text(_error!),TextButton(onPressed:_busy?null:()=>_load(_cursor),child:const Text('Retry calendar page'))],
   if(_busy)const Center(child:CircularProgressIndicator())else if(_items.isEmpty)const Text('No accessible events in this page.')else ..._items.map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-   Text(e['title'] as String),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?formatNepalInstant(e['startsAt'] as String):"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
+   TextButton(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventDetailScreen(api:widget.api,eventId:e['id'] as String))),child:Text(e['title'] as String)),Text(e['solarDate']!=null?"BS: ${e['solarDate']}":e['startsAt']!=null?formatNepalInstant(e['startsAt'] as String):"Tithi: ${e['tithiYearBs']} / ${e['tithiMonthBs']} · ${e['tithiPaksha']} ${e['tithiNumber']} (conversion unavailable)"),Text("${e['eventType']} · ${e['audienceScope']} · ${e['lifecycleState']}"),if(e['description']!=null)Text(e['description'] as String),
   ])))),
   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Latest calendar events')),
   TextButton(onPressed:_busy||_next==null?null:()=>_load(_next),child:const Text('Older calendar events')),

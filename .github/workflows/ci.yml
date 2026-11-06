@@ -440,7 +440,7 @@ jobs:
             test-results/android-*
             test-results/runtime-acceptance-matrix.json
             test-results/m4-device-*.json
-            test-results/kashyap-m4-debug.apk
+            test-results/nepali-bansawali-debug.apk
             test-results/usb-test/
           retention-days: 14
 

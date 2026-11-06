@@ -45,9 +45,21 @@ class _DeviceSessionsScreenState extends State<DeviceSessionsScreen> {
     } catch(_){if(mounted&&epoch==_epoch){setState((){_items=[];_next=null;_error='कार्य पुष्टि भएन। सूची ताजा गर्नुहोस्। (Action unconfirmed. Refresh the list before retrying.)';});}}
     finally{if(mounted&&epoch==_epoch){setState((){_busy=false;if(_owner!=widget.apiService.chatAccountId){_items=[];_next=null;}});}}
   }
+  Future<void> _logoutAll() async {
+    if(_busy || _owner==null || _owner!=widget.apiService.chatAccountId) return;
+    final generation=widget.apiService.pushSessionGeneration;
+    final yes=await showDialog<bool>(context:context,builder:(context)=>AlertDialog(title:const Text('सबै उपकरणबाट साइन आउट? (Sign out everywhere?)'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('Cancel')),TextButton(onPressed:()=>Navigator.pop(context,true),child:const Text('Confirm all devices'))]));
+    if(!mounted || yes!=true || _busy || widget.apiService.pushSessionGeneration!=generation) return;
+    setState(()=>_busy=true);
+    try { await widget.apiService.logoutAll(); if(mounted) Navigator.of(context).popUntil((route)=>route.isFirst); }
+    catch(_) { if(mounted) setState(()=>_error='सबै सत्र बन्द भएको पुष्टि भएन। (Global logout unconfirmed.)'); }
+    finally { if(mounted) setState(()=>_busy=false); }
+  }
   @override
   Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('मेरा उपकरणहरू (My devices)')),
     body:ListView(padding:const EdgeInsets.all(16),children:[
+      OutlinedButton(key:const ValueKey('logout-all'),onPressed:_busy?null:_logoutAll,child:const Text('सबै उपकरणबाट साइन आउट (Sign out everywhere)')),
       const Text('उपकरणका नाम ग्राहकले दिएको विवरण हुन्। (Recorded device labels do not prove device identity.)'),
       if(_error!=null)Semantics(liveRegion:true,child:Text(_error!)),
       if(_busy)const Center(child:CircularProgressIndicator()),

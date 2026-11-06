@@ -1,0 +1,1 @@
+These two PNGs are rendered Flutter widgets from the renamed app using synthetic/mock fixtures. They verify visible branding/layout only. Actual live-API calendar screenshots are collected by the Android integration test and retained in its source-bound GitHub artifact; no mock image is presented as proof of a working backend.

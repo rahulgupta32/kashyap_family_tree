@@ -304,6 +304,16 @@ class GenealogyApiService {
     onAccountDeleted?.call();
   }
 
+  Future<void> logoutAll() async {
+    final generation = _sessionGeneration;
+    final result = await requestJson('/auth/logout-all',method:'POST',data:{});
+    if (generation != _sessionGeneration) throw StateError('Session changed');
+    if (result is! Map || result['success'] != true || result['revokedCount'] is! int || result['revokedCount'] < 0) {
+      throw const FormatException('Global logout outcome unconfirmed');
+    }
+    await _clearSession();
+  }
+
   Future<void> logout() async {
     final generation = _sessionGeneration;
     _chatOutbox?.stop();
@@ -839,6 +849,22 @@ class GenealogyApiService {
     } else {
       throw Exception('पात्रो कार्यक्रम लोड गर्न सकिएन');
     }
+  }
+
+  Future<Map<String, dynamic>> getCalendarEvent(String id) async {
+    final result = await requestJson('/calendar/events/${Uri.encodeComponent(id)}');
+    if (result is! Map || result['id'] != id || result['title'] is! String) {
+      throw const FormatException('Invalid calendar event response');
+    }
+    return Map<String, dynamic>.from(result);
+  }
+
+  Future<List<Map<String, dynamic>>> getCalendarEventHistory(String id) async {
+    final result = await requestJson('/calendar/events/${Uri.encodeComponent(id)}/history');
+    if (result is! List || result.any((row) => row is! Map || row['version'] is! int || row['action'] is! String)) {
+      throw const FormatException('Invalid calendar history response');
+    }
+    return result.map((row) => Map<String, dynamic>.from(row as Map)).toList();
   }
 
   Future<Map<String, dynamic>> getMyProfile() async {

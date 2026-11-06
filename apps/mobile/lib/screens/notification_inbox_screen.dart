@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../services/calendar_time.dart';
 import '../services/genealogy_api_service.dart';
 import 'chat_screen.dart';
+import 'my_change_requests_screen.dart';
 import 'community_screen.dart';
 import 'calendar_events_screen.dart';
 import 'person_search_screen.dart';
@@ -49,7 +50,8 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       else if(target=='/calendar'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>CalendarEventsScreen(apiService:widget.apiService)));}
       else if(target=='/broadcasts'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>OfficialNoticesScreen(
         apiService:widget.apiService, initialNoticeId:notice['broadcastId'] is String?notice['broadcastId'] as String:null)));}
-      else if(target=='/claims'||target=='/change-requests'){
+      else if(target=='/change-requests'){await Navigator.push(context,MaterialPageRoute(builder:(_)=>MyChangeRequestsScreen(api:widget.apiService)));}
+      else if(target=='/claims'){
         // Notifications intentionally omit private person IDs. Let the member
         // select an authorized person before opening a governed workflow.
         await Navigator.push(context,MaterialPageRoute(builder:(_)=>PersonSearchScreen(apiService:widget.apiService)));

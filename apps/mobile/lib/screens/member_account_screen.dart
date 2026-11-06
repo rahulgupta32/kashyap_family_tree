@@ -4,6 +4,7 @@ import '../widgets/heritage.dart';
 import '../widgets/profile_photo_editor.dart';
 import 'profile_privacy_screen.dart';
 import 'my_claims_screen.dart';
+import 'my_change_requests_screen.dart';
 import 'follow_manager_screen.dart';
 import 'device_sessions_screen.dart';
 import 'policy_acknowledgements_screen.dart';
@@ -152,6 +153,7 @@ class _MemberAccountScreenState extends State<MemberAccountScreen> {
                                                 'पुस्ता · Generation ${person['generation']}')),
                                     ])))),
                         const HeritageHeading('खाता · Account'),
+                        Card(child: _link(Icons.edit_note, 'मेरा संशोधनहरू (My change requests)', () => _open(MyChangeRequestsScreen(api:widget.api)))),
                         Card(
                             child: Column(children: [
                           _link(
