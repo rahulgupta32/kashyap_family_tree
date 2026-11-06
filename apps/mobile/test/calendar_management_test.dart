@@ -72,7 +72,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home:CalendarPeriodScreen(api:service)));await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField),'2026-10-06');
     await tester.ensureVisible(find.text('Show calendar period'));await tester.tap(find.text('Show calendar period'));await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('06\n2 events'));await tester.tap(find.text('06\n2 events'));await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('calendar-day-2026-10-06')));await tester.pumpAndSettle();await tester.tap(find.byKey(const ValueKey('calendar-day-2026-10-06')));await tester.pumpAndSettle();
     expect(queries.last,{'source':'AD','view':'DAY','date':'2026-10-06'});
     await tester.ensureVisible(find.byType(DropdownButtonFormField<String>).at(1));await tester.tap(find.byType(DropdownButtonFormField<String>).at(1));await tester.pumpAndSettle();
     await tester.tap(find.text('कार्यसूची (Agenda for month)').last);await tester.pumpAndSettle();

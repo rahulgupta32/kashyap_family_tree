@@ -2,6 +2,7 @@ import '../services/calendar_time.dart';
 import 'calendar_audience_picker.dart';
 import 'calendar_session_guard.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 import 'calendar_period_screen.dart';
 import 'calendar_recurrence_screen.dart';
 import '../services/genealogy_api_service.dart';
@@ -287,15 +288,15 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('सांस्कृतिक तथा पारिवारिक पात्रो (Calendar)'),
-        actions: [
+        title: const Text('पारिवारिक पात्रो · Calendar'),
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(52), child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
           IconButton(tooltip: 'Calendar day month agenda', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarPeriodScreen(api: widget.apiService))); }, icon: const Icon(Icons.calendar_month)),
           IconButton(tooltip: 'Browse all calendar events', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarBrowseScreen(api: widget.apiService))); }, icon: const Icon(Icons.list_alt)),
           IconButton(tooltip: 'वार्षिक सम्झना (Annual reminders)', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService))); }, icon: const Icon(Icons.event_repeat)),
           IconButton(tooltip: calendarLabels['resolveCreate'], onPressed: !calendarSessionCurrent || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate ? null : () { _resolvePendingCreate(); }, icon: const Icon(Icons.fact_check)),
           IconButton(tooltip: widget.apiService.hasPendingCalendarCreate ? 'बाँकी सिर्जना पुनः प्रयास (Retry pending creation)' : calendarLabels['create'], onPressed: !calendarSessionCurrent ? null : _create, icon: const Icon(Icons.add)),
           IconButton(onPressed: !calendarSessionCurrent ? null : _loadEvents, icon: const Icon(Icons.refresh)),
-        ],
+        ]))),
       ),
       body: !calendarSessionCurrent ? const Center(child: Text(calendarSessionChanged)) : _loading
           ? const Center(child: CircularProgressIndicator())
@@ -324,9 +325,9 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
                           margin: const EdgeInsets.only(bottom: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.amber.shade100,
-                              child: Icon(Icons.event, color: Colors.amber.shade900),
+                            leading: const CircleAvatar(
+                              backgroundColor: AppTheme.softPeach,
+                              child: Icon(Icons.event, color: AppTheme.saffron),
                             ),
                             title: Text(
                               ev['title'] ?? 'कार्यक्रम',

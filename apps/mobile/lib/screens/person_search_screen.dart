@@ -1,8 +1,9 @@
+import '../widgets/heritage.dart';
+import 'home_dashboard.dart';
+import 'member_account_screen.dart';
 import 'sign_in_screen.dart';
 import '../localization/my_claim_labels.dart';
 import 'my_claims_screen.dart';
-import 'policy_acknowledgements_screen.dart';
-import 'device_sessions_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
@@ -29,8 +30,13 @@ class PersonSearchScreen extends StatefulWidget {
   final Future<bool> Function()? onEnablePush;
   final Future<void> Function()? onDisablePush;
 
-  const PersonSearchScreen({super.key, required this.apiService, this.onSignIn, this.onSignOut,
-    this.onEnablePush, this.onDisablePush});
+  const PersonSearchScreen(
+      {super.key,
+      required this.apiService,
+      this.onSignIn,
+      this.onSignOut,
+      this.onEnablePush,
+      this.onDisablePush});
 
   @override
   State<PersonSearchScreen> createState() => _PersonSearchScreenState();
@@ -43,6 +49,8 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
   bool _isLoading = false;
   String? _error;
   int _searchVersion = 0;
+  int _tab = 0;
+  String? _treeId;
 
   @override
   void initState() {
@@ -59,71 +67,140 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
 
     try {
       final items = await widget.apiService.searchPersons(query: query);
-      if (!mounted || version != _searchVersion) { return; }
+      if (!mounted || version != _searchVersion) {
+        return;
+      }
       setState(() {
         _results = items;
-        if (!_results.any((p) => p.id == _selectedPerson?.id)) { _selectedPerson = null; }
+        if (!_results.any((p) => p.id == _selectedPerson?.id)) {
+          _selectedPerson = null;
+        }
       });
     } catch (e) {
-      if (!mounted || version != _searchVersion) { return; }
+      if (!mounted || version != _searchVersion) {
+        return;
+      }
       setState(() {
         _error = e.toString();
       });
     } finally {
-      if (mounted && version == _searchVersion) { setState(() {
-        _isLoading = false;
-      }); }
+      if (mounted && version == _searchVersion) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
-  void dispose() { _searchController.dispose(); super.dispose(); }
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('कश्यप अधिकारी वंशावली', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          if(widget.apiService.authToken!=null) IconButton(tooltip:'नीति र सहमति (Policies)',icon:const Icon(Icons.policy),onPressed:(){Navigator.of(context).push(MaterialPageRoute(builder:(_)=>PolicyAcknowledgementsScreen(api:widget.apiService)));}),
-          if (widget.apiService.authToken != null)
-            IconButton(tooltip: 'मेरा उपकरणहरू (My devices)', icon: const Icon(Icons.devices), onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => DeviceSessionsScreen(apiService: widget.apiService)));
-            }),
-          if (widget.apiService.authToken != null)
-            IconButton(tooltip: 'Security verification', icon: const Icon(Icons.security), onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => AuthenticatorScreen(
-                apiService: widget.apiService, enrollmentRequested: true, manageCredentials: true,
-                child: () => Scaffold(appBar: AppBar(title: const Text('Security verification')),
-                  body: const Padding(padding: EdgeInsets.all(20), child: Text(
-                    'Security verification is complete or is not required for your current account.'))))));
-            }),
-          if (widget.apiService.authToken == null && widget.onSignIn != null)
-            IconButton(tooltip: 'Sign in', onPressed: widget.onSignIn, icon: const Icon(Icons.login)),
-          if (widget.apiService.authToken != null && widget.onSignOut != null)
-            IconButton(tooltip: 'Sign out', icon: const Icon(Icons.logout), onPressed: () async {
-              try { await widget.onSignOut!(); }
-              catch (_) { if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Local session cleared; server logout could not be confirmed.'))); } }
-            }),
-        ],
-      ),
+      appBar: _tab == 0 || (_tab == 1 && _treeId == null)
+          ? AppBar(
+              centerTitle: false,
+              title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Kashyap Adhikari',
+                        style: AppTheme.editorial
+                            .copyWith(color: AppTheme.saffron, fontSize: 19)),
+                    const Text('वंशावली · LINEAGE & COMMUNITY',
+                        style: TextStyle(
+                            fontSize: 8,
+                            letterSpacing: .8,
+                            color: AppTheme.textMuted)),
+                  ]),
+              actions: [
+                if (widget.apiService.authToken != null)
+                  IconButton(
+                      tooltip: 'सूचनाहरू (Notifications)',
+                      icon: const Icon(Icons.notifications_none),
+                      onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => NotificationInboxScreen(
+                                  apiService: widget.apiService,
+                                  onEnablePush: widget.onEnablePush,
+                                  onDisablePush: widget.onDisablePush)))),
+                if (widget.apiService.authToken != null)
+                  IconButton(
+                      tooltip: 'Security verification',
+                      icon: const Icon(Icons.security_outlined),
+                      onPressed: () {
+                        Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => AuthenticatorScreen(
+                                apiService: widget.apiService,
+                                enrollmentRequested: true,
+                                manageCredentials: true,
+                                child: () => Scaffold(
+                                    appBar: AppBar(
+                                        title: const Text(
+                                            'Security verification')),
+                                    body: const Padding(
+                                        padding: EdgeInsets.all(20),
+                                        child: Text(
+                                            'Security verification is complete or is not required for your current account.'))))));
+                      }),
+                if (widget.apiService.authToken == null &&
+                    widget.onSignIn != null)
+                  IconButton(
+                      tooltip: 'Sign in',
+                      onPressed: widget.onSignIn,
+                      icon: const Icon(Icons.login)),
+                if (widget.apiService.authToken != null &&
+                    widget.onSignOut != null)
+                  IconButton(
+                      tooltip: 'Sign out',
+                      icon: const Icon(Icons.logout),
+                      onPressed: () async {
+                        try {
+                          await widget.onSignOut!();
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Local session cleared; server logout could not be confirmed.')));
+                          }
+                        }
+                      }),
+              ],
+            )
+          : null,
+      bottomNavigationBar: HeritageNavigation(
+          selected: _tab,
+          onSelect: (index) => setState(() {
+                _tab = index;
+                if (index == 1) _treeId = _selectedPerson?.id;
+              })),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
             const DrawerHeader(
-              decoration: BoxDecoration(color: AppTheme.saffron),
+              decoration: BoxDecoration(color: AppTheme.warmCream),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     'कश्यप अधिकारी वंशावली',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: AppTheme.heritageBrown,
+                        fontSize: 18,
+                        fontFamily: 'PlayfairDisplay',
+                        fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 4),
-                  Text('नेभिगेसन मेनु (Navigation Menu)', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text('नेभिगेसन मेनु (Navigation Menu)',
+                      style:
+                          TextStyle(color: AppTheme.textMuted, fontSize: 12)),
                 ],
               ),
             ),
@@ -133,13 +210,16 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               onTap: () => Navigator.pop(context),
             ),
             ListTile(
-              leading: const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
+              leading:
+                  const Icon(Icons.account_tree, color: AppTheme.heritageBrown),
               title: const Text('वंशावली रुख (Family Tree)'),
               onTap: () {
                 final targetId = _selectedPerson?.id;
                 if (targetId == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                    const SnackBar(
+                        content: Text(
+                            'कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
                   );
                   return;
                 }
@@ -147,19 +227,25 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ReadOnlyTreeScreen(rootPersonId: targetId, apiService: widget.apiService),
+                    builder: (_) => ReadOnlyTreeScreen(
+                        rootPersonId: targetId, apiService: widget.apiService),
                   ),
                 );
               },
             ),
             if (widget.apiService.authToken != null)
-              ListTile(leading: const Icon(Icons.assignment_ind),
-                title: Text(myClaimLabels['title']!), onTap: () {
-                  if (widget.apiService.authToken == null) return;
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => MyClaimsScreen(api: widget.apiService)));
-                }),
+              ListTile(
+                  leading: const Icon(Icons.assignment_ind),
+                  title: Text(myClaimLabels['title']!),
+                  onTap: () {
+                    if (widget.apiService.authToken == null) return;
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                MyClaimsScreen(api: widget.apiService)));
+                  }),
             ListTile(
               leading: const Icon(Icons.verified_user, color: Colors.blue),
               title: const Text('दाबी प्रमाणीकरण (Profile Claims)'),
@@ -167,7 +253,9 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 final targetPerson = _selectedPerson;
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                    const SnackBar(
+                        content: Text(
+                            'कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
                   );
                   return;
                 }
@@ -191,7 +279,9 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 final targetPerson = _selectedPerson;
                 if (targetPerson == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
+                    const SnackBar(
+                        content: Text(
+                            'कृपया पहिले व्यक्ति चयन गर्नुहोस् (Please select a person first)')),
                   );
                   return;
                 }
@@ -213,44 +303,113 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
               title: const Text('समुदाय (Community)'),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => CommunityScreen(apiService: widget.apiService)));
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            CommunityScreen(apiService: widget.apiService)));
               },
             ),
             if (widget.apiService.authToken != null)
-              ListTile(leading: const Icon(Icons.menu_book), title: const Text('संस्कृति (Culture)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => CulturalContentScreen(apiService: widget.apiService))); }),
-            ListTile(leading: const Icon(Icons.map), title: const Text('परिवारको स्थान (Localities)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => HouseholdMapScreen(apiService: widget.apiService))); }),
-            if (widget.apiService.chatAccountId != null)
-              ListTile(leading: const Icon(Icons.email), title: const Text('इमेल जोड्नुहोस् (Link email)'),
+              ListTile(
+                  leading: const Icon(Icons.menu_book),
+                  title: const Text('संस्कृति (Culture)'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => CulturalContentScreen(
+                                apiService: widget.apiService)));
+                  }),
+            ListTile(
+                leading: const Icon(Icons.map),
+                title: const Text('परिवारको स्थान (Localities)'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (screenContext) =>
-                    SignInScreen(apiService: widget.apiService, linkEmail: true,
-                      onSignedIn: () { Navigator.pop(screenContext); }, onBrowsePublic: () {})));
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => HouseholdMapScreen(
+                              apiService: widget.apiService)));
                 }),
-            ListTile(leading: const Icon(Icons.chat), title: const Text('सन्देश (Messages)'), onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(apiService: widget.apiService))); }),
-            if (widget.apiService.authToken != null)
-              ListTile(leading: const Icon(Icons.notifications), title: const Text('सूचनाहरू (Notifications)'), onTap: () {
-                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationInboxScreen(
-                  apiService: widget.apiService, onEnablePush: widget.onEnablePush, onDisablePush: widget.onDisablePush)));
-              }),
-            if (widget.apiService.authToken != null)
-              ListTile(leading: const Icon(Icons.person_add_alt_1), title: const Text('अनुसरण (Following)'), onTap: () {
-                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => FollowManagerScreen(apiService: widget.apiService)));
-              }),
-            if (widget.apiService.authToken != null)
-              ListTile(leading: const Icon(Icons.campaign), title: const Text('प्रशासनिक सूचनाहरू (Official notices)'), onTap: () {
-                Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => OfficialNoticesScreen(apiService: widget.apiService)));
-              }),
+            if (widget.apiService.chatAccountId != null)
+              ListTile(
+                  leading: const Icon(Icons.email),
+                  title: const Text('इमेल जोड्नुहोस् (Link email)'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (screenContext) => SignInScreen(
+                                apiService: widget.apiService,
+                                linkEmail: true,
+                                onSignedIn: () {
+                                  Navigator.pop(screenContext);
+                                },
+                                onBrowsePublic: () {})));
+                  }),
             ListTile(
-              leading: const Icon(Icons.calendar_month, color: Colors.deepOrange),
+                leading: const Icon(Icons.chat),
+                title: const Text('सन्देश (Messages)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              ChatScreen(apiService: widget.apiService)));
+                }),
+            if (widget.apiService.authToken != null)
+              ListTile(
+                  leading: const Icon(Icons.notifications),
+                  title: const Text('सूचनाहरू (Notifications)'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => NotificationInboxScreen(
+                                apiService: widget.apiService,
+                                onEnablePush: widget.onEnablePush,
+                                onDisablePush: widget.onDisablePush)));
+                  }),
+            if (widget.apiService.authToken != null)
+              ListTile(
+                  leading: const Icon(Icons.person_add_alt_1),
+                  title: const Text('अनुसरण (Following)'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => FollowManagerScreen(
+                                apiService: widget.apiService)));
+                  }),
+            if (widget.apiService.authToken != null)
+              ListTile(
+                  leading: const Icon(Icons.campaign),
+                  title: const Text('प्रशासनिक सूचनाहरू (Official notices)'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => OfficialNoticesScreen(
+                                apiService: widget.apiService)));
+                  }),
+            ListTile(
+              leading:
+                  const Icon(Icons.calendar_month, color: Colors.deepOrange),
               title: const Text('पात्रो तथा कार्यक्रम (Calendar)'),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => CalendarEventsScreen(apiService: widget.apiService),
+                    builder: (_) =>
+                        CalendarEventsScreen(apiService: widget.apiService),
                   ),
                 );
               },
@@ -263,7 +422,8 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ProfilePrivacyScreen(apiService: widget.apiService),
+                    builder: (_) =>
+                        ProfilePrivacyScreen(apiService: widget.apiService),
                   ),
                 );
               },
@@ -271,113 +431,144 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          // Search Header Box
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'वंशज तथा पुर्खा खोजी (Search Lineage)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.textDark),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _searchController,
-                  onChanged: (val) {
-                    _performSearch(val);
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'नाम वा स्थान (Nepali / English)...',
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.saffron),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              _performSearch('');
-                            },
-                          )
-                        : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Search Results
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.saffron))
-                : _error != null
-                    ? Center(
-                        child: Text(_error!, style: const TextStyle(color: Colors.red)),
-                      )
-                    : _results.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'कुनै व्यक्ति फेला परेन (No persons found)',
-                              style: TextStyle(color: AppTheme.textMuted),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: _results.length,
-                            itemBuilder: (context, index) {
-                              final person = _results[index];
-                              final isSelected = _selectedPerson?.id == person.id;
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                color: isSelected ? AppTheme.saffron.withValues(alpha: 0.1) : null,
-                                child: ListTile(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedPerson = person;
-                                    });
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => PersonDetailScreen(
-                                          personId: person.id,
-                                          apiService: widget.apiService,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  leading: CircleAvatar(
-                                    backgroundColor: person.livingStatus == LivingStatus.living
-                                        ? AppTheme.livingGreen.withValues(alpha: 0.15)
-                                        : AppTheme.deceasedSlate.withValues(alpha: 0.15),
-                                    child: Text(
-                                      person.generation != null ? 'G${person.generation}' : '?',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        color: person.livingStatus == LivingStatus.living
-                                            ? AppTheme.livingGreen
-                                            : AppTheme.deceasedSlate,
-                                      ),
-                                    ),
-                                  ),
-                                  title: Text(
-                                    person.primaryNameNepali,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textDark),
-                                  ),
-                                  subtitle: Text(
-                                    '${person.branchName ?? "शाखा अज्ञात"} • ${person.livingStatus == LivingStatus.living ? "जीवित" : "दिवंगत"}',
-                                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                                  ),
-                                  trailing: const Icon(Icons.chevron_right, color: AppTheme.saffron),
-                                ),
-                              );
-                            },
-                          ),
-          ),
-        ],
-      ),
+      body: _tabBody(),
     );
+  }
+
+  void _openPerson(PersonSummary person) {
+    setState(() => _selectedPerson = person);
+    Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => PersonDetailScreen(
+                personId: person.id, apiService: widget.apiService)));
+  }
+
+  void _openTree(String? personId) {
+    final id = personId ?? _selectedPerson?.id;
+    if (id == null) {
+      setState(() {
+        _tab = 1;
+        _treeId = null;
+      });
+    } else {
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => ReadOnlyTreeScreen(
+                  rootPersonId: id, apiService: widget.apiService)));
+    }
+  }
+
+  Widget _tabBody() {
+    if (_tab == 2) return CalendarEventsScreen(apiService: widget.apiService);
+    if (_tab == 3) return CommunityScreen(apiService: widget.apiService);
+    if (_tab == 4) {
+      return MemberAccountScreen(
+          api: widget.apiService,
+          onSignIn: widget.onSignIn,
+          onSignOut: widget.onSignOut);
+    }
+    if (_tab == 1 && _treeId != null) {
+      return ReadOnlyTreeScreen(
+          rootPersonId: _treeId!, apiService: widget.apiService);
+    }
+    final searching = _searchController.text.trim().isNotEmpty || _tab == 1;
+    return ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        children: [
+          if (_tab == 1)
+            const HeritageHeading('Explore your family tree',
+                subtitle:
+                    'रुख सुरु गर्न व्यक्ति छान्नुहोस्। (Choose a person to start.)',
+                icon: Icons.account_tree_outlined),
+          TextField(
+              controller: _searchController,
+              onChanged: _performSearch,
+              decoration: InputDecoration(
+                  hintText: 'वंशज खोज्नुहोस् · Search family members…',
+                  prefixIcon: const Icon(Icons.search, size: 21),
+                  suffixIcon: _searchController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () {
+                            _searchController.clear();
+                            _performSearch('');
+                          }))),
+          const SizedBox(height: 18),
+          if (_isLoading)
+            const Padding(
+                padding: EdgeInsets.all(20),
+                child: Center(child: CircularProgressIndicator())),
+          if (_error != null)
+            HeritageEmpty(
+                icon: Icons.cloud_off_outlined,
+                message: 'खोज अहिले उपलब्ध छैन। (Search unavailable)',
+                action: TextButton(
+                    onPressed: () => _performSearch(_searchController.text),
+                    child: const Text('Retry'))),
+          if (searching && !_isLoading && _error == null) ...[
+            if (_results.isEmpty)
+              const HeritageEmpty(
+                  icon: Icons.person_search_outlined,
+                  message: 'कुनै व्यक्ति फेला परेन (No persons found)'),
+            ..._results.map((person) => Card(
+                    child: ListTile(
+                  selected: _selectedPerson?.id == person.id,
+                  onTap: () {
+                    if (_tab == 1) {
+                      setState(() {
+                        _selectedPerson = person;
+                        _treeId = person.id;
+                      });
+                    } else {
+                      _openPerson(person);
+                    }
+                  },
+                  leading: HeritageAvatar(
+                      name: person.primaryNameNepali,
+                      deceased: person.livingStatus == LivingStatus.deceased),
+                  title: Text(person.primaryNameNepali,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  subtitle: Text(
+                      [
+                        if (person.primaryNameEnglish?.isNotEmpty == true)
+                          person.primaryNameEnglish!,
+                        person.branchName ?? 'शाखा अज्ञात',
+                        person.livingStatus == LivingStatus.living
+                            ? 'जीवित (Living)'
+                            : 'दिवंगत (Deceased)'
+                      ].join(' · '),
+                      style: Theme.of(context).textTheme.bodySmall),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                ))),
+          ],
+          if (!searching)
+            HomeDashboard(
+              key: const ValueKey('home-dashboard'),
+                api: widget.apiService,
+                directory: _results,
+                onPerson: _openPerson,
+                onTree: _openTree,
+                onCalendar: () => setState(() => _tab = 2),
+                onProfile: () => setState(() => _tab = 4),
+                onNotices: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => OfficialNoticesScreen(
+                            apiService: widget.apiService))),
+                onCulture: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => CulturalContentScreen(
+                            apiService: widget.apiService))),
+                onMessages: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            ChatScreen(apiService: widget.apiService)))),
+        ]);
   }
 }

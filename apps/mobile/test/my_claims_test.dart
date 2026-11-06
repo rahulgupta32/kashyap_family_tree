@@ -375,7 +375,7 @@ void main() {
     await tester.tap(destination.hitTestable());
     await tester.pumpAndSettle();
     expect(find.byType(MyClaimsScreen),findsOneWidget);
-    expect(paths,['/genealogy/search','/claims/mine']);
+    expect(paths,['/genealogy/search','/profile/me','/calendar/events','/notifications/broadcasts','/claims/mine']);
   });
 
   testWidgets('public drawer has no owned-claim discovery destination', (tester) async {

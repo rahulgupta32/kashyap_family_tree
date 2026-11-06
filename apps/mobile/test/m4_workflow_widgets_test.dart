@@ -29,9 +29,11 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: SignInScreen(apiService: service,
         onSignedIn: () => signedIn = true, onBrowsePublic: () {})));
       await tester.enterText(find.byKey(const Key('sign-in-phone')), '+9779840000001');
+      await tester.ensureVisible(find.byKey(const Key('sign-in-submit')));
       await tester.tap(find.byKey(const Key('sign-in-submit')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('sign-in-code')), '123456');
+      await tester.ensureVisible(find.byKey(const Key('sign-in-submit')));
       await tester.tap(find.byKey(const Key('sign-in-submit')));
       await tester.pumpAndSettle();
       expect(signedIn, isTrue);
@@ -104,6 +106,8 @@ void main() {
       final service = FakeGenealogyApiService()..setAuthToken('mock-access');
       addTearDown(service.dispose);
       await tester.pumpWidget(MaterialApp(home: PersonSearchScreen(apiService: service)));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'हरि');
       await tester.pumpAndSettle();
       await tester.tap(find.text('हरि प्रसाद अधिकारी (परीक्षण)'));
       await tester.pumpAndSettle();

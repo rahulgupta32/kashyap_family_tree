@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../services/calendar_time.dart';
 import '../services/genealogy_api_service.dart';
 import 'chat_screen.dart';
 import 'community_screen.dart';
@@ -101,9 +103,10 @@ class _NotificationInboxScreenState extends State<NotificationInboxScreen> {
       TextButton(onPressed:_busy?null:() async {try{await widget.apiService.requestJson('/notifications/read-all',method:'POST');await _load();}
         catch(e){if(mounted)setState(()=>_error=e.toString());}},child:const Text('सबै पढियो (Mark all read)')),
       if(_items.isEmpty&&!_loading)const Text('अहिलेसम्म सूचना छैन। (No notifications yet.)'),
-      ..._items.map((raw){final n=raw as Map;return Card(child:ListTile(
-        leading:Icon(n['readAt']==null?Icons.notifications_active:Icons.notifications_none),
-        title:Text(n['message']?.toString()??''),subtitle:Text(n['createdAt']?.toString()??''),
+      ..._items.map((raw){final n=raw as Map;return Card(color:n['readAt']==null?const Color(0xFFFFF3E5):Colors.white,child:ListTile(
+        contentPadding:const EdgeInsets.symmetric(horizontal:16,vertical:12),
+        leading:Container(padding:const EdgeInsets.all(10),decoration:BoxDecoration(color:AppTheme.softPeach,borderRadius:BorderRadius.circular(8)),child:Icon(n['readAt']==null?Icons.notifications_active_outlined:Icons.notifications_none)),
+        title:Text(n['message']?.toString()??''),subtitle:Padding(padding:const EdgeInsets.only(top:8),child:Text(n['createdAt'] is String?formatNepalInstant(n['createdAt'] as String):'')),
         trailing:n['readAt']!=null?IconButton(tooltip:'Mark unread',icon:const Icon(Icons.mark_email_unread),onPressed:_busy?null:() async {
           try {await widget.apiService.requestJson('/notifications/${n['id']}/unread',method:'POST');await _load();}
           catch(e){if(mounted){setState(()=>_error=e.toString());}}

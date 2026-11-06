@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import '../widgets/heritage.dart';
 import '../services/genealogy_api_service.dart';
 
 class CommunityScreen extends StatefulWidget {
@@ -108,17 +109,19 @@ class _CommunityScreenState extends State<CommunityScreen> {
           ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue, onSelected: _busy ? null : (_) { setState(() => _queue = false); _load(); }),
           ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) { setState(() => _queue = true); _load(); }),
         ]),
-        if (_posts.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('कुनै पोस्ट छैन (No posts yet)')),
+        const HeritageHeading('Our community', subtitle:'समाचार, सम्झना र पारिवारिक सम्बन्ध।', icon: Icons.groups_outlined),
+        if (_posts.isEmpty) const HeritageEmpty(icon:Icons.forum_outlined,message:'कुनै पोस्ट छैन (No posts yet)'),
         ..._posts.map((p) => Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p['title'] as String, style: Theme.of(context).textTheme.titleMedium),
-            Text(p['moderationStatus'] as String, style: Theme.of(context).textTheme.labelSmall),
+            Padding(padding:const EdgeInsets.only(top:8),child:Chip(label:Text(p['moderationStatus'] as String, style: Theme.of(context).textTheme.labelSmall))),
             const SizedBox(height: 8), Text(p['content'] as String),
             if (p['moderationOutcome'] != null) Text('Moderation: ${p['moderationOutcome']['decision']} · ${p['moderationOutcome']['notes']}'),
             if (p['locality'] != null) Text("स्थान (Approximate locality): ${p['locality']['district']} · ${p['locality']['municipality']}"),
             if (p['contactPhone'] != null) Text("सम्पर्क (Shared contact): ${p['contactPhone']}"),
             if (p['escalated'] == true) const Text('Escalated: awaiting independent central review.'),
             if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
+            const Divider(),
             Wrap(spacing: 8, children: [
               if (p['canAppeal'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map, appeal: true), child: const Text('अपिल (Appeal)')),
               if (p['moderationStatus'] == 'PUBLISHED') ...[

@@ -9,7 +9,8 @@ import '../services/genealogy_api_service.dart';
 class ProfilePhotoEditor extends StatefulWidget {
   final GenealogyApiService api;
   final String? initialAsset;
-  const ProfilePhotoEditor({super.key,required this.api,this.initialAsset});
+  final bool readOnly;
+  const ProfilePhotoEditor({super.key,required this.api,this.initialAsset, this.readOnly = false});
   @override State<ProfilePhotoEditor> createState()=>_ProfilePhotoEditorState();
 }
 class _ProfilePhotoEditorState extends State<ProfilePhotoEditor> {
@@ -87,7 +88,10 @@ class _ProfilePhotoEditorState extends State<ProfilePhotoEditor> {
     finally{if(_current(generation)){setState(()=>_busy=false);}}
   }
   Future<void> _retry() async {final generation=_generation,owner=_owner,asset=_asset;if(owner==null||asset==null){return;}try{await widget.api.profilePhotoRequest('/media/$asset/retry',owner,method:'POST');if(_current(generation)){setState((){_error=null;_status='PENDING';});unawaited(_check());}}catch(error){if(_current(generation)){setState(()=>_error='पुनः प्रयास असफल भयो / Retry unavailable');}}}
-  @override Widget build(BuildContext context){if(_owner!=widget.api.chatAccountId){return const Text('खाता बदलिएको छ / Account changed');}return Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+  @override Widget build(BuildContext context){if(_owner!=widget.api.chatAccountId){return const Text('खाता बदलिएको छ / Account changed');}if(widget.readOnly){return ClipRRect(borderRadius:BorderRadius.circular(10),child:_thumbnail==null
+      ? const SizedBox(width:88,height:88,child:ColoredBox(color:Color(0xFFF4E8D8),child:Icon(Icons.person_outline,size:44,color:Color(0xFF68452C))))
+      : Image.memory(_thumbnail!,width:88,height:88,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Icon(Icons.person_outline,size:44)));}
+    return Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
     const Text('प्रोफाइल फोटो / Profile photo',style:TextStyle(fontWeight:FontWeight.bold)),
     const SizedBox(height:8),
     _thumbnail==null?const CircleAvatar(radius:32,child:Text('क')):Image.memory(_thumbnail!,width:96,height:96,fit:BoxFit.cover,errorBuilder:(_,__,___)=>const Text('Photo unavailable')),

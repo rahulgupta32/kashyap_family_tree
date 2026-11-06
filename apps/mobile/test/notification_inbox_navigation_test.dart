@@ -71,7 +71,7 @@ void main() {
     await tester.tap(destination.hitTestable());
     await tester.pumpAndSettle();
     expect(find.byType(OfficialNoticesScreen), findsOneWidget);
-    expect(paths, ['/genealogy/search', '/notifications/broadcasts']);
+    expect(paths, ['/genealogy/search', '/profile/me', '/calendar/events', '/notifications/broadcasts', '/notifications/broadcasts']);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
@@ -148,7 +148,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(readRequests,1);
     expect(find.byType(PersonSearchScreen),findsOneWidget);
-    expect(find.text('कश्यप अधिकारी वंशावली'),findsOneWidget);
+    expect(find.text('Kashyap Adhikari'),findsOneWidget);
   });
 
   testWidgets('Mocked follow manager saves an authorized branch choice and removes it', (tester) async {

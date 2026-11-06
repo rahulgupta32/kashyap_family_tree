@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/heritage.dart';
 import 'calendar_session_guard.dart';
 import '../services/genealogy_api_service.dart';
 import '../services/calendar_time.dart';
@@ -38,7 +40,9 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
   final items=(_page?['items'] as List?)??[];
   final groups=items.map((e)=>e['displayDate']??'UNDATED').toSet();
   return Scaffold(appBar:AppBar(title:const Text('पात्रो दृश्य (Calendar views)')),body:!calendarSessionCurrent?const Center(child:Text(calendarSessionChanged)):ListView(padding:const EdgeInsets.all(16),children:[
-   const Text('AD times display fixed Nepal UTC+05:45. Select the original calendar; switching source does not convert an event or the selected date. BS month cells are numbered days; weekday conversion is unavailable.'),
+   const HeritageHeading('पारिवारिक पात्रो · Family calendar', subtitle: 'Explore family events and shared traditions.', icon: Icons.calendar_month_outlined),
+   const Padding(padding: EdgeInsets.only(bottom:16), child: Text('Nepal time · UTC+05:45. AD and BS dates are shown in their original calendar.', style: TextStyle(color:AppTheme.textMuted,fontSize:12))),
+   if(_source=='BS') const Text('BS days are numbered; weekday conversion is unavailable.'),
    DropdownButtonFormField<String>(initialValue:_source,decoration:const InputDecoration(labelText:'Date source'),items:['AD','BS'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_source=v!);}),
    DropdownButtonFormField<String>(initialValue:_view,key:ValueKey(_view),decoration:const InputDecoration(labelText:'Calendar view'),items:const [DropdownMenuItem(value:'DAY',child:Text('दिन (Day)')),DropdownMenuItem(value:'MONTH',child:Text('महिना (Month)')),DropdownMenuItem(value:'AGENDA',child:Text('कार्यसूची (Agenda for month)'))],onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_view=v!);}),
    TextField(controller:_date,enabled:!_busy,decoration:const InputDecoration(labelText:'Source date (YYYY-MM-DD)'),onChanged:(_)=>_clear()),
@@ -48,7 +52,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
    if(_page!=null)...[
     Text("${_page!['period']['source']} · ${_page!['period']['view']} · ${_page!['period']['date']}. Counts cover all currently accessible events; each event page contains at most 50."),
     Wrap(children:[TextButton(onPressed:_page!['period']['previousDate']==null?null:(){if(checkCalendarSession() && !_busy && _page!=null)_load(date:_page!['period']['previousDate'] as String);},child:const Text('Previous calendar period')),TextButton(onPressed:_page!['period']['nextDate']==null?null:(){if(checkCalendarSession() && !_busy && _page!=null)_load(date:_page!['period']['nextDate'] as String);},child:const Text('Next calendar period'))]),
-    if(_view=='MONTH')Wrap(spacing:4,runSpacing:4,children:(_page!['days'] as List).map((d)=>SizedBox(width:85,child:OutlinedButton(onPressed:()=>_load(view:'DAY',date:d['date'] as String),child:Text("${d['date'].toString().substring(8)}\n${d['count']} events",textAlign:TextAlign.center)))).toList()),
+    if(_view=='MONTH') _monthGrid(),
     if((_page!['undatedCount'] as int)>0)Text("Undated Tithi: ${_page!['undatedCount']} events. Conversion unavailable; these events are not assigned to a day."),
     if(items.isEmpty)const Text('No accessible events in this period.'),
     ...groups.map((group)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
@@ -60,4 +64,23 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
    ],
   ]));
  }
+ Widget _monthGrid() {
+  final days = _page!['days'] as List;
+  final first = days.isEmpty ? null : DateTime.tryParse(days.first['date'].toString());
+  final offset = _source == 'AD' && first != null ? first.weekday % 7 : 0;
+  return Card(child: Padding(padding: const EdgeInsets.all(12), child: LayoutBuilder(builder:(context, constraints) {
+   final width = (constraints.maxWidth - 24) / 7;
+   return Column(children:[
+    if(_source=='AD') Row(children:[for(final name in const ['S','M','T','W','T','F','S']) Expanded(child:Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(name,textAlign:TextAlign.center,style:const TextStyle(color:AppTheme.textMuted,fontSize:12))))]),
+    Wrap(spacing:4,runSpacing:4,children:[
+     for(var i=0;i<offset;i++) SizedBox(width:width,height:60),
+     ...days.map((d)=>SizedBox(width:width, child:OutlinedButton(key:ValueKey('calendar-day-${d['date']}'),
+      style:OutlinedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10,horizontal:1),minimumSize:const Size(0,60),backgroundColor:(d['count'] as num)>0?AppTheme.softPeach:Colors.white),
+      onPressed:()=>_load(view:'DAY',date:d['date'] as String),
+      child:Column(children:[Text(d['date'].toString().substring(8),style:const TextStyle(fontSize:14,fontWeight:FontWeight.w600)),Text("${d['count']} events",style:const TextStyle(fontSize:8))])))),
+    ]),
+   ]);
+  })));
+ }
+
 }
