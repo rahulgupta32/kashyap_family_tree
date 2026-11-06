@@ -14,7 +14,7 @@ badging=subprocess.check_output([str(tools[-1].with_name('aapt')),'dump','badgin
 package=re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",badging,re.M)
 minimum=re.search(r"^sdkVersion:'(\d+)'",badging,re.M)
 label=re.search(r"^application-label:'([^']+)'",badging,re.M)
-cert=re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$',signature,re.M)
+cert=sorted(set(re.findall(r'^(?:Signer #\d+|V[123](?:\.1)? Signer:) certificate SHA-256 digest: ([a-fA-F0-9]{64})\s*$',signature,re.M)))
 assert package and package[1]=='com.example.kashyap_mobile' and label and label[1]=='Nepali Bansawali'
 assert minimum, 'Missing minimum SDK in aapt badging: '+badging
 assert len(cert)==1, 'Expected one certificate digest: '+signature
