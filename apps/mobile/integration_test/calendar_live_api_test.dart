@@ -119,7 +119,10 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      await press(tester, find.byKey(ValueKey('calendar-event-$id')));
+      await press(tester, find.descendant(
+          of: find.byKey(ValueKey('calendar-event-$id')),
+          matching: find.text(original)));
+      // The tile also contains RSVP controls; tap its title to open detail.
       await until(tester, find.byType(CalendarEventDetailScreen));
       await until(tester, find.text('v1 · CALENDAR_EVENT_CREATED'));
       await press(tester, find.byKey(const ValueKey('detail-rsvp-GOING')));

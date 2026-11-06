@@ -138,8 +138,8 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
         title: Text(calendarLabels['create']!),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(key: const ValueKey('calendar-title'), controller: title, enabled: !busy && !submitted, decoration: InputDecoration(labelText: calendarLabels['title'])),
-          DropdownButtonFormField<String>(key: const ValueKey('calendar-event-type'), initialValue: eventType, decoration: InputDecoration(labelText: calendarLabels['eventType']),
-            items: [DropdownMenuItem(value: 'GENERAL_EVENT', child: Text(calendarLabels['generalEvent']!)), DropdownMenuItem(value: 'COMMUNITY_MEETING', child: Text(calendarLabels['communityMeeting']!))],
+          DropdownButtonFormField<String>(isExpanded: true,key: const ValueKey('calendar-event-type'), initialValue: eventType, decoration: InputDecoration(labelText: calendarLabels['eventType']),
+            items: [DropdownMenuItem(value: 'GENERAL_EVENT', child: Text(calendarLabels['generalEvent']!, overflow: TextOverflow.ellipsis)), DropdownMenuItem(value: 'COMMUNITY_MEETING', child: Text(calendarLabels['communityMeeting']!, overflow: TextOverflow.ellipsis))],
             onChanged: busy || submitted ? null : (value) {if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted) update(() => eventType = value!);}),
           Text(calendarLabels['detailsAudience']!),
           TextField(key: const ValueKey('calendar-description'), controller: description, enabled: !busy && !submitted, minLines: 2, maxLines: 4, decoration: InputDecoration(labelText: calendarLabels['description'])),
@@ -417,7 +417,7 @@ class _CalendarBrowseScreenState extends State<CalendarBrowseScreen> with Calend
  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('सबै कार्यक्रम (Browse all events)')),body:!calendarSessionCurrent?const Center(child:Text(calendarSessionChanged)):ListView(padding:const EdgeInsets.all(16),children:[
   const Text('Newest submissions first. BS filters use stored BS/Tithi metadata; AD events are not converted.'),
   TextField(controller:_year,enabled:!_busy,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'BS year (2000–2090)'),onChanged:(_){if(checkCalendarSession())setState((){_epoch++;_next=null;_items=[];});}),
-  DropdownButtonFormField<String>(initialValue:_month,decoration:const InputDecoration(labelText:'BS month'),items:[const DropdownMenuItem(value:'',child:Text('All months')),...List.generate(12,(i)=>DropdownMenuItem(value:'${i+1}',child:Text('${i+1}')))],onChanged:_busy?null:(v){if(checkCalendarSession())setState((){_epoch++;_month=v==''?null:v;_next=null;_items=[];});}),
+  DropdownButtonFormField<String>(isExpanded: true,initialValue:_month,decoration:const InputDecoration(labelText:'BS month'),items:[const DropdownMenuItem(value:'',child:Text('All months')),...List.generate(12,(i)=>DropdownMenuItem(value:'${i+1}',child:Text('${i+1}')))],onChanged:_busy?null:(v){if(checkCalendarSession())setState((){_epoch++;_month=v==''?null:v;_next=null;_items=[];});}),
   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Apply calendar filters')),
   if(_error!=null)...[Text(_error!),TextButton(onPressed:_busy?null:()=>_load(_cursor),child:const Text('Retry calendar page'))],
   if(_busy)const Center(child:CircularProgressIndicator())else if(_items.isEmpty)const Text('No accessible events in this page.')else ..._items.map((e)=>Card(child:Padding(padding:const EdgeInsets.all(12),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
