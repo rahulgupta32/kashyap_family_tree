@@ -8,7 +8,8 @@ test.describe('End-to-End Browser Session Flow (Milestone 2)', () => {
     // 1. Load login page
     await page.goto('/login');
     await expect(page).toHaveTitle(/Nepali Bansawali/i);
-    await expect(page.getByRole('heading', { name: 'नेपाली वंशावली' })).toBeVisible();
+    await expect(page.locator('#login-heading')).toHaveText('नेपाली वंशावली');
+    await expect(page.locator('#login-heading')).toBeVisible();
 
     // 2. Enter non-admin mobile number
     const nonAdminPhone = '9841234567';

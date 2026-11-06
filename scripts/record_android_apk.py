@@ -16,7 +16,9 @@ minimum=re.search(r"^sdkVersion:'(\d+)'",badging,re.M)
 label=re.search(r"^application-label:'([^']+)'",badging,re.M)
 cert=re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$',signature,re.M)
 assert package and package[1]=='com.example.kashyap_mobile' and label and label[1]=='Nepali Bansawali'
-assert minimum and len(cert)==1 and 'application-debuggable' in badging
+assert minimum, 'Missing minimum SDK in aapt badging: '+badging
+assert len(cert)==1, 'Expected one certificate digest: '+signature
+assert 'application-debuggable' in badging, 'Expected debuggable emulator APK: '+badging
 info={'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
  'sourceTree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip(),
  'filename':apk.name,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'applicationId':package[1],
