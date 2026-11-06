@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """A labelled, debug-signed USB evaluation APK; no provisioning or staging claim."""
+from android_signing import verified_certificate_digests
 import hashlib
 import json
 import os
@@ -57,7 +58,7 @@ def main():
     if not versions:
         raise ValueError('Android build tools are required')
     signature = subprocess.check_output([str(versions[-1]), 'verify', '--print-certs', str(apk)], text=True)
-    cert = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$', signature, re.M)
+    cert = verified_certificate_digests(signature)
     if len(cert) != 1:
         raise ValueError('Expected exactly one verified debug signing certificate')
     badging = subprocess.check_output([str(versions[-1].with_name('aapt')), 'dump', 'badging', str(apk)], text=True)

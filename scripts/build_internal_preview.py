@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build an explicitly approved, signed internal preview; never provisions infrastructure."""
+from android_signing import verified_certificate_digests
 import hashlib
 import ipaddress
 import json
@@ -78,7 +79,7 @@ def main():
     if not tools:
         raise ValueError('Android signature verification tools are required')
     signature = subprocess.check_output([str(tools[-1]), 'verify', '--print-certs', str(apk)], text=True)
-    certs = [value.lower() for value in re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})$', signature, re.MULTILINE)]
+    certs = verified_certificate_digests(signature)
     if certs != [os.environ['KASHYAP_PREVIEW_CERT_SHA256'].lower()]:
         raise ValueError('APK signer does not match the approved internal signing certificate')
     badging = subprocess.check_output([str(tools[-1].with_name('aapt')), 'dump', 'badging', str(apk)], text=True)

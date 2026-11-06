@@ -45,5 +45,26 @@ class PreviewAdmissionTests(unittest.TestCase):
                 preview.validate({**env, 'KASHYAP_ANDROID_STORE_FILE': str(debug)})
 
 
+class SignerOutputTests(unittest.TestCase):
+    def test_supported_tool_outputs_and_repeated_schemes(self):
+        digest = 'a' * 64
+        for prefix in ['Signer #1', 'V1 Signer:', 'V2 Signer:', 'V3 Signer:', 'V3.1 Signer:']:
+            line = prefix + ' certificate SHA-256 digest: ' + digest
+            self.assertEqual(preview.verified_certificate_digests(line), [digest])
+        output = ('V2 Signer: certificate SHA-256 digest: ' + digest.upper() +
+                  '\nV3 Signer: certificate SHA-256 digest: ' + digest)
+        self.assertEqual(preview.verified_certificate_digests(output), [digest])
+
+    def test_distinct_signers_are_not_collapsed(self):
+        output = ('Signer #1 certificate SHA-256 digest: ' + 'a' * 64 +
+                  '\nSigner #2 certificate SHA-256 digest: ' + 'b' * 64)
+        self.assertEqual(len(preview.verified_certificate_digests(output)), 2)
+
+    def test_unrecognized_or_malformed_output_provides_no_identity(self):
+        for output in ['', 'V2 Signer: certificate SHA-256 digest: xyz',
+                       'Unverified certificate SHA-256 digest: ' + 'a' * 64]:
+            self.assertEqual(preview.verified_certificate_digests(output), [])
+
+
 if __name__ == '__main__':
     unittest.main()
