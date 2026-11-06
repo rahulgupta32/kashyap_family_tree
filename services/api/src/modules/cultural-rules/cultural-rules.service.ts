@@ -1,9 +1,15 @@
+import { PRIVILEGED_SESSION_MAX_AGE_MS } from '../auth/privileged-session.policy';
+import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
+import { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
+import { allowedFields, textField, uuid } from '../community/community-policy';
 import {
   Injectable,
-  Logger,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  UnauthorizedException,
+  ConflictException,
+  Optional,
 } from '@nestjs/common';
 import {
   KinshipLookupDto,
@@ -15,7 +21,6 @@ import {
   ReviewRuleDto,
   ApproveRuleDto,
   ErrorCode,
-  Role,
 } from '@kashyap/contracts';
 import { DatabaseService } from '../../database/database.service';
 import { PersonRepository } from '../../database/repositories/person.repository';
@@ -48,13 +53,12 @@ interface KinshipGraphNode {
 
 @Injectable()
 export class CulturalRulesService {
-  private readonly logger = new Logger(CulturalRulesService.name);
   private readonly rulesMap = new Map<string, CanonicalKinshipRule>();
-  private readonly proposedRules = new Map<string, ProposedRuleRecord>();
 
   constructor(
     private readonly db: DatabaseService,
     private readonly personRepo: PersonRepository,
+    @Optional() private readonly audit: AuditOutboxRepository = new AuditOutboxRepository(db),
   ) {
     CANONICAL_NATA_SAINO_RULES.forEach((rule) => {
       this.rulesMap.set(rule.pathCode, rule);
@@ -499,78 +503,158 @@ export class CulturalRulesService {
     }));
   }
 
-  async proposeRule(dto: ProposeRuleDto): Promise<ProposedRuleRecord> {
-    const ruleId = `prop_rule_${Date.now()}`;
-    const record: ProposedRuleRecord = {
-      id: ruleId,
-      ruleType: dto.ruleType,
-      pathCode: dto.pathCode,
-      nepaliTerm: dto.nepaliTerm,
-      englishTerm: dto.englishTerm,
-      descriptionNepali: dto.descriptionNepali,
-      proposedByUserId: dto.proposedByUserId,
-      rationale: dto.rationale,
-      status: 'PROPOSED',
-      createdAt: new Date().toISOString(),
+  private proposal(row: any): ProposedRuleRecord {
+    const date = (value: any) => value instanceof Date ? value.toISOString() : value;
+    return {
+      id: row.id, ruleType: row.rule_type, pathCode: row.path_code, nepaliTerm: row.nepali_term,
+      englishTerm: row.english_term, descriptionNepali: row.description_nepali ?? undefined,
+      proposedByUserId: row.proposed_by_user_id, rationale: row.rationale, status: row.status,
+      reviewerUserId: row.reviewer_user_id ?? undefined, reviewerNotes: row.reviewer_notes ?? undefined,
+      seniorAuthorityUserId: row.senior_authority_user_id ?? undefined,
+      authorityComments: row.authority_comments ?? undefined, createdAt: date(row.created_at),
+      reviewedAt: date(row.reviewed_at) ?? undefined, approvedAt: date(row.approved_at) ?? undefined,
     };
-
-    this.proposedRules.set(ruleId, record);
-    this.logger.log(`Rule proposed: ${ruleId} for path ${dto.pathCode} by ${dto.proposedByUserId}`);
-    return record;
   }
 
-  async reviewRule(dto: ReviewRuleDto): Promise<ProposedRuleRecord> {
-    const record = this.proposedRules.get(dto.ruleId);
-    if (!record) {
-      throw new NotFoundException({
-        errorCode: ErrorCode.UNMAPPED_KINSHIP_TERM,
-        message: 'Proposed rule not found',
-      });
-    }
-
-    if (record.proposedByUserId === dto.reviewerUserId) {
-      throw new BadRequestException({
-        errorCode: ErrorCode.UNAUTHORIZED,
-        message: 'Separation of duties: Author cannot review their own rule proposal',
-      });
-    }
-
-    record.reviewerUserId = dto.reviewerUserId;
-    record.reviewerNotes = dto.reviewerNotes;
-    record.status = dto.isEndorsed ? 'REVIEWED' : 'REJECTED';
-    record.reviewedAt = new Date().toISOString();
-
-    return record;
+  private identity(actor: AuthenticatedUser | undefined, suppliedId?: string): string {
+    if (!actor?.id) throw new UnauthorizedException('Authenticated actor required');
+    uuid(actor.id, 'actor');
+    if (suppliedId !== undefined && suppliedId !== actor.id) throw new ForbiddenException('Actor identity does not match authenticated account');
+    return actor.id;
   }
 
-  async approveRule(dto: ApproveRuleDto): Promise<ProposedRuleRecord> {
-    const record = this.proposedRules.get(dto.ruleId);
-    if (!record) {
-      throw new NotFoundException({
-        errorCode: ErrorCode.UNMAPPED_KINSHIP_TERM,
-        message: 'Proposed rule not found',
-      });
+  private async activeAccount(client: any, id: string) {
+    const row = (await client.query(`SELECT id FROM user_accounts WHERE id=$1 AND is_active
+      AND is_phone_verified AND NOT is_suspended AND deleted_at IS NULL FOR SHARE`, [id])).rows[0];
+    if (!row) throw new ForbiddenException('Active verified account required');
+  }
+
+  private async authority(client: any, id: string, ruleType: RuleType, duty: string) {
+    const row = (await client.query(`SELECT a.id FROM cultural_rule_authorities a JOIN user_accounts u ON u.id=a.user_id
+      WHERE a.user_id=$1 AND a.rule_type=$2 AND a.duty=$3 AND a.revoked_at IS NULL
+      AND u.is_active AND u.is_phone_verified AND NOT u.is_suspended AND u.deleted_at IS NULL
+      FOR SHARE OF a,u`, [id, ruleType, duty])).rows[0];
+    if (!row) throw new ForbiddenException('Current explicit cultural authority assignment required');
+  }
+
+  private async verifiedDecisionSession(client: any, actor: AuthenticatedUser) {
+    if (!actor.sessionId) throw new ForbiddenException('Fresh authenticator-verified session required');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('authenticator:' || $1::text))", [actor.id]);
+    const session = (await client.query(`SELECT s.id FROM user_sessions s JOIN account_authenticators f ON f.user_id=s.user_id
+      WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.owner_revoked_at IS NULL
+      AND s.expires_at>clock_timestamp() AND s.authenticated_at>clock_timestamp()-($3::bigint*INTERVAL '1 millisecond')
+      AND s.authenticated_at<=clock_timestamp() AND f.enabled_at IS NOT NULL AND s.mfa_verified_at IS NOT NULL
+      AND s.mfa_generation=f.generation FOR UPDATE OF s FOR SHARE OF f`, [uuid(actor.sessionId, 'session'),actor.id,PRIVILEGED_SESSION_MAX_AGE_MS])).rows[0];
+    if (!session) throw new ForbiddenException('Fresh authenticator-verified session required');
+  }
+
+  private async proposalEvent(client: any, row: any, actorId: string, action: string, from: string | null, reason: string) {
+    await client.query(`INSERT INTO cultural_rule_proposal_events(proposal_id,actor_id,action,from_status,to_status,reason)
+      VALUES($1,$2,$3,$4,$5,$6)`, [row.id, actorId, action, from, row.status, reason]);
+    await this.audit.recordAuditIntent({action: 'CULTURAL_RULE_PROPOSAL_' + action,
+      entityType: 'CULTURAL_RULE_PROPOSAL', entityId: row.id, actorId,
+      oldValue: from === null ? null : {status: from}, newValue: {status: row.status, ruleType: row.rule_type}}, client);
+  }
+
+  private async lockedProposal(client: any, id: string) {
+    const row = (await client.query('SELECT * FROM cultural_rule_proposals WHERE id=$1 FOR UPDATE', [uuid(id, 'proposal')])).rows[0];
+    if (!row) throw new NotFoundException('Proposed rule not found');
+    return row;
+  }
+
+  async proposeRule(dto: ProposeRuleDto, actor?: AuthenticatedUser): Promise<ProposedRuleRecord> {
+    const actorId = this.identity(actor, dto?.proposedByUserId);
+    allowedFields(dto, ['ruleType','pathCode','nepaliTerm','englishTerm','descriptionNepali','proposedByUserId','rationale']);
+    if (!Object.values(RuleType).includes(dto.ruleType)) throw new BadRequestException('Invalid rule type');
+    const values = [dto.ruleType, textField(dto.pathCode, 'Path code', 200), textField(dto.nepaliTerm, 'Nepali term', 500),
+      textField(dto.englishTerm, 'English term', 500), dto.descriptionNepali === undefined ? null : textField(dto.descriptionNepali, 'Description', 4000),
+      actorId, textField(dto.rationale, 'Rationale', 4000)];
+    return this.db.transaction(async client => {
+      await this.activeAccount(client, actorId);
+      const row = (await client.query(`INSERT INTO cultural_rule_proposals(rule_type,path_code,nepali_term,english_term,description_nepali,proposed_by_user_id,rationale)
+        VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`, values)).rows[0];
+      await this.proposalEvent(client, row, actorId, 'PROPOSED', null, dto.rationale);
+      return this.proposal(row);
+    });
+  }
+
+  async reviewRule(dto: ReviewRuleDto, actor?: AuthenticatedUser): Promise<ProposedRuleRecord> {
+    const actorId = this.identity(actor, dto?.reviewerUserId);
+    allowedFields(dto, ['ruleId','reviewerUserId','reviewerNotes','isEndorsed']);
+    const notes = textField(dto.reviewerNotes, 'Review notes', 4000);
+    if (typeof dto.isEndorsed !== 'boolean') throw new BadRequestException('Explicit review decision required');
+    return this.db.transaction(async client => {
+      await this.verifiedDecisionSession(client, actor!);
+      const row = await this.lockedProposal(client, dto.ruleId);
+      await this.authority(client, actorId, row.rule_type, 'REVIEWER');
+      if (row.proposed_by_user_id === actorId) throw new ForbiddenException('Separation of duties: Author cannot review their own rule proposal');
+      if (row.status !== 'PROPOSED') throw new ConflictException('Proposal is no longer awaiting review');
+      const updated = (await client.query(`UPDATE cultural_rule_proposals SET status=$2,reviewer_user_id=$3,
+        reviewer_notes=$4,reviewed_at=NOW() WHERE id=$1 RETURNING *`,
+        [row.id, dto.isEndorsed ? 'REVIEWED' : 'REJECTED', actorId, notes])).rows[0];
+      await this.proposalEvent(client, updated, actorId, 'REVIEWED', row.status, notes);
+      return this.proposal(updated);
+    });
+  }
+
+  async approveRule(dto: ApproveRuleDto, actor?: AuthenticatedUser): Promise<ProposedRuleRecord> {
+    const actorId = this.identity(actor, dto?.seniorAuthorityUserId);
+    allowedFields(dto, ['ruleId','seniorAuthorityUserId','authorityComments','decision']);
+    const notes = textField(dto.authorityComments, 'Authority comments', 4000);
+    if (!['APPROVED','REJECTED'].includes(dto.decision)) throw new BadRequestException('Explicit final decision required');
+    return this.db.transaction(async client => {
+      await this.verifiedDecisionSession(client, actor!);
+      const row = await this.lockedProposal(client, dto.ruleId);
+      await this.authority(client, actorId, row.rule_type, 'SENIOR_APPROVER');
+      if ([row.proposed_by_user_id,row.reviewer_user_id].includes(actorId)) throw new ForbiddenException('Senior final approver must be independent from proposer and reviewer');
+      if (row.status !== 'REVIEWED') throw new ConflictException('Rule must be reviewed before senior authority sign-off');
+      await this.authority(client, row.reviewer_user_id, row.rule_type, 'REVIEWER');
+      const updated = (await client.query(`UPDATE cultural_rule_proposals SET status=$2,senior_authority_user_id=$3,
+        authority_comments=$4,approved_at=NOW() WHERE id=$1 RETURNING *`, [row.id,dto.decision,actorId,notes])).rows[0];
+      await this.proposalEvent(client, updated, actorId, 'DECIDED', row.status, notes);
+      // Approval records a proposal decision only. Active rulesets and HG gates are unchanged.
+      return this.proposal(updated);
+    });
+  }
+
+  private async readableProposal(client: any, row: any, actorId: string) {
+    await this.activeAccount(client, actorId);
+    if (row.proposed_by_user_id !== actorId) {
+      const authority = (await client.query(`SELECT id FROM cultural_rule_authorities WHERE user_id=$1 AND rule_type=$2
+        AND revoked_at IS NULL FOR SHARE`, [actorId,row.rule_type])).rows[0];
+      if (!authority) throw new NotFoundException('Proposed rule not found');
     }
+  }
 
-    if (record.status !== 'REVIEWED') {
-      throw new BadRequestException({
-        errorCode: ErrorCode.AUTHORITY_GATE_LOCKED,
-        message: 'Rule must be reviewed by first-tier cultural reviewer before senior authority sign-off',
-      });
-    }
+  async listProposals(actor: AuthenticatedUser, before?: string) {
+    const actorId = this.identity(actor);
+    if (before !== undefined) uuid(before, 'proposal cursor');
+    return this.db.transaction(async client => {
+      await this.activeAccount(client, actorId);
+      const rows = (await client.query(`SELECT p.* FROM cultural_rule_proposals p
+        WHERE ($2::uuid IS NULL OR p.id<$2) AND (p.proposed_by_user_id=$1 OR EXISTS(
+          SELECT 1 FROM cultural_rule_authorities a WHERE a.user_id=$1 AND a.rule_type=p.rule_type AND a.revoked_at IS NULL))
+        ORDER BY p.id DESC LIMIT 51`, [actorId, before || null])).rows;
+      const items = rows.slice(0,50).map(row => this.proposal(row));
+      return {items, nextBefore: rows.length > 50 ? items[49].id : null};
+    });
+  }
 
-    if (record.reviewerUserId === dto.seniorAuthorityUserId || record.proposedByUserId === dto.seniorAuthorityUserId) {
-      throw new BadRequestException({
-        errorCode: ErrorCode.UNAUTHORIZED,
-        message: 'Senior final approver must be an independent individual from proposer and reviewer',
-      });
-    }
+  async getProposal(id: string, actor: AuthenticatedUser) {
+    const actorId = this.identity(actor);
+    return this.db.transaction(async client => {
+      const row = await this.lockedProposal(client, id); await this.readableProposal(client, row, actorId);
+      return this.proposal(row);
+    });
+  }
 
-    record.seniorAuthorityUserId = dto.seniorAuthorityUserId;
-    record.authorityComments = dto.authorityComments;
-    record.status = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
-    record.approvedAt = new Date().toISOString();
-
-    return record;
+  async proposalHistory(id: string, actor: AuthenticatedUser) {
+    const actorId = this.identity(actor);
+    return this.db.transaction(async client => {
+      const row = await this.lockedProposal(client, id); await this.readableProposal(client, row, actorId);
+      return (await client.query(`SELECT sequence,action,actor_id AS "actorId",from_status AS "fromStatus",
+        to_status AS "toStatus",reason,created_at AS "createdAt" FROM cultural_rule_proposal_events
+        WHERE proposal_id=$1 ORDER BY sequence LIMIT 10`, [id])).rows;
+    });
   }
 }

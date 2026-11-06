@@ -1,0 +1,11 @@
+# Versioned case comment restoration
+
+Migration 038 adds a positive comment moderation version and bounded removal provenance. Existing removed records are LEGACY_UNKNOWN rather than inferring an actor or reason. New author withdrawal, direct moderator removal and case removal have separate provenance; each increments the version. Rollback refuses new moderation evidence.
+
+Authenticated restoration requires an independently scoped moderator, visible published conversation, exact viewed version and reason of 5–1000 characters. Only current CASE removals are eligible. Post authors, comment authors and any historical reporter of that comment are excluded. Author withdrawals, direct moderator removals and unknown historical removals remain ineligible; this is deliberately a bounded case-restoration workflow, not universal undelete. Current post/comment locks serialize removal/review/restoration and reject competing or stale requests.
+
+Restoration clears logical removal, increments the moderation version and records reason/actor/version atomically in durable audit. Original comment content, creation timestamp, parent links, report reasons and original KEPT/REMOVED decisions remain unchanged. Restored comments appear in subsequent authorized reads/counts; children regain live parent context. Existing historical report statuses remain visible as prior decisions, not a claim that the comment is still removed. Restoration emits no external notification or appeal decision.
+
+Web and Flutter case consoles show eligible restore controls with the viewed comment version. Explicit bounded reason entry and reload follow restoration. Two PostgreSQL cases verify source/child preservation, decision retention, competing/stale restoration, audit rollback, disallowed provenance/actors/payloads and current hidden/deleted conversations. Browser coverage removes then restores a reported comment; mocked native coverage checks the exact version/reason and refreshed eligibility. Exact-head CI is recorded in PR #5.
+
+Direct-removal review, author outcomes/appeals, configured policy, restriction/escalation and production device/load/security/accessibility/retention/provider/authority acceptance remain mandatory/open. All 260 original acceptance records and 31 exact NFR targets stay unchanged. No merge, deployment or real-user restoration/migration.

@@ -1,3 +1,5 @@
+import '../widgets/profile_photo_editor.dart';
+import 'account_deletion_screen.dart';
 import 'package:flutter/material.dart';
 import '../services/genealogy_api_service.dart';
 
@@ -11,6 +13,13 @@ class ProfilePrivacyScreen extends StatefulWidget {
 }
 
 class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
+  late final GenealogyApiService _api;
+  late final int _generation;
+  bool _expired = false;
+  bool get _current => mounted && !_expired && identical(widget.apiService, _api) &&
+      _api.authToken != null && _api.pushSessionGeneration == _generation;
+  bool get _editable => _current && _loaded && !_loading && !_saving;
+
   final _addressController = TextEditingController();
   final _occupationController = TextEditingController();
   final _educationController = TextEditingController();
@@ -21,21 +30,59 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
   String _addressVisibility = 'PRIVATE';
 
   bool _saving = false;
-  bool _loading = true;
+  bool _loading = false;
   bool _loaded = false;
   String? _message;
+  String? _avatarAsset;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.apiService;
+    _generation = _api.pushSessionGeneration;
+    _api.sessionChanges.addListener(_sessionChanged);
     _loadProfile();
   }
 
+  void _clearPrivateState() {
+    _addressController.clear();
+    _occupationController.clear();
+    _educationController.clear();
+    _bioController.clear();
+    _avatarAsset = null;
+    _message = null;
+    _loaded = false;
+    _profileVisibility = 'VERIFIED_COMMUNITY';
+    _contactVisibility = 'IMMEDIATE_FAMILY';
+    _addressVisibility = 'PRIVATE';
+  }
+
+  void _sessionChanged() {
+    if (mounted && !_current) {
+      setState(() {
+        _expired = true;
+        _clearPrivateState();
+        _loading = _saving = false;
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfilePrivacyScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.apiService, widget.apiService)) {
+      _expired = true;
+      _sessionChanged();
+    }
+  }
+
   Future<void> _loadProfile() async {
-    setState(() { _loading = true; _message = null; });
+    if (!_current || _loading || _saving) { return; }
+    setState(() { _clearPrivateState(); _loading = true; });
     try {
-      final profile = await widget.apiService.getMyProfile();
-      if (!mounted) { return; }
+      final profile = await _api.getMyProfile();
+      if (!_current) { return; }
+      _avatarAsset=profile['avatarAssetId'] as String?;
       final person = profile['person'] as Map<String, dynamic>? ?? {};
       final privacy = profile['privacy'] as Map<String, dynamic>? ?? {};
       _addressController.text = person['currentAddress'] as String? ?? '';
@@ -46,15 +93,19 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
       _contactVisibility = privacy['contactVisibility'] as String? ?? 'IMMEDIATE_FAMILY';
       _addressVisibility = privacy['addressVisibility'] as String? ?? 'IMMEDIATE_FAMILY';
       _loaded = true;
-    } catch (error) {
-      if (mounted) { _message = error.toString().replaceFirst('Exception: ', ''); }
+    } catch (_) {
+      if (_current) {
+        _clearPrivateState();
+        _message = 'प्रोफाइल लोड भएन। पुनः प्रयास गर्नुहोस्। (Profile unavailable; retry.)';
+      }
     } finally {
-      if (mounted) { setState(() => _loading = false); }
+      if (_current) { setState(() => _loading = false); }
     }
   }
 
   @override
   void dispose() {
+    _api.sessionChanges.removeListener(_sessionChanged);
     _addressController.dispose();
     _occupationController.dispose();
     _educationController.dispose();
@@ -63,13 +114,14 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
   }
 
   Future<void> _saveSettings() async {
+    if (!_editable) { return; }
     setState(() {
       _saving = true;
       _message = null;
     });
 
     try {
-      await widget.apiService.updateProfileDetails(
+      await _api.updateProfileDetails(
         currentAddress: _addressController.text.trim(),
         occupation: _occupationController.text.trim(),
         education: _educationController.text.trim(),
@@ -81,15 +133,15 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
         },
       );
 
-      if (mounted) { setState(() {
+      if (_current) { setState(() {
         _message = 'प्रोफाइल तथा गोपनीयता सेटिङ सफलतापूर्वक सुरक्षित गरियो।';
       }); }
-    } catch (e) {
-      if (mounted) { setState(() {
-        _message = e.toString().replaceAll('Exception: ', '');
+    } catch (_) {
+      if (_current) { setState(() {
+        _message = 'सेटिङ सुरक्षित भएको पुष्टि भएन। पुनः प्रयास गर्नुहोस्। (Save unconfirmed; retry.)';
       }); }
     } finally {
-      if (mounted) { setState(() {
+      if (_current) { setState(() {
         _saving = false;
       }); }
     }
@@ -100,8 +152,14 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('प्रोफाइल तथा गोपनीयता (Privacy)'),
+        actions: [IconButton(key: const Key('account-deletion-open'), tooltip: 'Account deletion',
+          icon: const Icon(Icons.person_remove_outlined), onPressed: !_current ? null : () {
+            if (!_current) { return; }
+            Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AccountDeletionScreen(api: _api)));
+          })],
       ),
-      body: _loading ? const Center(child: CircularProgressIndicator())
+      body: !_current ? const Center(child: Text('सत्र परिवर्तन भयो। फेरि साइन इन गरी प्रोफाइल खोल्नुहोस्। (Session changed; sign in and reopen profile.)'))
+          : _loading ? const Center(child: CircularProgressIndicator())
           : !_loaded ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text(_message ?? 'Profile could not be loaded'),
               TextButton(onPressed: _loadProfile, child: const Text('पुनः प्रयास (Retry)')),
@@ -110,6 +168,8 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ProfilePhotoEditor(api:_api,initialAsset:_avatarAsset),
+
             if (_message != null) ...[
               Container(
                 width: double.infinity,
@@ -128,24 +188,28 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
 
             TextField(
               controller: _addressController,
+              enabled: _editable,
               decoration: const InputDecoration(labelText: 'हालको ठेगाना (Address)', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
 
             TextField(
               controller: _occupationController,
+              enabled: _editable,
               decoration: const InputDecoration(labelText: 'पेशा (Occupation)', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
 
             TextField(
               controller: _educationController,
+              enabled: _editable,
               decoration: const InputDecoration(labelText: 'शिक्षा (Education)', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
 
             TextField(
               controller: _bioController,
+              enabled: _editable,
               maxLines: 2,
               decoration: const InputDecoration(labelText: 'जीवनी (Biography)', border: OutlineInputBorder()),
             ),
@@ -164,7 +228,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
                 DropdownMenuItem(value: 'IMMEDIATE_FAMILY', child: Text('नजिकको परिवार (IMMEDIATE_FAMILY)')),
                 DropdownMenuItem(value: 'PRIVATE', child: Text('गोप्य (PRIVATE)')),
               ],
-              onChanged: (val) => setState(() => _profileVisibility = val ?? 'VERIFIED_COMMUNITY'),
+              onChanged: !_editable ? null : (val) { if (_editable) { setState(() => _profileVisibility = val ?? 'VERIFIED_COMMUNITY'); } },
             ),
             const SizedBox(height: 12),
 
@@ -178,7 +242,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
                 DropdownMenuItem(value: 'IMMEDIATE_FAMILY', child: Text('नजिकको परिवार (IMMEDIATE_FAMILY)')),
                 DropdownMenuItem(value: 'PRIVATE', child: Text('गोप्य (PRIVATE)')),
               ],
-              onChanged: (val) => setState(() => _contactVisibility = val ?? 'IMMEDIATE_FAMILY'),
+              onChanged: !_editable ? null : (val) { if (_editable) { setState(() => _contactVisibility = val ?? 'IMMEDIATE_FAMILY'); } },
             ),
             const SizedBox(height: 12),
 
@@ -192,7 +256,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
                 DropdownMenuItem(value: 'IMMEDIATE_FAMILY', child: Text('नजिकको परिवार (IMMEDIATE_FAMILY)')),
                 DropdownMenuItem(value: 'PRIVATE', child: Text('गोप्य (PRIVATE)')),
               ],
-              onChanged: (val) => setState(() => _addressVisibility = val ?? 'PRIVATE'),
+              onChanged: !_editable ? null : (val) { if (_editable) { setState(() => _addressVisibility = val ?? 'PRIVATE'); } },
             ),
             const SizedBox(height: 24),
 
@@ -200,7 +264,7 @@ class _ProfilePrivacyScreenState extends State<ProfilePrivacyScreen> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: _saving ? null : _saveSettings,
+                onPressed: _editable ? _saveSettings : null,
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade800, foregroundColor: Colors.white),
                 child: _saving
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white))

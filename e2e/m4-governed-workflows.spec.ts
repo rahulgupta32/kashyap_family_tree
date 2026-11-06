@@ -35,6 +35,7 @@ async function memberSession(api: APIRequestContext) {
   const challenge = await checkedJson(await api.post(`${API_BASE}/auth/otp/request`, { data: { phoneNumber } }));
   const { otp } = await checkedJson(await api.get(`${API_BASE}/auth/test-otp`, { params: { phoneNumber } }));
   const session = await checkedJson(await api.post(`${API_BASE}/auth/native/verify`, {
+    headers: { Origin: '', Cookie: '' },
     data: { otpSessionId: challenge.otpSessionId, code: otp,
       deviceInfo: { deviceId: randomUUID(), platform: 'android', appVersion: 'acceptance' } },
   }));
@@ -62,8 +63,8 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   test.beforeEach(async ({ page }) => { await loginAdmin(page); });
 
   test('1. Claim submission, evidence download, two distinct reviewers and persisted ownership', async ({ page, browser }) => {
-    const api = await requestFactory.newContext();
-    const tier1Context = await browser.newContext();
+    const api = await requestFactory.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
+    const tier1Context = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
@@ -113,7 +114,9 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
   });
 
   test('2. Change approval applies the submitted fields and advances the person version', async ({ page }) => {
-    const api = await requestFactory.newContext();
+    const api = await requestFactory.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
+    let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+    const listRoute=(url:URL)=>url.pathname==='/change-requests';
     try {
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
@@ -129,21 +132,30 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       await expect(page.getByText(JSON.stringify(occupation), { exact: true })).toBeVisible();
       await expect(page.getByText(JSON.stringify('Original fictional occupation'), { exact: true })).toBeVisible();
       await page.locator('textarea').fill('Reviewed both changed fields against fictional acceptance fixture.');
+      let entered!:()=>void;const staleList=new Promise<void>(resolve=>{entered=resolve;});let held=false;
+      await page.route(listRoute,async route=>{
+        if(route.request().method()!=='GET'||held){await route.continue();return;}
+        held=true;entered();await gate;await route.fulfill({status:401,json:{message:'Fictional delayed expired list response'}});
+      });
+      await page.evaluate(async()=>{localStorage.setItem('kashyap_token_refreshed_at','0');await (window as any).__kashyap_refreshSession();});await staleList;
+      const delayed=page.waitForResponse(r=>new URL(r.url()).pathname==='/change-requests'&&r.status()===401);
       const approval = page.waitForResponse(r => r.url().endsWith(`/change-requests/${request.id}/review`) && r.request().method() === 'POST');
       await page.getByRole('button', { name: /Approve & Merge/ }).click();
       expect((await approval).ok()).toBeTruthy();
       await expect(page.getByText('Change request approved successfully')).toBeVisible();
+      release();await (await delayed).finished();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+      await expect(page.getByText('Change request approved successfully')).toBeVisible();await expect(page.getByText('Fictional delayed expired list response')).toHaveCount(0);
       const persisted = await checkedJson(await api.get(`${API_BASE}/genealogy/people/${person.id}`, { headers: auth(await browserToken(page)) }));
       expect(persisted.occupation).toBe(occupation);
       expect(persisted.birthPlace).toBe('Updated fictional birthplace');
       expect(persisted.version).toBe(person.version + 1);
       const reviewed = await checkedJson(await api.get(`${API_BASE}/change-requests/${request.id}`, { headers: auth(member.accessToken) }));
       expect(reviewed.status).toBe('APPROVED');
-    } finally { await api.dispose(); }
+    } finally {release();await page.unroute(listRoute);await api.dispose(); }
   });
 
   test('3. Calendar creation and non-host RSVP persist after reload', async ({ page, browser }) => {
-    const context = await browser.newContext();
+    const context = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
     try {
       const title = `Fictional gathering ${randomUUID()}`;
       await page.goto('/calendar');
@@ -164,9 +176,16 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       await card.getByRole('button', { name: /\(Going\)/ }).click();
       expect((await response).ok()).toBeTruthy();
       await expect(card.getByRole('button', { name: /\(Going\)/ })).toHaveAttribute('aria-pressed', 'true');
+      const previousToken = await browserToken(attendee);
       await attendee.reload();
       await expect(attendee.getByRole('article', { name: title }).getByRole('button', { name: /\(Going\)/ })).toHaveAttribute('aria-pressed', 'true');
-      const token = await browserToken(attendee);
+      // Rendering restored rows can precede bootstrap refresh completion. Join the
+      // application's refresh promise rather than racing a cached access token.
+      const token = await attendee.evaluate(async () => (window as any).__kashyap_refreshSession());
+      expect(token).toBeTruthy();
+      expect(token).not.toBe(previousToken);
+      const revoked = await attendee.request.get(`${API_BASE}/calendar/events/${created.id}`, { headers: auth(previousToken) });
+      expect(revoked.status()).toBe(401);
       const persisted = await checkedJson(await attendee.request.get(`${API_BASE}/calendar/events/${created.id}`, { headers: auth(token) }));
       expect(persisted.myRsvp).toBe('GOING');
     } finally { await context.close(); }
@@ -186,5 +205,62 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
     const profile = await checkedJson(await page.request.get(`${API_BASE}/profile/me`, { headers: auth(token) }));
     expect(profile.person.currentAddress).toBe(address);
     expect(profile.personId).toBeTruthy();
+  });
+
+  test('5. Admin broadcast previews, sends and reads an auditable notice through the live portal', async ({ page }) => {
+    const title = `Fictional official notice ${randomUUID()}`;
+    const body = `Fictional community gathering ${randomUUID()}`;
+    await page.goto('/broadcasts');
+    await expect(page.getByRole('heading', { name: /Official notices/ })).toBeVisible();
+    await page.getByRole('combobox', { name: 'Audience' }).selectOption('ALL');
+    await page.getByRole('textbox', { name: 'Title' }).fill(title);
+    await page.getByRole('textbox', { name: 'Notice' }).fill(body);
+    await page.getByRole('button', { name: 'Preview recipients' }).click();
+    await expect(page.getByText(/currently eligible recipients/)).toBeVisible();
+    const response = page.waitForResponse(r => r.url().endsWith('/notifications/broadcasts') && r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Send notice' }).click();
+    const created = await checkedJson(await response);
+    expect(created.recipientCount).toBeGreaterThan(0);
+    await expect(page.getByText(/Delivery is queued/)).toBeVisible();
+    await page.getByRole('button', { name: new RegExp(title) }).click();
+    await expect(page.getByText(body, { exact: true })).toBeVisible();
+    const token = await browserToken(page);
+    const detail = await checkedJson(await page.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`, { headers: auth(token) }));
+    expect(detail.body).toBe(body);
+    expect((await page.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`)).status()).toBe(401);
+  });
+
+  test('6. Defined notice audience reaches only the explicitly selected member', async ({ page, browser }) => {
+    const memberContext = await browser.newContext({ extraHTTPHeaders: { Origin: `http://127.0.0.1:${process.env.ADMIN_PORT || '3002'}` } });
+    try {
+      const recipient = await memberContext.newPage();
+      await loginAdmin(recipient, '9800000002');
+      const token = await browserToken(recipient);
+      const member = await checkedJson(await recipient.request.get(`${API_BASE}/profile/me`, { headers: auth(token) }));
+      const title = `Fictional selected notice ${randomUUID()}`;
+      const body = `Fictional selected content ${randomUUID()}`;
+      await page.goto('/broadcasts');
+      await page.getByRole('combobox', { name: 'Audience' }).selectOption('DEFINED');
+      await page.getByRole('combobox', { name: 'Branch' }).selectOption('');
+      await page.getByRole('textbox', { name: 'Phone ending' }).fill('0002');
+      await page.getByRole('button', { name: 'Find members' }).click();
+      const matches = page.getByRole('list', { name: 'Matching members' });
+      const chosen = matches.getByRole('button').filter({ hasText: member.id.slice(0,8) });
+      await expect(chosen).toBeVisible();
+      await chosen.click();
+      await expect(page.getByRole('list', { name: 'Selected members' }).getByRole('listitem')).toHaveCount(1);
+      await page.getByRole('textbox', { name: 'Title' }).fill(title);
+      await page.getByRole('textbox', { name: 'Notice' }).fill(body);
+      await page.getByRole('button', { name: 'Preview recipients' }).click();
+      await expect(page.getByText('1 currently eligible recipients')).toBeVisible();
+      const response = page.waitForResponse(r => r.url().endsWith('/notifications/broadcasts') && r.request().method() === 'POST');
+      await page.getByRole('button', { name: 'Send notice' }).click();
+      const created = await checkedJson(await response);
+      expect(created.recipientCount).toBe(1);
+      const detail = await checkedJson(await recipient.request.get(`${API_BASE}/notifications/broadcasts/${created.id}`, { headers: auth(token) }));
+      expect(detail.body).toBe(body);
+      const listing = await checkedJson(await recipient.request.get(`${API_BASE}/notifications/broadcasts`, { headers: auth(token) }));
+      expect(listing.some((item:any)=>item.id===created.id)).toBe(true);
+    } finally { await memberContext.close(); }
   });
 });

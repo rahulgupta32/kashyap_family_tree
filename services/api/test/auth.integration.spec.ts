@@ -5,6 +5,7 @@ import { UserRepository } from '../src/database/repositories/user.repository';
 import { SessionRepository } from '../src/database/repositories/session.repository';
 import { BranchRepository } from '../src/database/repositories/branch.repository';
 import { AuditRepository } from '../src/database/repositories/audit.repository';
+import { AuditOutboxRepository } from '../src/database/repositories/audit-outbox.repository';
 import { BootstrapService } from '../src/database/bootstrap.service';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { TestSmsProviderAdapter } from '../src/modules/auth/sms/test-sms-provider.adapter';
@@ -76,6 +77,8 @@ describe('Auth & Sessions Integration (Real PostgreSQL & Redis / D: Storage)', (
       branchRepo,
       auditRepo,
       smsProvider,
+      db,
+      new AuditOutboxRepository(db),
     );
 
     // Clean test phone artifacts from Redis

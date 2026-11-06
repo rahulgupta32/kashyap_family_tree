@@ -10,6 +10,14 @@ describe('ChangeRequestsService (Genealogy Change Governance & Workflow)', () =>
   let mockAuditOutboxRepo: any;
   let diffService: DiffService;
 
+  it.each(['PENDING','APPROVED','REJECTED','WITHDRAWN','ESCALATED'])('does not reopen %s through resubmission', async status => {
+    const query=jest.fn().mockResolvedValueOnce({rows:[{id:'request',requester_user_id:'owner',status}]});
+    mockDb.transaction.mockImplementation((cb:any)=>cb({query}));
+    await expect(changeRequestsService.resubmit('request','owner',{proposedChanges:{birthPlace:'Synthetic'}})).rejects.toThrow('Only correction-requested');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(mockAuditOutboxRepo.recordAuditIntent).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     diffService = new DiffService();
 

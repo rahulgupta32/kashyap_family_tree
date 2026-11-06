@@ -1,5 +1,7 @@
 import {
+  BadRequestException,
   Controller,
+  Header,
   Post,
   Get,
   Body,
@@ -10,17 +12,21 @@ import {
 } from '@nestjs/common';
 import {
   SubmitClaimDto,
+  ResolveClaimCreationDto,
+  ClaimCreationResolutionDto,
   ClaimDetailDto,
   Tier1ReviewClaimDto,
   Tier2ReviewClaimDto,
   RequestClaimCorrectionDto,
   ResubmitClaimDto,
   FileClaimDisputeDto,
+  ResolveClaimDisputeDto,
   ClaimDisputeDetailDto,
   ClaimStatus,
   Role,
 } from '@kashyap/contracts';
 import { ClaimsService } from './claims.service';
+import { MemberDisputesService } from './member-disputes.service';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -30,7 +36,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('claims')
 export class ClaimsController {
-  constructor(private readonly claimsService: ClaimsService) {}
+  constructor(private readonly claimsService: ClaimsService, private readonly memberDisputes: MemberDisputesService) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -41,7 +47,15 @@ export class ClaimsController {
     return this.claimsService.submitClaim(user.id, dto);
   }
 
+  @Post('creation-resolution')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard)
+  async resolveCreation(@CurrentUser() user: AuthenticatedUser, @Body() dto: ResolveClaimCreationDto): Promise<ClaimCreationResolutionDto> {
+    return this.claimsService.resolveClaimCreation(user.id, dto);
+  }
+
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async listClaims(
@@ -53,7 +67,24 @@ export class ClaimsController {
     return this.claimsService.listClaims(user, { status, branchId, claimantUserId });
   }
 
+  @Get('mine')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard)
+  async listOwnClaims(@CurrentUser() user: AuthenticatedUser,
+      @Query('paged') paged?: unknown, @Query('cursor') cursor?: unknown) {
+    if (paged !== undefined && paged !== 'true' && paged !== 'false') {
+      throw new BadRequestException('Invalid claim history page mode');
+    }
+    if (paged !== 'true' && cursor !== undefined) {
+      throw new BadRequestException('Claim history cursor requires page mode');
+    }
+    return paged === 'true'
+      ? this.claimsService.listOwnClaims(user, { cursor })
+      : this.claimsService.listOwnClaims(user);
+  }
+
   @Get(':id')
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.BRANCH_VERIFIER, Role.BRANCH_ADMIN, Role.SUPER_ADMIN, Role.VERIFIED_MEMBER, Role.REGISTERED_USER)
   async getClaim(
@@ -118,13 +149,22 @@ export class ClaimsController {
   }
 
   @Post(':id/dispute')
+  @Header('Cache-Control', 'private, no-store')
   @UseGuards(JwtAuthGuard)
   async fileDispute(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: FileClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
-    return this.claimsService.fileDispute(id, user.id, dto);
+    return this.memberDisputes.submitForClaim(id, user, dto);
+  }
+
+  @Get(':id/disputes')
+  @Header('Cache-Control', 'private, no-store')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  async listDisputes(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<ClaimDisputeDetailDto[]> {
+    return this.claimsService.listClaimDisputes(id, user);
   }
 
   @Post('disputes/:disputeId/resolve')
@@ -133,7 +173,7 @@ export class ClaimsController {
   async resolveDispute(
     @Param('disputeId') disputeId: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() body: { decision: 'DISMISSED' | 'RESOLVED'; notes: string },
+    @Body() body: ResolveClaimDisputeDto,
   ): Promise<ClaimDisputeDetailDto> {
     return this.claimsService.resolveDispute(disputeId, user, body);
   }
@@ -159,9 +199,11 @@ export class ClaimsController {
   ) {
     const effectiveUser = queryUser || queryU;
     const media = await this.claimsService.getEvidenceMediaAsset(assetId, viewer, effectiveUser, queryExpires, querySig);
-    if (res && res.setHeader && res.sendFile) {
+    if (res && res.setHeader && res.send) {
       res.setHeader('Content-Type', media.mimeType);
-      res.sendFile(media.filePath);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(media.buffer);
       return;
     }
     return media;

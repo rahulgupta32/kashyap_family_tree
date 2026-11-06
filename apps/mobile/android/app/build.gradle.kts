@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,34 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release inputs stay outside source control. key.properties and keystores are ignored.
+val releaseProperties = Properties().apply {
+    val propertiesFile = rootProject.file("key.properties")
+    if (propertiesFile.isFile) propertiesFile.inputStream().use { load(it) }
+}
+fun releaseInput(property: String, environment: String): String? =
+    providers.environmentVariable(environment).orNull?.takeIf { it.isNotBlank() }
+        ?: releaseProperties.getProperty(property)?.takeIf { it.isNotBlank() }
+
+val releaseApplicationId = releaseInput("applicationId", "KASHYAP_ANDROID_APPLICATION_ID")?.trim()
+val releaseStorePath = releaseInput("storeFile", "KASHYAP_ANDROID_STORE_FILE")
+val releaseStorePassword = releaseInput("storePassword", "KASHYAP_ANDROID_STORE_PASSWORD")
+val releaseKeyAlias = releaseInput("keyAlias", "KASHYAP_ANDROID_KEY_ALIAS")?.trim()
+val releaseKeyPassword = releaseInput("keyPassword", "KASHYAP_ANDROID_KEY_PASSWORD")
+val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val usbTest = providers.environmentVariable("KASHYAP_USB_TEST").orNull == "true"
+val internalPreview = providers.environmentVariable("KASHYAP_INTERNAL_PREVIEW").orNull == "true"
+val releaseConfigurationValid =
+    releaseApplicationId?.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) == true &&
+    !releaseApplicationId.orEmpty().startsWith("com.example.", ignoreCase = true) &&
+    !releaseApplicationId.equals("com.example", ignoreCase = true) &&
+    releaseStoreFile?.isFile == true &&
+    !releaseStoreFile?.name.equals("debug.keystore", ignoreCase = true) &&
+    !releaseKeyAlias.equals("androiddebugkey", ignoreCase = true) &&
+    !releaseKeyAlias.isNullOrBlank() && releaseStorePassword != null && releaseKeyPassword != null
+
 android {
+    buildFeatures { resValues = true }
     namespace = "com.example.kashyap_mobile"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -16,7 +45,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        manifestPlaceholders["appLabel"] = "@string/app_name"
+        // Development identity only; release variants receive the approved private ID.
         applicationId = "com.example.kashyap_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -30,11 +60,31 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("approvedRelease") {
+            if (releaseConfigurationValid) {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (usbTest) {
+                applicationIdSuffix = ".usbtest"
+                resValue("string", "usb_test_name", "Nepali Bansawali — USB Test")
+                manifestPlaceholders["appLabel"] = "@string/usb_test_name"
+            }
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("approvedRelease")
+            if (internalPreview) {
+                resValue("string", "internal_preview_name", "नेपाली वंशावली — Preview")
+                manifestPlaceholders["appLabel"] = "@string/internal_preview_name"
+            }
         }
     }
 }
@@ -49,3 +99,26 @@ flutter {
     source = "../.."
 }
 
+// Preserve debug identity even when private release inputs are supplied.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        releaseApplicationId?.let { variant.applicationId.set(it) }
+    }
+}
+
+// Never produce a release with absent configuration, example ID or known debug keys.
+tasks.configureEach {
+    if (name == "preReleaseBuild" || name == "validateSigningRelease") {
+        doFirst {
+            if (usbTest) throw GradleException("USB testing is debug-only; unset KASHYAP_USB_TEST for release.")
+            if (!releaseConfigurationValid) {
+                throw GradleException(
+                    "Release requires an approved application ID and private non-debug signing configuration."
+                )
+            }
+            if (internalPreview && !releaseApplicationId.orEmpty().endsWith(".preview")) {
+                throw GradleException("Internal preview requires a separate approved .preview application ID.")
+            }
+        }
+    }
+}

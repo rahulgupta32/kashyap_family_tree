@@ -1,4 +1,4 @@
-# Kashyap Adhikari Family Tree
+# Nepali Bansawali — नेपाली वंशावली
 
 [![Owner](https://img.shields.io/badge/Owner-Jyphra%20Technology%20Pvt.%20Ltd.-blue)]()
 [![Status](https://img.shields.io/badge/Status-In%20Development-yellow)]()
@@ -6,7 +6,7 @@
 
 ## Overview
 
-The **Kashyap Adhikari Family Tree** is a comprehensive genealogy and community platform for the Kashyap Adhikari community. It provides:
+The **Nepali Bansawali — नेपाली वंशावली** is a comprehensive genealogy and community platform for the Kashyap Adhikari community. It provides:
 
 - 📱 **Mobile Applications** (Android & iOS) for family tree visualization and community interaction
 - 🖥️ **Administration Portal** for community management and governance
@@ -81,8 +81,9 @@ git clone https://github.com/rahulgupta32/kashyap_family_tree.git D:\Jyphra\kash
 
 ## License
 
-All rights reserved. This software is proprietary to **Jyphra Technology Pvt. Ltd.**  
-See [LICENSE_DECISION_REQUIRED.md](LICENSE_DECISION_REQUIRED.md) for details.
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+Copyright 2026 **Jyphra Technology Pvt. Ltd.** See [NOTICE](NOTICE).
 
 ## Contact
 

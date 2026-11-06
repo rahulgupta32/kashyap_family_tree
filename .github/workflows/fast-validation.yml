@@ -1,0 +1,128 @@
+name: Fast developer validation
+
+on:
+  push:
+    branches-ignore: [main, develop]
+
+permissions:
+  contents: read
+
+env:
+  KASHYAP_SOURCE_HEAD_SHA: ${{ github.sha }}
+
+jobs:
+  plan-and-validate:
+    name: Source-bound plan and frozen release validators
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.plan.outputs.backend }}
+      admin: ${{ steps.plan.outputs.admin }}
+      mobile: ${{ steps.plan.outputs.mobile }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify checked out source
+        run: python3 scripts/verify_ci_checkout.py
+      - name: Test conservative change planning
+        run: python3 -m unittest discover -s scripts -p 'test_fast_ci.py'
+      - name: Plan affected fast checks
+        id: plan
+        run: python3 scripts/plan_fast_ci.py
+      - name: Validate frozen requirements readiness matrix
+        run: |
+          python3 scripts/validate_requirements_matrix.py
+          python3 scripts/test_requirements_matrix.py
+      - name: Validate complete release implementation assessment
+        run: python3 scripts/validate_release_assessment.py
+      - name: Validate frozen genealogy workbook field inventory
+        run: |
+          python3 scripts/validate_genealogy_workbook_mapping.py
+          python3 scripts/test_genealogy_workbook_mapping.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fast-ci-plan-${{ github.run_id }}
+          path: test-results/fast-ci-plan.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  typescript:
+    name: Affected TypeScript and backend unit checks
+    needs: plan-and-validate
+    if: needs.plan-and-validate.outputs.backend == 'true' || needs.plan-and-validate.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify checked out source
+        run: python3 scripts/verify_ci_checkout.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.9
+      - run: pnpm install --frozen-lockfile
+      - name: Build and typecheck shared packages
+        run: |
+          pnpm run build:packages
+          pnpm run typecheck:packages
+      - name: Backend typecheck and unit regressions
+        if: needs.plan-and-validate.outputs.backend == 'true'
+        run: |
+          pnpm --filter @kashyap/api run typecheck
+          pnpm --filter @kashyap/api run test:unit --runInBand
+        env:
+          NODE_ENV: test
+      - name: Admin typecheck
+        if: needs.plan-and-validate.outputs.admin == 'true'
+        run: pnpm --filter @kashyap/admin run typecheck
+
+  flutter:
+    name: Affected Flutter analysis and widget checks
+    needs: plan-and-validate
+    if: needs.plan-and-validate.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify checked out source
+        run: python3 scripts/verify_ci_checkout.py
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Flutter dependencies
+        run: flutter pub get --enforce-lockfile
+        working-directory: apps/mobile
+      - name: Flutter analysis and tests
+        run: |
+          flutter analyze
+          flutter test
+        working-directory: apps/mobile
+
+  fast-result:
+    name: Fast developer validation result
+    if: always()
+    needs: [plan-and-validate, typescript, flutter]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      PLAN_RESULT: ${{ needs.plan-and-validate.result }}
+      TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
+      FLUTTER_RESULT: ${{ needs.flutter.result }}
+    steps:
+      - name: Require validators and every selected check
+        run: |
+          test "$PLAN_RESULT" = success
+          case "$TYPESCRIPT_RESULT" in success|skipped) ;; *) exit 1 ;; esac
+          case "$FLUTTER_RESULT" in success|skipped) ;; *) exit 1 ;; esac
+          echo 'Fast developer checks passed; full CI and native acceptance remain mandatory.'

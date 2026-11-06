@@ -1,0 +1,41 @@
+# Approved private Gregorian annual reminders — 2026-10-09
+
+CAL-FR-005 is partial. This engineering checkpoint does not close CAL-FR-005/CAL-FR-013 acceptance or open HG-004. Current assessment: 102 completed, 133 partial, 13 missing dedicated NFR evidence, 12 external gates; all 260 original acceptance rows remain open.
+
+## Implemented boundary
+
+- A currently active, phone-verified member/administrator explicitly consents to a private annual reminder from their own active GENERAL_EVENT or COMMUNITY_MEETING with an organizer-supplied Gregorian instant. No recursive, BS-only, Tithi-only or cultural source is accepted.
+- The proposal preserves the source ID/version and Nepal-local source date, evidence reference, explicit local occurrence time, stable `gregorian-annual-1` rule and explicit leap-day policy. Non-leap years either skip February 29, use February 28, or use March 1; no implicit cultural convention is selected.
+- Annual occurrences begin in the year after the original source event. Earlier or same-year previews return no occurrence; a future source never generates reminders before it happens. Preview delivery eligibility also excludes elapsed or skipped occurrences.
+- A different current phone-verified Super Admin must approve or reject the proposal with a reason. Self and immediate-family reviewers recuse. A changed source version cannot be approved. The source snapshot and append-only decision history are retained; terminal decisions cannot be reopened.
+- A bounded, restart-safe worker checks up to 20 due approved rules per minute using row locks/SKIP LOCKED. Eligible rules create future occurrences in the current and next supported year, checked once daily. Unique rule/year receipts prevent concurrent duplicates or recreation after cancellation. Supported occurrence years are 2000–2090. Each owner may have at most 100 pending/approved rules.
+- Derived events have generic titles, PRIVATE owner-only visibility and a one-day reminder through existing category preferences, outbox, inbox and provider retry handling. No source names, descriptions or dates are added to external notification text. If approval happens after the one-day reminder deadline, the elapsed reminder is not backfilled.
+- Calendar listings, browse/period/detail, reminder emission, notice recipient selection, inbox and external delivery/retry share the current recurrence eligibility predicate. Source cancellation/version change, owner suspension/deletion/verification/role loss, reviewer authority loss or a newly relevant immediate-family relationship blocks delivery. Withdrawal blocks subsequent visibility/delivery; reminders already delivered cannot be recalled. Restoring unchanged account/authority eligibility can restore an approved rule; withdrawal is terminal.
+- Derived occurrences cannot be edited or shared. Owners withdraw the rule to stop all occurrences; current source edits require withdrawal and a fresh reviewed proposal. Reads and mutations require current authorization; proposal/review/materialization and read evidence fail closed on audit failure. Source snapshot and decision deletion are blocked; migration rollback refuses to discard retained rules.
+- Bilingual calendar controls propose, preview a specific year's date, show owner rules and independent review queues, review/withdraw with version checks and load bounded pages. Session changes clear private form/results state and stale responses are discarded. Previews are request-time snapshots, not signed reference cases or authorization to send.
+
+## Validation
+
+The dedicated engine cases cover explicit leap-day outcomes, invalid dates/inputs, year bounds, Nepal time at midnight/year boundaries and process timezone independence. Real PostgreSQL/HTTP scenarios cover consent/authorization, rejected source kinds, concurrent proposals/workers, independent review and stale versions, private occurrences, withdrawal and delivery eligibility, source/account/authority changes, family recusal, audit rollback and immutable evidence. A live browser journey covers proposal, preview, reload and consent withdrawal. Full exact-head CI results are recorded in PR #5 only after verification.
+
+## Mandatory remaining scope
+
+Person-derived reminders need independently verified Person dates, identity/claim and privacy/consent lifecycle checks. Broader family/branch/invitee reminder audiences need approved relationship rules and source-bound audience evidence. Native proposal/review controls and full multilingual/device/accessibility acceptance remain. BS/Tithi and religious recurrence need the designated authority's versioned approved source, signed catalogue and reference cases; engineering must not invent those rules. Named review owners, accepted evidence, production notification/provider acceptance, operating monitoring and frozen NFR targets remain required. This checkpoint is not production-ready approval.
+
+## Session restoration regression follow-up — 2026-10-09
+
+Exact-head CI for `fece77c4ae93f4fd017bc8dc53914d469a4f0f23` passed unit and PostgreSQL suites, Flutter, storage and scanner checks, but the invitation browser scenario failed: the Create dialog opened before restored-session rotation and was closed by the session invalidation effect. The recurrence browser scenario passed. This run is not full green acceptance.
+
+Calendar creation now waits for session initialization and the current calendar load. Calendar requests discard results and errors after token changes. The session-change form invalidation remains enforced. A browser regression deliberately holds refresh, confirms creation is disabled, then releases refresh and verifies the form remains usable. Local TypeScript and ledger checks pass; exact published-head CI must verify browser and Android behavior before recording full verification. Native recurrence controls remain pending.
+
+## Native controls and session regression checkpoint
+
+Flutter now provides bilingual source-event proposal, explicit Nepal time and leap-day policy, consent and evidence, owner/reviewer paginated lists, a supported-year preview, version-bound approval/rejection and withdrawal. Server authority, recusal and source validation remain mandatory; the reviewer switch is not permission. Mutations and reads bind the originating account, and account changes clear form/results and discard late responses. No preview itself authorizes delivery. Three mocked native widget/HTTP regressions cover withdrawal/version, paging/denied review and late account-switched responses. Full native device/accessibility acceptance remains open.
+
+Run 37919240402 passed Flutter, Android, private storage and scanner jobs, but platform browser checks failed on same-account refresh closing the calendar form and an MFA assertion before restored authentication settled. The form now survives same-account rotation while recipient previews are invalidated; account/authority changes still clear it. The browser regression now exercises rotation while a filled form is open. MFA denial assertion still requires HTTP 403 and waits for authenticated verification controls. Full new-head CI remains pending; this is not release acceptance.
+
+## Browser initialization and rotation follow-up
+
+Run 37922614930 passed PostgreSQL integration, Flutter, storage/scanning and live Android, but failed calendar invitation creation and recurrence proposal browser journeys. Retained traces showed the initial authentication refresh completing after calendar interaction began; recurrence source selection was reset and no proposal POST was sent.
+
+Calendar account/authority resets now run in the layout phase, before interaction. Recurrence source/consent/evidence clear on identity/authority changes, while same-account token rotation invalidates in-flight results and previews without erasing the proposal form. Recurrence inputs stay disabled during session initialization and proposal-list refresh. Independent owner/reviewer reads run in parallel, with generation guards rejecting stale results. Browser recurrence coverage explicitly rotates the session after source selection and checks that the selection remains intact before submitting. This follow-up requires full exact-head CI; it does not close release acceptance.

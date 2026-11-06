@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-09",
+  "baseline_commit": "320cf8e669d95c5882bb4975045e9b607cc1e418",
+  "scope": "Production dependency registry audit; does not replace penetration testing or release acceptance",
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0
+    },
+    "dependencies": 251,
+    "devDependencies": 0,
+    "optionalDependencies": 0,
+    "totalDependencies": 251
+  },
+  "advisories": {}
+}

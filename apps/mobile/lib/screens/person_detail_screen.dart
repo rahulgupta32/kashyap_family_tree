@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import '../models/person.dart';
 import '../services/genealogy_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/heritage.dart';
 import 'read_only_tree_screen.dart';
+import 'member_disputes_screen.dart';
 
 class PersonDetailScreen extends StatefulWidget {
   final String personId;
   final GenealogyApiService apiService;
 
-  const PersonDetailScreen({super.key, required this.personId, required this.apiService});
+  const PersonDetailScreen(
+      {super.key, required this.personId, required this.apiService});
 
   @override
   State<PersonDetailScreen> createState() => _PersonDetailScreenState();
@@ -16,30 +19,73 @@ class PersonDetailScreen extends StatefulWidget {
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   PersonDetail? _person;
+  late final GenealogyApiService _api;
+  late final int _generation;
+  bool _expired = false;
+  bool get _current =>
+      mounted &&
+      !_expired &&
+      identical(widget.apiService, _api) &&
+      _api.pushSessionGeneration == _generation;
+  void _sessionChanged() {
+    if (mounted && !_current) {
+      setState(() {
+        _expired = true;
+        _person = null;
+        _isLoading = false;
+        _error =
+            'सत्र बदलियो; विवरण फेरि खोल्नुहोस्। (Session changed; reopen Person details.)';
+      });
+    }
+  }
+
   bool _isLoading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.apiService;
+    _generation = _api.pushSessionGeneration;
+    _api.sessionChanges.addListener(_sessionChanged);
     _fetchDetail();
   }
 
   Future<void> _fetchDetail() async {
     try {
-      final data = await widget.apiService.getPerson(widget.personId);
-      if (!mounted) { return; }
+      final data = await _api.getPerson(widget.personId);
+      if (!_current) {
+        return;
+      }
       setState(() {
         _person = data;
         _isLoading = false;
       });
-    } catch (e) {
-      if (!mounted) { return; }
+    } catch (_) {
+      if (!_current) {
+        return;
+      }
       setState(() {
-        _error = e.toString();
+        _error = 'विवरण उपलब्ध छैन। (Person details unavailable.)';
         _isLoading = false;
       });
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant PersonDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.apiService, widget.apiService) ||
+        oldWidget.personId != widget.personId) {
+      _expired = true;
+      _sessionChanged();
+    }
+  }
+
+  @override
+  void dispose() {
+    _api.sessionChanges.removeListener(_sessionChanged);
+    super.dispose();
   }
 
   @override
@@ -47,7 +93,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('विवरण लोड हुँदैछ...')),
-        body: const Center(child: CircularProgressIndicator(color: AppTheme.saffron)),
+        body: const Center(
+            child: CircularProgressIndicator(color: AppTheme.saffron)),
       );
     }
 
@@ -62,12 +109,27 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(p.primaryNameNepali, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(p.primaryNameNepali,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          if (p.isClaimed && widget.apiService.authToken != null)
+            IconButton(
+                icon: const Icon(Icons.flag_outlined),
+                tooltip: 'दाबी विवाद (Dispute claim)',
+                onPressed: () {
+                  if (_current) {
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => MemberDisputesScreen(
+                                api: _api, personId: p.id)));
+                  }
+                }),
           IconButton(
             icon: const Icon(Icons.account_tree),
             tooltip: 'रुख हेर्नुहोस्',
             onPressed: () {
+              if (!_current) return;
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -93,46 +155,48 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          p.primaryNameNepali,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: AppTheme.textDark),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: p.livingStatus == LivingStatus.living
-                                ? AppTheme.livingGreen.withValues(alpha: 0.15)
-                                : AppTheme.deceasedSlate.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            p.livingStatus == LivingStatus.living ? 'जीवित' : 'दिवंगत',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: p.livingStatus == LivingStatus.living
-                                  ? AppTheme.livingGreen
-                                  : AppTheme.deceasedSlate,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (p.primaryNameEnglish != null && p.primaryNameEnglish!.isNotEmpty)
-                      Text(p.primaryNameEnglish!, style: const TextStyle(color: AppTheme.textMuted)),
+                    Center(
+                        child: Column(children: [
+                      HeritageAvatar(
+                          name: p.primaryNameNepali,
+                          size: 96,
+                          deceased: p.livingStatus == LivingStatus.deceased),
+                      const SizedBox(height: 16),
+                      Text(p.primaryNameNepali,
+                          textAlign: TextAlign.center,
+                          style: AppTheme.editorial.copyWith(fontSize: 28)),
+                      if (p.primaryNameEnglish?.isNotEmpty == true)
+                        Text(p.primaryNameEnglish!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: AppTheme.textMuted)),
+                      const SizedBox(height: 8),
+                      Chip(
+                          label: Text(p.livingStatus == LivingStatus.living
+                              ? 'जीवित · Living'
+                              : 'स्मृतिमा · In loving memory')),
+                    ])),
                     const Divider(height: 24),
                     _infoRow('शाखा (Branch)', p.branchName ?? '—'),
-                    _infoRow('पुस्ता (Generation)', p.generation != null ? 'G${p.generation}' : 'अज्ञात'),
-                    _infoRow('जन्म मिति / वर्ष', p.birthDateBs ?? (p.birthYearBs != null ? '${p.birthYearBs} BS' : '—')),
+                    _infoRow('पुस्ता (Generation)',
+                        p.generation != null ? 'G${p.generation}' : 'अज्ञात'),
+                    _infoRow(
+                        'जन्म मिति / वर्ष',
+                        p.birthDateBs ??
+                            (p.birthYearBs != null
+                                ? '${p.birthYearBs} BS'
+                                : '—')),
                     if (p.livingStatus == LivingStatus.deceased)
-                      _infoRow('स्वर्गारोहण मिति / वर्ष', p.deathDateBs ?? (p.deathYearBs != null ? '${p.deathYearBs} BS' : '—')),
+                      _infoRow(
+                          'स्वर्गारोहण मिति / वर्ष',
+                          p.deathDateBs ??
+                              (p.deathYearBs != null
+                                  ? '${p.deathYearBs} BS'
+                                  : '—')),
                     _infoRow('जन्मस्थान (Birth Place)', p.birthPlace ?? '—'),
                     _infoRow('मूलघर (Mool Ghar)', p.moolGhar ?? '—'),
-                    _infoRow('गोत्र (Gotra)', p.gotra ?? 'कश्यप'),
-                    if (p.currentAddress != null && p.currentAddress!.isNotEmpty)
+                    _infoRow('गोत्र (Gotra)', p.gotra ?? '—'),
+                    if (p.currentAddress != null &&
+                        p.currentAddress!.isNotEmpty)
                       _infoRow('हालको ठेगाना', p.currentAddress!),
                   ],
                 ),
@@ -141,22 +205,31 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             const SizedBox(height: 16),
 
             // Parents Section
-            const Text('अभिभावकहरू (Parents)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('अभिभावकहरू (Parents)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             if (p.parents.isEmpty)
-              const Text('कुनै अभिभावक जोडिएको छैन', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
+              const Text('कुनै अभिभावक जोडिएको छैन',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
             else
               ...p.parents.map((parent) => Card(
                     child: ListTile(
-                      title: Text(parent.fullNameNepali.isNotEmpty ? parent.fullNameNepali : 'अज्ञात अभिभावक',
+                      title: Text(
+                          parent.fullNameNepali.isNotEmpty
+                              ? parent.fullNameNepali
+                              : 'अज्ञात अभिभावक',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(parent.gender == Gender.male ? 'पिता (Father)' : 'आमा (Mother)'),
+                      subtitle: Text(parent.gender == Gender.male
+                          ? 'पिता (Father)'
+                          : 'आमा (Mother)'),
                       trailing: const Icon(Icons.chevron_right, size: 16),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PersonDetailScreen(personId: parent.targetPersonId, apiService: widget.apiService),
+                            builder: (_) => PersonDetailScreen(
+                                personId: parent.targetPersonId,
+                                apiService: widget.apiService),
                           ),
                         );
                       },
@@ -165,22 +238,31 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             const SizedBox(height: 16),
 
             // Spouses Section
-            const Text('दम्पती (Spouses)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text('दम्पती (Spouses)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             if (p.spouses.isEmpty)
-              const Text('कुनै दम्पती जोडिएको छैन', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
+              const Text('कुनै दम्पती जोडिएको छैन',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
             else
               ...p.spouses.map((spouse) => Card(
                     child: ListTile(
-                      title: Text(spouse.fullNameNepali.isNotEmpty ? spouse.fullNameNepali : 'अज्ञात दम्पती',
+                      title: Text(
+                          spouse.fullNameNepali.isNotEmpty
+                              ? spouse.fullNameNepali
+                              : 'अज्ञात दम्पती',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(spouse.marriageDateBs != null ? 'विवाह: ${spouse.marriageDateBs}' : 'दम्पती'),
+                      subtitle: Text(spouse.marriageDateBs != null
+                          ? 'विवाह: ${spouse.marriageDateBs}'
+                          : 'दम्पती'),
                       trailing: const Icon(Icons.chevron_right, size: 16),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PersonDetailScreen(personId: spouse.targetPersonId, apiService: widget.apiService),
+                            builder: (_) => PersonDetailScreen(
+                                personId: spouse.targetPersonId,
+                                apiService: widget.apiService),
                           ),
                         );
                       },
@@ -190,22 +272,31 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
             // Children Section
             Text('सन्तानहरू (Children) (${p.children.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             if (p.children.isEmpty)
-              const Text('कुनै सन्तान जोडिएको छैन', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
+              const Text('कुनै सन्तान जोडिएको छैन',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12))
             else
               ...p.children.map((child) => Card(
                     child: ListTile(
-                      title: Text(child.fullNameNepali.isNotEmpty ? child.fullNameNepali : 'अज्ञात सन्तान',
+                      title: Text(
+                          child.fullNameNepali.isNotEmpty
+                              ? child.fullNameNepali
+                              : 'अज्ञात सन्तान',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(child.gender == Gender.male ? 'छोरा (Son)' : 'छोरी (Daughter)'),
+                      subtitle: Text(child.gender == Gender.male
+                          ? 'छोरा (Son)'
+                          : 'छोरी (Daughter)'),
                       trailing: const Icon(Icons.chevron_right, size: 16),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PersonDetailScreen(personId: child.targetPersonId, apiService: widget.apiService),
+                            builder: (_) => PersonDetailScreen(
+                                personId: child.targetPersonId,
+                                apiService: widget.apiService),
                           ),
                         );
                       },
@@ -223,11 +314,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppTheme.textDark)),
+          Text(label,
+              style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+          Text(value,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: AppTheme.textDark)),
         ],
       ),
     );
   }
 }
-

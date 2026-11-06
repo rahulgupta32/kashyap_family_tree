@@ -41,6 +41,8 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${ADMIN_PORT}`,
     trace: 'retain-on-failure',
+    // APIRequestContext shares browser cookies but does not synthesize Origin.
+    extraHTTPHeaders: { Origin: `http://127.0.0.1:${ADMIN_PORT}` },
   },
   projects: [
     {
