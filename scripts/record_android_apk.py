@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Record the actual ordinary emulator APK; no staging/distribution acceptance."""
-import hashlib,json,os,re,subprocess
+import hashlib,json,os,re,subprocess,sys
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 apk=root/'test-results/nepali-bansawali-debug.apk'
@@ -21,9 +21,22 @@ info={'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root
  'sourceTree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip(),
  'filename':apk.name,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'applicationId':package[1],
  'version':package[3],'versionCode':package[2],'minimumAndroidApi':int(minimum[1]),'displayName':label[1],
- 'apiOrigin':defines['API_BASE_URL'],'buildCommand':'flutter build apk --debug --dart-define-from-file=test-results/m4-device-defines.json',
+ 'apiOrigin':defines['API_BASE_URL'],'buildWorkingDirectory':'apps/mobile','buildCommand':'flutter build apk --debug --dart-define-from-file=../../test-results/m4-device-defines.json',
  'signingType':'Android debug / emulator evaluation','certificateSha256':cert[0].lower(),
  'persistentBackend':False,'physicalDeviceVerified':False,'productionAcceptance':False,
  'requires':'Synthetic backend on emulator host port3010; hosted CI services end after the job'}
+if '--calendar-verified' in sys.argv:
+ log=(root/'test-results/android-calendar-integration.log').read_text()
+ assert '[CALENDAR DEVICE] Real UI AD/BS month/create/detail/update/RSVP/cancel/history and unauthorized mutation/history verified' in log and 'All tests passed!' in log
+ assert os.environ.get('USE_REAL_POSTGRES')=='true' and os.environ.get('DB_NAME','').startswith('kashyap_test_')
+ verified={('GET','/calendar/events'),('POST','/calendar/events'),('GET','/calendar/events/:id'),('PATCH','/calendar/events/:id'),('GET','/calendar/events/:id/history'),('POST','/calendar/events/:id/rsvp'),('POST','/calendar/events/:id/cancel'),('GET','/calendar/period')}
+ routes=json.loads((root/'docs/integration/api-mobile-matrix.json').read_text())['routes']
+ overlay={'sourceCommit':info['sourceCommit'],'sourceTree':info['sourceTree'],'scope':'One synthetic Android emulator UI journey using actual NestJS/PostgreSQL/Redis; not signed/full requirement acceptance',
+  'evidence':'android-calendar-integration.log','logSha256':hashlib.sha256(log.encode()).hexdigest(),
+  'routes':[{'verb':r['verb'],'route':r['route'],'status':'working','scope':'Bounded lifecycle/month/denial assertions in calendar_live_api_test.dart'} for r in routes if (r['verb'],r['route']) in verified],
+  'realEmailDeliveryVerified':False,'physicalDeviceVerified':False,'productionAcceptance':False}
+ assert len(overlay['routes'])==8
+ (root/'test-results/android-calendar-traceability.json').write_text(json.dumps(overlay,indent=2)+'\n')
+ info['emulatorCalendarVerified']=True
 (root/'test-results/android-apk-evidence.json').write_text(json.dumps(info,indent=2)+'\n')
 print('Verified APK metadata and SHA256:',info['sha256'])

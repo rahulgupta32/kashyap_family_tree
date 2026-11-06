@@ -21,3 +21,5 @@ adb -s emulator-5554 exec-out run-as com.example.kashyap_mobile cat cache/nepali
 adb -s emulator-5554 exec-out run-as com.example.kashyap_mobile cat cache/nepali-calendar.png > ../../test-results/android-nepali-calendar.png
 
 adb -s emulator-5554 exec-out run-as com.example.kashyap_mobile cat cache/nepali-calendar-month.png > ../../test-results/android-nepali-calendar-month.png
+
+python3 ../../scripts/record_android_apk.py --calendar-verified
