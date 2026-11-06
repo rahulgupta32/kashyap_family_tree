@@ -22,6 +22,7 @@ val releaseStorePassword = releaseInput("storePassword", "KASHYAP_ANDROID_STORE_
 val releaseKeyAlias = releaseInput("keyAlias", "KASHYAP_ANDROID_KEY_ALIAS")?.trim()
 val releaseKeyPassword = releaseInput("keyPassword", "KASHYAP_ANDROID_KEY_PASSWORD")
 val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val usbTest = providers.environmentVariable("KASHYAP_USB_TEST").orNull == "true"
 val internalPreview = providers.environmentVariable("KASHYAP_INTERNAL_PREVIEW").orNull == "true"
 val releaseConfigurationValid =
     releaseApplicationId?.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) == true &&
@@ -70,6 +71,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (usbTest) {
+                applicationIdSuffix = ".usbtest"
+                resValue("string", "usb_test_name", "Kashyap — USB Test")
+                manifestPlaceholders["appLabel"] = "@string/usb_test_name"
+            }
+        }
         release {
             signingConfig = signingConfigs.getByName("approvedRelease")
             if (internalPreview) {
@@ -101,6 +109,7 @@ androidComponents {
 tasks.configureEach {
     if (name == "preReleaseBuild" || name == "validateSigningRelease") {
         doFirst {
+            if (usbTest) throw GradleException("USB testing is debug-only; unset KASHYAP_USB_TEST for release.")
             if (!releaseConfigurationValid) {
                 throw GradleException(
                     "Release requires an approved application ID and private non-debug signing configuration."
