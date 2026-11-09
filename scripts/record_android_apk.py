@@ -30,7 +30,16 @@ info={'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root
  'requires':'Synthetic backend on emulator host port3010; hosted CI services end after the job'}
 if '--calendar-verified' in sys.argv:
  log=(root/'test-results/android-calendar-integration.log').read_text()
- assert '[CALENDAR DEVICE] Real UI AD/BS month/create/detail/update/RSVP/cancel/history and unauthorized mutation/history verified' in log and 'All tests passed!' in log
+ assert '[CALENDAR DEVICE] Real UI AD/BS month/create/detail/update/RSVP/cancel/history and unauthorized mutation/history verified' in log and 'All tests passed.' in log
+ assert '[CALENDAR SCREENSHOTS] All three native PNG captures verified' in log
+ captures={}
+ for name in ['nepali-login','nepali-calendar-month','nepali-calendar']:
+  path=root/f'test-results/android-{name}.png'
+  data=path.read_bytes()
+  assert len(data)>=33 and data[:8]==b'\x89PNG\r\n\x1a\n' and data[12:16]==b'IHDR', f'Invalid native PNG: {path.name}'
+  assert int.from_bytes(data[16:20],'big')>0 and int.from_bytes(data[20:24],'big')>0
+  captures[path.name]=hashlib.sha256(data).hexdigest()
+ info['nativeScreenshotSha256']=captures
  assert os.environ.get('USE_REAL_POSTGRES')=='true' and os.environ.get('DB_NAME','').startswith('kashyap_test_')
  verified={('GET','/calendar/events'),('POST','/calendar/events'),('GET','/calendar/events/:id'),('PATCH','/calendar/events/:id'),('GET','/calendar/events/:id/history'),('POST','/calendar/events/:id/rsvp'),('POST','/calendar/events/:id/cancel'),('GET','/calendar/period')}
  routes=json.loads((root/'docs/integration/api-mobile-matrix.json').read_text())['routes']

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -28,9 +27,7 @@ void main() {
     await tester.runAsync(store.clear);
     Future<void> snapshot(String name) async {
       await tester.pumpAndSettle();
-      final bytes = await binding.takeScreenshot(name);
-      await File('${Directory.systemTemp.path}/$name.png')
-          .writeAsBytes(bytes, flush: true);
+      await binding.takeScreenshot(name);
     }
 
     try {
@@ -119,9 +116,11 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      await press(tester, find.descendant(
-          of: find.byKey(ValueKey('calendar-event-$id')),
-          matching: find.text(original)));
+      await press(
+          tester,
+          find.descendant(
+              of: find.byKey(ValueKey('calendar-event-$id')),
+              matching: find.text(original)));
       // The tile also contains RSVP controls; tap its title to open detail.
       await until(tester, find.byType(CalendarEventDetailScreen));
       await until(tester, find.text('v1 · CALENDAR_EVENT_CREATED'));

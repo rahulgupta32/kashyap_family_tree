@@ -1,3 +1,7 @@
+# Native screenshot evidence correction — 9 November 2026
+
+Baseline Android artifact13532830396 contains adb error text under all three PNG filenames; screenshots FAILED, despite a passing calendar journey. Do not display or claim those files as images. Supported extended-driver capture now transfers binding-owned PNG bytes to host files before uninstall, requires all three captures and records validated screenshot hashes. Two negative/positive PNG-admission tests, Flutter analysis, shell/Python syntax and whitespace passed. Actual new-source emulator/driver/PNG transfer remains pending CI. Read `docs/integration/COMPLETION_20261109.md`. Resolve final published SHA/workflow conclusions from GitHub; no historical success validates changed source. Production NO-GO.
+
 # Latest terminal-state hardening — 9 November 2026
 
 Child/death frontend changes published as `427a400dde2216207e3d83bc5fb0fe11a7713828`. Full local Flutter348 tests and clean analysis passed. Main42592546522/iOS42592546526 remain pending when inspected. A follow-on reviewer correction/escalation terminal-reopening flaw was reproduced by8 failing regressions and fixed under the existing row lock/authority checks. Local684 backend units/63suites,16focused service cases and API typecheck passed. Added real PostgreSQL mutation/history regression remains pending exact-source CI. See `docs/integration/COMPLETION_20261109.md`; resolve latest publication identity/workflows from GitHub. Production NO-GO; no merge/deploy/store/signing/provider/physical-device acceptance inferred.

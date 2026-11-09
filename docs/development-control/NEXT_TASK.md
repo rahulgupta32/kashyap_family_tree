@@ -1,3 +1,7 @@
+# Immediate verification — native screenshot transfer
+
+Inspect final-source calendar driver/emulator completion, three real PNGs and APK evidence hashes. Require the actual calendar lifecycle marker, extended-driver success and all-three-captures marker. Reject adb error text, missing files and non-PNG bytes. Also require the new PostgreSQL terminal-transition guard regression. Current source has local684 backend units/API typecheck,348 full Flutter cases plus2 new screenshot controls, and clean analysis; actual final-source native/real-PG execution remains pending.
+
 # Immediate verification — terminal hardening
 
 Inspect final-source main/iOS, especially `m4-change-requests.integration.spec.ts` terminal correction/escalation denial and retained row/history assertions. Backend local684 units/API typecheck and Flutter348/analysis are bounded evidence only. Preserve original authority/recusal and reviewable-state behavior. Do not call the final source verified until its actual CI results are inspected.
