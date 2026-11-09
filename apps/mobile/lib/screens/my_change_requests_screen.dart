@@ -17,7 +17,10 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
       _occupation = TextEditingController(),
       _reason = TextEditingController(),
       _deathDate = TextEditingController(),
-      _deathYear = TextEditingController();
+      _deathYear = TextEditingController(),
+      _childNepali = TextEditingController(),
+      _childEnglish = TextEditingController();
+  String? _childGender;
   List<Map<String, dynamic>> _items = [];
   Map<String, dynamic>? _selected;
   String? _id, _error;
@@ -47,6 +50,9 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     _reason.clear();
     _deathDate.clear();
     _deathYear.clear();
+    _childNepali.clear();
+    _childEnglish.clear();
+    _childGender = null;
   }
 
   void _changed() {
@@ -69,6 +75,8 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     _reason.dispose();
     _deathDate.dispose();
     _deathYear.dispose();
+    _childNepali.dispose();
+    _childEnglish.dispose();
     super.dispose();
   }
 
@@ -110,6 +118,16 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
             _occupation.text =
                 result['proposedChanges']['occupation']?.toString() ?? '';
             _reason.text = result['reason']?.toString() ?? '';
+            _childNepali.text =
+                result['proposedChanges']['primaryNameNepali']?.toString() ??
+                    '';
+            _childEnglish.text =
+                result['proposedChanges']['primaryNameEnglish']?.toString() ??
+                    '';
+            final gender = result['proposedChanges']['gender'];
+            _childGender = {'MALE', 'FEMALE', 'OTHER'}.contains(gender)
+                ? gender as String
+                : null;
             _deathDate.text =
                 result['proposedChanges']['deathDateBs']?.toString() ?? '';
             _deathYear.text =
@@ -132,7 +150,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     if (!_current ||
         _busy ||
         row == null ||
-        !{'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) ||
+        !{'EDIT_PERSON', 'RECORD_DEATH', 'ADD_CHILD'}.contains(row['type']) ||
         !{'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
             .contains(row['status'])) {
       return;
@@ -142,7 +160,22 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
       return;
     }
     final proposed = Map<String, dynamic>.from(row['proposedChanges'] as Map);
-    if (row['type'] == 'RECORD_DEATH') {
+    if (row['type'] == 'ADD_CHILD') {
+      // Existing-person links retain their immutable target; do not turn them into new people.
+      if (proposed['childPersonId'] == null) {
+        if (_childNepali.text.trim().isEmpty || _childGender == null) {
+          setState(() => _error =
+              'बच्चाको नाम र लिङ्ग आवश्यक छ (Child name and gender required)');
+          return;
+        }
+        proposed['primaryNameNepali'] = _childNepali.text.trim();
+        proposed['gender'] = _childGender;
+        proposed.remove('primaryNameEnglish');
+        if (_childEnglish.text.trim().isNotEmpty) {
+          proposed['primaryNameEnglish'] = _childEnglish.text.trim();
+        }
+      }
+    } else if (row['type'] == 'RECORD_DEATH') {
       final date = _deathDate.text.trim(), year = _deathYear.text.trim();
       if ((date.isNotEmpty &&
               !RegExp(r'^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[0-2])$')
@@ -195,7 +228,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
   Widget build(BuildContext context) {
     final row = _selected;
     final editable = row != null &&
-        {'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) &&
+        {'EDIT_PERSON', 'RECORD_DEATH', 'ADD_CHILD'}.contains(row['type']) &&
         {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}.contains(row['status']);
     return Scaffold(
         appBar: AppBar(
@@ -239,7 +272,43 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
               Text(row['reviewNotes'] as String),
             Text('अनुरोध संस्करण (Request version): ${row['version']}'),
             if (editable) ...[
-              if (row['type'] == 'RECORD_DEATH') ...[
+              if (row['type'] == 'ADD_CHILD') ...[
+                if ((row['proposedChanges'] as Map)['childPersonId'] ==
+                    null) ...[
+                  TextField(
+                      key: const ValueKey('proposal-child-nepali'),
+                      controller: _childNepali,
+                      enabled: !_busy,
+                      decoration: const InputDecoration(
+                          labelText:
+                              'बच्चाको नेपाली नाम (Child name in Nepali)')),
+                  TextField(
+                      key: const ValueKey('proposal-child-english'),
+                      controller: _childEnglish,
+                      enabled: !_busy,
+                      decoration: const InputDecoration(
+                          labelText:
+                              'बच्चाको अंग्रेजी नाम (Child name in English)')),
+                  DropdownButtonFormField<String>(
+                      key: const ValueKey('proposal-child-gender'),
+                      initialValue: _childGender,
+                      decoration:
+                          const InputDecoration(labelText: 'लिङ्ग (Gender)'),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'MALE', child: Text('पुरुष (Male)')),
+                        DropdownMenuItem(
+                            value: 'FEMALE', child: Text('महिला (Female)')),
+                        DropdownMenuItem(
+                            value: 'OTHER', child: Text('अन्य (Other)'))
+                      ],
+                      onChanged: _busy
+                          ? null
+                          : (value) => setState(() => _childGender = value)),
+                ] else
+                  const Text(
+                      'विद्यमान बच्चाको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing child link target is preserved.)'),
+              ] else if (row['type'] == 'RECORD_DEATH') ...[
                 TextField(
                     key: const ValueKey('proposal-death-date'),
                     controller: _deathDate,
@@ -280,7 +349,8 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                   child: const Text('पुनः पेश गर्नुहोस् (Resubmit)')),
             ] else
               Text(row['reason']?.toString() ?? ''),
-            if (!{'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) &&
+            if (!{'EDIT_PERSON', 'RECORD_DEATH', 'ADD_CHILD'}
+                    .contains(row['type']) &&
                 {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
                     .contains(row['status']))
               const Text(

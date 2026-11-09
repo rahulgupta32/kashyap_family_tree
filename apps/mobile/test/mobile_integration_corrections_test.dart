@@ -122,6 +122,63 @@ void main() {
     expect(submit, findsNothing);
     expect(find.text('RECORD_DEATH · PENDING'), findsOneWidget);
   });
+  for (final existingChild in [false, true]) {
+    testWidgets('child correction preserves link identity: $existingChild',
+        (tester) async {
+      Map<String, dynamic>? sent;
+      final proposal = existingChild
+          ? {'childPersonId': 'existing-child', 'evidenceAssetId': 'retain'}
+          : {
+              'primaryNameNepali': 'पहिले',
+              'primaryNameEnglish': 'Before',
+              'gender': 'FEMALE',
+              'livingStatus': 'LIVING',
+              'evidenceAssetId': 'retain'
+            };
+      final row = {
+        'id': 'child',
+        'requesterUserId': 'owner',
+        'type': 'ADD_CHILD',
+        'status': 'CONFLICT_DETECTED',
+        'version': 2,
+        'reason': 'Correct child proposal',
+        'proposedChanges': proposal
+      };
+      final api = GenealogyApiService(client: MockClient((r) async {
+        if (r.method == 'POST') sent = jsonDecode(r.body);
+        return jsonResponse(
+            {...row, 'status': sent == null ? 'CONFLICT_DETECTED' : 'PENDING'});
+      }))
+        ..setAuthToken(token('owner'));
+      addTearDown(api.dispose);
+      await tester.pumpWidget(MaterialApp(
+          home: MyChangeRequestsScreen(api: api, initialId: 'child')));
+      await tester.pumpAndSettle();
+      if (existingChild) {
+        expect(
+            find.byKey(const ValueKey('proposal-child-nepali')), findsNothing);
+      } else {
+        await tester.enterText(
+            find.byKey(const ValueKey('proposal-child-nepali')), 'सच्याइएको');
+        await tester.enterText(
+            find.byKey(const ValueKey('proposal-child-english')), 'Corrected');
+      }
+      final submit = find.byKey(const ValueKey('proposal-resubmit'));
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(
+          sent!['proposedChanges'],
+          existingChild
+              ? proposal
+              : {
+                  ...proposal,
+                  'primaryNameNepali': 'सच्याइएको',
+                  'primaryNameEnglish': 'Corrected'
+                });
+      expect(submit, findsNothing);
+    });
+  }
   test(
       'global logout validates acknowledgement before clearing the local session',
       () async {

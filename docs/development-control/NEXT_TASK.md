@@ -1,3 +1,10 @@
+# Current continuation — 9 November 2026
+
+1. Inspect exact final-source CI/iOS and artifacts for member death/child correction. Fix demonstrated failures without weakening authorization or assertions. Do not attribute parent-source success to changed code.
+2. Add real Android/API/PostgreSQL correction/resubmission journeys for these proposal types, including terminal-state denial and account replacement. Widget transport fixtures are not real-service evidence.
+3. Continue remaining proposal types and the complete module matrix in `docs/integration/`, preserving administrative roles and cultural gates. Child link targets remain preserved; editing a relationship target requires its own approved selection and integrity workflow.
+4. Obtain approved isolated staging access/secret store, real provider configuration and dedicated signing inputs within the existing $20/month ceiling; complete physical-device and external acceptance before release. No production/store/merge action without explicit authority.
+
 # Current next execution — release-candidate sprint, 2 November 2026
 
 Use `RELEASE_CANDIDATE.md` as the current blocker register. Inspect actual latest branch/source-bound CI, especially Android real HTTP acknowledgement diagnostics and corrected widget analysis. Preserve original assertions; correct only the demonstrated failure. Independently obtain approved isolated staging target/access/domains/budget and preview signing/environment inputs; execute prepared signed-preview build, install/startup/staged-connectivity acceptance once supplied. Continue frozen F1–F6/assurance work; no production GO, merge, real data or cultural activation is inferred.

@@ -1,3 +1,9 @@
+# Current continuation — 9 November 2026
+
+Read `docs/integration/COMPLETION_20261109.md` before the historical checkpoints below. Actual remote recovery source was `8bdfc7539d78cc2c63281ef9e89fd9cc33d872b9`, not the stale November2 PR body. Main42271420934 and iOS42271420859 completed SUCCESS on that source. The Android artifact digest and embedded APK/USB evidence were independently inspected; physicalDeviceVerified and productionAcceptance remain false.
+
+Published death-proposal correction: `cc4818bb8665fa991b0cd0f4dc3b5f5f25f7151c`; source-bound main42591756152 and iOS42591756083 were running when inspected. Follow-on child-proposal correction is described in the report; resolve its published identity and actual workflow outcomes from GitHub. Local tests are separate from real-service/native acceptance. No merge/deployment/store publication/paid provisioning/cultural activation. Production remains NO-GO.
+
 # Current release-candidate sprint — 2 November 2026
 
 Read `RELEASE_CANDIDATE.md` for the canonical current blocker register, verified recovery/publication, signed-preview preparation, exact-source CI and infrastructure/signing limitations. Historical records below remain source-specific. Final SHA/tree/results resolve from PR5 and GitHub; pending is not passed. All260 signed acceptances/RG01..12 OPEN; production NO-GO.
