@@ -405,4 +405,22 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
     expect(saved.status).toBe('PENDING');expect(saved.resubmissionCount).toBe(1);
   });
 
+  it('retains terminal decisions when reviewers request corrections or escalate', async () => {
+    const reviewer = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    for (const status of ['APPROVED', 'REJECTED', 'WITHDRAWN', 'SUPERSEDED']) {
+      const req = await changeRequestsService.submitRequest(requesterId, {
+        targetPersonId: personId, type: ChangeRequestType.EDIT_PERSON,
+        proposedChanges: {birthPlace: 'Synthetic unchanged place'}, reason: 'Terminal transition regression',
+      });
+      await db.query('UPDATE genealogy_change_requests SET status=$2 WHERE id=$1', [req.id, status]);
+      const before = (await db.query('SELECT * FROM genealogy_change_requests WHERE id=$1', [req.id])).rows[0];
+      const transitions = (await db.query('SELECT * FROM workflow_state_transitions WHERE entity_id=$1 ORDER BY id', [req.id])).rows;
+      for (const operation of ['requestCorrection', 'escalate'] as const) {
+        await expect(changeRequestsService[operation](req.id, reviewer, 'Must not reopen')).rejects.toThrow('Cannot modify a terminal change request');
+      }
+      expect((await db.query('SELECT * FROM genealogy_change_requests WHERE id=$1', [req.id])).rows[0]).toEqual(before);
+      expect((await db.query('SELECT * FROM workflow_state_transitions WHERE entity_id=$1 ORDER BY id', [req.id])).rows).toEqual(transitions);
+    }
+  });
+
 });

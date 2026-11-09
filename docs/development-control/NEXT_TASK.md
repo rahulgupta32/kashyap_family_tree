@@ -1,3 +1,7 @@
+# Immediate verification — terminal hardening
+
+Inspect final-source main/iOS, especially `m4-change-requests.integration.spec.ts` terminal correction/escalation denial and retained row/history assertions. Backend local684 units/API typecheck and Flutter348/analysis are bounded evidence only. Preserve original authority/recusal and reviewable-state behavior. Do not call the final source verified until its actual CI results are inspected.
+
 # Current continuation — 9 November 2026
 
 1. Inspect exact final-source CI/iOS and artifacts for member death/child correction. Fix demonstrated failures without weakening authorization or assertions. Do not attribute parent-source success to changed code.

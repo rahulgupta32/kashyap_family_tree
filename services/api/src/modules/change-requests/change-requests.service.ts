@@ -169,6 +169,20 @@ export class ChangeRequestsService {
     });
   }
 
+  private assertActiveRequest(status: ChangeRequestStatus): void {
+    const active = [
+      ChangeRequestStatus.SUBMITTED, ChangeRequestStatus.PENDING,
+      ChangeRequestStatus.CORRECTION_REQUESTED, ChangeRequestStatus.RESUBMITTED,
+      ChangeRequestStatus.ESCALATED, ChangeRequestStatus.CONFLICT_DETECTED,
+    ];
+    if (!active.includes(status)) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.CANNOT_MODIFY_PROCESSED_REQUEST,
+        message: 'Cannot modify a terminal change request',
+      });
+    }
+  }
+
   async requestCorrection(
     id: string,
     actor: AuthenticatedUser,
@@ -191,6 +205,7 @@ export class ChangeRequestsService {
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
       await this.validateFamilyRecusal(client, actor, gcr);
+      this.assertActiveRequest(gcr.status);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
@@ -326,6 +341,7 @@ export class ChangeRequestsService {
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
       await this.validateFamilyRecusal(client, actor, gcr);
+      this.assertActiveRequest(gcr.status);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 

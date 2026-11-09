@@ -1,3 +1,7 @@
+# Latest terminal-state hardening — 9 November 2026
+
+Child/death frontend changes published as `427a400dde2216207e3d83bc5fb0fe11a7713828`. Full local Flutter348 tests and clean analysis passed. Main42592546522/iOS42592546526 remain pending when inspected. A follow-on reviewer correction/escalation terminal-reopening flaw was reproduced by8 failing regressions and fixed under the existing row lock/authority checks. Local684 backend units/63suites,16focused service cases and API typecheck passed. Added real PostgreSQL mutation/history regression remains pending exact-source CI. See `docs/integration/COMPLETION_20261109.md`; resolve latest publication identity/workflows from GitHub. Production NO-GO; no merge/deploy/store/signing/provider/physical-device acceptance inferred.
+
 # Current continuation — 9 November 2026
 
 Read `docs/integration/COMPLETION_20261109.md` before the historical checkpoints below. Actual remote recovery source was `8bdfc7539d78cc2c63281ef9e89fd9cc33d872b9`, not the stale November2 PR body. Main42271420934 and iOS42271420859 completed SUCCESS on that source. The Android artifact digest and embedded APK/USB evidence were independently inspected; physicalDeviceVerified and productionAcceptance remain false.

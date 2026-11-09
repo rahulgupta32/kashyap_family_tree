@@ -18,6 +18,18 @@ describe('ChangeRequestsService (Genealogy Change Governance & Workflow)', () =>
     expect(mockAuditOutboxRepo.recordAuditIntent).not.toHaveBeenCalled();
   });
 
+  describe.each(['requestCorrection', 'escalate'] as const)('%s terminal-state boundary', operation => {
+    it.each(['APPROVED', 'REJECTED', 'WITHDRAWN', 'SUPERSEDED'])('retains %s without transition or audit writes', async status => {
+      const query = jest.fn().mockResolvedValue({rows: [{id: 'request', requester_user_id: 'owner', status}]});
+      mockDb.transaction.mockImplementation((cb: any) => cb({query}));
+      jest.spyOn(changeRequestsService as any, 'validateBranchAuthority').mockResolvedValue(undefined);
+      jest.spyOn(changeRequestsService as any, 'validateFamilyRecusal').mockResolvedValue(undefined);
+      await expect(changeRequestsService[operation]('request', {id: 'reviewer', roles: [Role.SUPER_ADMIN]} as any, 'Synthetic review notes')).rejects.toThrow('Cannot modify a terminal change request');
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(mockAuditOutboxRepo.recordAuditIntent).not.toHaveBeenCalled();
+    });
+  });
+
   beforeEach(() => {
     diffService = new DiffService();
 
