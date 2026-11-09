@@ -15,7 +15,9 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
   late final String? _owner;
   final _birth = TextEditingController(),
       _occupation = TextEditingController(),
-      _reason = TextEditingController();
+      _reason = TextEditingController(),
+      _deathDate = TextEditingController(),
+      _deathYear = TextEditingController();
   List<Map<String, dynamic>> _items = [];
   Map<String, dynamic>? _selected;
   String? _id, _error;
@@ -43,6 +45,8 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     _birth.clear();
     _occupation.clear();
     _reason.clear();
+    _deathDate.clear();
+    _deathYear.clear();
   }
 
   void _changed() {
@@ -63,6 +67,8 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     _birth.dispose();
     _occupation.dispose();
     _reason.dispose();
+    _deathDate.dispose();
+    _deathYear.dispose();
     super.dispose();
   }
 
@@ -104,6 +110,10 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
             _occupation.text =
                 result['proposedChanges']['occupation']?.toString() ?? '';
             _reason.text = result['reason']?.toString() ?? '';
+            _deathDate.text =
+                result['proposedChanges']['deathDateBs']?.toString() ?? '';
+            _deathYear.text =
+                result['proposedChanges']['deathYearBs']?.toString() ?? '';
           });
         }
       }
@@ -122,8 +132,9 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     if (!_current ||
         _busy ||
         row == null ||
-        row['type'] != 'EDIT_PERSON' ||
-        !{'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}.contains(row['status'])) {
+        !{'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) ||
+        !{'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
+            .contains(row['status'])) {
       return;
     }
     if (_reason.text.trim().isEmpty) {
@@ -131,13 +142,29 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
       return;
     }
     final proposed = Map<String, dynamic>.from(row['proposedChanges'] as Map);
-    // Preserve other original proposal fields; expose only the existing native edit fields.
-    if (proposed.containsKey('birthPlace') || _birth.text.trim().isNotEmpty) {
-      proposed['birthPlace'] = _birth.text.trim();
-    }
-    if (proposed.containsKey('occupation') ||
-        _occupation.text.trim().isNotEmpty) {
-      proposed['occupation'] = _occupation.text.trim();
+    if (row['type'] == 'RECORD_DEATH') {
+      final date = _deathDate.text.trim(), year = _deathYear.text.trim();
+      if ((date.isNotEmpty &&
+              !RegExp(r'^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[0-2])$')
+                  .hasMatch(date)) ||
+          (year.isNotEmpty && !RegExp(r'^\d{4}$').hasMatch(year))) {
+        setState(() => _error =
+            'BS मिति YYYY-MM-DD वा चार अङ्कको वर्ष दिनुहोस् (Enter a stored BS date/year; no conversion)');
+        return;
+      }
+      proposed.remove('deathDateBs');
+      proposed.remove('deathYearBs');
+      if (date.isNotEmpty) proposed['deathDateBs'] = date;
+      if (year.isNotEmpty) proposed['deathYearBs'] = int.parse(year);
+    } else {
+      // Preserve unrelated original proposal fields.
+      if (proposed.containsKey('birthPlace') || _birth.text.trim().isNotEmpty) {
+        proposed['birthPlace'] = _birth.text.trim();
+      }
+      if (proposed.containsKey('occupation') ||
+          _occupation.text.trim().isNotEmpty) {
+        proposed['occupation'] = _occupation.text.trim();
+      }
     }
     setState(() => _busy = true);
     var confirmed = false;
@@ -168,7 +195,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
   Widget build(BuildContext context) {
     final row = _selected;
     final editable = row != null &&
-        row['type'] == 'EDIT_PERSON' &&
+        {'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) &&
         {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}.contains(row['status']);
     return Scaffold(
         appBar: AppBar(
@@ -212,18 +239,34 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
               Text(row['reviewNotes'] as String),
             Text('अनुरोध संस्करण (Request version): ${row['version']}'),
             if (editable) ...[
-              TextField(
-                  key: const ValueKey('proposal-birth'),
-                  controller: _birth,
-                  enabled: !_busy,
-                  decoration: const InputDecoration(
-                      labelText: 'जन्मस्थान (Birth place)')),
-              TextField(
-                  key: const ValueKey('proposal-occupation'),
-                  controller: _occupation,
-                  enabled: !_busy,
-                  decoration:
-                      const InputDecoration(labelText: 'पेशा (Occupation)')),
+              if (row['type'] == 'RECORD_DEATH') ...[
+                TextField(
+                    key: const ValueKey('proposal-death-date'),
+                    controller: _deathDate,
+                    enabled: !_busy,
+                    decoration: const InputDecoration(
+                        labelText:
+                            'मृत्यु मिति BS (Death date BS: YYYY-MM-DD)')),
+                TextField(
+                    key: const ValueKey('proposal-death-year'),
+                    controller: _deathYear,
+                    enabled: !_busy,
+                    decoration: const InputDecoration(
+                        labelText: 'मृत्यु वर्ष BS (Death year BS)')),
+              ] else ...[
+                TextField(
+                    key: const ValueKey('proposal-birth'),
+                    controller: _birth,
+                    enabled: !_busy,
+                    decoration: const InputDecoration(
+                        labelText: 'जन्मस्थान (Birth place)')),
+                TextField(
+                    key: const ValueKey('proposal-occupation'),
+                    controller: _occupation,
+                    enabled: !_busy,
+                    decoration:
+                        const InputDecoration(labelText: 'पेशा (Occupation)')),
+              ],
               TextField(
                   key: const ValueKey('proposal-reason'),
                   controller: _reason,
@@ -237,7 +280,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                   child: const Text('पुनः पेश गर्नुहोस् (Resubmit)')),
             ] else
               Text(row['reason']?.toString() ?? ''),
-            if (row['type'] != 'EDIT_PERSON' &&
+            if (!{'EDIT_PERSON', 'RECORD_DEATH'}.contains(row['type']) &&
                 {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
                     .contains(row['status']))
               const Text(

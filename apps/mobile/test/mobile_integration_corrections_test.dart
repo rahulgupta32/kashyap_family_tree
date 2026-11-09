@@ -72,12 +72,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Synthetic reason'), findsNothing);
   });
+  testWidgets('death correction validates input and preserves evidence',
+      (tester) async {
+    Map<String, dynamic>? sent;
+    final row = {
+      'id': 'death',
+      'requesterUserId': 'owner',
+      'type': 'RECORD_DEATH',
+      'status': 'CORRECTION_REQUESTED',
+      'version': 2,
+      'reason': 'Correct stored date',
+      'proposedChanges': {
+        'deathDateBs': '2083-01-01',
+        'deathYearBs': 2083,
+        'evidenceAssetId': 'retain'
+      }
+    };
+    final api = GenealogyApiService(client: MockClient((r) async {
+      if (r.method == 'POST') {
+        sent = jsonDecode(r.body);
+        return jsonResponse({...row, 'status': 'PENDING'});
+      }
+      return jsonResponse({
+        ...row,
+        'status': sent == null ? 'CORRECTION_REQUESTED' : 'PENDING'
+      });
+    }))
+      ..setAuthToken(token('owner'));
+    addTearDown(api.dispose);
+    await tester.pumpWidget(MaterialApp(
+        home: MyChangeRequestsScreen(api: api, initialId: 'death')));
+    await tester.pumpAndSettle();
+    final submit = find.byKey(const ValueKey('proposal-resubmit'));
+    await tester.enterText(
+        find.byKey(const ValueKey('proposal-death-date')), 'bad date');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(sent, isNull);
+    await tester.enterText(
+        find.byKey(const ValueKey('proposal-death-date')), '2083-02-03');
+    await tester.enterText(
+        find.byKey(const ValueKey('proposal-death-year')), '');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(sent!['proposedChanges'],
+        {'deathDateBs': '2083-02-03', 'evidenceAssetId': 'retain'});
+    expect(submit, findsNothing);
+    expect(find.text('RECORD_DEATH · PENDING'), findsOneWidget);
+  });
   test(
       'global logout validates acknowledgement before clearing the local session',
       () async {
     var malformed = true;
     final api = GenealogyApiService(
-        sessionStore: MemorySessionStore(), chatOutboxStore: MemoryChatOutboxStore(),
+        sessionStore: MemorySessionStore(),
+        chatOutboxStore: MemoryChatOutboxStore(),
         client: MockClient((r) async {
           expect(r.method, 'POST');
           expect(r.url.path, '/auth/logout-all');
