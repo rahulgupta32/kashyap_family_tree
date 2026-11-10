@@ -346,9 +346,13 @@ void main() {
     await until(tester, going);
     await press(tester, going);
     final rsvpDeadline = DateTime.now().add(const Duration(seconds: 20));
-    while (!tester.widget<ChoiceChip>(going).selected && DateTime.now().isBefore(rsvpDeadline)) {
+    // A successful RSVP reload temporarily removes the list/chip. Poll the
+    // authoritative replacement without reading an absent widget.
+    while (DateTime.now().isBefore(rsvpDeadline)) {
+      if (going.evaluate().length == 1 && tester.widget<ChoiceChip>(going).selected) break;
       await tester.pump(const Duration(milliseconds: 100));
     }
+    expect(going, findsOneWidget);
     expect(tester.widget<ChoiceChip>(going).selected, isTrue);
     expect((await api('/calendar/events/$eventId', token: service.authToken))['myRsvp'], 'GOING');
     await back(tester);

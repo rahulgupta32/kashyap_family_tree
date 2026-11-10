@@ -8,6 +8,7 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import {
   SubmitChangeRequestDto,
   ChangeRequestDetailDto,
@@ -1049,6 +1050,12 @@ export class ChangeRequestsService {
     } else if (options?.requesterUserId) {
       sql += ` AND r.requester_user_id = $${pIdx++}`;
       params.push(options.requesterUserId);
+    }
+
+    if (options?.branchId) {
+      if (!isUUID(options.branchId)) throw new BadRequestException('Valid branch ID required');
+      sql += ` AND p.branch_id = $${pIdx++}`;
+      params.push(options.branchId);
     }
 
     if (options?.status) {

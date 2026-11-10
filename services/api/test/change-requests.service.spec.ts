@@ -30,6 +30,21 @@ describe('ChangeRequestsService (Genealogy Change Governance & Workflow)', () =>
     });
   });
 
+  it.each([false, true])('applies requested branch filter while retaining member scope (reviewer=%s)', async reviewer => {
+    mockDb.query.mockResolvedValue({ rows: [] });
+    const actor = reviewer ? {id: 'reviewer', roles: [Role.SUPER_ADMIN], roleAssignments: []} : {id: 'owner', roles: [Role.REGISTERED_USER], roleAssignments: []};
+    await changeRequestsService.listRequests(actor as any, {branchId: '11111111-1111-4111-8111-111111111111', status: ChangeRequestStatus.PENDING});
+    const [sql, params] = mockDb.query.mock.calls[0];
+    expect(sql).toMatch(/AND p\.branch_id = \$\d+/);
+    expect(params).toEqual(reviewer ? ['11111111-1111-4111-8111-111111111111', 'PENDING'] : ['owner', '11111111-1111-4111-8111-111111111111', 'PENDING']);
+    if (!reviewer) expect(sql).toMatch(/AND r\.requester_user_id = \$\d+/);
+  });
+
+  it('rejects malformed branch selections before database access', async () => {
+    await expect(changeRequestsService.listRequests({id: 'owner', roles: [Role.REGISTERED_USER], roleAssignments: []} as any, {branchId: 'not-a-uuid'})).rejects.toThrow('Valid branch ID required');
+    expect(mockDb.query).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     diffService = new DiffService();
 
