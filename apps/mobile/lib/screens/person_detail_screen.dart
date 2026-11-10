@@ -314,13 +314,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-          Text(value,
+          Expanded(child: Text(label,
+              style: const TextStyle(color: AppTheme.textMuted, fontSize: 13))),
+          const SizedBox(width: 12),
+          Expanded(child: Text(value, textAlign: TextAlign.end,
               style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
-                  color: AppTheme.textDark)),
+                  color: AppTheme.textDark))),
         ],
       ),
     );

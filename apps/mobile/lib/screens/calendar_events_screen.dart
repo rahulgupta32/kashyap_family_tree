@@ -126,13 +126,14 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
     final description = TextEditingController();
     final location = TextEditingController();
     var eventType = 'GENERAL_EVENT';
+    var privateEvent = false;
     DateTime? selected;
     var reminder = false;
     var busy = false;
     var submitted = false;
     String? error;
     Map<String,dynamic>? audience;
-    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); selected=null; audience=null;};
+    _clearDialogDraft = () {title.clear(); description.clear(); location.clear(); selected=null; audience=null; privateEvent=false;};
     try {
       final route = DialogRoute<void>(context: context, builder: (dialogContext) => StatefulBuilder(builder: (context, update) => AlertDialog(
         title: Text(calendarLabels['create']!),
@@ -156,7 +157,16 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           CheckboxListTile(title: Text(calendarLabels['reminder']!), value: reminder, onChanged: busy || submitted ? null : (value) { if(dialogContext.mounted && checkCalendarSession() && !busy && !submitted) update(() => reminder = value ?? false); }),
           const Text('नेपाल समय (Nepal UTC+05:45)'),
           Text(calendarLabels['dateNote']!),
-          TextButton(onPressed: busy || submitted ? null : () async {
+          CheckboxListTile(
+            key: const ValueKey('calendar-private-event'),
+            title: const Text('निजी कार्यक्रम · तपाईं मात्र (Private event · only you)'),
+            value: privateEvent,
+            onChanged: busy || submitted ? null : (value) {
+              if (dialogContext.mounted && checkCalendarSession() && !busy && !submitted) {
+                update(() { privateEvent = value ?? false; audience = null; });
+              }
+            }),
+          TextButton(onPressed: busy || submitted || privateEvent ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
             final picked=await Navigator.of(dialogContext).push<Map<String,dynamic>>(MaterialPageRoute(builder:(_)=>CalendarAudiencePicker(api:widget.apiService)));
             if(dialogContext.mounted && checkCalendarSession() && picked != null)update(()=>audience=picked);
@@ -191,7 +201,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
             update(() {busy = true; submitted = true; error = null;});
             try {
               await widget.apiService.createCalendarEvent({
-                'title': title.text.trim(), 'description': description.text.trim(), 'location': location.text.trim(), 'eventType': eventType, 'audienceScope': audience==null?'COMMUNITY':'INVITED_ONLY',
+                'title': title.text.trim(), 'description': description.text.trim(), 'location': location.text.trim(), 'eventType': eventType, 'audienceScope': privateEvent?'PRIVATE':audience==null?'COMMUNITY':'INVITED_ONLY',
                 if(audience!=null)'audienceSelection':audience!['audienceSelection'],
                 if(audience!=null)'audiencePreviewId':audience!['audiencePreviewId'],
                 'startsAt': nepalWallTimeToUtc(selected!).toIso8601String(), 'reminderOffsets': reminder ? [60] : <int>[],

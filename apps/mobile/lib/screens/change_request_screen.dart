@@ -220,17 +220,18 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _changeType,
                     items: const [
                       DropdownMenuItem(
                           value: 'EDIT_PERSON',
-                          child: Text('विवरण संशोधन (Edit Details)')),
+                          child: Text('विवरण संशोधन (Edit Details)', maxLines: 1, overflow: TextOverflow.ellipsis)),
                       DropdownMenuItem(
                           value: 'RECORD_DEATH',
-                          child: Text('मृत्यु दर्ता (Record Death)')),
+                          child: Text('मृत्यु दर्ता (Record Death)', maxLines: 1, overflow: TextOverflow.ellipsis)),
                       DropdownMenuItem(
                           value: 'ADD_CHILD',
-                          child: Text('सन्तान थप (Add Child)')),
+                          child: Text('सन्तान थप (Add Child)', maxLines: 1, overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: _submitting || _isSuccess
                         ? null
@@ -267,6 +268,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                         decoration: const InputDecoration(
                             labelText: 'English name (optional)')),
                     DropdownButtonFormField<String>(
+                    isExpanded: true,
                         initialValue: _gender,
                         items: const [
                           DropdownMenuItem(

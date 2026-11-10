@@ -138,6 +138,9 @@ Future<void> press(WidgetTester tester, Finder finder) async {
   await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
   for (var attempt = 0; attempt < 30; attempt++) {
     await tester.pump(const Duration(milliseconds: 150));
+    // A pending refresh can temporarily replace the form with its loading view.
+    // Re-resolve after every frame; never retain an element across the rebuild.
+    if (finder.evaluate().isEmpty) continue;
     await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
     await tester.pump(const Duration(milliseconds: 150));
     if (finder.hitTestable().evaluate().isNotEmpty) break;

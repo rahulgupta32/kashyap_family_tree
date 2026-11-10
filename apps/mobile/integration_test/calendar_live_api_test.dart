@@ -60,6 +60,7 @@ void main() {
           'Synthetic event; no cultural calculations.');
       await tester.enterText(find.byKey(const ValueKey('calendar-location')),
           'Synthetic test venue');
+      await press(tester, find.byKey(const ValueKey('calendar-private-event')));
       await press(
           tester, find.widgetWithText(TextButton, calendarLabels['time']!));
       await press(tester, find.text('OK').last);
@@ -72,6 +73,7 @@ void main() {
       final event = events.singleWhere((e) => e['title'] == original) as Map;
       final id = event['id'] as String;
       expect(event['version'], 1);
+      expect(event['audienceScope'], 'PRIVATE');
       final wall = nepalWallClock(DateTime.parse(event['startsAt'] as String));
       final date = wall.toIso8601String().substring(0, 10);
       await press(tester, find.byTooltip('Calendar day month agenda'));
@@ -140,6 +142,9 @@ void main() {
       await until(tester, find.text('Updated synthetic calendar integration'));
       await until(tester, find.text('v2 · CALENDAR_EVENT_UPDATED'));
       final other = await reviewerLogin('+9779847100072');
+      final hidden = await http.get(Uri.parse('$base/calendar/events/$id'),
+          headers: {'Authorization': 'Bearer $other'});
+      expect(hidden.statusCode, anyOf(403, 404), reason: 'UI-created private event must stay hidden from another account');
       final denied = await http.patch(Uri.parse('$base/calendar/events/$id'),
           headers: {
             'Content-Type': 'application/json',

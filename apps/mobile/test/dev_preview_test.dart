@@ -140,6 +140,8 @@ void main() {
       'catalog opens main synthetic screens without layout or contract exceptions',
       (tester) async {
     if (!devPreviewRequested) return;
+    await tester.binding.setSurfaceSize(const Size(411, 731));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const DevelopmentPreviewApp());
     await tester.pumpAndSettle();
     final entry = find.byKey(const Key('enter-development-preview'));
@@ -169,7 +171,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text(name), 220,
           scrollable: find.byType(Scrollable).last);
-      await tester.tap(find.text(name));
+      final destination = find.text(name);
+      await Scrollable.ensureVisible(tester.element(destination), alignment: 0.5);
+      await tester.pumpAndSettle();
+      expect(destination.hitTestable(), findsOneWidget, reason: name);
+      await tester.tap(destination.hitTestable());
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: name);
       await tester.pageBack();

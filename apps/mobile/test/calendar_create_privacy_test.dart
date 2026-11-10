@@ -26,6 +26,32 @@ Future<void> selectAudience(WidgetTester tester) async {
 }
 
 void main() {
+  for (final hadAudience in [false, true]) {
+    testWidgets('private create preserves organizer-only scope and clears invitation selection (prior audience=$hadAudience)', (tester) async {
+      Map<String, dynamic>? submitted;
+      final api = GenealogyApiService(client: MockClient((request) async {
+        if (request.url.path == '/genealogy/branches') return jsonResponse([{'id':'branch-1','nameNepali':'शाखा','nameEnglish':'Fictional branch'}]);
+        if (request.url.path == '/calendar/events/preview') return jsonResponse({'previewId':'preview-1','selection':selection,'recipientCount':1,'expiresAt':DateTime.now().add(const Duration(minutes:10)).toIso8601String(),'recipients':[{'name':'Fictional recipient'}]});
+        if (request.method == 'POST') { submitted = jsonDecode(request.body); return jsonResponse({'id':'event-1'},201); }
+        return jsonResponse([]);
+      }))..setAuthToken('fixture');
+      addTearDown(api.dispose);
+      await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService:api)));
+      await tester.pumpAndSettle(); await createDialog(tester);
+      await tester.enterText(find.byKey(titleKey),'Private synthetic appointment');
+      await chooseDate(tester);
+      if (hadAudience) await selectAudience(tester);
+      final toggle = find.byKey(const ValueKey('calendar-private-event'));
+      await tester.ensureVisible(toggle); await tester.tap(toggle); await tester.pumpAndSettle();
+      expect(tester.widget<TextButton>(find.widgetWithText(TextButton,audienceButton)).onPressed, isNull);
+      expect(find.text(clearButton), findsNothing);
+      await tapButton(tester,calendarLabels['save']!);
+      expect(submitted!['audienceScope'],'PRIVATE');
+      expect(submitted!.containsKey('audienceSelection'),isFalse);
+      expect(submitted!.containsKey('audiencePreviewId'),isFalse);
+    });
+  }
+
   for (final failure in ['403', '409', 'network']) {
     testWidgets('create $failure retains invitation scope and hides raw server errors on explicit retry', (tester) async {
       final bodies = <Map<String, dynamic>>[];

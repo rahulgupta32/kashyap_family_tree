@@ -8,6 +8,8 @@ void main() {
   testWidgets(
       'offline preview enters without credentials and opens all catalog screens',
       (tester) async {
+    WidgetController.hitTestWarningShouldBeFatal = true;
+    addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
     await tester.pumpWidget(const DevelopmentPreviewApp());
     await tester.pumpAndSettle();
     await binding.convertFlutterSurfaceToImage();
@@ -47,7 +49,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text(screen.key), 220,
           scrollable: find.byType(Scrollable).last);
-      await tester.tap(find.text(screen.key));
+      final destination = find.text(screen.key);
+      await Scrollable.ensureVisible(tester.element(destination), alignment: 0.5);
+      await tester.pumpAndSettle();
+      expect(destination.hitTestable(), findsOneWidget, reason: screen.key);
+      debugPrint('[OFFLINE PREVIEW DEVICE] Opening ${screen.key}');
+      await tester.tap(destination.hitTestable());
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: screen.key);
       if (screen.key == 'Notifications') {
@@ -55,8 +62,10 @@ void main() {
             find.text('Synthetic notification — offline only'), findsOneWidget);
       }
       if (screen.value != null) await capture(screen.value!);
+      expect(find.text('Preview screen catalog'), findsNothing, reason: screen.key);
       await tester.pageBack();
       await tester.pumpAndSettle();
+      expect(find.text('Preview screen catalog'), findsOneWidget, reason: screen.key);
       await tester.pageBack();
       await tester.pumpAndSettle();
     }

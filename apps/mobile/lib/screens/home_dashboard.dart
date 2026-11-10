@@ -301,9 +301,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             const Row(children: [
                               Icon(Icons.push_pin_outlined, size: 16),
                               SizedBox(width: 8),
-                              Text('आधिकारिक सूचना · OFFICIAL NOTICE',
+                              Expanded(child: Text('आधिकारिक सूचना · OFFICIAL NOTICE',
                                   style: TextStyle(
-                                      fontSize: 10, color: AppTheme.saffron))
+                                      fontSize: 10, color: AppTheme.saffron)))
                             ]),
                             const SizedBox(height: 10),
                             Text(
