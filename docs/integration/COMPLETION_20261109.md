@@ -1,3 +1,11 @@
+# Spouse correction integration — 10 November 2026
+
+Member correction now supports ADD_SPOUSE and ADD_SPOUSE_LINK in the existing owner/session/state-guarded screen. New-person proposals permit corrected Nepali/English names and explicit gender while preserving stored livingStatus, evidence and all unrelated fields. Existing-person proposals using either spousePersonId or spouseId permit reason correction only; the exact relationship target is preserved. No marriage-date calculation/storage or new relationship-target selector is claimed.
+
+Local focused verification:15 spouse/existing correction widget cases passed, including10 new spouse cases covering both proposal types, both target aliases, required values, terminal/PENDING denial, foreign ownership and retained callbacks after account replacement. A new real-PostgreSQL integration case exercises correction, foreign-owner denial, resubmission without genealogy mutation, independent approval with corrected names/gender/deceased state and provenance, then terminal resubmission denial. That database case is implemented but not locally executed; exact changed-source CI is required.
+
+Parent published dba13f9/treebf5805bf fast42852204826 passed. Main42852516230, iOS42852515969 and offline42852515923 were running when inspected; their source is the preceding diagnostic batch, not the spouse changes. The independently verified offline61723c8 APK remains available as recorded in PREVIEW_DELIVERY_20261110.md. Vercel staging inventory now returns403 for missing Jyphra team authorization; a consent link was provided privately in the conversation. No staging deployment is claimed. Existing distribution/provider/device/independent approval/operations gates remain open.
+
 # Production completion continuation — 9 November 2026
 
 ## Recovered published baseline — Verified

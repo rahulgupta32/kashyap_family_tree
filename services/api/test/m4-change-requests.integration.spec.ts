@@ -390,6 +390,42 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
     expect(link.provenance.changeRequestId).toBe(req.id);
     expect(link.provenance.approvedBy).toBe(superAdminId);
   });
+  it('corrects a spouse proposal without changing genealogy until independent approval', async () => {
+    const target = (await db.query(
+      "INSERT INTO persons (gender,living_status,branch_id,generation,version) VALUES ('OTHER','LIVING',$1,3,1) RETURNING *",
+      [testBranchId],
+    )).rows[0];
+    const reviewer = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    const original = {primaryNameNepali: 'काल्पनिक नाम', primaryNameEnglish: 'Fictional original',
+      gender: 'OTHER', livingStatus: 'DECEASED', evidenceNotes: 'Retain fictional evidence note'};
+    const request = await changeRequestsService.submitRequest(requesterId, {
+      targetPersonId: target.id, type: ChangeRequestType.ADD_SPOUSE,
+      proposedChanges: original, reason: 'Fictional spouse correction lifecycle',
+    });
+    await changeRequestsService.requestCorrection(request.id, reviewer, 'Correct the fictional spelling');
+    const corrected = {...original, primaryNameNepali: 'काल्पनिक सच्याइएको नाम', primaryNameEnglish: 'Fictional corrected', gender: 'FEMALE'};
+    await expect(changeRequestsService.resubmit(request.id, otherUserId, {
+      proposedChanges: corrected, reason: 'Foreign account correction',
+    })).rejects.toThrow('Only the requester');
+    const pending = await changeRequestsService.resubmit(request.id, requesterId, {
+      proposedChanges: corrected, reason: 'Corrected fictional spelling',
+    });
+    expect(pending.status).toBe(ChangeRequestStatus.PENDING);
+    expect((await db.query('SELECT proposed_changes FROM genealogy_change_requests WHERE id=$1', [request.id])).rows[0].proposed_changes).toEqual(corrected);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [target.id])).rows[0]).toEqual(target);
+    expect((await db.query('SELECT * FROM spouse_links WHERE person_id=$1 OR spouse_id=$1', [target.id])).rows).toEqual([]);
+    const approved = await changeRequestsService.reviewRequest(request.id, reviewer, {
+      status: ChangeRequestStatus.APPROVED, reviewNotes: 'Independent fictional verification',
+    });
+    expect(approved.status).toBe(ChangeRequestStatus.APPROVED);
+    const links = (await db.query('SELECT spouse_id,confidence,provenance FROM spouse_links WHERE person_id=$1', [target.id])).rows;
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({confidence: 'VERIFIED', provenance: {changeRequestId: request.id, approvedBy: superAdminId}});
+    expect((await db.query('SELECT gender,living_status FROM persons WHERE id=$1', [links[0].spouse_id])).rows[0]).toEqual({gender: 'FEMALE', living_status: 'DECEASED'});
+    expect((await db.query("SELECT full_name FROM person_names WHERE person_id=$1 AND language='en'", [links[0].spouse_id])).rows[0].full_name).toBe('Fictional corrected');
+    await expect(changeRequestsService.resubmit(request.id, requesterId, {proposedChanges: original})).rejects.toThrow('Only correction-requested');
+  });
+
   it('retains terminal decisions on resubmission and permits only owned requested corrections/conflicts', async()=>{
     for(const status of ['PENDING','APPROVED','REJECTED','ESCALATED']) {
       const req=await changeRequestsService.submitRequest(requesterId,{targetPersonId:personId,type:ChangeRequestType.EDIT_PERSON,proposedChanges:{birthPlace:'Synthetic place'},reason:'Synthetic state guard regression'});
