@@ -65,3 +65,7 @@ Follow-on local validation:687 backend units/63suites; API typecheck;17 focused 
 ## PostgreSQL fixture correction
 
 Main42771202693 at0b7da23 passed687 unit tests but failed one of632 general integration cases (621 passed/10 skipped): the new selected-branch regression reused the suite's shared person after an earlier branch-transfer test had intentionally moved it. Its positive selected-branch assertion correctly returned no such requests. The regression now creates independent people in both branches and retains every positive inclusion, foreign-owner exclusion and reviewer denial assertion. Production query/authority behavior is unchanged by this fixture correction. Exact corrected-source PostgreSQL verification remains required. Both offline and USB build jobs in42771202695 passed separately; native17-screen/10capture acceptance was queued when inspected.
+
+## Native SDK source binding correction
+
+The new native preview job in42771202695 stopped before emulator/application execution because its reused SDK preflight correctly required `KASHYAP_SOURCE_HEAD_SHA`, which the new workflow had omitted. The workflow now supplies the exact PR source SHA (or dispatch SHA) to the unchanged preflight, and retains SDK diagnostics alongside native evidence. No source-matching check, SDK validation or application assertion was bypassed. Native screenshots remain unverified until the corrected workflow runs successfully. First and follow-on APK build successes remain independent evidence.

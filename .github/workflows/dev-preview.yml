@@ -9,6 +9,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  KASHYAP_SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 jobs:
   build-preview:
     runs-on: ubuntu-latest
@@ -91,7 +93,9 @@ jobs:
         if: always()
         with:
           name: offline-preview-native-evidence-${{ github.run_id }}
-          path: test-results/dev-preview-device/
+          path: |
+            test-results/dev-preview-device/
+            test-results/android-sdk-*
           if-no-files-found: error
           retention-days: 14
   build-usb-integration:
