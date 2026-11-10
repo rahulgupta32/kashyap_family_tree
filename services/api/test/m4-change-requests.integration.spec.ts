@@ -424,13 +424,19 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
   });
 
   it('applies branch filters together with requester ownership and reviewer branch isolation', async () => {
+    // Earlier branch-transfer acceptance intentionally moves the shared person.
+    // This regression owns both branch fixtures and must not depend on test order.
+    const selectedPerson = (await db.query(
+      "INSERT INTO persons (gender, living_status, branch_id, generation, version) VALUES ('OTHER', 'LIVING', $1, 2, 1) RETURNING id",
+      [testBranchId],
+    )).rows[0].id;
     const otherPerson = (await db.query(
       "INSERT INTO persons (gender, living_status, branch_id, generation, version) VALUES ('OTHER', 'LIVING', $1, 2, 1) RETURNING id",
       [destBranchId],
     )).rows[0].id;
-    const own = await changeRequestsService.submitRequest(requesterId, {targetPersonId: personId, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic filtered'}, reason: 'Branch filter regression'});
+    const own = await changeRequestsService.submitRequest(requesterId, {targetPersonId: selectedPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic filtered'}, reason: 'Branch filter regression'});
     const otherBranch = await changeRequestsService.submitRequest(requesterId, {targetPersonId: otherPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic other branch'}, reason: 'Branch filter regression'});
-    const foreign = await changeRequestsService.submitRequest(otherUserId, {targetPersonId: personId, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic other requester'}, reason: 'Branch filter regression'});
+    const foreign = await changeRequestsService.submitRequest(otherUserId, {targetPersonId: selectedPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic other requester'}, reason: 'Branch filter regression'});
     const global = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
     const member = {id: requesterId, roles: [Role.REGISTERED_USER], roleAssignments: []} as any;
     const branchReviewer = {id: branchAdminId, roles: [Role.BRANCH_ADMIN], roleAssignments: [{role: Role.BRANCH_ADMIN, branchId: testBranchId}]} as any;
