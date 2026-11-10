@@ -8,6 +8,43 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 
 void main() {
+  testWidgets('manager cancellation reloads the authoritative cancelled history on a phone', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(411, 731);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    var cancelled = false;
+    final api = GenealogyApiService(client: MockClient((r) async {
+      if (r.url.path.endsWith('/history')) {
+        return jsonResponse([
+          if (cancelled) {'version': 3, 'action': 'CALENDAR_EVENT_CANCELLED'},
+          {'version': 2, 'action': 'CALENDAR_EVENT_UPDATED'},
+          {'version': 1, 'action': 'CALENDAR_EVENT_CREATED'},
+        ]);
+      }
+      return jsonResponse({
+        'id': 'event', 'title': 'Updated synthetic calendar integration',
+        'description': 'Synthetic event; no cultural calculations.',
+        'location': 'Synthetic test venue', 'canManage': true,
+        'startsAt': '2026-11-11T04:15:00Z',
+        'rsvpCounts': {'going': 1, 'maybe': 0, 'declined': 0},
+        'lifecycleState': cancelled ? 'CANCELLED' : 'ACTIVE',
+      });
+    }))..setAuthToken('mock');
+    addTearDown(api.dispose);
+    await tester.pumpWidget(MaterialApp(home: CalendarEventDetailScreen(
+      api: api, eventId: 'event', onEdit: (_) async {},
+      onCancel: (_) async { cancelled = true; },
+    )));
+    await tester.pumpAndSettle();
+    final cancel = find.text('रद्द गर्नुहोस् (Cancel event)');
+    await tester.ensureVisible(cancel);
+    await tester.tap(cancel);
+    await tester.pumpAndSettle();
+    expect(cancelled, isTrue);
+    expect(find.text('v3 · CALENDAR_EVENT_CANCELLED'), findsOneWidget);
+    expect(find.byKey(const ValueKey('detail-rsvp-GOING')), findsNothing);
+  });
   testWidgets(
       'detail fetches manager history, uses RSVP endpoint and reloads authoritative state',
       (tester) async {

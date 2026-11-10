@@ -9,6 +9,38 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 
 void main() {
+  testWidgets('cancelling from detail preserves its route and reloads manager history', (tester) async {
+    var cancelled = false;
+    final service = GenealogyApiService(client: MockClient((request) async {
+      final event = {'id': 'event-1', 'title': 'Fictional gathering',
+        'eventType': 'GENERAL_EVENT', 'audienceScope': 'PRIVATE',
+        'version': cancelled ? 3 : 2, 'canManage': true,
+        'lifecycleState': cancelled ? 'CANCELLED' : 'ACTIVE'};
+      if (request.method == 'POST') {
+        expect(request.url.path, '/calendar/events/event-1/cancel');
+        expect(jsonDecode(request.body), {'version': 2, 'reason': 'Fictional cancellation'});
+        cancelled = true;
+        return jsonResponse({...event, 'version': 3, 'lifecycleState': 'CANCELLED'});
+      }
+      if (request.url.path.endsWith('/history')) { return jsonResponse([
+        {'version': cancelled ? 3 : 2,
+          'action': cancelled ? 'CALENDAR_EVENT_CANCELLED' : 'CALENDAR_EVENT_UPDATED'}]); }
+      return jsonResponse(request.url.path == '/calendar/events' ? [event] : event);
+    }))..setAuthToken('mock-access');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: CalendarEventsScreen(apiService: service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fictional gathering'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('रद्द गर्नुहोस् (Cancel event)'));
+    // The detail shows an active operation while its dialog is open.
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(find.byKey(const ValueKey('calendar-title')), 'Fictional cancellation');
+    await tester.tap(find.widgetWithText(TextButton, calendarLabels['save']!));
+    await tester.pumpAndSettle();
+    expect(cancelled, isTrue);
+    expect(find.text('v3 · CALENDAR_EVENT_CANCELLED'), findsOneWidget);
+  });
   testWidgets('organizer cancellation sends current version and disables RSVP after reload', (tester) async {
     var cancelled = false;
     final service = GenealogyApiService(client: MockClient((request) async {

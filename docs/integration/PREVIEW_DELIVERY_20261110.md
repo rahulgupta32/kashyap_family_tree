@@ -1,3 +1,19 @@
+# Verified offline delivery and native continuation — 10 November 2026
+
+Recovered canonical source `61723c8b7727dfc8092c57ed143210a8f5960b74`, tree `ce384c5578a9526b56e1207928571d96c2ca2813`. The prior local `46c3fdc` has the identical tree; its history and unrelated untracked files were preserved. PR5 is draft/open/unmerged on its existing base.
+
+**Offline preview delivered:** [artifact13744590267](https://github.com/rahulgupta32/kashyap_family_tree/actions/runs/42775900077/artifacts/13744590267), workflow42775900077 SUCCESS. APK `nepali-bansawali-offline-preview.apk`, package `com.example.kashyap_mobile.devpreview`, SHA256 `773e90d1a69e7c9ea610becb2626e2675256e322ee3f544e690ac8bd3e1c18ff`. Download/unzip/install on an Android test phone and tap **Enter Development Preview**. Switch-account cycles five synthetic personas; catalog opens17 destinations; reset erases memory changes; exit returns to login. No backend or OTP is needed. Debug inspection only.
+
+ZIP digest `7f6e180af3a72d8ff7b542e7c33826395d423c35dfad753236c22460dc9aae26` independently matches GitHub. All three actual Gradle release/profile rejection checks passed. Native evidence artifact13744537231 digest `c99820445b2fa20c714bb74d185beb4278e7cf284744af0fa14349807382cc5a` matched; all10 PNG structures/hashes and native log hash verified. Original APK installation/launch, instrumented17-screen sweep and two native tests passed on an emulator. Physical-device/backend/production acceptance remain false. Cleanup reported an uninstall warning after the successful checks; no physical-device acceptance is inferred.
+
+**Separate live verification:** Main42775900209 FAILED only its Android job's later calendar journey. Its four preceding live M4 cases passed. Platform687 units,622 real PostgreSQL/Redis integration cases (10 dedicated-storage skips),87 browser cases, dependency audit, restore, storage/scanner/search, containers and Flutter job passed. Calendar failed waiting for exact `v3 · CALENDAR_EVENT_CANCELLED`; artifact13744960093 digest `14ac276d33d21d8344ba74b7b042d78ec7a284e640197c8c00221f8cebdd3b0a` independently matched. No retained cancellation HTTP result proves a production defect or successful cancellation. Follow-on adds real-response status observation, closed-dialog confirmation and persisted version/state assertions before the unchanged history assertion; two local widget regressions cover manager cancellation and parent-list/detail navigation. Native execution remains required.
+
+**iOS42775900184 FAILED:** initial simulator and unsigned-device compilations passed; fixture compilation hit its360-second deadline before installation/startup/Keychain execution. Artifact13744856329 digest `abc7690056eecec493a16f2c1c4b146d988b00c24ddb663d92e018f183027f07` independently matched. Follow-on retains verbose fixture-build diagnostics and distinguishes inner build timeout/failure;20 host controls pass. Deadlines, native configuration and body assertions remain unchanged. Diagnostics are not a claimed native fix.
+
+Follow-on local validation: all362 default Flutter tests passed, clean mobile analysis,20 iOS host controls and whitespace checks passed. Locked hosted packages were checksum-verified during cache restoration; no dependency versions changed. These are local results, not new-source native acceptance.
+
+Approved staging service access/secure configuration, provider/signing inputs, physical devices, independent requirement/security/privacy/accessibility/localization/UAT and operational recovery remain open. No merge, production deployment, paid provisioning, real data or cultural activation. Subsequent changed-source workflows must be inspected independently.
+
 # Offline preview delivery — 10 November 2026
 
 ## Verified first deliverable

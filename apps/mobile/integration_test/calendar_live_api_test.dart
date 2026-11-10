@@ -14,6 +14,24 @@ import 'package:kashyap_mobile/widgets/heritage.dart';
 import 'm4_live_api_device_test.dart' show api, reviewerLogin, until, press;
 
 const base = String.fromEnvironment('API_BASE_URL');
+
+// Observe real responses without logging identifiers, credentials or bodies.
+class CalendarOutcomeClient extends http.BaseClient {
+  final http.Client _inner = http.Client();
+  int? cancellationStatus;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = await _inner.send(request);
+    if (request.method == 'POST' && request.url.path.endsWith('/cancel')) {
+      cancellationStatus = response.statusCode;
+      debugPrint('[CALENDAR DEVICE] Cancellation HTTP ${response.statusCode}');
+    }
+    return response;
+  }
+  @override
+  void close() => _inner.close();
+}
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
@@ -22,7 +40,8 @@ void main() {
     expect(base, 'http://10.0.2.2:3010',
         reason: 'Only the disposable CI API is allowed in this fixture');
     const phone = '+9779847100071';
-    final service = GenealogyApiService();
+    final transport = CalendarOutcomeClient();
+    final service = GenealogyApiService(client: transport);
     final store = SecureSessionStore();
     await tester.runAsync(store.clear);
     Future<void> snapshot(String name) async {
@@ -166,11 +185,16 @@ void main() {
           'Synthetic test cancellation');
       await press(
           tester, find.widgetWithText(TextButton, calendarLabels['save']!));
-      await until(tester, find.text('v3 · CALENDAR_EVENT_CANCELLED'));
-      expect(find.byKey(const ValueKey('detail-rsvp-GOING')), findsNothing);
+      await until(tester, find.byType(CalendarEventDetailScreen),
+          ready: () => find.byType(AlertDialog).evaluate().isEmpty);
+      expect(transport.cancellationStatus, inInclusiveRange(200, 299),
+          reason: 'Cancellation must have a real successful server response');
       final saved = await api('/calendar/events/$id', token: service.authToken);
+      debugPrint('[CALENDAR DEVICE] Persisted cancellation version=${saved['version']} state=${saved['lifecycleState']}');
       expect(saved['lifecycleState'], 'CANCELLED');
       expect(saved['version'], 3);
+      await until(tester, find.text('v3 · CALENDAR_EVENT_CANCELLED'));
+      expect(find.byKey(const ValueKey('detail-rsvp-GOING')), findsNothing);
       final late = await http.post(Uri.parse('$base/calendar/events/$id/rsvp'),
           headers: {
             'Content-Type': 'application/json',

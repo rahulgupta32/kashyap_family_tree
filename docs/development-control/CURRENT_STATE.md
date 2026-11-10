@@ -1,3 +1,9 @@
+# Verified recovery and preview delivery — 10 November 2026
+
+Canonical61723c8/treece384c55 recovered without overwriting prior local history or unrelated files. PR5 remains draft/open/unmerged. Offline workflow42775900077 SUCCESS: original .devpreview APK launch,17 instrumented destinations,10 independently hash/PNG-checked captures and three real release/profile rejections. Download/source/checksum and exact limits are recorded in `docs/integration/PREVIEW_DELIVERY_20261110.md`.
+
+Main42775900209 FAILED its later calendar cancellation/history journey; four earlier M4 cases and all other applicable main jobs passed. iOS42775900184 FAILED fixture-build deadline; simulator/device compilation passed but startup/Keychain did not execute. Follow-on adds cancellation response/persisted-state diagnostics, two local route/history regressions and verbose/accurately classified iOS build evidence. Neither native failure is claimed fixed.20 iOS host controls pass; changed-source native CI must still run. Production NO-GO; all independent acceptance and approved infrastructure/provider/device/operations gates remain required.
+
 # Offline development preview implementation — 9 November 2026
 
 Recovery source d540e366e4df69a7e22a0d6cf48a46f72043d8c9 independently verified: Main42593651760 SUCCESS; iOS42593651763 SUCCESS. New highest-priority work: separate debug-only main_dev_preview.dart, .devpreview app identity, OTP-free preview action, five synthetic personas, reset/exit, existing dashboard and17 catalog destinations, memory-only HTTP/chat fixtures without network/JWT credentials. Production import graph excludes synthetic sources. Android/iOS native guards reject preview flags/targets in non-debug builds. Dedicated preview APK workflow builds independently and exercises actual Android release/profile rejection. No new backend auth bypass.

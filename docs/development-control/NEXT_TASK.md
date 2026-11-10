@@ -1,3 +1,9 @@
+# Current execution — 10 November 2026
+
+Offline preview delivery is verified on canonical61723c8/treece384c55, run42775900077: original APK launch,17 native destinations,10 validated PNGs and real non-debug rejection. Download and checksum: `docs/integration/PREVIEW_DELIVERY_20261110.md`.
+
+Inspect changed-source automatic Android/iOS results next. Parent Main42775900209 passed platform/storage/scanner/search/containers/Flutter and four M4 device cases, but calendar cancellation history failed. New transport observation and persisted-state checks must distinguish submission rejection from reload/render failure; preserve exact v3 assertion and original deadlines. Parent iOS42775900184 timed out during fixture build before startup; verbose retained diagnostics and precise build-timeout attribution are added, not a claimed fix. Complete native failure closure, then continue the existing full-stack persona/core-governance integration queue. Staging access/signing/providers/physical-device/independent acceptance remain actual external dependencies. No merge/production/data/cultural activation.
+
 # Immediate priority — deliver offline APK
 
 Inspect **Offline development preview APK** workflow on the exact new source. Require actual APK build, .devpreview identity/debug signature/hash evidence and three real Gradle release/profile rejections. Fix demonstrated failures, then deliver APK/source/SHA256 and installation/entry/persona/reset instructions. Capture native preview screen evidence separately; do not call synthetic fixtures real backend acceptance.

@@ -106,6 +106,12 @@ def select_device(inventory):
 def classify_failure(failure, log, connection=None):
     if failure.phase != 'startup-test':
         return 'SIMULATOR_INFRASTRUCTURE_' + ('TIMEOUT' if failure.timed_out else 'FAILURE')
+    if connection and connection.get('failurePhase') == 'test-build':
+        # Inner build deadlines exit the supervisor normally with status 1;
+        # attribute their retained timeout rather than calling them app failures.
+        phases = connection.get('phases', [])
+        build = next((phase for phase in phases if phase.get('phase') == 'test-build'), {})
+        return 'TEST_BUILD_TIMEOUT' if build.get('status') == 'TIMEOUT' else 'TEST_BUILD_FAILURE'
     if connection and connection.get('failurePhase') == 'vm-discovery':
         return 'TEST_VM_CONNECTION_DISCOVERY_FAILURE'
     if not failure.timed_out:

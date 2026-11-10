@@ -251,7 +251,7 @@ def run(simulator):
               'vmUrlValidated': False, 'ownedProcessesJoined': False, 'bodyMarkers': []}
     console, bundle, failure = None, None, None
     try:
-        command_phase(report, 'test-build', ['flutter', 'build', 'ios', '--simulator', '--debug', '--no-pub',
+        command_phase(report, 'test-build', ['flutter', 'build', 'ios', '--simulator', '--debug', '--no-pub', '--verbose',
             '--target=integration_test/ios_startup_test.dart',
             '--dart-define=KASHYAP_DISPOSABLE_IOS_SIMULATOR=true',
             '--dart-define=INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE=false',

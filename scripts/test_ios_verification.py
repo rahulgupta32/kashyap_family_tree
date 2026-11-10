@@ -68,6 +68,16 @@ class BoundedRunnerTests(unittest.TestCase):
         self.assertEqual(runner.classify_failure(runner.PhaseFailure('startup-test'), ''),
                          'TEST_COMMAND_FAILED_REVIEW_LOG')
 
+    def test_inner_build_timeout_remains_distinct_from_application_failure(self):
+        failure = runner.PhaseFailure('startup-test')
+        connection = {'failurePhase': 'test-build', 'phases': [
+            {'phase': 'test-build', 'status': 'TIMEOUT', 'exitCode': None}]}
+        self.assertEqual(runner.classify_failure(failure, '', connection), 'TEST_BUILD_TIMEOUT')
+        connection['phases'][0].update(status='FAILED', exitCode=65)
+        self.assertEqual(runner.classify_failure(failure, '', connection), 'TEST_BUILD_FAILURE')
+        self.assertEqual(runner.classify_failure(failure, '', {'failurePhase': 'test-driver'}),
+                         'TEST_COMMAND_FAILED_REVIEW_LOG')
+
     def test_hung_child_is_killed_and_phase_report_is_retained(self):
         previous = runner.RESULTS
         with tempfile.TemporaryDirectory() as tmp:
