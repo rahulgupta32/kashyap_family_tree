@@ -12,6 +12,7 @@ class SignInScreen extends StatefulWidget {
   final VoidCallback onBrowsePublic;
   final bool accountDeletionConfirmed;
   final bool linkEmail;
+  final VoidCallback? onDevelopmentPreview;
 
   const SignInScreen(
       {super.key,
@@ -19,7 +20,8 @@ class SignInScreen extends StatefulWidget {
       required this.onSignedIn,
       required this.onBrowsePublic,
       this.accountDeletionConfirmed = false,
-      this.linkEmail = false});
+      this.linkEmail = false,
+      this.onDevelopmentPreview});
 
   @override
   State<SignInScreen> createState() => _SignInScreenState();
@@ -181,6 +183,19 @@ class _SignInScreenState extends State<SignInScreen> {
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodySmall),
                           const SizedBox(height: 20),
+                          if (kDebugMode &&
+                              const bool.fromEnvironment(
+                                  'ENABLE_DEV_PREVIEW') &&
+                              widget.onDevelopmentPreview != null)
+                            Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: FilledButton.icon(
+                                  key: const Key('enter-development-preview'),
+                                  onPressed: widget.onDevelopmentPreview,
+                                  icon: const Icon(Icons.science_outlined),
+                                  label:
+                                      const Text('Enter Development Preview'),
+                                )),
                           if (!widget.linkEmail)
                             Wrap(
                                 alignment: WrapAlignment.center,

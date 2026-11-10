@@ -9,7 +9,7 @@ const args=d=>ts.isCallExpression(d)?[...d.arguments]:[];
 const literal=n=>!n?['']:ts.isStringLiteral(n)?[n.text]:ts.isArrayLiteralExpression(n)?n.elements.flatMap(literal):[n.getText()];
 const clean=p=>('/'+p).replace(/\/+/g,'/').replace(/\/$/,'')||'/';
 const line=(sf,n)=>sf.getLineAndCharacterOfPosition(n.getStart(sf)).line+1;
-const dart=files('apps/mobile/lib','.dart').map(file=>({file,text:fs.readFileSync(path.join(root,file),'utf8')}));
+const dart=files('apps/mobile/lib','.dart').filter(file=>!file.includes('/dev_preview/')&&!file.endsWith('/main_dev_preview.dart')).map(file=>({file,text:fs.readFileSync(path.join(root,file),'utf8')}));
 const tests=[...files('services/api/test','.ts'),...files('apps/mobile/test','.dart'),...files('apps/mobile/integration_test','.dart')].map(file=>({file,text:fs.readFileSync(path.join(root,file),'utf8')}));
 const normalize=s=>s.replace(/\$\{[^}]*\}/g,':id').replace(/\$baseUrl/g,'').replace(/\$[\w]+/g,':id').split('?')[0].replace(/([A-Za-z-]):id$/,'$1').replace(/\/+/g,'/');
 const segments=s=>normalize(s).split('/').filter(Boolean);

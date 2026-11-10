@@ -1,0 +1,47 @@
+name: Offline development preview APK
+on:
+  pull_request:
+    branches: ['feat/*', develop, main]
+    paths:
+      - 'apps/mobile/**'
+      - 'scripts/*preview*'
+      - '.github/workflows/dev-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3G -Dorg.gradle.workers.max=2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Verify release exclusion and native build hooks
+        run: python3 -m unittest discover -s scripts -p test_preview_build.py
+      - name: Locked dependencies and preview regression tests
+        working-directory: apps/mobile
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze
+          flutter test test/dev_preview_test.dart --dart-define=ENABLE_DEV_PREVIEW=true --reporter expanded
+      - name: Build independent offline preview and verify release rejection
+        run: python3 scripts/build_dev_preview.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nepali-bansawali-offline-preview-${{ github.run_id }}
+          path: test-results/dev-preview/
+          if-no-files-found: error
+          retention-days: 14

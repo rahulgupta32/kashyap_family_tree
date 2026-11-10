@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -22,6 +23,9 @@ val releaseStorePassword = releaseInput("storePassword", "KASHYAP_ANDROID_STORE_
 val releaseKeyAlias = releaseInput("keyAlias", "KASHYAP_ANDROID_KEY_ALIAS")?.trim()
 val releaseKeyPassword = releaseInput("keyPassword", "KASHYAP_ANDROID_KEY_PASSWORD")
 val releaseStoreFile = releaseStorePath?.let { rootProject.file(it) }
+val devPreview = providers.environmentVariable("KASHYAP_DEV_PREVIEW").orNull == "true"
+val previewTarget = providers.gradleProperty("target").orNull.orEmpty().replace('\\', '/').lowercase().contains("dev_preview")
+val previewDefines = providers.gradleProperty("dart-defines").orNull.orEmpty().split(",").filter { it.isNotBlank() }.map { String(Base64.getDecoder().decode(it)) }.any { it.substringBefore("=") in setOf("ENABLE_DEV_PREVIEW", "ENABLE_DEV_FULL_STACK") }
 val usbTest = providers.environmentVariable("KASHYAP_USB_TEST").orNull == "true"
 val internalPreview = providers.environmentVariable("KASHYAP_INTERNAL_PREVIEW").orNull == "true"
 val releaseConfigurationValid =
@@ -73,6 +77,12 @@ android {
 
     buildTypes {
         debug {
+            if (devPreview) {
+                if (usbTest) throw GradleException("Choose either offline preview or USB testing.")
+                applicationIdSuffix = ".devpreview"
+                resValue("string", "dev_preview_name", "Nepali Bansawali — Offline Preview")
+                manifestPlaceholders["appLabel"] = "@string/dev_preview_name"
+            }
             if (usbTest) {
                 applicationIdSuffix = ".usbtest"
                 resValue("string", "usb_test_name", "Nepali Bansawali — USB Test")
@@ -108,8 +118,18 @@ androidComponents {
 
 // Never produce a release with absent configuration, example ID or known debug keys.
 tasks.configureEach {
+    if (name == "preProfileBuild") {
+        doFirst {
+            if (devPreview || previewTarget || previewDefines) {
+                throw GradleException("Development preview is debug-only and forbidden in release/profile builds.")
+            }
+        }
+    }
     if (name == "preReleaseBuild" || name == "validateSigningRelease") {
         doFirst {
+            if (devPreview || previewTarget || previewDefines) {
+                throw GradleException("Development preview is debug-only and forbidden in release/profile builds.")
+            }
             if (usbTest) throw GradleException("USB testing is debug-only; unset KASHYAP_USB_TEST for release.")
             if (!releaseConfigurationValid) {
                 throw GradleException(

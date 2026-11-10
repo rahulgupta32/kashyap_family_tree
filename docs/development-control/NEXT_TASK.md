@@ -1,3 +1,9 @@
+# Immediate priority — deliver offline APK
+
+Inspect **Offline development preview APK** workflow on the exact new source. Require actual APK build, .devpreview identity/debug signature/hash evidence and three real Gradle release/profile rejections. Fix demonstrated failures, then deliver APK/source/SHA256 and installation/entry/persona/reset instructions. Capture native preview screen evidence separately; do not call synthetic fixtures real backend acceptance.
+
+Next implement isolated full-stack five-persona testing with actual seeded accounts and normal server-issued OTP/session/MFA/branch rules. Preserve production auth and all frozen gates. Continue calendar/core-governance/admin/communication integration using FEATURE_TRACKER.csv and real service evidence. No production deployment or merge.
+
 # Immediate verification — native screenshot transfer
 
 Inspect final-source calendar driver/emulator completion, three real PNGs and APK evidence hashes. Require the actual calendar lifecycle marker, extended-driver success and all-three-captures marker. Reject adb error text, missing files and non-PNG bytes. Also require the new PostgreSQL terminal-transition guard regression. Current source has local684 backend units/API typecheck,348 full Flutter cases plus2 new screenshot controls, and clean analysis; actual final-source native/real-PG execution remains pending.

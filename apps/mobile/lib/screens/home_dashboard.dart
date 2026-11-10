@@ -249,7 +249,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 : null),
       if (people.isNotEmpty)
         SizedBox(
-            height: 142,
+            height: 92 + MediaQuery.textScalerOf(context).scale(70),
             child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: people.length,
