@@ -69,3 +69,7 @@ Main42771202693 at0b7da23 passed687 unit tests but failed one of632 general inte
 ## Native SDK source binding correction
 
 The new native preview job in42771202695 stopped before emulator/application execution because its reused SDK preflight correctly required `KASHYAP_SOURCE_HEAD_SHA`, which the new workflow had omitted. The workflow now supplies the exact PR source SHA (or dispatch SHA) to the unchanged preflight, and retains SDK diagnostics alongside native evidence. No source-matching check, SDK validation or application assertion was bypassed. Native screenshots remain unverified until the corrected workflow runs successfully. First and follow-on APK build successes remain independent evidence.
+
+## Notification fixture consistency
+
+Screen review found that the synthetic inbox fixture used title/body fields while the existing inbox renders message. The fixture now supplies the correct message and a sample-notice destination. A new widget regression verifies visible text, notice navigation and retained read/unread state; the native screen check also requires visible notification text. All8 opt-in preview tests and mobile static analysis passed locally. This is a synthetic-fixture correction, not a claim of real push delivery. Corrected-source5a9f224 PostgreSQL and restore stages passed while its platform job proceeded to browser testing; final-source workflow conclusions still require inspection.

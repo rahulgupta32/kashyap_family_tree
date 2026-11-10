@@ -132,6 +132,9 @@ class PreviewRepository extends http.BaseClient {
     {
       'id': 'preview-notification',
       'title': 'Synthetic notification',
+      'message': 'Synthetic notification — offline only',
+      'destination': '/broadcasts',
+      'broadcastId': '22222222-2222-4222-8222-222222222222',
       'body': 'Preview only — no push delivery.',
       'readAt': null,
       'createdAt': '2026-11-09T00:00:00Z',

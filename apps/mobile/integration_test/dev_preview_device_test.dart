@@ -50,6 +50,10 @@ void main() {
       await tester.tap(find.text(screen.key));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: screen.key);
+      if (screen.key == 'Notifications') {
+        expect(
+            find.text('Synthetic notification — offline only'), findsOneWidget);
+      }
       if (screen.value != null) await capture(screen.value!);
       await tester.pageBack();
       await tester.pumpAndSettle();

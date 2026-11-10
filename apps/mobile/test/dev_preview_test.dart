@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:kashyap_mobile/dev_preview/preview_app.dart';
 import 'package:kashyap_mobile/dev_preview/preview_repository.dart';
+import 'package:kashyap_mobile/screens/notification_inbox_screen.dart';
 
 void main() {
   test('preview requires explicit opt-in and debug mode', () {
@@ -82,6 +83,28 @@ void main() {
     expect(frames.last['messages'].last['content'], 'Local only');
     await subscription.cancel();
     await socket.close();
+  });
+  testWidgets(
+      'synthetic inbox renders message, retains read state and opens sample notice',
+      (tester) async {
+    final api = PreviewApiService(PreviewRepository(previewPersonas.first));
+    addTearDown(api.dispose);
+    await tester.pumpWidget(
+        MaterialApp(home: NotificationInboxScreen(apiService: api)));
+    await tester.pumpAndSettle();
+    final notice = find.text('Synthetic notification — offline only');
+    expect(notice, findsOneWidget);
+    await tester.tap(notice);
+    await tester.pumpAndSettle();
+    expect(find.text('Synthetic announcement'), findsWidgets);
+    expect(api.repository.inbox.single['readAt'], isNotNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Mark unread'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mark unread'));
+    await tester.pumpAndSettle();
+    expect(api.repository.inbox.single['readAt'], isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
   testWidgets(
       'entry opens dashboard, calendar, persona reset and exit without OTP',
