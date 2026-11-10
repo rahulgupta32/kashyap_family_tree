@@ -1,5 +1,7 @@
 # Current execution — 10 November 2026
 
+New-person spouse proposal creation is now implemented alongside both spouse correction types; explicit UNKNOWN choices round-trip and cross-type payloads remain isolated.25 focused widgets/mobile analysis pass. First inspect actual final-source main/iOS/offline results and the spouse real-PG lifecycle case; no preceding-source result validates the changed form. Then complete remaining relationship target selection, other proposal types and frozen module acceptance against actual services. Staging remains403 pending Jyphra team access plus approved runtime/signing/provider inputs; no production gate is closed.
+
 Spouse correction now joins EDIT_PERSON/RECORD_DEATH/ADD_CHILD: ADD_SPOUSE and ADD_SPOUSE_LINK new-person editing, immutable existing targets under both aliases,15 focused passing widgets and new pending PostgreSQL correction/no-write/approval regression. See COMPLETION_20261109.md. Inspect actual changed-source CI; do not credit preceding dba13f9 checks to spouse changes. Continue remaining new-spouse proposal creation/selection and mandatory module acceptance after native failure closure. No mandatory workflow is considered complete from these bounded corrections.
 
 Offline preview delivery is verified on canonical61723c8/treece384c55, run42775900077: original APK launch,17 native destinations,10 validated PNGs and real non-debug rejection. Download and checksum: `docs/integration/PREVIEW_DELIVERY_20261110.md`.

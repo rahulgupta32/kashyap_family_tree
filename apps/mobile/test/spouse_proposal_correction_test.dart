@@ -113,6 +113,40 @@ void main() {
   }
 
   testWidgets(
+      'spouse correction retains explicit UNKNOWN gender and living status',
+      (tester) async {
+    Map<String, dynamic>? sent;
+    final proposal = <String, dynamic>{
+      'primaryNameNepali': 'Original',
+      'gender': 'UNKNOWN',
+      'livingStatus': 'UNKNOWN',
+      'evidenceAssetId': 'retain'
+    };
+    final row = proposalRow('ADD_SPOUSE', proposal);
+    final api = GenealogyApiService(client: MockClient((r) async {
+      if (r.method == 'POST') sent = jsonDecode(r.body);
+      return jsonResponse(
+          {...row, 'status': sent == null ? row['status'] : 'PENDING'});
+    }))
+      ..setAuthToken(token('owner'));
+    addTearDown(api.dispose);
+    await tester.pumpWidget(MaterialApp(
+        home: MyChangeRequestsScreen(api: api, initialId: 'spouse')));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<DropdownButtonFormField<String>>(
+                find.byKey(const ValueKey('proposal-spouse-gender')))
+            .initialValue,
+        'UNKNOWN');
+    await tester.enterText(
+        find.byKey(const ValueKey('proposal-spouse-nepali')), 'Corrected');
+    await submit(tester);
+    expect(sent!['proposedChanges'],
+        {...proposal, 'primaryNameNepali': 'Corrected'});
+  });
+
+  testWidgets(
       'new spouse correction requires explicit name and gender before POST',
       (tester) async {
     var writes = 0;

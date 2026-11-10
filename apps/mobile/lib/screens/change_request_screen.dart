@@ -25,8 +25,11 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   final _nepaliName = TextEditingController(),
       _englishName = TextEditingController(),
       _deathDate = TextEditingController(),
-      _deathYear = TextEditingController();
+      _deathYear = TextEditingController(),
+      _spouseNepaliName = TextEditingController(),
+      _spouseEnglishName = TextEditingController();
   String _gender = 'OTHER';
+  String? _spouseGender, _spouseLivingStatus;
   @override
   void initState() {
     super.initState();
@@ -45,10 +48,14 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
           _nepaliName,
           _englishName,
           _deathDate,
-          _deathYear
+          _deathYear,
+          _spouseNepaliName,
+          _spouseEnglishName
         ]) {
           c.clear();
         }
+        _spouseGender = null;
+        _spouseLivingStatus = null;
         _message = null;
       });
     }
@@ -64,7 +71,14 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   @override
   void dispose() {
     widget.apiService.sessionChanges.removeListener(_sessionChanged);
-    for (final c in [_nepaliName, _englishName, _deathDate, _deathYear]) {
+    for (final c in [
+      _nepaliName,
+      _englishName,
+      _deathDate,
+      _deathYear,
+      _spouseNepaliName,
+      _spouseEnglishName
+    ]) {
       c.dispose();
     }
     _birthPlaceController.dispose();
@@ -104,6 +118,20 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
             'primaryNameEnglish': _englishName.text.trim(),
           'gender': _gender,
           'livingStatus': 'LIVING'
+        };
+      } else if (_changeType == 'ADD_SPOUSE') {
+        if (_spouseNepaliName.text.trim().isEmpty ||
+            !{'MALE', 'FEMALE', 'OTHER', 'UNKNOWN'}.contains(_spouseGender) ||
+            !{'LIVING', 'DECEASED', 'UNKNOWN'}.contains(_spouseLivingStatus)) {
+          throw const FormatException(
+              'जीवनसाथीको नाम, लिङ्ग र जीवित अवस्था छान्नुहोस् (Enter spouse name and explicitly choose gender and living status)');
+        }
+        proposedChanges = {
+          'primaryNameNepali': _spouseNepaliName.text.trim(),
+          if (_spouseEnglishName.text.trim().isNotEmpty)
+            'primaryNameEnglish': _spouseEnglishName.text.trim(),
+          'gender': _spouseGender,
+          'livingStatus': _spouseLivingStatus,
         };
       } else if (_changeType == 'RECORD_DEATH') {
         final date = _deathDate.text.trim(), year = _deathYear.text.trim();
@@ -221,17 +249,25 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     isExpanded: true,
+                    key: const ValueKey('proposal-request-type'),
                     initialValue: _changeType,
                     items: const [
                       DropdownMenuItem(
                           value: 'EDIT_PERSON',
-                          child: Text('विवरण संशोधन (Edit Details)', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          child: Text('विवरण संशोधन (Edit Details)',
+                              maxLines: 1, overflow: TextOverflow.ellipsis)),
                       DropdownMenuItem(
                           value: 'RECORD_DEATH',
-                          child: Text('मृत्यु दर्ता (Record Death)', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          child: Text('मृत्यु दर्ता (Record Death)',
+                              maxLines: 1, overflow: TextOverflow.ellipsis)),
                       DropdownMenuItem(
                           value: 'ADD_CHILD',
-                          child: Text('सन्तान थप (Add Child)', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          child: Text('सन्तान थप (Add Child)',
+                              maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(
+                          value: 'ADD_SPOUSE',
+                          child: Text('जीवनसाथी थप (Add Spouse)',
+                              maxLines: 1, overflow: TextOverflow.ellipsis)),
                     ],
                     onChanged: _submitting || _isSuccess
                         ? null
@@ -268,7 +304,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                         decoration: const InputDecoration(
                             labelText: 'English name (optional)')),
                     DropdownButtonFormField<String>(
-                    isExpanded: true,
+                        isExpanded: true,
                         initialValue: _gender,
                         items: const [
                           DropdownMenuItem(
@@ -283,6 +319,65 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                             : (value) => setState(() => _gender = value!),
                         decoration:
                             const InputDecoration(labelText: 'लिङ्ग (Gender)')),
+                  ],
+                  if (_changeType == 'ADD_SPOUSE') ...[
+                    const Text(
+                        'नयाँ व्यक्ति प्रस्ताव गर्नुहोस्; सम्बन्ध स्वीकृतिपछि मात्र कायम हुन्छ। (Propose a new person; the relationship is added only after approval.)'),
+                    TextField(
+                        key: const ValueKey('spouse-nepali-name'),
+                        controller: _spouseNepaliName,
+                        enabled: !_submitting && !_isSuccess,
+                        decoration: const InputDecoration(
+                            labelText:
+                                'जीवनसाथीको नेपाली नाम (Spouse Nepali name)')),
+                    TextField(
+                        key: const ValueKey('spouse-english-name'),
+                        controller: _spouseEnglishName,
+                        enabled: !_submitting && !_isSuccess,
+                        decoration: const InputDecoration(
+                            labelText:
+                                'जीवनसाथीको अंग्रेजी नाम (Spouse English name · optional)')),
+                    DropdownButtonFormField<String>(
+                        key: const ValueKey('spouse-gender'),
+                        isExpanded: true,
+                        initialValue: _spouseGender,
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'MALE', child: Text('पुरुष (Male)')),
+                          DropdownMenuItem(
+                              value: 'FEMALE', child: Text('महिला (Female)')),
+                          DropdownMenuItem(
+                              value: 'OTHER', child: Text('अन्य (Other)')),
+                          DropdownMenuItem(
+                              value: 'UNKNOWN',
+                              child: Text('अज्ञात (Unknown)')),
+                        ],
+                        onChanged: _submitting || _isSuccess
+                            ? null
+                            : (value) => setState(() => _spouseGender = value),
+                        decoration: const InputDecoration(
+                            labelText: 'लिङ्ग छान्नुहोस् (Choose gender)')),
+                    DropdownButtonFormField<String>(
+                        key: const ValueKey('spouse-living-status'),
+                        isExpanded: true,
+                        initialValue: _spouseLivingStatus,
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'LIVING', child: Text('जीवित (Living)')),
+                          DropdownMenuItem(
+                              value: 'DECEASED',
+                              child: Text('मृतक (Deceased)')),
+                          DropdownMenuItem(
+                              value: 'UNKNOWN',
+                              child: Text('अज्ञात (Unknown)')),
+                        ],
+                        onChanged: _submitting || _isSuccess
+                            ? null
+                            : (value) =>
+                                setState(() => _spouseLivingStatus = value),
+                        decoration: const InputDecoration(
+                            labelText:
+                                'जीवित अवस्था छान्नुहोस् (Choose living status)')),
                   ],
                   if (_changeType == 'RECORD_DEATH') ...[
                     const Text(
@@ -306,6 +401,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   TextField(
+                    key: const ValueKey('new-proposal-reason'),
                     controller: _reasonController,
                     maxLines: 3,
                     decoration: const InputDecoration(
@@ -319,6 +415,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
+                      key: const ValueKey('new-proposal-submit'),
                       onPressed: _submitting || _isSuccess
                           ? null
                           : _submitChangeRequest,

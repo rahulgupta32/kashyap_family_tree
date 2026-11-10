@@ -138,7 +138,12 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                 result['proposedChanges']['primaryNameEnglish']?.toString() ??
                     '';
             final gender = result['proposedChanges']['gender'];
-            _childGender = {'MALE', 'FEMALE', 'OTHER'}.contains(gender)
+            _childGender = {
+              'MALE',
+              'FEMALE',
+              'OTHER',
+              if (_spouseProposal(result['type'])) 'UNKNOWN'
+            }.contains(gender)
                 ? gender as String
                 : null;
             _deathDate.text =
@@ -317,13 +322,16 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                       initialValue: _childGender,
                       decoration:
                           const InputDecoration(labelText: 'लिङ्ग (Gender)'),
-                      items: const [
-                        DropdownMenuItem(
+                      items: [
+                        const DropdownMenuItem(
                             value: 'MALE', child: Text('पुरुष (Male)')),
-                        DropdownMenuItem(
+                        const DropdownMenuItem(
                             value: 'FEMALE', child: Text('महिला (Female)')),
-                        DropdownMenuItem(
-                            value: 'OTHER', child: Text('अन्य (Other)'))
+                        const DropdownMenuItem(
+                            value: 'OTHER', child: Text('अन्य (Other)')),
+                        if (_spouseProposal(row['type']))
+                          const DropdownMenuItem(
+                              value: 'UNKNOWN', child: Text('अज्ञात (Unknown)'))
                       ],
                       onChanged: _busy
                           ? null

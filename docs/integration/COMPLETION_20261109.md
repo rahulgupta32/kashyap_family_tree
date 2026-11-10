@@ -1,3 +1,11 @@
+# New-spouse proposal and correction integration — 10 November 2026
+
+The existing proposal form now offers new-person ADD_SPOUSE submission. Nepali name, reason, gender and living status are explicit inputs; optional English name is trimmed. Separate spouse drafts prevent edit/death/child fields leaking into the payload. UNKNOWN is an explicit contract-valid choice, preserved by the spouse correction editor. No gender/living status is inferred from the selected person. No marriage-date behavior or existing-person target selector is introduced. The proposal remains subject to normal server authorization and independent approval.
+
+Final local focused validation:25 creation/correction/existing workflow widgets PASS; mobile analysis clean. Seven creation cases cover all living-status choices, UNKNOWN gender, missing required inputs, cross-type payload isolation, replaced-session callbacks and duplicate pending callbacks. The additional UNKNOWN correction regression preserves child behavior. This is bounded implementation/local verification, not complete cross-client/native/UAT acceptance.
+
+Published predecessor2b6a5f14fa90b3094397944aacfafee9b75e140f fast42854064526 passed; Main42854328702 has passed its real PostgreSQL stage (including the new spouse lifecycle case), with browser/Android completion pending when inspected. Earlier dba13f9 Main42852516230 and offline42852515923 completed SUCCESS; its Android log proves cancellationHTTP201, persistedversion3/CANCELLED, exact history and original real M4/calendar/USB journeys. iOS42852515969 startup/Keychain passed; unsigned device/final conclusion remained pending. None of these preceding-source results verifies the changed creation form. Inspect final-source CI without relabelling earlier results.
+
 # Spouse correction integration — 10 November 2026
 
 Member correction now supports ADD_SPOUSE and ADD_SPOUSE_LINK in the existing owner/session/state-guarded screen. New-person proposals permit corrected Nepali/English names and explicit gender while preserving stored livingStatus, evidence and all unrelated fields. Existing-person proposals using either spousePersonId or spouseId permit reason correction only; the exact relationship target is preserved. No marriage-date calculation/storage or new relationship-target selector is claimed.
