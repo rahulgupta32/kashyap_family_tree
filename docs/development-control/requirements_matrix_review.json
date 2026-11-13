@@ -1,0 +1,985 @@
+{
+  "reviewed_sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+  "reviewed_at_utc": "2026-10-14T12:20:00Z",
+  "modules": {
+    "AUTH": {
+      "name": "Identity and authentication",
+      "backend": [
+        "services/api/src/modules/auth/auth.service.ts",
+        "services/api/src/modules/auth/mfa.service.ts",
+        "services/api/src/modules/auth/session-management.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/sign_in_screen.dart",
+        "apps/mobile/lib/services/session_store.dart",
+        "apps/mobile/lib/screens/authenticator_screen.dart",
+        "apps/mobile/lib/screens/device_sessions_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/login/page.tsx",
+        "apps/admin/src/context/auth-context.tsx",
+        "apps/admin/src/app/devices/page.tsx",
+        "apps/admin/src/app/mfa/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/auth-m2-hardening.integration.spec.ts",
+        "services/api/test/auth-security-regressions.integration.spec.ts",
+        "services/api/test/session-management.integration.spec.ts",
+        "apps/mobile/test/native_session_test.dart",
+        "e2e/login-flow.spec.ts",
+        "e2e/mfa.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/OTP_LIFECYCLE_EVIDENCE_REPORT.md",
+        "docs/execution/DEVICE_SESSION_MANAGEMENT_REPORT.md",
+        "docs/execution/REFRESH_DURABLE_AUDIT_REPORT.md",
+        "docs/execution/NATIVE_PUSH_OPT_OUT_RECOVERY_REPORT.md"
+      ],
+      "dependencies": "PostgreSQL/Redis; SMS; managed authenticator keys; secure storage; approved privileged recovery policy",
+      "security_privacy": "Current account/session, privilege, replay and generic-error protections; complete independently signed security/privacy acceptance is OPEN."
+    },
+    "PROF": {
+      "name": "Profiles",
+      "backend": [
+        "services/api/src/modules/profile/profile.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/profile_privacy_screen.dart",
+        "apps/mobile/lib/screens/person_detail_screen.dart",
+        "apps/mobile/lib/widgets/profile_photo_editor.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/profile/page.tsx",
+        "apps/admin/src/components/ProfilePhoto.tsx"
+      ],
+      "tests": [
+        "services/api/test/m4-profile-calendar.integration.spec.ts",
+        "services/api/test/image-derivatives.integration.spec.ts",
+        "apps/mobile/test/profile_photo_editor_test.dart",
+        "e2e/profile-photo.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/IMAGE_DERIVATIVES_REPORT.md",
+        "docs/execution/DEVICE_SESSION_MANAGEMENT_REPORT.md"
+      ],
+      "dependencies": "Claimed Person; private media/scanner; approved privacy/retention/guardian rules",
+      "security_privacy": "Field privacy and independent Person/account lifecycles; minors, deletion and legal/consent acceptance OPEN."
+    },
+    "GEN": {
+      "name": "Genealogy",
+      "backend": [
+        "services/api/src/modules/genealogy/genealogy.service.ts",
+        "services/api/src/modules/genealogy/privacy/privacy-engine.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/read_only_tree_screen.dart",
+        "apps/mobile/lib/screens/person_detail_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/tree/page.tsx",
+        "apps/admin/src/app/people/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/genealogy-http.integration.spec.ts",
+        "services/api/test/genealogy-m3.integration.spec.ts",
+        "apps/mobile/test/tree_navigation_test.dart",
+        "e2e/genealogy-flow.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/NATIVE_TREE_EXPANSION_REPORT.md"
+      ],
+      "dependencies": "Verified direct graph; governed changes/merge/import; privacy; production-scale/device support",
+      "security_privacy": "Current branch/field filtering and graph invariants; complete privacy, trusted-import and large-tree acceptance OPEN."
+    },
+    "SRCH": {
+      "name": "Search",
+      "backend": [
+        "services/api/src/modules/genealogy/search.service.ts",
+        "services/api/src/modules/genealogy/search-normalization.ts",
+        "services/api/src/modules/admin-lookup/admin-lookup.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/person_search_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/people/page.tsx",
+        "apps/admin/src/app/lookup/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/indexed-search.integration.spec.ts",
+        "services/api/test/search-normalization.integration.spec.ts",
+        "services/api/test/admin-lookup.integration.spec.ts",
+        "apps/mobile/test/api_smoke_flow_test.dart",
+        "e2e/admin-lookup.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/MILLION_PERSON_SEARCH_BENCHMARK_REPORT.md",
+        "docs/execution/SEARCH_NORMALIZATION_REPORT.md"
+      ],
+      "dependencies": "PostgreSQL trigram/index rollout; graph/source aliases; current visibility; target-load HTTP evidence",
+      "security_privacy": "Private/protected results must remain excluded; source spellings preserved; index/API production acceptance OPEN."
+    },
+    "CLAIM": {
+      "name": "Membership claims",
+      "backend": [
+        "services/api/src/modules/claims/claims.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/claim_profile_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/claims/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/m4-claims-workflow.integration.spec.ts",
+        "services/api/test/claims.service.spec.ts",
+        "apps/mobile/test/m4_workflow_widgets_test.dart",
+        "e2e/genealogy-flow.spec.ts"
+      ],
+      "reports": [],
+      "dependencies": "Named verifiers/branch scope; evidence/recusal; claim-Person account uniqueness",
+      "security_privacy": "Independent review, recusal and protected evidence required; identity/guardian/legal acceptance OPEN."
+    },
+    "CHG": {
+      "name": "Genealogy change requests",
+      "backend": [
+        "services/api/src/modules/change-requests/change-requests.service.ts",
+        "services/api/src/modules/change-requests/diff.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/change_request_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/change-requests/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/m4-change-requests.integration.spec.ts",
+        "services/api/test/change-requests.service.spec.ts",
+        "apps/mobile/test/m4_workflow_widgets_test.dart",
+        "e2e/genealogy-flow.spec.ts"
+      ],
+      "reports": [],
+      "dependencies": "Verified graph; immutable versions; independent verifiers; durable audit/outbox",
+      "security_privacy": "No trusted mutation before authorized independent review; invariant/concurrency/privacy acceptance OPEN."
+    },
+    "DUP": {
+      "name": "Duplicates and merge",
+      "backend": [
+        "services/api/src/modules/genealogy/duplicate.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/person_search_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/duplicates/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/genealogy-m3.integration.spec.ts",
+        "services/api/test/genealogy-http.integration.spec.ts",
+        "e2e/genealogy-flow.spec.ts"
+      ],
+      "reports": [],
+      "dependencies": "Canonical aliases; active claims; audited merge decisions; recovery policy",
+      "security_privacy": "Preserve identity/provenance and reject graph/claim conflicts; independent merge recovery acceptance OPEN."
+    },
+    "REL": {
+      "name": "Relationships and Nata/Saino",
+      "backend": [
+        "services/api/src/modules/cultural-rules/cultural-rules.service.ts",
+        "services/api/src/modules/cultural-rules/nata-saino-rules.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/read_only_tree_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/cultural/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/cultural-rules.service.spec.ts",
+        "services/api/test/m4-cultural-observances.integration.spec.ts",
+        "apps/mobile/test/tree_navigation_test.dart"
+      ],
+      "reports": [],
+      "dependencies": "Approved versioned Nata/Saino catalogue; deterministic verified graph; two-person authority",
+      "security_privacy": "Unapproved terminology stays neutral; disputed/private paths must not leak; signed cultural acceptance OPEN."
+    },
+    "CUL": {
+      "name": "Cultural content",
+      "backend": [
+        "services/api/src/modules/cultural-rules/cultural-content.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/cultural_content_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/cultural/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/cultural-content.integration.spec.ts",
+        "apps/mobile/test/cultural_content_screen_test.dart",
+        "e2e/cultural-content.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/CULTURAL_REVISION_CMS_REPORT.md"
+      ],
+      "dependencies": "Named designated reviewers/authority; approved bilingual content/references; private media",
+      "security_privacy": "Durable independent review and publication-only reads; signed canon and native/accessibility/privacy acceptance OPEN."
+    },
+    "CAL": {
+      "name": "Calendar",
+      "backend": [
+        "services/api/src/modules/calendar/calendar.service.ts",
+        "services/api/src/modules/calendar/calendar-period.ts",
+        "services/api/src/modules/calendar/calendar-recurrence.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/calendar_events_screen.dart",
+        "apps/mobile/lib/screens/calendar_period_screen.dart",
+        "apps/mobile/lib/screens/calendar_recurrence_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/calendar/page.tsx",
+        "apps/admin/src/app/calendar/browse.tsx",
+        "apps/admin/src/app/calendar/recurring-reminders.tsx"
+      ],
+      "tests": [
+        "services/api/test/calendar-period.spec.ts",
+        "services/api/test/calendar-recurrence.integration.spec.ts",
+        "services/api/test/calendar-delivery.integration.spec.ts",
+        "apps/mobile/test/calendar_management_test.dart",
+        "apps/mobile/test/calendar_recurrence_test.dart",
+        "e2e/calendar-management.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/CALENDAR_DELIVERY_REPORT.md",
+        "docs/execution/CALENDAR_VIEWS_REPORT.md",
+        "docs/execution/ANNUAL_RECURRENCE_REPORT.md"
+      ],
+      "dependencies": "Source-calendar metadata; approved BS/Tithi sources/references; genealogy audiences; durable workers",
+      "security_privacy": "Private event access and current invitation/authority checks; no invented conversion; signed calendar/provider acceptance OPEN."
+    },
+    "JUT": {
+      "name": "Jutho",
+      "backend": [
+        "services/api/src/modules/cultural-rules/cultural-rules.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/cultural_content_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/cultural/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/m4-cultural-observances.integration.spec.ts",
+        "services/api/test/cultural-rules.service.spec.ts"
+      ],
+      "reports": [],
+      "dependencies": "Approved Jutho rules/durations/exceptions; verified death/relationships; named authority",
+      "security_privacy": "Unapproved/incomplete/disputed determinations remain neutral; signed result, disclaimer and notification acceptance OPEN."
+    },
+    "NOT": {
+      "name": "Notifications",
+      "backend": [
+        "services/api/src/modules/notifications/notification-dispatcher.service.ts",
+        "services/api/src/modules/notifications/push-delivery.service.ts",
+        "services/api/src/modules/notifications/push-tokens.service.ts",
+        "services/api/src/modules/notifications/notification-inbox.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/services/native_push_lifecycle.dart",
+        "apps/mobile/lib/services/native_push_inbox_router.dart",
+        "apps/mobile/lib/screens/notification_inbox_screen.dart",
+        "apps/mobile/lib/screens/official_notices_screen.dart",
+        "apps/mobile/lib/screens/follow_manager_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/notifications/page.tsx",
+        "apps/admin/src/app/broadcasts/page.tsx",
+        "apps/admin/src/components/push-investigation-panel.tsx"
+      ],
+      "tests": [
+        "services/api/test/notification-delivery-policy.integration.spec.ts",
+        "services/api/test/push-provider-journal.integration.spec.ts",
+        "services/api/test/push-token-lifecycle.integration.spec.ts",
+        "apps/mobile/test/native_push_lifecycle_test.dart",
+        "apps/mobile/test/native_push_opt_out_recovery_test.dart",
+        "apps/mobile/test/native_push_inbox_entry_test.dart",
+        "e2e/notifications.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/NATIVE_PUSH_SDK_LIFECYCLE_REPORT.md",
+        "docs/execution/NATIVE_PUSH_INBOX_ROUTING_REPORT.md",
+        "docs/execution/NATIVE_PUSH_OPT_OUT_RECOVERY_REPORT.md",
+        "docs/execution/PUSH_PROVIDER_JOURNAL_REPORT.md",
+        "docs/execution/PUSH_OPERATIONS_MONITORING_REPORT.md"
+      ],
+      "dependencies": "Configured real FCM/APNs; signing/physical devices; current preference/audience eligibility; monitored workers",
+      "security_privacy": "Payload minimization, account fencing and uncertain-provider evidence; real receipt/lifecycle/security acceptance OPEN."
+    },
+    "INV": {
+      "name": "Invitations",
+      "backend": [
+        "services/api/src/modules/calendar/calendar-audience.service.ts",
+        "services/api/src/modules/calendar/calendar-delivery.service.ts",
+        "services/api/src/modules/calendar/calendar.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/calendar_events_screen.dart",
+        "apps/mobile/lib/screens/calendar_audience_picker.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/calendar/genealogy-audience.tsx",
+        "apps/admin/src/app/calendar/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/calendar-audience.integration.spec.ts",
+        "services/api/test/calendar-delivery.integration.spec.ts",
+        "apps/mobile/test/calendar_audience_test.dart",
+        "e2e/calendar-audience.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/GENEALOGY_INVITATION_AUDIENCE_REPORT.md",
+        "docs/execution/CALENDAR_DELIVERY_REPORT.md"
+      ],
+      "dependencies": "Verified graph/source snapshot; typed audience limits; approved relationship groups; delivery provider",
+      "security_privacy": "Preview/confirm authority, minimized recipients and revision-bound eligibility; family/device/provider acceptance OPEN."
+    },
+    "COM": {
+      "name": "Community",
+      "backend": [
+        "services/api/src/modules/community/community.service.ts",
+        "services/api/src/modules/community/community-media.service.ts",
+        "services/api/src/modules/community/community-privacy.ts",
+        "services/api/src/modules/community/community-policy.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/community_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/community/page.tsx",
+        "apps/admin/src/app/community/comment-cases.tsx"
+      ],
+      "tests": [
+        "services/api/test/community-http.integration.spec.ts",
+        "services/api/test/community.service.spec.ts",
+        "apps/mobile/test/community_screen_test.dart",
+        "e2e/community.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/COMMUNITY_CATEGORIES_REPORT.md",
+        "docs/execution/COMMUNITY_MEDIA_REPORT.md",
+        "docs/execution/COMMUNITY_SHARING_REPORT.md",
+        "docs/execution/COMMUNITY_CASE_EVIDENCE_REPORT.md",
+        "docs/execution/COMMUNITY_APPEALS_REPORT.md",
+        "docs/execution/COMMUNITY_COMMENT_RESTORATION_REPORT.md"
+      ],
+      "dependencies": "Verified membership/branch; current author privacy; independent moderators; approved policy; scan/private media",
+      "security_privacy": "Pending/re-review visibility, independent report cases and retention; complete risk/moderation/guardian/device acceptance OPEN."
+    },
+    "MAP": {
+      "name": "Households and map",
+      "backend": [
+        "services/api/src/modules/map/map.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/household_map_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/map/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/map-http.integration.spec.ts",
+        "services/api/test/map.service.spec.ts",
+        "apps/mobile/test/household_map_screen_test.dart"
+      ],
+      "reports": [],
+      "dependencies": "Approved map provider/terms; explicit household consent; generalized geography; approved retention",
+      "security_privacy": "Protect exact coordinates and minor/shared-household details; aggregation/provider/audit acceptance OPEN."
+    },
+    "CHAT": {
+      "name": "Messaging",
+      "backend": [
+        "services/api/src/modules/chat/chat.service.ts",
+        "services/api/src/modules/chat/chat.gateway.ts",
+        "services/api/src/modules/chat/chat-attachments.service.ts",
+        "services/api/src/modules/chat/direct-chat-safety.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/chat_screen.dart",
+        "apps/mobile/lib/services/chat_outbox.dart",
+        "apps/mobile/lib/services/chat_connection.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/chat/page.tsx",
+        "apps/admin/src/lib/chat-outbox.ts",
+        "apps/admin/src/app/chat/group-controls.tsx"
+      ],
+      "tests": [
+        "services/api/test/chat-http.integration.spec.ts",
+        "services/api/test/chat-groups.integration.spec.ts",
+        "services/api/test/chat-delivery.integration.spec.ts",
+        "services/api/test/direct-chat-safety.spec.ts",
+        "apps/mobile/test/chat_outbox_test.dart",
+        "apps/mobile/test/chat_screen_test.dart",
+        "e2e/chat.spec.ts",
+        "e2e/chat-groups.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/CHAT_GROUP_MANAGEMENT_REPORT.md",
+        "docs/execution/CHAT_DELIVERY_REPORT.md",
+        "docs/execution/CHAT_OFFLINE_OUTBOX_REPORT.md",
+        "docs/execution/CHAT_BROWSER_OUTBOX_REPORT.md",
+        "docs/execution/CHAT_MINOR_SAFETY_REPORT.md"
+      ],
+      "dependencies": "Current adult/claim eligibility; blocked participants; history boundaries; encrypted local intent; receipt/retention policy",
+      "security_privacy": "Both participants rechecked; private membership/context and scan controls; full device/reconnect/load/exceptional-access acceptance OPEN."
+    },
+    "ADM": {
+      "name": "Administration",
+      "backend": [
+        "services/api/src/modules/branch-administration/branch-administration.service.ts",
+        "services/api/src/modules/application-settings/application-settings.service.ts",
+        "services/api/src/modules/genealogy-import/genealogy-import.service.ts",
+        "services/api/src/modules/admin-lookup/admin-lookup.service.ts"
+      ],
+      "mobile": [],
+      "admin": [
+        "apps/admin/src/app/page.tsx",
+        "apps/admin/src/app/branches/page.tsx",
+        "apps/admin/src/app/settings/page.tsx",
+        "apps/admin/src/app/imports/page.tsx",
+        "apps/admin/src/app/audit/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/branch-administration.integration.spec.ts",
+        "services/api/test/application-settings.integration.spec.ts",
+        "services/api/test/genealogy-import.integration.spec.ts",
+        "e2e/branch-administration.spec.ts",
+        "e2e/genealogy-import.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/BRANCH_ADMINISTRATION_REPORT.md",
+        "docs/execution/TYPED_APPLICATION_SETTINGS_REPORT.md",
+        "docs/execution/GENEALOGY_IMPORT_STAGING_REPORT.md",
+        "docs/execution/GENEALOGY_IMPORT_PEER_BRANCH_HIERARCHY_REPORT.md"
+      ],
+      "dependencies": "Named scoped roles/deputies/recusal; MFA/recovery; accepted sources; durable audit; operations ownership",
+      "security_privacy": "Current role/scope/MFA and reason/version/audit checks; no source staging promotion or authority inference; final acceptance OPEN."
+    },
+    "AUD": {
+      "name": "Audit",
+      "backend": [
+        "services/api/src/modules/audit/audit.service.ts",
+        "services/api/src/modules/audit/audit-delivery.service.ts",
+        "services/api/src/modules/audit/audit-recovery.service.ts"
+      ],
+      "mobile": [],
+      "admin": [
+        "apps/admin/src/app/audit/page.tsx",
+        "apps/admin/src/components/audit-recovery-panel.tsx"
+      ],
+      "tests": [
+        "services/api/test/audit-chain.integration.spec.ts",
+        "services/api/test/audit-delivery.integration.spec.ts",
+        "services/api/test/audit-recovery.integration.spec.ts",
+        "e2e/audit.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/AUDIT_DELIVERY_WORKER_REPORT.md",
+        "docs/execution/AUDIT_GOVERNED_RECOVERY_REPORT.md"
+      ],
+      "dependencies": "Append-only chain/store; transactional intent; managed operational-recovery keys; authorized retention and access",
+      "security_privacy": "Tamper-evidence and minimized safe payloads; full event/read coverage, key custody and operational acceptance OPEN."
+    },
+    "PRIV": {
+      "name": "Privacy",
+      "backend": [
+        "services/api/src/modules/genealogy/privacy/privacy-engine.service.ts",
+        "services/api/src/modules/profile/profile.service.ts",
+        "services/api/src/modules/community/community-privacy.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/screens/profile_privacy_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/profile/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/privacy-engine.spec.ts",
+        "services/api/test/m4-profile-calendar.integration.spec.ts",
+        "services/api/test/auth-security-regressions.integration.spec.ts"
+      ],
+      "reports": [],
+      "dependencies": "DPO/contact; Nepal-qualified legal review; approved policy/consent versions; processor/retention/guardian register",
+      "security_privacy": "Server field/privacy controls exist; statutory/legal, minor/consent/deletion and public-notice sign-off OPEN."
+    },
+    "I18N": {
+      "name": "Localization and accessibility",
+      "backend": [],
+      "mobile": [
+        "apps/mobile/lib/theme/app_theme.dart"
+      ],
+      "admin": [
+        "apps/admin/src/app/layout.tsx",
+        "apps/admin/src/app/globals.css"
+      ],
+      "tests": [
+        "services/api/test/localization.spec.ts",
+        "e2e/login-accessibility.spec.ts",
+        "apps/mobile/test/models_and_widgets_test.dart"
+      ],
+      "reports": [],
+      "dependencies": "Approved Nepali language review; screen readers/text scale; complete stable locale keys",
+      "security_privacy": "English/Nepali surfaces and partial login accessibility tests; full module/supported-device WCAG/platform acceptance OPEN."
+    },
+    "MEDIA": {
+      "name": "Media",
+      "backend": [
+        "services/api/src/modules/profile/profile.service.ts",
+        "services/api/src/modules/profile/malware-scanner.service.ts",
+        "services/api/src/modules/community/community-media.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/widgets/profile_photo_editor.dart",
+        "apps/mobile/lib/screens/community_screen.dart"
+      ],
+      "admin": [
+        "apps/admin/src/components/ProfilePhoto.tsx",
+        "apps/admin/src/app/media-operations/page.tsx"
+      ],
+      "tests": [
+        "services/api/test/image-derivatives.integration.spec.ts",
+        "services/api/test/media-write-journal.integration.spec.ts",
+        "services/api/test/s3-media.integration.spec.ts",
+        "services/api/test/legacy-media-migration.integration.spec.ts",
+        "e2e/media-operations.spec.ts"
+      ],
+      "reports": [
+        "docs/execution/IMAGE_DERIVATIVES_REPORT.md",
+        "docs/execution/DURABLE_MEDIA_STORAGE_REPORT.md",
+        "docs/execution/MEDIA_WRITE_JOURNAL_REPORT.md",
+        "docs/execution/LEGACY_MEDIA_MIGRATION_REPORT.md"
+      ],
+      "dependencies": "Private S3/scanner; owner references; derivatives/journals; legal holds; approved retention/consent",
+      "security_privacy": "Quarantine before display, fresh owning-entity access, exact-object recovery; gallery/physical devices/real storage/retention acceptance OPEN."
+    },
+    "NFR": {
+      "name": "Nonfunctional assurance",
+      "backend": [
+        "services/api/src/modules/auth/auth.service.ts",
+        "services/api/src/modules/genealogy/privacy/privacy-engine.service.ts"
+      ],
+      "mobile": [
+        "apps/mobile/lib/services/session_store.dart",
+        "apps/mobile/lib/services/api_endpoint_config.dart"
+      ],
+      "admin": [
+        "apps/admin/src/context/auth-context.tsx"
+      ],
+      "tests": [
+        "services/api/test/auth-security-regressions.integration.spec.ts",
+        "services/api/test/privacy-engine.spec.ts",
+        "apps/mobile/integration_test/m4_live_api_device_test.dart",
+        "e2e/login-accessibility.spec.ts",
+        "scripts/search-scale-metrics.test.cjs"
+      ],
+      "reports": [
+        "docs/execution/MILLION_PERSON_SEARCH_BENCHMARK_REPORT.md",
+        "docs/execution/CI_RESUME_AND_RESTORE_SCHEMA_REPORT_2026-10-10.md",
+        "docs/execution/PRODUCTION_DEPENDENCY_SECURITY_REPORT.md"
+      ],
+      "dependencies": "Production-like infrastructure; supported devices; independent security/load/accessibility; real monitoring/PITR; named owners",
+      "security_privacy": "Exact target remains mandatory; functional CI/mocks and bounded benchmarks are not NFR acceptance."
+    }
+  },
+  "frozen_hashes": {
+    "docs/baseline/v1.1/Kashyap_Adhikari_Edge_Case_Exception_Negative_Test_Traceability_Catalogue_v1.0.xlsx": "af31e36e621bc303b8268c407bc094f33e56633a0c1f92215b98161d7673cb5d",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Detailed_Behaviour_Edge_Case_Exception_Negative_Test_Specification_v1.0.docx": "d4ed5d04f26f59ec455deed7b749591b111253abb587b22426f9dd655c46bdd9",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Nata_Saino_Desk_Validated_Draft_v0.2.xlsx": "c56b37331a25132ece54bf6e39543b76386e86dd7dacfdb7a47055c63e706e2b",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Documentation_Baseline_Freeze_Record_v1.0.docx": "643027fcfc53551281cee47a49e836163e7083c36bf7964cfd85c5bf42595456",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Initial_Genealogy_Data_Collection_Import_Template_v0.1.xlsx": "b1e8342f66499fa8f0032e8f8e1e2f0cc7aeaa91864cda19b9358883569c96d7",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Master_Requirements_SDLC_Specification.docx": "033695d93bc378a12a0f890e5f9252ff87e05eb4a733f78111117fdb7661fe00",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Privacy_Data_Retention_Policy_v1.0.docx": "7268b4080366f7cabcc813f034efddefc091364aa494239fcb1dc52110494438",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Scale_Staffing_Operating_Budget_Plan_v0.1.docx": "21257f227b5c4b036c6a36ceafbae611d485ddf38a9a19b5dec8814ff90bd5e6",
+    "docs/baseline/v1.1/SHA256SUMS.txt": "2b9db873afe745db2aef0e05019ddced90554f86e4ae2b85711233cb04e5a969",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Final_SDLC_Execution_Governance_Specification_v1.0.docx": "e990d9221d7044b3029e9f4d14e870bfddcbaae4dbe13306365048a987c3ff57",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Administrator_Branch_Authority_Governance_Framework_v0.1.xlsx": "ea4efdc0337b99b03f1dd6a043acce93e4113a3007955528bab02358d2c7a0d3",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Scale_Staffing_Operating_Budget_Model_v0.1.xlsx": "b340f429ade8dfebf739e2571e41ab6a21f47f7c7303c6f647eafb514e2b2548",
+    "docs/baseline/v1.1/Kashyap_Adhikari_Business_Requirements.docx": "ecbc017ff8681e7fd72051229a6341495a9458fb33b761880fa9fcb55dfdccbc",
+    "docs/execution/RELEASE_ACCEPTANCE_LEDGER.csv": "0e323d5de38d3d73b1518000606d7d28ffc225e167f2b1f569d43bf45632f44b",
+    "docs/execution/EDGE_CASE_TRACEABILITY.csv": "189803edb611b9a8c81bf1841e1e8ddb665de19f20bb748fbc8a7eec8b508fae",
+    "docs/execution/RELEASE_IMPLEMENTATION_ASSESSMENT.csv": "f6239cd076c77e9a1c96dbbbe5fcbeb31c9123c326e4fc2171ce86537baf4d5a",
+    "docs/execution/REQUIREMENTS_TRACEABILITY.csv": "6038026b40e847880b869a93a29d91a897674fe1bcfbc8c9772149a928ba5cb5"
+  },
+  "overrides": {
+    "AUTH-FR-009": "Active device listing/revocation and encrypted push-registration generations exist. Native SDK token/lifecycle, shutdown and durable failed-opt-out reconciliation are implemented with c804 Flutter regressions; configured FCM/APNs, physical-device/process-kill and stale-token reconciliation acceptance remain.",
+    "AUTH-FR-011": "Durable OTP request/failure/login and refresh rotation/replay/expiry intents and supervised delivery exist. Guard/DTO rejection coverage, other revocation paths, post-rotation account/privilege rejection, evidence-outage incident reconciliation and approved retention/alerting remain.",
+    "PROF-FR-007": "Web/native active device controls and current-session-bound revocation exist; final independent device/security/privileged-current-session acceptance remains.",
+    "CUL-FR-001": "Durable bilingual document CMS with independent designated approval/publication and native/web published reads exists; authority-approved initial canon and all named cultural signatures remain external owner inputs, not fabricated content.",
+    "CUL-FR-007": "Bilingual fields linked by one document/concept and durable revisions exist; independent equivalence/translation review, richer content types and production-wide language acceptance remain.",
+    "CAL-FR-002": "Event create/edit/cancel preserves refreshed source/provenance and versioned history. Approved calendar conversions/source references and signed reference cases remain.",
+    "CAL-FR-004": "Version-checked event edit/cancel and history controls exist in API/web/native. Complete editor fields, account-change/process-lifecycle and full supported-device acceptance remain.",
+    "CAL-FR-010": "AD/BS source day/month/agenda views, full authorized day counts, exact composite cursor pagination and native/web browsing exist; full device/accessibility/load acceptance and signed source/conversion references remain.",
+    "NOT-FR-003": "Durable explicitly scheduled AD event reminders and private annual general-event recurrence exist alongside genealogy/chat/broadcast notices. Approved Person/family-derived birthday, puja/Shraddha and broader follower/relationship audiences remain.",
+    "NOT-FR-004": "Shared category/channel policy is rechecked for initial delivery, queued retry and recovery. Current c804 source includes SDK/local opt-out reconciliation; real provider/category/physical-device and product acceptance remain.",
+    "NOT-FR-005": "Native registration, refresh, pending APNs opt-in and durable failed-opt-out reconciliation exist. Physical devices/real configured FCM/APNs and secure-storage/OS-lifecycle failures remain external verification.",
+    "NOT-FR-007": "Generic SDK tap signals traverse restoration/MFA into authenticated inbox; fresh authorized official-notice detail/fallback and account/generation fencing exist. Full destination matrix, real provider/physical-device and accessibility acceptance remain.",
+    "NOT-FR-011": "Durable claim/backoff, device-generation attempt journal, unknown/held outcome reconciliation, privacy rechecks and operator counts exist. Provider acceptance does not prove receipt; reviewed uncertain-outcome recovery, external callbacks/policy, incident ownership and live acceptance remain.",
+    "INV-FR-006": "Transactional invitation fanout targets eligible invitees; explicit reminders, revision/cancellation and retry-time recipient authorization exist. Full audience/category and real device/provider delivery acceptance remain.",
+    "COM-FR-001": "Required MISSING_PERSON, PROPERTY_ROOM, ASSISTANCE and COMMUNITY_PROGRAM categories exist in API and bilingual web/native composers, preserving existing categories and independent moderation. Full category-specific device, approved policy and release acceptance remain.",
+    "COM-FR-002": "Scanned private single-image revisions, metadata-stripped derivatives and explicit coarse-locality/contact sharing with current adult/consent/privacy checks exist in API/web/native. Multiple/video/gallery media, fuller audiences, authoritative geography and free-text abuse/contact handling remain.",
+    "COM-FR-007": "Minimized report/version evidence, history/appeal context and independent central escalation exist. Full configurable policy/triage, deleted-content case handling, staffing/retention and release acceptance remain.",
+    "COM-FR-008": "Post keep/remove outcomes, private central escalation and retained decisions exist; comment removal/restoration/case actions are also implemented. Full post restrict/restore/escalation policy, deleted-post case workflows and independent release acceptance remain.",
+    "COM-FR-009": "Versioned post decisions/appeals, author outcome notices and comment-case actions/notices exist. Complete category/risk/appeal policy, fuller audiences and provider/device/authority acceptance remain.",
+    "COM-FR-010": "Text/category, single-image and sharing edits retain revision snapshots and trigger independent re-review. Complete configurable material-change policy, other media/gallery and signed retention/device/security acceptance remain.",
+    "COM-FR-012": "Feed supports bounded pagination and implemented required categories; full deterministic concurrent-feed search/filter acceptance needs explicit case-to-test mapping and product verification.",
+    "COM-FR-013": "Text controls plus private media scanning/quarantine/current owning-post checks exist. Broader configured anti-abuse/risk policy, free-text leakage prevention and deployed security/load acceptance remain.",
+    "CHAT-FR-002": "Selected-member private groups, information/version editing, add/remove/restore, owner/admin/member and ownership transfer exist in API/web/native. Larger branch-roster pagination, orphaned ownership recovery and full device/load acceptance remain.",
+    "CHAT-FR-005": "Durable exact per-message/account Delivered acknowledgements and cumulative Read exist over HTTP/WebSocket with web/native rendering; no delivery inferred from provider sends. Full receipt preference/retention/multi-device/load acceptance remains.",
+    "CHAT-FR-007": "Encrypted account/API-bound native and browser persistent outboxes, immutable retry identities, single-flight/backoff, permission failure and committed-response-loss reconciliation exist. Full OS process-kill, offline startup, physical devices, expiry/retention and general sync acceptance remain.",
+    "ADM-FR-009": "Durable content revision CMS/independent publication, designated approval, history and web/native reads exist. Signed initial canon, richer media/reference content and full role/device/quality acceptance remain.",
+    "ADM-FR-013": "Source-preserving staging, workbook inventory, bounded cross-batch Person/evidence/relationship/contact/branch hierarchy validation and dry-run reports exist. No accepted production graph promotion is enabled. Approved transforms/source/branch/privacy decisions, complete target reconciliation, controlled promotion/resume and two approved rehearsal/rollback cycles remain.",
+    "ADM-FR-016": "Media inventory/write journaling/orphan review/legacy migration and native push aggregate worker/delivery status with independent held-outcome investigation exist. Fleet-wide heartbeat/real alert routing, named operators, full integration/import status and production retention/backup acceptance remain.",
+    "MEDIA-FR-001": "Authenticated private local/S3 upload/download boundaries, checksum journals, scan quarantine and short-lived reads exist. Full production storage/lifecycle/credential/retention and upload authorization/device acceptance remain. Known production media-HMAC fallback was identified in this audit; fail-closed key correction is a separate pending-source batch, not covered by c804 success.",
+    "MEDIA-FR-004": "Safe source-preserving private derivatives integrate profile/chat and single community images. Broader gallery/media codecs, device failure/retry and load/security acceptance remain.",
+    "NFR-PERF-003": "One-million-Person indexed repository benchmark has bounded source-bound evidence (77121ffe source run38068312014: 20 samples/scenario, four closed-loop workers; name p95 521.823ms/location p95475.570ms). This excludes authenticated HTTP, realistic distributions and target-load/network; full frozen production search acceptance remains.",
+    "NFR-SCALE-001": "Disposable one-million-Person database search benchmark and graph schema exist; this demonstrates only bounded repository search. Full million-Person workflows/mutations/tree/privacy, production deployment and no-redesign independent acceptance remain.",
+    "NFR-SEC-003": "flutter_secure_storage session and outbox paths use Android Keystore/iOS Keychain; source-bound Android/iOS driver evidence exists at b7ec666. Physical-device/passcode/backup/process-kill/error-policy and full supported-version acceptance remain.",
+    "NFR-OBS-002": "Durable worker lifecycle and redacted push/audit delivery counters exist. Configured off-process/fleet monitoring, approved alerts/thresholds, named routing/acknowledgement and real production incidents remain; dashboard counts are not alert acceptance.",
+    "NFR-DR-003": "Disposable fictional logical restore validates migration/schema/data/audit consistency in CI. Approved production-like managed/PITR/object-storage recovery, RPO/RTO/retention replay and quarterly scheduling/owner evidence remain.",
+    "NFR-SEC-002": "Managed production secret custody remains an external gate. Audit found ProfileService fallback to a known compiled MEDIA_HMAC_SECRET when production omits configuration. A fail-closed production-key selection correction with focused unit regressions is being implemented separately; not verified by c804 CI. Signing, key rotation/recovery, deployed secret inventory and independent security acceptance remain.",
+    "MEDIA-FR-005": "Fresh owning-entity authorization and private delivery URL validation exist, but production key configuration must fail closed instead of the known compiled MEDIA_HMAC_SECRET fallback. Correction and focused regression verification are a separate source batch; managed keys/rotation/provider acceptance remain."
+  },
+  "evidence": {
+    "CI-C804-PR": {
+      "sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+      "run_id": "38560862785",
+      "conclusion": "SUCCESS",
+      "scope": "Full PR CI all six jobs SUCCESS as fetched by integration owner. Flutter115841281689 clean analysis/182 tests including13 opt-out; platform115841281913,storage115841281629,scanner115841281334,scale115841281790,Android115841281951 SUCCESS. Individual complete frozen-case acceptance is not inferred."
+    },
+    "CI-C804-PUSH": {
+      "sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+      "run_id": "38560855763",
+      "conclusion": "SUCCESS",
+      "scope": "Automatic push CI workflow success as fetched by integration owner; does not close individual signed requirement or edge-case acceptance."
+    },
+    "IOS-C804-PR": {
+      "sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+      "run_id": "38560862836",
+      "conclusion": "SUCCESS",
+      "scope": "Full iOS workflow SUCCESS; artifact11892472658 independently retrieved by integration owner, ZIP SHA25662eb507e2805cfc8bef6b0cfbcb69b1f1d4030317c6b528798041481f9a1c44b. Report source/tree,44 native source hashes,7 inputs and9 real body markers checked: startup/Keychain and unsigned compilation verified. Production/physical-device/APNs acceptance false."
+    },
+    "IOS-C804-PUSH": {
+      "sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+      "run_id": "38560855873",
+      "conclusion": "SUCCESS",
+      "scope": "Automatic push native workflow SUCCESS as fetched by integration owner; no physical-device/signing/live provider acceptance."
+    },
+    "CI-B7-PR": {
+      "sha": "b7ec666cbd1aae9262dd1bb38d1f42619237671f",
+      "run_id": "38470234155",
+      "conclusion": "SUCCESS",
+      "scope": "Previous routing checkpoint full six-job PR CI; evidence binds this earlier source, not later untested changes."
+    },
+    "IOS-B7-PR": {
+      "sha": "b7ec666cbd1aae9262dd1bb38d1f42619237671f",
+      "run_id": "38470234134",
+      "conclusion": "SUCCESS",
+      "scope": "Job115547109771 inspected: actual Keychain body,driver,evidence and unsigned device compilation success at prior checkpoint; no physical-device/signing/live provider acceptance."
+    },
+    "CI-B7-PUSH": {
+      "sha": "b7ec666cbd1aae9262dd1bb38d1f42619237671f",
+      "run_id": "38470226640",
+      "conclusion": "SUCCESS",
+      "scope": "Prior checkpoint automatic push full CI."
+    },
+    "IOS-B7-PUSH": {
+      "sha": "b7ec666cbd1aae9262dd1bb38d1f42619237671f",
+      "run_id": "38470226429",
+      "conclusion": "SUCCESS",
+      "scope": "Prior checkpoint automatic native CI."
+    },
+    "RESTORE-C804": {
+      "sha": "c80433c6079033f39d97bc9555990d8a65047b34",
+      "run_id": "38560862785",
+      "conclusion": "SUCCESS",
+      "scope": "Artifact11893145089 independently retrieved by integration owner; ZIP SHA2564b07ff2ffe0cf13e1b68da4bff6790fd4d20a320ab009757db534e0f72b333d4. Disposable fictional logical restore PASSED82 tables/59 migrations; production/PITR/RPO/RTO/push-key acceptance flags remain false."
+    }
+  },
+  "classification_overrides": {
+    "CUL-FR-001": "Awaiting owner approval",
+    "REL-FR-006": "Awaiting owner approval",
+    "JUT-FR-001": "Awaiting owner approval",
+    "JUT-FR-004": "Awaiting owner approval",
+    "CAL-FR-006": "Awaiting owner approval",
+    "CAL-FR-007": "Awaiting owner approval",
+    "CAL-FR-013": "Awaiting owner approval",
+    "NFR-PERF-003": "Partially implemented",
+    "NFR-SCALE-001": "Partially implemented",
+    "NFR-OBS-002": "Partially implemented",
+    "NFR-DR-003": "Partially implemented"
+  },
+  "edge_context": {
+    "EC-0002": [
+      "AUTH;NOT",
+      "Native SDK permission denial and settings/core-inbox fallback code; required permission matrix across every feature still needs individual controlled evidence."
+    ],
+    "EC-0003": [
+      "NOT",
+      "Native push permission requests are explicit; ordinary inbox remains accessible. All optional permission routes require supported-device validation."
+    ],
+    "EC-0016": [
+      "AUTH",
+      "OTP provider timeout and lifecycle evidence cover bounded failures; real SMS outage/status acceptance remains."
+    ],
+    "EC-0019": [
+      "AUTH",
+      "Session management rechecks revocation; current native persisted-session/replay cleanup regressions exist; exact cross-device case mapping pending."
+    ],
+    "EC-0020": [
+      "AUTH",
+      "Refresh successor/replay revocation transaction and durable audit are covered by auth/refresh suite context; full evidence-outage policy acceptance pending."
+    ],
+    "EC-0029": [
+      "PRIV;GEN;PROF",
+      "Server privacy filtering tests and field projection are present; individual requested hidden-field scenario and full surfaces need approval evidence."
+    ],
+    "EC-0065": [
+      "SRCH",
+      "Recorded Unicode/name variants and indexed candidates preserve original names; production API/locale spelling cases require independent mapping."
+    ],
+    "EC-0066": [
+      "GEN;SRCH",
+      "Depth-bounded native expansion and million-Person repository benchmark exist; wide-branch pagination/tree/device target-load acceptance remains."
+    ],
+    "EC-0099": [
+      "CUL",
+      "Durable independent designated content approval/publication code and suite context exist; actual named canon approval is not supplied."
+    ],
+    "EC-0102": [
+      "CUL",
+      "Durable revision/version and independent-review code exists; exact edit-during-review case mapping and full acceptance remain."
+    ],
+    "EC-0103": [
+      "CUL",
+      "Published-only reads/archive lifecycle are present; all index/client cache withdrawal paths need controlled independent evidence."
+    ],
+    "EC-0107": [
+      "CUL;SRCH",
+      "Cultural published-only title/body/keyword search exists; individual draft ID/query privacy acceptance requires case mapping."
+    ],
+    "EC-0143": [
+      "CHAT",
+      "Immutable outbox ID and PostgreSQL server deduplication exist with lost-response recovery contexts; exact case acceptance open."
+    ],
+    "EC-0146": [
+      "CHAT",
+      "Current block/account/adult eligibility enforced during direct messaging and notification delivery; race/deployed security acceptance remains."
+    ],
+    "EC-0147": [
+      "CHAT",
+      "Removal/history boundaries and current HTTP/WebSocket authorization are implemented; offline sync/retention/device campaign remains."
+    ],
+    "EC-0151": [
+      "CHAT",
+      "Version-checked locks/atomic ownership transfer and group management integration contexts exist; independent exact concurrency case acceptance remains."
+    ],
+    "EC-0152": [
+      "CHAT;MEDIA",
+      "Scan state blocks message/community downloads and scanner outage fails closed; deployed scanner/fleet acceptance remains."
+    ],
+    "EC-0153": [
+      "CHAT;MEDIA",
+      "Private attachment type/size/content validation exists; full device/upload/codec/security matrix remains."
+    ],
+    "EC-0159": [
+      "NOT",
+      "Device-generation attempt journal invalidates only matching rejected token generation; provider/physical token lifecycle acceptance remains."
+    ],
+    "EC-0160": [
+      "NOT",
+      "Transactional notification identities and device claim/attempt fencing exist; independent duplicate-event acceptance remains."
+    ],
+    "EC-0161": [
+      "NOT",
+      "Permission denial preserves authenticated inbox; pending opt-in/opt-out reconciliation regression context exists; OS/physical-device acceptance remains."
+    ],
+    "EC-0162": [
+      "NOT",
+      "Shared policy re-evaluates queued deliveries and retries against current category/channel/account/privacy access; live provider acceptance remains."
+    ],
+    "EC-0167": [
+      "NOT",
+      "SDK payload stripped; authenticated inbox/official notice lookup returns safe deleted/restricted fallback with account-generation fences; destination/device matrix remains."
+    ],
+    "EC-0168": [
+      "NOT",
+      "Provider acceptance vs receipt kept distinct; unknown outcomes retained for investigation without speculative resend; live receipt/reconciliation acceptance remains."
+    ],
+    "EC-0171": [
+      "MEDIA",
+      "Malware scanner unavailable keeps files quarantined; independent real outage/privacy evidence remains."
+    ],
+    "EC-0172": [
+      "MEDIA",
+      "Image derivatives strip metadata while immutable restricted original provenance survives; all codec/source-consent acceptance remains."
+    ],
+    "EC-0175": [
+      "MEDIA;COM;CHAT",
+      "Owning-entity/media revision references and legal-hold-aware cleanup exist; full signed retention/deletion/backup policy acceptance remains."
+    ],
+    "EC-0178": [
+      "MEDIA",
+      "Inventory/write journal/orphan and integrity investigation are bounded redacted operations; named production integrity alert/recovery acceptance remains."
+    ],
+    "EC-0193": [
+      "CHAT;AUTH",
+      "Replay uses current credentials and authorization with failed review state; physical-process restart/account revocation case evidence remains."
+    ],
+    "EC-0194": [
+      "CHAT;CHG",
+      "Immutable retry IDs and uncertain-commit recovery context exist; every mutation family requires independent lost-response acceptance."
+    ],
+    "EC-0195": [
+      "CHAT",
+      "Native/browser chat outboxes have bounded retry backoff; generic API workflows are not automatically proven."
+    ],
+    "EC-0213": [
+      "ADM",
+      "Frozen workbook mapping preflight/staging checks exist; full approved transforms and accepted target promotion remain disabled."
+    ],
+    "EC-0215": [
+      "ADM",
+      "Current/peer source ID conflicts produce blocking staging issues; promotion is not enabled."
+    ],
+    "EC-0216": [
+      "ADM;GEN",
+      "Staged relationship and cross-batch source branch cycle checks exist; approved target graph promotion/recovery remains disabled."
+    ],
+    "EC-0219": [
+      "ADM",
+      "Hash-bound staging/dry-run request identity exists; governed production batch replay requires future promotion/recovery acceptance."
+    ],
+    "EC-0220": [
+      "ADM",
+      "Immutable staged hashes and dry-run context exist; approved target promotion/source-change invalidation are not activated."
+    ],
+    "EC-0226": [
+      "PRIV;GEN;CHAT",
+      "Relevant object/branch/member and field-filter suite contexts exist; independent full attack matrix/deployed penetration acceptance remains."
+    ],
+    "EC-0228": [
+      "PRIV;AUD;AUTH",
+      "Fixed diagnostics and auth/provider/database redaction contexts exist; historical logs/telemetry/screenshot and operational incident acceptance remain."
+    ],
+    "EC-0238": [
+      "NFR",
+      "Disposable CI logical restore/schema/data/audit checks provide bounded evidence; real production PITR/object recovery and RPO/RTO acceptance remain."
+    ],
+    "EC-0241": [
+      "NFR",
+      "Dashboard worker counters do not close operational alerting; named routing, off-process detection and acknowledgement rehearsal are external release blockers."
+    ],
+    "EC-0259": [
+      "AUTH;CAL;CHAT",
+      "Session-bound secure drafts/outboxes and calendar token/actor fences exist; every form/supported-device restoration path requires case acceptance."
+    ],
+    "EC-0004": [
+      "NFR;AUTH",
+      "Native minimum OS build metadata exists, but no controlled optional app-update notice/version-provider workflow was found. Implement and verify compatible optional-update guidance without blocking core use."
+    ],
+    "EC-0005": [
+      "NFR;AUTH;CHAT",
+      "Build minimum OS metadata does not implement server-selected retirement of an already installed client. Approved minimum-version gating and preservation of safe unsent drafts need implementation and device/server evidence."
+    ],
+    "EC-0075": [
+      "REL",
+      "Unapproved catalogue stays disabled/neutral through current active rules predicate; this denial/fallback behavior can be tested without obtaining cultural approval. Exact case-to-test independent evidence remains open; approval is required for later authoritative activation."
+    ],
+    "EC-0076": [
+      "REL",
+      "Unsupported term uses neutral fallback rather than invented cultural terminology; signed supported terms are separate dependencies. Exact unsupported-path case mapping and client acceptance remain."
+    ],
+    "EC-0083": [
+      "REL",
+      "Traversal depth/resource bounds are present in current relationship engine context. Exact over-depth case-to-assertion, privacy fallback and production performance evidence remain."
+    ],
+    "EC-0087": [
+      "CAL",
+      "Unavailable authoritative calendar/Tithi provider returns explicit unavailable metadata rather than invented date. Safe unavailable behavior can be accepted without live-provider approval; exact client/test mapping remains."
+    ],
+    "EC-0093": [
+      "JUT;GEN",
+      "Current rules require verified direct links and neutral unsupported/disputed results; complete disputed-relationship client/privacy/GWT evidence remains, independently of final signed positive cultural cases."
+    ],
+    "EC-0098": [
+      "JUT;CAL",
+      "Unapproved/incomplete active rules produce neutral/unavailable fallback. Required data/audit/retry/privacy/client evidence mapping remains; this does not activate incomplete rules."
+    ],
+    "EC-0180": [
+      "AUTH;ADM",
+      "BranchGuard/current scoped services deny missing authority scope; approved named-role appointments are a separate production gate. Exact omission case mapping and all role endpoints remain for acceptance."
+    ],
+    "EC-0181": [
+      "AUTH;ADM",
+      "Current role/scope/session checks reject later unauthorized actions. Exact timed-expiry test/control and every privileged endpoint need independent acceptance."
+    ],
+    "EC-0182": [
+      "CLAIM;CHG;ADM",
+      "Current family/author recusal checks exist for claim/change/cultural/group contexts. Complete genealogy-authority own-family reassignment and test/GWT acceptance remain."
+    ],
+    "EC-0189": [
+      "CUL;REL",
+      "Cultural document publication requires independent designated approval; rule activation uses separate authority checks and incomplete durable proposal lifecycle. Exact rule proposer approval case, source version and signed authority evidence remain."
+    ]
+  },
+  "edge_classification_overrides": {
+    "EC-0004": "Not implemented",
+    "EC-0005": "Not implemented",
+    "EC-0019": "Implemented but verification pending",
+    "EC-0020": "Implemented but verification pending",
+    "EC-0021": "Implemented but verification pending",
+    "EC-0029": "Implemented but verification pending",
+    "EC-0075": "Implemented but verification pending",
+    "EC-0076": "Implemented but verification pending",
+    "EC-0083": "Implemented but verification pending",
+    "EC-0085": "Partially implemented",
+    "EC-0087": "Implemented but verification pending",
+    "EC-0093": "Implemented but verification pending",
+    "EC-0098": "Implemented but verification pending",
+    "EC-0099": "Implemented but verification pending",
+    "EC-0102": "Implemented but verification pending",
+    "EC-0103": "Implemented but verification pending",
+    "EC-0107": "Implemented but verification pending",
+    "EC-0143": "Implemented but verification pending",
+    "EC-0146": "Implemented but verification pending",
+    "EC-0147": "Implemented but verification pending",
+    "EC-0151": "Implemented but verification pending",
+    "EC-0152": "Implemented but verification pending",
+    "EC-0153": "Implemented but verification pending",
+    "EC-0159": "Implemented but verification pending",
+    "EC-0160": "Implemented but verification pending",
+    "EC-0161": "Implemented but verification pending",
+    "EC-0162": "Implemented but verification pending",
+    "EC-0167": "Implemented but verification pending",
+    "EC-0168": "Implemented but verification pending",
+    "EC-0171": "Implemented but verification pending",
+    "EC-0172": "Implemented but verification pending",
+    "EC-0180": "Implemented but verification pending",
+    "EC-0181": "Implemented but verification pending",
+    "EC-0182": "Implemented but verification pending",
+    "EC-0185": "Partially implemented",
+    "EC-0186": "Partially implemented",
+    "EC-0189": "Implemented but verification pending",
+    "EC-0193": "Implemented but verification pending",
+    "EC-0194": "Partially implemented",
+    "EC-0195": "Partially implemented",
+    "EC-0213": "Partially implemented",
+    "EC-0215": "Partially implemented",
+    "EC-0216": "Partially implemented",
+    "EC-0219": "Partially implemented",
+    "EC-0220": "Partially implemented",
+    "EC-0238": "Partially implemented",
+    "EC-0241": "Blocked by external dependencies"
+  }
+}

@@ -390,4 +390,176 @@ describe('Milestone 4: Genealogy Change Requests & Concurrency Isolation Integra
     expect(link.provenance.changeRequestId).toBe(req.id);
     expect(link.provenance.approvedBy).toBe(superAdminId);
   });
+  it('corrects a spouse proposal without changing genealogy until independent approval', async () => {
+    const target = (await db.query(
+      "INSERT INTO persons (gender,living_status,branch_id,generation,version) VALUES ('OTHER','LIVING',$1,3,1) RETURNING *",
+      [testBranchId],
+    )).rows[0];
+    const reviewer = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    const original = {primaryNameNepali: 'काल्पनिक नाम', primaryNameEnglish: 'Fictional original',
+      gender: 'OTHER', livingStatus: 'DECEASED', evidenceNotes: 'Retain fictional evidence note'};
+    const request = await changeRequestsService.submitRequest(requesterId, {
+      targetPersonId: target.id, type: ChangeRequestType.ADD_SPOUSE,
+      proposedChanges: original, reason: 'Fictional spouse correction lifecycle',
+    });
+    await changeRequestsService.requestCorrection(request.id, reviewer, 'Correct the fictional spelling');
+    const corrected = {...original, primaryNameNepali: 'काल्पनिक सच्याइएको नाम', primaryNameEnglish: 'Fictional corrected', gender: 'FEMALE'};
+    await expect(changeRequestsService.resubmit(request.id, otherUserId, {
+      proposedChanges: corrected, reason: 'Foreign account correction',
+    })).rejects.toThrow('Only the requester');
+    const pending = await changeRequestsService.resubmit(request.id, requesterId, {
+      proposedChanges: corrected, reason: 'Corrected fictional spelling',
+    });
+    expect(pending.status).toBe(ChangeRequestStatus.PENDING);
+    expect((await db.query('SELECT proposed_changes FROM genealogy_change_requests WHERE id=$1', [request.id])).rows[0].proposed_changes).toEqual(corrected);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [target.id])).rows[0]).toEqual(target);
+    expect((await db.query('SELECT * FROM spouse_links WHERE person_id=$1 OR spouse_id=$1', [target.id])).rows).toEqual([]);
+    const approved = await changeRequestsService.reviewRequest(request.id, reviewer, {
+      status: ChangeRequestStatus.APPROVED, reviewNotes: 'Independent fictional verification',
+    });
+    expect(approved.status).toBe(ChangeRequestStatus.APPROVED);
+    const links = (await db.query('SELECT spouse_id,confidence,provenance FROM spouse_links WHERE person_id=$1', [target.id])).rows;
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({confidence: 'VERIFIED', provenance: {changeRequestId: request.id, approvedBy: superAdminId}});
+    expect((await db.query('SELECT gender,living_status FROM persons WHERE id=$1', [links[0].spouse_id])).rows[0]).toEqual({gender: 'FEMALE', living_status: 'DECEASED'});
+    expect((await db.query("SELECT full_name FROM person_names WHERE person_id=$1 AND language='en'", [links[0].spouse_id])).rows[0].full_name).toBe('Fictional corrected');
+    await expect(changeRequestsService.resubmit(request.id, requesterId, {proposedChanges: original})).rejects.toThrow('Only correction-requested');
+  });
+
+  it('corrects a biological parent proposal without changing genealogy before independent approval', async () => {
+    const target = (await db.query(
+      "INSERT INTO persons (gender,living_status,branch_id,generation,version) VALUES ('OTHER','LIVING',$1,3,1) RETURNING *", [testBranchId],
+    )).rows[0];
+    const reviewer = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    const original = {primaryNameNepali: 'काल्पनिक अभिभावक', primaryNameEnglish: 'Fictional parent original',
+      gender: 'MALE', livingStatus: 'DECEASED', evidenceNotes: 'Retain fictional parent evidence'};
+    const request = await changeRequestsService.submitRequest(requesterId, {
+      targetPersonId: target.id, type: ChangeRequestType.ADD_PARENT,
+      proposedChanges: original, reason: 'Fictional biological parent correction lifecycle',
+    });
+    await changeRequestsService.requestCorrection(request.id, reviewer, 'Correct the fictional parent spelling');
+    const corrected = {...original, primaryNameNepali: 'सच्याइएको काल्पनिक अभिभावक', primaryNameEnglish: 'Fictional parent corrected', gender: 'UNKNOWN'};
+    await expect(changeRequestsService.resubmit(request.id, otherUserId, {proposedChanges: corrected})).rejects.toThrow('Only the requester');
+    expect((await changeRequestsService.resubmit(request.id, requesterId, {proposedChanges: corrected})).status).toBe(ChangeRequestStatus.PENDING);
+    expect((await db.query('SELECT proposed_changes FROM genealogy_change_requests WHERE id=$1', [request.id])).rows[0].proposed_changes).toEqual(corrected);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [target.id])).rows[0]).toEqual(target);
+    expect((await db.query('SELECT * FROM parent_links WHERE child_id=$1', [target.id])).rows).toEqual([]);
+    expect((await changeRequestsService.reviewRequest(request.id, reviewer, {status: ChangeRequestStatus.APPROVED,
+      reviewNotes: 'Independent fictional biological-parent verification'})).status).toBe(ChangeRequestStatus.APPROVED);
+    const links = (await db.query('SELECT parent_id,parent_type,confidence FROM parent_links WHERE child_id=$1', [target.id])).rows;
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({parent_type: 'BIOLOGICAL', confidence: 'VERIFIED'});
+    expect((await db.query('SELECT gender,living_status FROM persons WHERE id=$1', [links[0].parent_id])).rows[0]).toEqual({gender: 'UNKNOWN', living_status: 'DECEASED'});
+    expect((await db.query("SELECT full_name FROM person_names WHERE person_id=$1 AND language='en'", [links[0].parent_id])).rows[0].full_name).toBe('Fictional parent corrected');
+    await expect(changeRequestsService.resubmit(request.id, requesterId, {proposedChanges: original})).rejects.toThrow('Only correction-requested');
+  });
+
+  it.each([
+    [ChangeRequestType.ADD_PARENT, 'parentPersonId'],
+    [ChangeRequestType.ADD_SPOUSE, 'spousePersonId'],
+  ] as const)('links a selected existing person only after independent cross-branch approval: %s', async (type, key) => {
+    const target = (await db.query(
+      "INSERT INTO persons(gender,living_status,branch_id,generation,version) VALUES('OTHER','LIVING',$1,3,1) RETURNING *", [testBranchId],
+    )).rows[0];
+    const relative = (await db.query(
+      "INSERT INTO persons(gender,living_status,branch_id,generation,version) VALUES('UNKNOWN','UNKNOWN',$1,2,1) RETURNING *", [destBranchId],
+    )).rows[0];
+    const global = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    const branch = {id: branchAdminId, roles: [Role.BRANCH_ADMIN],
+      roleAssignments: [{role: Role.BRANCH_ADMIN, branchId: testBranchId}]} as any;
+    const proposed = {[key]: relative.id};
+    const req = await changeRequestsService.submitRequest(requesterId, {
+      targetPersonId: target.id, type, proposedChanges: proposed, reason: 'Synthetic existing-person relationship',
+    });
+    const parent = type === ChangeRequestType.ADD_PARENT;
+    const graph = async () => (await db.query(parent
+      ? 'SELECT * FROM parent_links WHERE child_id=$1'
+      : 'SELECT * FROM spouse_links WHERE person_id=$1 OR spouse_id=$1', [target.id])).rows;
+    expect(await graph()).toEqual([]);
+    await changeRequestsService.requestCorrection(req.id, global, 'Clarify the synthetic relationship reason');
+    await changeRequestsService.resubmit(req.id, requesterId, {
+      proposedChanges: proposed, reason: 'Clarified relationship to the same selected person',
+    });
+    expect((await db.query('SELECT proposed_changes FROM genealogy_change_requests WHERE id=$1', [req.id])).rows[0].proposed_changes).toEqual(proposed);
+    expect(await graph()).toEqual([]);
+    await expect(changeRequestsService.reviewRequest(req.id,
+      {...global, id: requesterId}, {status: ChangeRequestStatus.APPROVED, reviewNotes: 'Unauthorized self review'})).rejects.toThrow('own change proposals');
+    await expect(changeRequestsService.reviewRequest(req.id, branch,
+      {status: ChangeRequestStatus.APPROVED, reviewNotes: 'Single branch review'})).rejects.toThrow(/both branches/);
+    expect(await graph()).toEqual([]);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [target.id])).rows[0]).toEqual(target);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [relative.id])).rows[0]).toEqual(relative);
+    const before = Number((await db.query('SELECT count(*) FROM persons')).rows[0].count);
+    expect((await changeRequestsService.reviewRequest(req.id, global, {
+      status: ChangeRequestStatus.APPROVED, reviewNotes: 'Independent synthetic cross-branch verification',
+    })).status).toBe(ChangeRequestStatus.APPROVED);
+    expect(Number((await db.query('SELECT count(*) FROM persons')).rows[0].count)).toBe(before);
+    expect((await db.query('SELECT * FROM persons WHERE id=$1', [relative.id])).rows[0]).toEqual(relative);
+    const links = await graph();
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject(parent
+      ? {parent_id: relative.id, child_id: target.id, parent_type: 'BIOLOGICAL', confidence: 'VERIFIED', created_by: superAdminId}
+      : {person_id: target.id, spouse_id: relative.id, confidence: 'VERIFIED', provenance: {changeRequestId: req.id, approvedBy: superAdminId}});
+  });
+
+  it('retains terminal decisions on resubmission and permits only owned requested corrections/conflicts', async()=>{
+    for(const status of ['PENDING','APPROVED','REJECTED','ESCALATED']) {
+      const req=await changeRequestsService.submitRequest(requesterId,{targetPersonId:personId,type:ChangeRequestType.EDIT_PERSON,proposedChanges:{birthPlace:'Synthetic place'},reason:'Synthetic state guard regression'});
+      await db.query('UPDATE genealogy_change_requests SET status=$2 WHERE id=$1',[req.id,status]);
+      const before=(await db.query('SELECT status,version,resubmission_count FROM genealogy_change_requests WHERE id=$1',[req.id])).rows[0];
+      await expect(changeRequestsService.resubmit(req.id,requesterId,{proposedChanges:{birthPlace:'Should not apply'}})).rejects.toThrow('Only correction-requested');
+      expect((await db.query('SELECT status,version,resubmission_count FROM genealogy_change_requests WHERE id=$1',[req.id])).rows[0]).toEqual(before);
+    }
+    const req=await changeRequestsService.submitRequest(requesterId,{targetPersonId:personId,type:ChangeRequestType.EDIT_PERSON,proposedChanges:{birthPlace:'Synthetic original'},reason:'Synthetic correction regression'});
+    await db.query("UPDATE genealogy_change_requests SET status='CORRECTION_REQUESTED' WHERE id=$1",[req.id]);
+    await expect(changeRequestsService.resubmit(req.id,otherUserId,{proposedChanges:{birthPlace:'Foreign'}})).rejects.toThrow('Only the requester');
+    const saved=await changeRequestsService.resubmit(req.id,requesterId,{proposedChanges:{birthPlace:'Synthetic corrected'},reason:'Requested correction'});
+    expect(saved.status).toBe('PENDING');expect(saved.resubmissionCount).toBe(1);
+  });
+
+  it('retains terminal decisions when reviewers request corrections or escalate', async () => {
+    const reviewer = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    for (const status of ['APPROVED', 'REJECTED', 'WITHDRAWN', 'SUPERSEDED']) {
+      const req = await changeRequestsService.submitRequest(requesterId, {
+        targetPersonId: personId, type: ChangeRequestType.EDIT_PERSON,
+        proposedChanges: {birthPlace: 'Synthetic unchanged place'}, reason: 'Terminal transition regression',
+      });
+      await db.query('UPDATE genealogy_change_requests SET status=$2 WHERE id=$1', [req.id, status]);
+      const before = (await db.query('SELECT * FROM genealogy_change_requests WHERE id=$1', [req.id])).rows[0];
+      const transitions = (await db.query('SELECT * FROM workflow_state_transitions WHERE entity_id=$1 ORDER BY id', [req.id])).rows;
+      for (const operation of ['requestCorrection', 'escalate'] as const) {
+        await expect(changeRequestsService[operation](req.id, reviewer, 'Must not reopen')).rejects.toThrow('Cannot modify a terminal change request');
+      }
+      expect((await db.query('SELECT * FROM genealogy_change_requests WHERE id=$1', [req.id])).rows[0]).toEqual(before);
+      expect((await db.query('SELECT * FROM workflow_state_transitions WHERE entity_id=$1 ORDER BY id', [req.id])).rows).toEqual(transitions);
+    }
+  });
+
+  it('applies branch filters together with requester ownership and reviewer branch isolation', async () => {
+    // Earlier branch-transfer acceptance intentionally moves the shared person.
+    // This regression owns both branch fixtures and must not depend on test order.
+    const selectedPerson = (await db.query(
+      "INSERT INTO persons (gender, living_status, branch_id, generation, version) VALUES ('OTHER', 'LIVING', $1, 2, 1) RETURNING id",
+      [testBranchId],
+    )).rows[0].id;
+    const otherPerson = (await db.query(
+      "INSERT INTO persons (gender, living_status, branch_id, generation, version) VALUES ('OTHER', 'LIVING', $1, 2, 1) RETURNING id",
+      [destBranchId],
+    )).rows[0].id;
+    const own = await changeRequestsService.submitRequest(requesterId, {targetPersonId: selectedPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic filtered'}, reason: 'Branch filter regression'});
+    const otherBranch = await changeRequestsService.submitRequest(requesterId, {targetPersonId: otherPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic other branch'}, reason: 'Branch filter regression'});
+    const foreign = await changeRequestsService.submitRequest(otherUserId, {targetPersonId: selectedPerson, type: ChangeRequestType.EDIT_PERSON, proposedChanges: {occupation: 'Synthetic other requester'}, reason: 'Branch filter regression'});
+    const global = {id: superAdminId, roles: [Role.SUPER_ADMIN], roleAssignments: []} as any;
+    const member = {id: requesterId, roles: [Role.REGISTERED_USER], roleAssignments: []} as any;
+    const branchReviewer = {id: branchAdminId, roles: [Role.BRANCH_ADMIN], roleAssignments: [{role: Role.BRANCH_ADMIN, branchId: testBranchId}]} as any;
+    const globalRows = await changeRequestsService.listRequests(global, {branchId: testBranchId});
+    expect(globalRows.map(r => r.id)).toEqual(expect.arrayContaining([own.id, foreign.id]));
+    expect(globalRows.map(r => r.id)).not.toContain(otherBranch.id);
+    const memberRows = await changeRequestsService.listRequests(member, {branchId: testBranchId});
+    expect(memberRows.map(r => r.id)).toContain(own.id);
+    expect(memberRows.map(r => r.id)).not.toContain(foreign.id);
+    expect(memberRows.map(r => r.id)).not.toContain(otherBranch.id);
+    expect((await changeRequestsService.listRequests(branchReviewer, {branchId: destBranchId})).map(r => r.id)).not.toContain(otherBranch.id);
+  });
+
 });

@@ -10,7 +10,7 @@ Clients across web, mobile, and background integrations require predictable, ver
 
 ## 2. Decision
 - Primary Protocol: **RESTful HTTP endpoints** strictly defined with **OpenAPI 3.1** and shared TypeScript schemas (`@kashyap/contracts`).
-- Real-Time Protocol: **WebSocket (Socket.IO/WSS)** with JWT handshake authentication, heartbeat liveness, and room-based channel routing for chat and alerts.
+- Real-Time Protocol: **WebSocket/WSS** with a JWT authentication frame before subscriptions, current-session revalidation, bounded frame sizes and conversation authorization. The native and browser clients use the same JSON protocol; Socket.IO framing is not used. PostgreSQL is authoritative for reconnect history and read receipts; short-lived typing state uses Redis.
 
 ## 3. Alternatives Considered
 | Alternative | Evaluation & Rationale for Rejection |
@@ -31,3 +31,4 @@ Clients across web, mobile, and background integrations require predictable, ver
 
 ## 7. Operational Impact
 - Interactive Swagger UI available at `/api/docs`; WebSocket healthcheck endpoints for load balancer liveness probes.
+

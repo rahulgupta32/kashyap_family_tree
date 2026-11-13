@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
+import { NotificationDispatcherService } from '../src/modules/notifications/notification-dispatcher.service';
 import { ClaimsService } from '../src/modules/claims/claims.service';
 import { ClaimStatus, DisputeStatus, Role, ErrorCode } from '@kashyap/contracts';
 import { createDisposableDatabase, DisposableDatabase, assertDatabaseIsolation } from './helpers/disposable-db';
@@ -98,9 +99,9 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     await db.query(
       `INSERT INTO media_assets (id, uploader_user_id, storage_key, bucket, file_name, mime_type, byte_size, sha256_checksum, is_private, quarantine_status, retention_status)
        VALUES
-       ('00000000-0000-0000-0000-000000000101', $1, 'k1', 'private-profiles', 'f1.jpg', 'image/jpeg', 100, 'hash1', TRUE, 'CLEAN', 'ACTIVE'),
-       ('00000000-0000-0000-0000-000000000102', $1, 'k2', 'private-profiles', 'f2.jpg', 'image/jpeg', 100, 'hash2', TRUE, 'CLEAN', 'ACTIVE'),
-       ('00000000-0000-0000-0000-000000000103', $2, 'k3', 'private-profiles', 'f3.jpg', 'image/jpeg', 100, 'hash3', TRUE, 'CLEAN', 'ACTIVE')`,
+       ('00000000-0000-4000-8000-000000000101', $1, 'k1', 'private-profiles', 'f1.jpg', 'image/jpeg', 100, 'hash1', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-4000-8000-000000000102', $1, 'k2', 'private-profiles', 'f2.jpg', 'image/jpeg', 100, 'hash2', TRUE, 'CLEAN', 'ACTIVE'),
+       ('00000000-0000-4000-8000-000000000103', $2, 'k3', 'private-profiles', 'f3.jpg', 'image/jpeg', 100, 'hash3', TRUE, 'CLEAN', 'ACTIVE')`,
       [claimant1Id, claimant2Id],
     );
   });
@@ -121,7 +122,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       knownFamilyMembers: ['Hari Adhikari'],
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000101',
+          mediaAssetId: '00000000-0000-4000-8000-000000000101',
           documentType: 'family_photo',
           description: 'Family photograph with clan elders',
         },
@@ -132,7 +133,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     expect(claim.id).toBeDefined();
     expect(claim.status).toBe(ClaimStatus.PENDING_TIER1);
     expect(claim.evidenceAttachments.length).toBe(1);
-    expect(claim.evidenceAttachments[0].mediaUrl).toContain('00000000-0000-0000-0000-000000000101');
+    expect(claim.evidenceAttachments[0].mediaUrl).toContain('00000000-0000-4000-8000-000000000101');
     expect(claim.evidenceAttachments[0].mediaUrl).toContain('sig=');
 
     // Check transition table
@@ -182,12 +183,29 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     expect(corrected.status).toBe(ClaimStatus.CORRECTION_REQUESTED);
     expect(corrected.correctionRequestNotes).toBe('Please attach clearer family photo');
 
-    // 2. Claimant resubmits
+    // A stale member screen must not consume a newer correction request.
+    await expect(claimsService.resubmit(claimId, claimant1Id, {
+      expectedVersion: corrected.version - 1,
+      relationshipDescription: 'Stale correction must not be written',
+      statementOfTruth: true,
+    })).rejects.toMatchObject({ status: 409 });
+    const stillCorrected = await claimsService.getClaimById(claimId, {
+      id: claimant1Id, roles: [Role.REGISTERED_USER], roleAssignments: [],
+    } as any);
+    expect(stillCorrected.version).toBe(corrected.version);
+    expect(stillCorrected.status).toBe(ClaimStatus.CORRECTION_REQUESTED);
+    expect(stillCorrected.resubmissionCount).toBe(corrected.resubmissionCount);
+    expect(stillCorrected.relationshipDescription).toBe(corrected.relationshipDescription);
+    expect(stillCorrected.evidenceAttachments.map(({ id, mediaAssetId }) => ({ id, mediaAssetId })))
+      .toEqual(corrected.evidenceAttachments.map(({ id, mediaAssetId }) => ({ id, mediaAssetId })));
+
+    // 2. Claimant resubmits the correction version actually read.
     const resubmitted = await claimsService.resubmit(claimId, claimant1Id, {
+      expectedVersion: corrected.version,
       relationshipDescription: 'Updated with clearer photo',
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000102',
+          mediaAssetId: '00000000-0000-4000-8000-000000000102',
           documentType: 'elder_voucher',
           description: 'Elder written statement',
         },
@@ -196,6 +214,14 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
     });
     expect(resubmitted.status).toBe(ClaimStatus.PENDING_TIER1);
     expect(resubmitted.resubmissionCount).toBe(1);
+    expect(resubmitted.version).toBe(corrected.version + 1);
+    for (const original of corrected.evidenceAttachments) {
+      expect(resubmitted.evidenceAttachments).toContainEqual(expect.objectContaining({
+        id: original.id, mediaAssetId: original.mediaAssetId, documentType: original.documentType,
+      }));
+    }
+    expect(resubmitted.evidenceAttachments.some((attachment) =>
+      attachment.mediaAssetId === '00000000-0000-4000-8000-000000000102')).toBe(true);
   });
 
   it('4. should enforce Tier 1 vouch and Tier 2 approval separation of duties', async () => {
@@ -275,7 +301,7 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       reason: 'I am the real Ram Adhikari, claimant 1 is an imposter',
       evidenceAttachments: [
         {
-          mediaAssetId: '00000000-0000-0000-0000-000000000103',
+          mediaAssetId: '00000000-0000-4000-8000-000000000103',
           documentType: 'clan_record',
           description: 'Historical vamshavali photocopy',
         },
@@ -294,12 +320,34 @@ describe('Milestone 4: Governed Claims & Two-Tier Verification Integration', () 
       roleAssignments: [{ role: Role.SUPER_ADMIN, branchId: null }],
     } as any;
 
+    const inspected = await claimsService.listClaimDisputes(claimId, superAdminUser);
+    expect(inspected).toEqual(expect.arrayContaining([expect.objectContaining({ id: dispute.id, status: DisputeStatus.OPEN, reason: dispute.reason })]));
+    await expect(claimsService.listClaimDisputes(claimId, { id: verifier1Id, roles: [Role.BRANCH_VERIFIER] } as any)).rejects.toMatchObject({ status: 403 });
+
     const resolved = await claimsService.resolveDispute(dispute.id, superAdminUser, {
       decision: 'DISMISSED',
       notes: 'Dispute lacks valid evidence; claim restored to APPROVED',
     });
 
     expect(resolved.status).toBe(DisputeStatus.DISMISSED);
+    expect((await claimsService.listClaimDisputes(claimId, superAdminUser))[0]).toMatchObject({ id: dispute.id, status: DisputeStatus.DISMISSED, resolutionNotes: resolved.resolutionNotes, resolvedByUserId: superAdminId });
+
+    // Actual transactional adjudication event must reach BOTH parties, not just its actor.
+    // Disable all external channels explicitly; this proves durable inbox routing, not providers.
+    for (const userId of [claimant1Id, claimant2Id, superAdminId]) {
+      await db.query(`INSERT INTO notification_preferences(user_id,push_enabled,sms_enabled,email_enabled)
+        VALUES($1,FALSE,FALSE,FALSE) ON CONFLICT(user_id) DO UPDATE
+        SET push_enabled=FALSE,sms_enabled=FALSE,email_enabled=FALSE`, [userId]);
+    }
+    const notice = (await db.query(`SELECT * FROM audit_outbox WHERE entity_type='CLAIM_DISPUTE'
+      AND entity_id=$1 AND action='DISPUTE_DISMISSED'`, [dispute.id])).rows[0];
+    expect(notice).toBeDefined();
+    const dispatcher = moduleRef.get(NotificationDispatcherService);
+    await dispatcher.processRecord(notice);
+    await dispatcher.processRecord(notice);
+    const inbox = await db.query('SELECT recipient_user_id,message FROM notification_inbox WHERE outbox_id=$1', [notice.id]);
+    expect(inbox.rows.map(row => row.recipient_user_id).sort()).toEqual([claimant1Id, claimant2Id, superAdminId].sort());
+    expect(inbox.rows.every(row => !row.message.includes(dispute.reason) && !row.message.includes(resolved.resolutionNotes))).toBe(true);
 
     const claimRestored = await claimsService.getClaimById(claimId, superAdminUser);
     expect(claimRestored.status).toBe(ClaimStatus.APPROVED);

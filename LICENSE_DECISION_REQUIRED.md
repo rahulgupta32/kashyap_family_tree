@@ -1,32 +1,11 @@
-# License Decision Required
+# Software License Decision
 
-## Status: PENDING JYPHRA APPROVAL
+## Status: APPROVED — Apache License 2.0
 
-This repository and all its contents are the intellectual property of **Jyphra Technology Pvt. Ltd.**
+On 28 October 2026, the owner of Jyphra Technology Pvt. Ltd. explicitly approved open-source publication of this project and selected **Apache 2.0** in the license-choice prompt.
 
-No software license has been selected for this project. Until Jyphra Technology Pvt. Ltd. explicitly selects and approves a license:
+The project is licensed under **Apache-2.0**. The authoritative license text is in [LICENSE](LICENSE); project attribution is in [NOTICE](NOTICE). Package metadata and README reflect this decision. Third-party components retain their own licenses and notices.
 
-- **All rights are reserved** by Jyphra Technology Pvt. Ltd.
-- No permission is granted to use, copy, modify, merge, publish, distribute, sublicense, or sell copies of this software.
-- No permission is granted to use this software for any purpose without prior written consent from Jyphra Technology Pvt. Ltd.
+This replaces the previous pending/all-rights-reserved project license decision. It authorizes the reviewed source/documentation publication subject to the applicable security review; it does not authorize disclosure of credentials or private family data, nor merging, deployment, data import, cultural-rule activation or release acceptance.
 
-## Action Required
-
-Jyphra Technology Pvt. Ltd. must decide on an appropriate software license. Options include but are not limited to:
-
-| License Type | Description | Considerations |
-|---|---|---|
-| Proprietary (current default) | All rights reserved | Maximum IP protection |
-| MIT | Permissive open source | Allows commercial use, modification, distribution |
-| Apache 2.0 | Permissive with patent protection | Patent grant, trademark restrictions |
-| GPL v3 | Copyleft | Derivative works must be open source |
-| AGPL v3 | Strong copyleft (network use) | Server-side use triggers sharing |
-| BSL | Source-available with time delay | Converts to open source after delay period |
-
-## Contact
-
-For licensing inquiries, contact Jyphra Technology Pvt. Ltd.
-
----
-
-*This file will be replaced with the actual LICENSE file once Jyphra approves a license selection.*
+Production gates and independent verification remain separate. Historical decision records are retained for traceability and superseded by this owner decision.

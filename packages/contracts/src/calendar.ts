@@ -4,7 +4,19 @@
 
 import { EventAudienceScope } from './enums.js';
 
+export type GenealogyAudienceSelection =
+  | { type: 'BRANCH'; branchId: string }
+  | { type: 'GENERATION'; branchId: string; generation: number }
+  | { type: 'DESCENDANTS'; ancestorPersonId: string };
+
 export interface CreateCalendarEventDto {
+  /** Optional UUID retry identity, scoped to the authenticated account and create operation. */
+  creationKey?: string;
+  audienceSelection?: GenealogyAudienceSelection;
+  audiencePreviewId?: string;
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
   title: string;
   description?: string;
   eventType: string;
@@ -22,7 +34,20 @@ export interface CreateCalendarEventDto {
   invitedUserIds?: string[];
 }
 
+/** Full original payload verifies its fingerprint; key-only recovery exposes only an owned result ID. */
+export type ResolveCalendarCreationDto = Partial<CreateCalendarEventDto> & {creationKey:string};
+export type CalendarCreationResolutionDto = {outcome:'CREATED';eventId:string}|{outcome:'ABANDONED'};
+
 export interface CalendarEventDetailDto {
+  recurrenceRuleId?: string | null;
+  recurrenceYear?: number | null;
+  audienceSelection?: GenealogyAudienceSelection;
+  invitedUserIds?: string[];
+  startsAt?: string | null;
+  reminderOffsets?: number[];
+  version?: number;
+  lifecycleState?: 'ACTIVE' | 'CANCELLED';
+  canManage?: boolean;
   id: string;
   createdByUserId: string;
   title: string;

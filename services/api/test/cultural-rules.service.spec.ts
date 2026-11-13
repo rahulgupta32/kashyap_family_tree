@@ -134,44 +134,17 @@ describe('CulturalRulesService (Kinship Engine & Open Gate HG-002 Governance)', 
   });
 
   describe('2-Person Independent Review & Senior Final Approval Workflow', () => {
-    it('should enforce 2-tier approval and separation of duties for cultural rules', async () => {
-      const proposed = await culturalRulesService.proposeRule({
-        ruleType: RuleType.NATA_SAINO,
-        pathCode: 'E-B(o).S',
-        nepaliTerm: 'भतिज (दाजुको छोरा)',
-        englishTerm: 'Nephew (Elder Brother Son)',
-        proposedByUserId: 'user-researcher-01',
-        rationale: 'Canonical patrilineal nephew term validated against literature',
-      });
-
-      expect(proposed.status).toBe('PROPOSED');
-
-      await expect(
-        culturalRulesService.reviewRule({
-          ruleId: proposed.id,
-          reviewerUserId: 'user-researcher-01',
-          reviewerNotes: 'Self endorsement',
-          isEndorsed: true,
-        }),
-      ).rejects.toThrow('Separation of duties');
-
-      const reviewed = await culturalRulesService.reviewRule({
-        ruleId: proposed.id,
-        reviewerUserId: 'user-reviewer-02',
-        reviewerNotes: 'Genealogical textual evidence verified',
-        isEndorsed: true,
-      });
-
-      expect(reviewed.status).toBe('REVIEWED');
-
-      const approved = await culturalRulesService.approveRule({
-        ruleId: proposed.id,
-        seniorAuthorityUserId: 'user-senior-elder-03',
-        authorityComments: 'Approved for clan canon',
-        decision: 'APPROVED',
-      });
-
-      expect(approved.status).toBe('APPROVED');
+    it('rejects proposal governance without an authenticated actor instead of trusting DTO identities', async () => {
+      await expect(culturalRulesService.proposeRule({
+        ruleType: RuleType.NATA_SAINO, pathCode: 'F', nepaliTerm: 'परीक्षण', englishTerm: 'Fictional',
+        proposedByUserId: 'untrusted-dto-account', rationale: 'Fictional source',
+      })).rejects.toThrow('Authenticated actor required');
+      await expect(culturalRulesService.reviewRule({
+        ruleId: 'untrusted', reviewerUserId: 'untrusted-dto-account', reviewerNotes: 'Fictional', isEndorsed: true,
+      })).rejects.toThrow('Authenticated actor required');
+      await expect(culturalRulesService.approveRule({
+        ruleId: 'untrusted', seniorAuthorityUserId: 'untrusted-dto-account', authorityComments: 'Fictional', decision: 'APPROVED',
+      })).rejects.toThrow('Authenticated actor required');
     });
 
     it('should return UNAVAILABLE status with RULE_6001 when no active ruleset exists', async () => {

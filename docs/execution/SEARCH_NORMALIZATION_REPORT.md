@@ -1,0 +1,9 @@
+# Source-preserving search normalization — 2026-10-08
+
+Person search applies NFKC Unicode compatibility normalization, collapses whitespace and ignores case when comparing every recorded name or alias. An explicitly recorded Roman alias can therefore match a Roman query while the primary Nepali name remains the displayed source string. It does not invent a Roman spelling, strip Nepali marks or rewrite authoritative names. The current API consumers receive this behavior without a client contract change.
+
+User-entered percent, underscore and backslash are escaped in the parameterized LIKE pattern. Existing fuzzy matching remains enabled. The existing privacy predicates, total count, pagination and display selection remain in place. A search-only trigram expression index is supplied by migration 042 with a matching down migration; it does not update source data. Stage and time the index build before production rollout because index creation can block writes.
+
+Four unit cases cover Unicode, Nepali text, source preservation, literal pattern escaping and input validation. Two disposable PostgreSQL cases cover recorded Roman aliases, normalized Nepali queries, unchanged stored/display names, private-profile exclusion, count/pagination and wildcard-only queries. Local API type checking, unit tests and build are checked before publication; complete exact-head CI results are recorded in PR #5.
+
+SRCH-FR-006 remains PARTIALLY_COMPLETED. Authority/configuration for additional transliteration search keys, full bilingual/native acceptance and production-scale recall/latency evidence remain open. The index is not evidence that the required search p95 <= 1 second at production scale has been achieved. All 260 mandatory signed acceptance rows and applicable HG gates remain open. Nothing in this change authorizes production deployment or declares the application production-ready.

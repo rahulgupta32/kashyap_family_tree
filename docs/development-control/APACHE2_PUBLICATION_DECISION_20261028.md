@@ -1,0 +1,13 @@
+# Apache 2.0 owner decision and publication authorization — 28 October 2026
+
+The project owner stated that they own Jyphra and approve the reviewed project for open-source publication. In the subsequent license-choice prompt they selected **Apache 2.0**. This record supersedes the pending license selection in `LICENSE_DECISION_REQUIRED.md` and historical DR-007.
+
+Scope: the reviewed application source, tests, migrations, recovery tooling and project documentation for **PUBLIC rahulgupta32/kashyap_family_tree**, existing **feat/application-completion** branch and draft PR5. The earlier reviewed source was6d354d793942a38d6d00e187b43e2814cc19238e/treebd9b6bb6ceb5c8feff01f9b2b3391ddab542e662. This licensing batch adds the official Apache2.0 text, project attribution, SPDX metadata, README and current decision records; application behavior and dependency versions are unchanged.
+
+Official license source: https://www.apache.org/licenses/LICENSE-2.0.txt. Retrieved11358bytes, SHA256cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30. The text is unmodified. Third-party licenses/notices remain in force. No credentials, private family data or user attachments are authorized for public disclosure.
+
+Earlier automatic create-tree rejection is retained as historical evidence. Its cited missing company authority/license facts have now materially changed through the owner's explicit identity/approval and specific license selection. A new attempt may proceed only through the same approved GitHub connector and applicable review, against the final exact manifest. A new rejection must stop publication; no alternate transport/account/repository or indirect execution is permitted.
+
+No merge, PR retarget, deployment, real-data import, cultural activation or store submission is authorized. All260 production acceptance records and RG-01 through RG-12 remain OPEN; productionNO-GO. Existing local600unit tests/API-admin type-build/frozen validators/zero-known-production-audit evidence is bound to its tested code70e04c4 and is not a claim of realPG/browser/Flutter/native/provider acceptance. New-source CI remains pending until source publication succeeds.
+
+Publication procedure: re-read remote head/base tree; reject a changed lease; create an exact reviewed tree including license files and verify tree SHA; preserve all unpublished source trees and ordered commit messages, recording original IDs if the connector assigns new ones; update only the existing integration ref without force; verify actual remote SHA/tree and inspect source-bound CI without treating pending as passed. Review publication and production decisions separately.

@@ -1,0 +1,1 @@
+DROP INDEX idx_person_names_person_lookup;
