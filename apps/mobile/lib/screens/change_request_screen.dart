@@ -403,8 +403,9 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
               ? null
               : () {
                   if (!_canUseSelection(draft, revision) ||
-                      !draft.results.any((result) => result.id == person.id))
+                      !draft.results.any((result) => result.id == person.id)) {
                     return;
+                  }
                   setState(() {
                     draft.selected = person;
                     draft.invalidateSearch();
