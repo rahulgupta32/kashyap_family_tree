@@ -1,3 +1,20 @@
+# Current execution — 13 November 2026
+
+First inspect exact-source Android correction feedback, isolated account deletion and all mandatory M4/calendar/USB journeys. Source7bcb560 main42855748504 failed while iOS/offline passed. Preserve exact assertions/authority/deadlines; source-bound emulator completion is required. See COMPLETION_20261109.md for artifact provenance and causal distinctions.
+
+Concise mandatory completion queue, derived from RELEASE_IMPLEMENTATION_ASSESSMENT.csv and current mobile/server sources (not a new acceptance ledger):
+
+| Mandatory workflow | Remaining executable integration |
+|---|---|
+| CHG-FR-001 parent request | Finish explicit new biological-parent creation/correction and real-PG independent approval/no-write acceptance; parent aliases must not silently reinterpret child/adoptive shapes. |
+| CHG-FR-002/003/004 relationships | Existing-person target selection and remaining supported connection/correction types; retain self/cycle/cross-branch checks and independent review. |
+| CHG-FR-007/008/013/015 | Complete private scanned evidence wiring, reviewer graph-impact preview and full own-history behavior; verify least-disclosure/ownership consistently. |
+| Claims/account lifecycle | Real correction/resubmission/dispute/appeal, recusal, consent and deletion/session/device acceptance; widgets alone do not close these requirements. |
+| Calendar/community/messaging/notices | Real cross-module navigation/search, moderation/reconnect/attachment/provider delivery, preference and branch/privacy acceptance. |
+| Cultural/quality/operations | Approved content/rules remain gated; exact localization/accessibility/load, deployed security, restore/PITR/rollback/monitoring and independent UAT remain required. |
+
+Staging still403 pending Jyphra team authorization and approved runtime/secret/signing/provider inputs within$20/month. Continue independent engineering; do not claim staging/connected APK/production readiness. Preserve all260 requirements and RG01..12 authority gates.
+
 # Current execution — 10 November 2026
 
 New-person spouse proposal creation is now implemented alongside both spouse correction types; explicit UNKNOWN choices round-trip and cross-type payloads remain isolated.25 focused widgets/mobile analysis pass. First inspect actual final-source main/iOS/offline results and the spouse real-PG lifecycle case; no preceding-source result validates the changed form. Then complete remaining relationship target selection, other proposal types and frozen module acceptance against actual services. Staging remains403 pending Jyphra team access plus approved runtime/signing/provider inputs; no production gate is closed.

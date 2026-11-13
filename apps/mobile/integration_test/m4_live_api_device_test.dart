@@ -12,6 +12,7 @@ import 'package:kashyap_mobile/screens/account_deletion_screen.dart';
 import 'package:kashyap_mobile/screens/member_disputes_screen.dart';
 import 'package:kashyap_mobile/screens/person_search_screen.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
+import 'package:kashyap_mobile/screens/claim_status_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'package:kashyap_mobile/services/session_store.dart';
 import 'package:kashyap_mobile/services/chat_outbox.dart';
@@ -265,8 +266,16 @@ void main() {
     final correction = await api('/claims/${claim['id']}/correction-request', token: tier1,
       data: {'notes': correctionNotes});
     expect(correction['status'], 'CORRECTION_REQUESTED');
-    await press(tester, find.text(claimLabels['check']!));
+    final authoritativeCorrection = await api('/claims/${claim['id']}', token: service.authToken);
+    expect(authoritativeCorrection['status'], 'CORRECTION_REQUESTED');
+    expect(authoritativeCorrection['correctionRequestNotes'], correctionNotes);
+    final checkStatus = find.widgetWithText(OutlinedButton, claimLabels['check']!);
+    expect(checkStatus, findsOneWidget);
+    expect(tester.widget<OutlinedButton>(checkStatus).onPressed, isNotNull);
+    await press(tester, checkStatus);
     await until(tester, find.text(correctionNotes));
+    expect(find.byType(ClaimStatusScreen), findsOneWidget);
+    expect(tester.widget<ClaimStatusScreen>(find.byType(ClaimStatusScreen)).claimId, claim['id']);
     await tester.enterText(find.byKey(const ValueKey('claim-correction-description')),
       'Corrected fictional Android relationship for independent review.');
     await press(tester, find.byKey(const ValueKey('claim-correction-truth')));
@@ -497,24 +506,58 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 5)));
 
   testWidgets('Member deletes account through real UI, revokes all sessions and preserves genealogy', (tester) async {
+    // A failed preceding claim journey must not invalidate deletion's preconditions.
+    // Provision only synthetic genealogy through the same real authorized APIs.
+    const deletionPhone = '+9779847100096';
+    final adminFixture = await reviewerLogin('+9779800000001');
+    final verifierFixture = await reviewerLogin('+9779800000002');
+    final branchId = (await api('/genealogy/people/$rootId', token: adminFixture))['branchId'];
+    Future<String> fictionalPerson(String label, int generation) async {
+      final person = await api('/genealogy/people', token: adminFixture, data: {
+        'names': [{'language': 'en', 'firstName': label, 'lastName': 'Adhikari',
+          'fullName': '$label Adhikari', 'isPrimary': true}],
+        'gender': 'OTHER', 'livingStatus': 'LIVING', 'generation': generation,
+        'branchId': branchId, 'allowDuplicateOverride': true,
+        'justificationReason': 'Isolated synthetic account-deletion acceptance fixture',
+      });
+      return person['id'] as String;
+    }
+    final deletionParent = await fictionalPerson('Fictional deletion parent', 2);
+    final deletionRoot = await fictionalPerson('Fictional deletion member', 3);
+    final deletionChild = await fictionalPerson('Fictional deletion child', 4);
+    await api('/genealogy/people/$deletionRoot/parents', token: adminFixture,
+      data: {'parentId': deletionParent, 'parentType': 'BIOLOGICAL'});
+    await api('/genealogy/people/$deletionChild/parents', token: adminFixture,
+      data: {'parentId': deletionRoot, 'parentType': 'BIOLOGICAL'});
+    final fixtureOwner = await reviewerLogin(deletionPhone);
+    final claim = await api('/claims', token: fixtureOwner, data: {
+      'targetPersonId': deletionRoot, 'relationshipDescription': 'Fictional independently reviewed deletion identity',
+      'statementOfTruth': true,
+    });
+    await api('/claims/${claim['id']}/tier1-review', token: verifierFixture,
+      data: {'decision': 'VOUCHED', 'notes': 'Independent synthetic deletion review'});
+    final approved = await api('/claims/${claim['id']}/tier2-review', token: adminFixture,
+      data: {'decision': 'APPROVED', 'notes': 'Separate synthetic final deletion review'});
+    expect(approved['status'], 'APPROVED');
+    expect((await api('/profile/me', token: fixtureOwner))['personId'], deletionRoot);
     await SecureSessionStore().clear();
     final observer = CaptureDeletionChallengeClient();
     final service = GenealogyApiService(client: observer);
     addTearDown(service.dispose);
-    final independentToken = await reviewerLogin(phone);
+    final independentToken = await reviewerLogin(deletionPhone);
     await tester.pumpWidget(KashyapApp(apiService: service));
     await until(tester, find.byKey(const Key('sign-in-phone')));
-    await api('/auth/test-clear-cooldown', data: {'phoneNumber':phone});
-    await tester.enterText(find.byKey(const Key('sign-in-phone')), phone);
+    await api('/auth/test-clear-cooldown', data: {'phoneNumber':deletionPhone});
+    await tester.enterText(find.byKey(const Key('sign-in-phone')), deletionPhone);
     await press(tester, find.byKey(const Key('sign-in-submit')));
     await until(tester, find.byKey(const Key('sign-in-code')));
-    final otp = await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(phone)}');
+    final otp = await api('/auth/test-otp?phoneNumber=${Uri.encodeComponent(deletionPhone)}');
     await tester.enterText(find.byKey(const Key('sign-in-code')), otp['otp'] as String);
     await press(tester, find.byKey(const Key('sign-in-submit')));
     await until(tester, find.byType(PersonSearchScreen));
-    expect((await service.getMyProfile())['personId'], rootId);
+    expect((await service.getMyProfile())['personId'], deletionRoot);
     final oldToken = service.authToken!;
-    expect((await api('/profile/me',token:independentToken))['personId'],rootId);
+    expect((await api('/profile/me',token:independentToken))['personId'],deletionRoot);
     await drawer(tester, 'प्रोफाइल तथा गोपनीयता (Profile Privacy)');
     await press(tester, find.byKey(const Key('account-deletion-open')));
     await until(tester, find.byType(AccountDeletionScreen));
@@ -529,18 +572,18 @@ void main() {
     expect(service.authToken,isNull);
     expect(await SecureSessionStore().read(),isNull);
     expect(await SecureChatOutboxStore().read(),isNull);
-    for(final token in [oldToken,independentToken]) {
+    for(final token in [fixtureOwner,oldToken,independentToken]) {
       final response = await http.get(Uri.parse('$base/profile/me'),headers:{'Authorization':'Bearer $token'});
       expect(response.statusCode,401);
     }
     final admin = await reviewerLogin('9800000001');
-    final retained = await api('/genealogy/people/$rootId',token:admin);
-    expect(retained['id'],rootId);expect(retained['isClaimed'],isFalse);expect(retained['claimedByUserId'],isNull);
+    final retained = await api('/genealogy/people/$deletionRoot',token:admin);
+    expect(retained['id'],deletionRoot);expect(retained['isClaimed'],isFalse);expect(retained['claimedByUserId'],isNull);
     final reader = GenealogyApiService(baseUrl:base)..setAuthToken(admin);
     addTearDown(reader.dispose);
-    final preservedTree = await reader.getTree(rootId);
-    expect(preservedTree.ancestors.any((p) => p.id == parentId),isTrue);
-    expect(preservedTree.children.any((p) => p.id == childId),isTrue);
+    final preservedTree = await reader.getTree(deletionRoot);
+    expect(preservedTree.ancestors.any((p) => p.id == deletionParent),isTrue);
+    expect(preservedTree.children.any((p) => p.id == deletionChild),isTrue);
     await until(tester,find.byKey(const Key('sign-in-phone')));
     debugPrint('[ACCOUNT DELETE DEVICE] Real OTP confirmation, two revoked sessions, cleared secure stores and retained unclaimed genealogy verified');
     await tester.pumpWidget(const SizedBox.shrink());

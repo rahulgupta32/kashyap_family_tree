@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kashyap_mobile/localization/claim_labels.dart';
 import 'package:kashyap_mobile/screens/claim_profile_screen.dart';
+import 'package:kashyap_mobile/screens/claim_status_screen.dart';
 import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show jsonResponse;
 const channel=MethodChannel('kashyap/chat_attachments');
@@ -41,6 +42,41 @@ void main(){
   final retry=find.widgetWithText(ElevatedButton,claimLabels['retry']!);await tap(t,retry);expect(claims.length,2);expect(claims[0],claims[1]);
   expect(find.widgetWithText(OutlinedButton,claimLabels['check']!),findsOneWidget);
   expect(claims[0]['creationKey'],matches(RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$')));expect(claims[0]['evidenceAttachments'],[{'mediaAssetId':asset,'documentType':'family_photo'}]);
+ });
+ testWidgets('submitted claim opens fresh delayed correction feedback on a phone',(t)async{
+  t.view.physicalSize=const Size(411,731);t.view.devicePixelRatio=1;
+  addTearDown(t.view.resetPhysicalSize);addTearDown(t.view.resetDevicePixelRatio);
+  const notes='Clarify the fictional relationship before independent review.';
+  final feedback=Completer<http.Response>();var creations=0,reads=0;
+  final jwt='fixture.${base64Url.encode(utf8.encode(jsonEncode({'sub':'owner'})))}.fixture';
+  final api=GenealogyApiService(client:MockClient((r)async{
+   if(r.method=='POST'&&r.url.path=='/claims'){
+    creations++;return jsonResponse({'id':'claim','status':'PENDING_TIER1'});
+   }
+   expect(r.method,'GET');expect(r.url.path,'/claims/claim');
+   reads++;return feedback.future;
+  }))..setAuthToken(jwt);addTearDown(api.dispose);
+  await form(t,api);await fill(t);
+  await t.scrollUntilVisible(submit(),200,scrollable:find.descendant(of:find.byType(ListView),matching:find.byType(Scrollable)).first);
+  await tap(t,submit());
+  expect(creations,1);expect(reads,0);expect(api.hasPendingProfileClaim,isFalse);
+  final check=find.widgetWithText(OutlinedButton,claimLabels['check']!);
+  await t.scrollUntilVisible(check,200,scrollable:find.descendant(of:find.byType(ListView),matching:find.byType(Scrollable)).first);
+  await Scrollable.ensureVisible(t.element(check),alignment:0.5);await t.pumpAndSettle();
+  expect(check.hitTestable(),findsOneWidget);await t.tap(check);await t.pump();
+  await t.pump(const Duration(milliseconds:400));
+  expect(find.byType(ClaimStatusScreen),findsOneWidget);expect(reads,1);
+  expect(find.text(notes),findsNothing);
+  feedback.complete(jsonResponse({'id':'claim','claimantUserId':'owner',
+   'status':'CORRECTION_REQUESTED','version':2,'correctionRequestNotes':notes,
+   'relationshipDescription':'Fictional relationship'}));
+  await t.pumpAndSettle();
+  expect(find.text(notes),findsOneWidget);
+  expect(find.byKey(const ValueKey('claim-correction-description')),findsOneWidget);
+  await t.scrollUntilVisible(find.byKey(const ValueKey('claim-correction-evidence-upload')),200,
+   scrollable:find.descendant(of:find.byType(ClaimStatusScreen),matching:find.byType(Scrollable)).first);
+  expect(find.byKey(const ValueKey('claim-correction-evidence-upload')),findsOneWidget);
+  expect(creations,1);expect(reads,1);expect(t.takeException(),isNull);
  });
  testWidgets('delayed picker cannot upload or restore private draft after account replacement',(t)async{
   final picker=Completer<Map<String,dynamic>?>();var requests=0;

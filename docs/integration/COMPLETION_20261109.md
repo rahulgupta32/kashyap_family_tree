@@ -1,3 +1,15 @@
+# Android recovery — 13 November 2026
+
+Recovery source7bcb560a862cf42a11b11c1632a3bd668867548a is still the actual remote HEAD at recovery. Main42855748504 FAILED Android129968177622; current-source iOS42855748417 and offline42855748297 SUCCESS. Retained Android ZIP13783327650 digest9771f720a3ebcdc6da8579af5ea3168e9cd525651926a56c983ff5c02460fa13 independently matched.
+
+M4 stopped at the exact relationship-correction feedback assertion. Source review confirms the server/client correction-note contract, but the artifact alone does not prove whether navigation/rendering or a fresh read caused the absence. Native verification now checks authoritative status/notes before opening the enabled typed status control and retains the original exact-text30-second wait plus route/claim identity assertions. No timeout or business assertion is weakened. A delayed-read phone widget regression exercises actual submit-to-status navigation. It separately demonstrated layout overflows in both claim evidence selectors, corrected using expanded constrained labels; that layout defect is not asserted to be the native missing-feedback cause.
+
+Local validation:5 claim-evidence widgets pass, including delayed correction feedback and scrolling the correction evidence control into view; focused claim/native mobile analysis and whitespace checks pass. These are local results, not actual Android/API acceptance.
+
+Deletion failed before its deletion request: it reused the M4 account whose preceding profile approval never ran. It now owns a separate synthetic account and three-person genealogy created through ordinary authorized APIs; an independent Tier1/Tier2 claim establishes the precondition. Original real OTP/explicit confirmation, session revocation, secure-store cleanup and retained parent/child genealogy assertions remain, with the provisioning session additionally checked for revocation. No direct database identity shortcut or production bypass is added. Actual new-source emulator completion remains mandatory.
+
+Staging inventory still returns403 for missing Jyphra team authorization. One consent link was supplied; no provisioning/deployment/connected APK/physical-device acceptance is claimed. Offline inspection already passed and is not manually rebuilt. All260 signed acceptances and RG01..12 remain open. No merge/production/real-data/cultural activation.
+
 # New-spouse proposal and correction integration — 10 November 2026
 
 The existing proposal form now offers new-person ADD_SPOUSE submission. Nepali name, reason, gender and living status are explicit inputs; optional English name is trimmed. Separate spouse drafts prevent edit/death/child fields leaking into the payload. UNKNOWN is an explicit contract-valid choice, preserved by the spouse correction editor. No gender/living status is inferred from the selected person. No marriage-date behavior or existing-person target selector is introduced. The proposal remains subject to normal server authorization and independent approval.

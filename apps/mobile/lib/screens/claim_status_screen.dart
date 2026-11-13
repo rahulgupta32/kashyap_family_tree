@@ -378,21 +378,22 @@ class _ClaimStatusScreenState extends State<ClaimStatusScreen> {
                               : null,
                           title: Text(claimLabels['noticeCheck']!)),
                       DropdownButtonFormField<String>(
+                          isExpanded: true,
                           initialValue: _evidenceType,
                           decoration: InputDecoration(
                               labelText: claimLabels['evidenceCategory']),
                           items: const [
                             DropdownMenuItem(
                                 value: 'family_photo',
-                                child: Text('पारिवारिक फोटो (Family photo)')),
+                                child: Text('पारिवारिक फोटो (Family photo)', overflow: TextOverflow.ellipsis)),
                             DropdownMenuItem(
                                 value: 'event_invitation',
                                 child: Text(
-                                    'कार्यक्रम निमन्त्रणा (Event invitation)')),
+                                    'कार्यक्रम निमन्त्रणा (Event invitation)', overflow: TextOverflow.ellipsis)),
                             DropdownMenuItem(
                                 value: 'clan_record',
                                 child:
-                                    Text('पारिवारिक अभिलेख (Family record)')),
+                                    Text('पारिवारिक अभिलेख (Family record)', overflow: TextOverflow.ellipsis)),
                           ],
                           onChanged: _canCorrect
                               ? (value) {
