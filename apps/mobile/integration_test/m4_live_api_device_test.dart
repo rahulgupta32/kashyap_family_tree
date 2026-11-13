@@ -536,9 +536,12 @@ void main() {
     });
     await api('/claims/${claim['id']}/tier1-review', token: verifierFixture,
       data: {'decision': 'VOUCHED', 'notes': 'Independent synthetic deletion review'});
-    final approved = await api('/claims/${claim['id']}/tier2-review', token: adminFixture,
+    final approval = await api('/claims/${claim['id']}/tier2-review', token: adminFixture,
       data: {'decision': 'APPROVED', 'notes': 'Separate synthetic final deletion review'});
+    expect(approval['claim']['status'], 'APPROVED');
+    final approved = await api('/claims/${claim['id']}', token: fixtureOwner);
     expect(approved['status'], 'APPROVED');
+    expect(approved['tier1ReviewedBy'], isNot(approved['tier2ReviewedBy']));
     expect((await api('/profile/me', token: fixtureOwner))['personId'], deletionRoot);
     await SecureSessionStore().clear();
     final observer = CaptureDeletionChallengeClient();

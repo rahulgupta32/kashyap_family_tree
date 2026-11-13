@@ -6,13 +6,33 @@ const _correctableTypes = {
   'RECORD_DEATH',
   'ADD_CHILD',
   'ADD_SPOUSE',
-  'ADD_SPOUSE_LINK'
+  'ADD_SPOUSE_LINK',
+  'ADD_PARENT',
+  'ADD_PARENT_LINK'
 };
 bool _spouseProposal(Object? type) =>
     type == 'ADD_SPOUSE' || type == 'ADD_SPOUSE_LINK';
-bool _existingRelative(Map proposal, Object? type) => _spouseProposal(type)
-    ? proposal['spousePersonId'] != null || proposal['spouseId'] != null
-    : proposal['childPersonId'] != null;
+bool _parentProposal(Object? type) =>
+    type == 'ADD_PARENT' || type == 'ADD_PARENT_LINK';
+bool _namedRelativeProposal(Object? type) =>
+    type == 'ADD_CHILD' || _spouseProposal(type) || _parentProposal(type);
+String _relativeKey(Object? type) => _parentProposal(type)
+    ? 'parent'
+    : _spouseProposal(type)
+        ? 'spouse'
+        : 'child';
+bool _existingRelative(Map proposal, Object? type) => _parentProposal(type)
+    ? proposal['parentPersonId'] != null || proposal['parentId'] != null
+    : _spouseProposal(type)
+        ? proposal['spousePersonId'] != null || proposal['spouseId'] != null
+        : proposal['childPersonId'] != null;
+bool _supportedParentShape(Map row) {
+  if (!_parentProposal(row['type'])) return true;
+  final proposal = row['proposedChanges'] as Map;
+  return !(row['type'] == 'ADD_PARENT_LINK' && proposal['isChild'] == true) &&
+      (proposal['parentType'] == null ||
+          proposal['parentType'] == 'BIOLOGICAL');
+}
 
 /// Member proposals only; administration remains in the authorized portal.
 class MyChangeRequestsScreen extends StatefulWidget {
@@ -142,7 +162,9 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
               'MALE',
               'FEMALE',
               'OTHER',
-              if (_spouseProposal(result['type'])) 'UNKNOWN'
+              if (_spouseProposal(result['type']) ||
+                  _parentProposal(result['type']))
+                'UNKNOWN'
             }.contains(gender)
                 ? gender as String
                 : null;
@@ -169,6 +191,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
         _busy ||
         row == null ||
         !_correctableTypes.contains(row['type']) ||
+        !_supportedParentShape(row) ||
         !{'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
             .contains(row['status'])) {
       return;
@@ -178,13 +201,15 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
       return;
     }
     final proposed = Map<String, dynamic>.from(row['proposedChanges'] as Map);
-    if (row['type'] == 'ADD_CHILD' || _spouseProposal(row['type'])) {
+    if (_namedRelativeProposal(row['type'])) {
       // Existing-person links retain their immutable target; do not turn them into new people.
       if (!_existingRelative(proposed, row['type'])) {
         if (_childNepali.text.trim().isEmpty || _childGender == null) {
-          setState(() => _error = _spouseProposal(row['type'])
-              ? 'जीवनसाथीको नाम र लिङ्ग आवश्यक छ (Spouse name and gender required)'
-              : 'बच्चाको नाम र लिङ्ग आवश्यक छ (Child name and gender required)');
+          setState(() => _error = _parentProposal(row['type'])
+              ? 'अभिभावकको नाम र लिङ्ग आवश्यक छ (Parent name and gender required)'
+              : _spouseProposal(row['type'])
+                  ? 'जीवनसाथीको नाम र लिङ्ग आवश्यक छ (Spouse name and gender required)'
+                  : 'बच्चाको नाम र लिङ्ग आवश्यक छ (Child name and gender required)');
           return;
         }
         proposed['primaryNameNepali'] = _childNepali.text.trim();
@@ -248,6 +273,7 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
     final row = _selected;
     final editable = row != null &&
         _correctableTypes.contains(row['type']) &&
+        _supportedParentShape(row) &&
         {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}.contains(row['status']);
     return Scaffold(
         appBar: AppBar(
@@ -291,34 +317,37 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
               Text(row['reviewNotes'] as String),
             Text('अनुरोध संस्करण (Request version): ${row['version']}'),
             if (editable) ...[
-              if (row['type'] == 'ADD_CHILD' ||
-                  _spouseProposal(row['type'])) ...[
+              if (_namedRelativeProposal(row['type'])) ...[
                 if (!_existingRelative(
                     row['proposedChanges'] as Map, row['type'])) ...[
+                  if (_parentProposal(row['type']))
+                    const Text(
+                        'जैविक अभिभावकको प्रस्ताव (Biological-parent proposal)'),
                   TextField(
-                      key: ValueKey(_spouseProposal(row['type'])
-                          ? 'proposal-spouse-nepali'
-                          : 'proposal-child-nepali'),
+                      key: ValueKey(
+                          'proposal-${_relativeKey(row['type'])}-nepali'),
                       controller: _childNepali,
                       enabled: !_busy,
                       decoration: InputDecoration(
-                          labelText: _spouseProposal(row['type'])
-                              ? 'जीवनसाथीको नेपाली नाम (Spouse name in Nepali)'
-                              : 'बच्चाको नेपाली नाम (Child name in Nepali)')),
+                          labelText: _parentProposal(row['type'])
+                              ? 'अभिभावकको नेपाली नाम (Parent name in Nepali)'
+                              : _spouseProposal(row['type'])
+                                  ? 'जीवनसाथीको नेपाली नाम (Spouse name in Nepali)'
+                                  : 'बच्चाको नेपाली नाम (Child name in Nepali)')),
                   TextField(
-                      key: ValueKey(_spouseProposal(row['type'])
-                          ? 'proposal-spouse-english'
-                          : 'proposal-child-english'),
+                      key: ValueKey(
+                          'proposal-${_relativeKey(row['type'])}-english'),
                       controller: _childEnglish,
                       enabled: !_busy,
                       decoration: InputDecoration(
-                          labelText: _spouseProposal(row['type'])
-                              ? 'जीवनसाथीको अंग्रेजी नाम (Spouse name in English)'
-                              : 'बच्चाको अंग्रेजी नाम (Child name in English)')),
+                          labelText: _parentProposal(row['type'])
+                              ? 'अभिभावकको अंग्रेजी नाम (Parent name in English)'
+                              : _spouseProposal(row['type'])
+                                  ? 'जीवनसाथीको अंग्रेजी नाम (Spouse name in English)'
+                                  : 'बच्चाको अंग्रेजी नाम (Child name in English)')),
                   DropdownButtonFormField<String>(
-                      key: ValueKey(_spouseProposal(row['type'])
-                          ? 'proposal-spouse-gender'
-                          : 'proposal-child-gender'),
+                      key: ValueKey(
+                          'proposal-${_relativeKey(row['type'])}-gender'),
                       initialValue: _childGender,
                       decoration:
                           const InputDecoration(labelText: 'लिङ्ग (Gender)'),
@@ -329,7 +358,8 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                             value: 'FEMALE', child: Text('महिला (Female)')),
                         const DropdownMenuItem(
                             value: 'OTHER', child: Text('अन्य (Other)')),
-                        if (_spouseProposal(row['type']))
+                        if (_spouseProposal(row['type']) ||
+                            _parentProposal(row['type']))
                           const DropdownMenuItem(
                               value: 'UNKNOWN', child: Text('अज्ञात (Unknown)'))
                       ],
@@ -337,9 +367,11 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                           ? null
                           : (value) => setState(() => _childGender = value)),
                 ] else
-                  Text(_spouseProposal(row['type'])
-                      ? 'विद्यमान जीवनसाथीको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing spouse link target is preserved.)'
-                      : 'विद्यमान बच्चाको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing child link target is preserved.)'),
+                  Text(_parentProposal(row['type'])
+                      ? 'विद्यमान जैविक अभिभावकको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing biological-parent link target is preserved.)'
+                      : _spouseProposal(row['type'])
+                          ? 'विद्यमान जीवनसाथीको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing spouse link target is preserved.)'
+                          : 'विद्यमान बच्चाको सम्बन्ध लक्ष्य सुरक्षित छ। (Existing child link target is preserved.)'),
               ] else if (row['type'] == 'RECORD_DEATH') ...[
                 TextField(
                     key: const ValueKey('proposal-death-date'),
@@ -381,6 +413,9 @@ class _MyChangeRequestsScreenState extends State<MyChangeRequestsScreen> {
                   child: const Text('पुनः पेश गर्नुहोस् (Resubmit)')),
             ] else
               Text(row['reason']?.toString() ?? ''),
+            if (_parentProposal(row['type']) && !_supportedParentShape(row))
+              const Text(
+                  'यो सम्बन्ध प्रस्तावको प्रकार यहाँ संशोधन गर्न मिल्दैन। प्रशासनसँग समन्वय गर्नुहोस्। (This legacy relationship shape requires administrative coordination; biological-parent correction is unavailable.)'),
             if (!_correctableTypes.contains(row['type']) &&
                 {'CORRECTION_REQUESTED', 'CONFLICT_DETECTED'}
                     .contains(row['status']))

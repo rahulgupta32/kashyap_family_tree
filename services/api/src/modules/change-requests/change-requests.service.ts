@@ -75,6 +75,7 @@ export class ChangeRequestsService {
     }
 
     return this.db.transaction(async (client) => {
+      await this.validateEvidenceAssets(client, requesterUserId, dto.evidenceAssetIds);
       let baseVersion = 0;
       let snapshot: any = null;
       let branchId = dto.branchId || null;
@@ -235,7 +236,7 @@ export class ChangeRequestsService {
         client,
       );
 
-      return this.mapToDetailDto(updated);
+      return this.mapToDetailDto(updated, undefined, true);
     });
   }
 
@@ -371,7 +372,7 @@ export class ChangeRequestsService {
         client,
       );
 
-      return this.mapToDetailDto(updated);
+      return this.mapToDetailDto(updated, undefined, updated.requester_user_id !== actor.id);
     });
   }
 
@@ -988,10 +989,11 @@ export class ChangeRequestsService {
       });
     }
 
-    return this.mapToDetailDto(outcome.gcr);
+    return this.mapToDetailDto(outcome.gcr, undefined, true);
   }
 
   async getRequestById(id: string, actor?: AuthenticatedUser): Promise<ChangeRequestDetailDto> {
+    if (!actor) throw new UnauthorizedException('Authentication required');
     const res = await this.db.query<ChangeRequestRecord>('SELECT * FROM genealogy_change_requests WHERE id = $1', [id]);
     const req = res.rows[0];
     if (!req) {
@@ -1020,13 +1022,14 @@ export class ChangeRequestsService {
       }
     }
 
-    return this.mapToDetailDto(req);
+    return this.mapToDetailDto(req, undefined, await this.canReadReviewSnapshot(req, actor));
   }
 
   async listRequests(
     actor?: AuthenticatedUser,
     options?: { status?: ChangeRequestStatus; branchId?: string; requesterUserId?: string },
   ): Promise<ChangeRequestDetailDto[]> {
+    if (!actor) throw new UnauthorizedException('Authentication required');
     let sql = `
       SELECT r.*, p.branch_id as person_branch_id
       FROM genealogy_change_requests r
@@ -1076,12 +1079,47 @@ export class ChangeRequestsService {
       rows = rows.filter((r: any) => !r.person_branch_id || authorizedBranches.includes(r.person_branch_id));
     }
 
-    return Promise.all(rows.map((r: any) => this.mapToDetailDto(r, r.person_branch_id)));
+    return Promise.all(rows.map(async (r: any) =>
+      this.mapToDetailDto(r, r.person_branch_id, await this.canReadReviewSnapshot(r, actor))));
+  }
+
+  private async canReadReviewSnapshot(req: ChangeRequestRecord, actor: AuthenticatedUser): Promise<boolean> {
+    // A proposer cannot use their own request as an alternate private-person read endpoint.
+    if (req.requester_user_id === actor.id) return false;
+    const reviewer = actor.roles?.includes(Role.SUPER_ADMIN) || (actor.roleAssignments || []).some(
+      assignment => assignment.role === Role.BRANCH_ADMIN || assignment.role === Role.BRANCH_VERIFIER);
+    if (!reviewer) return false;
+    try {
+      await this.validateBranchAuthority(this.db, actor, req.target_person_id);
+      await this.validateFamilyRecusal(this.db, actor, req);
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) return false;
+      throw error;
+    }
+  }
+
+  private async validateEvidenceAssets(client: any, requesterUserId: string, ids?: string[]): Promise<void> {
+    if (ids === undefined) return;
+    if (!Array.isArray(ids) || ids.length > 5 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== 'string' || !isUUID(id))) {
+      throw new BadRequestException('Choose up to five distinct valid private evidence assets');
+    }
+    // Retention/quarantine/ownership cannot change while this transaction attaches the assets.
+    for (const id of [...ids].sort()) {
+      const asset = (await client.query(
+        'SELECT id, uploader_user_id, bucket, is_private, quarantine_status, retention_status FROM media_assets WHERE id=$1 FOR SHARE', [id],
+      )).rows[0];
+      if (!asset || asset.uploader_user_id !== requesterUserId || asset.bucket !== 'private-profiles' ||
+          asset.is_private !== true || asset.quarantine_status !== 'CLEAN' || asset.retention_status !== 'ACTIVE') {
+        throw new ForbiddenException('Private evidence unavailable for this request');
+      }
+    }
   }
 
   private async mapToDetailDto(
     req: ChangeRequestRecord,
     branchId?: string | null,
+    includeReviewSnapshot = false,
   ): Promise<ChangeRequestDetailDto> {
     let resolvedBranchId = branchId;
     if (!resolvedBranchId && req.target_person_id) {
@@ -1089,7 +1127,8 @@ export class ChangeRequestsService {
       if (person) resolvedBranchId = person.branch_id || null;
     }
 
-    const visualDiff = this.diffService.computeVisualDiff(req.current_snapshot, req.proposed_changes || {});
+    const snapshot = includeReviewSnapshot ? req.current_snapshot : undefined;
+    const visualDiff = this.diffService.computeVisualDiff(snapshot, req.proposed_changes || {});
 
     return {
       id: req.id,
@@ -1101,7 +1140,7 @@ export class ChangeRequestsService {
       baseVersion: req.base_version || 0,
       version: req.version || 1,
       proposedChanges: req.proposed_changes || {},
-      currentSnapshot: req.current_snapshot || undefined,
+      currentSnapshot: snapshot || undefined,
       visualDiff,
       reason: req.reason,
       correctionNotes: req.correction_notes || undefined,

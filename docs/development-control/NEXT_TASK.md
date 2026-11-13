@@ -1,5 +1,7 @@
 # Current execution — 13 November 2026
 
+Parent creation/correction and proposal privacy/evidence batch is locally verified:401 Flutter/709 backend units, clean mobile/API analysis, frozen validators. Inspect final-source real-PG parent no-write/independent-approval and four security HTTP/concurrency cases, plus browser/native/restore evidence. Preceding native-only24ce624 CI is separate. Finish Android failures on actual final source before claiming completion; all remaining queue items below and all external gates remain mandatory. New parent UI is biological only; incompatible legacy shapes remain read-only until correctly supported, not silently mapped.
+
 First inspect exact-source Android correction feedback, isolated account deletion and all mandatory M4/calendar/USB journeys. Source7bcb560 main42855748504 failed while iOS/offline passed. Preserve exact assertions/authority/deadlines; source-bound emulator completion is required. See COMPLETION_20261109.md for artifact provenance and causal distinctions.
 
 Concise mandatory completion queue, derived from RELEASE_IMPLEMENTATION_ASSESSMENT.csv and current mobile/server sources (not a new acceptance ledger):
