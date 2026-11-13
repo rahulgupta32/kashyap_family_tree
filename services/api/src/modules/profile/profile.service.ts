@@ -32,6 +32,7 @@ import {
 } from '@kashyap/contracts';
 import * as crypto from 'crypto';
 import { MediaStorageService } from '../../media/media-storage.service';
+import { attachedEvidenceAccess } from '../../media/evidence-access.policy';
 
 export interface MediaUploadResult {
   assetId: string;
@@ -560,7 +561,7 @@ export class ProfileService implements OnModuleInit, OnModuleDestroy {
     if (!isAdmin && !isOwner) {
       throw new ForbiddenException('You do not have permission to access or stream this media asset');
     }
-
+    await attachedEvidenceAccess(this.db, asset, viewer);
 
     return asset;
   }

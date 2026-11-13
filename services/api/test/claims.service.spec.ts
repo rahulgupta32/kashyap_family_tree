@@ -12,7 +12,7 @@ describe('ClaimsService (State Transitions & Governance)', () => {
 
   beforeEach(() => {
     mockDb = {
-      query: jest.fn(),
+      query: jest.fn().mockResolvedValue({rows: [{person_id: null}]}),
       transaction: jest.fn((cb) => cb({
         query: jest.fn(async (sql, params) => {
           if (sql.includes('FROM media_assets')) {

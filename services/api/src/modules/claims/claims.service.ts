@@ -1,5 +1,6 @@
 import { allowedFields, uuid } from '../community/community-policy';
 import { MediaStorageService } from '../../media/media-storage.service';
+import { attachedEvidenceAccess, canReviewEvidenceContext } from '../../media/evidence-access.policy';
 import {
   Injectable,
   Optional,
@@ -176,25 +177,9 @@ export class ClaimsService {
       }
     }
 
-    let isAuthorized = false;
-
-    if (viewer.roles?.includes(Role.SUPER_ADMIN)) {
-      isAuthorized = true;
-    } else if (asset.uploader_user_id === viewer.id) {
-      isAuthorized = true;
-    } else {
-      const claimEvidenceRes = await this.db.query(
-        `SELECT pc.target_person_id, p.branch_id, cea.dispute_id
-           FROM claim_evidence_attachments cea
-           JOIN profile_claims pc ON pc.id = cea.claim_id
-           JOIN persons p ON p.id = pc.target_person_id
-           WHERE cea.media_asset_id = $1
-           LIMIT 1`,
-        [assetId],
-      );
-      const branchId = claimEvidenceRes.rows[0]?.branch_id;
-      isAuthorized = !claimEvidenceRes.rows[0]?.dispute_id && this.hasBranchAuthority(viewer, branchId);
-    }
+    const context = await attachedEvidenceAccess(this.db, asset, viewer);
+    const isAuthorized = asset.uploader_user_id === viewer.id ||
+      viewer.roles?.includes(Role.SUPER_ADMIN) || context.claim;
 
     if (!isAuthorized) {
       throw new ForbiddenException('You do not have permission to access or stream this evidence asset');
@@ -470,7 +455,7 @@ export class ClaimsService {
         client,
       );
 
-      return this.mapToDetailDto(updatedClaim, client);
+      return this.mapToDetailDto(updatedClaim, client, actor);
     });
   }
 
@@ -666,7 +651,7 @@ export class ClaimsService {
         client,
       );
 
-      return this.mapToDetailDto(updatedClaim, client);
+      return this.mapToDetailDto(updatedClaim, client, actor);
     });
   }
 
@@ -739,7 +724,7 @@ export class ClaimsService {
         claimantUser.person_id === targetPerson.id &&
         targetPerson.claimed_user_id === claimantUser.id
       ) {
-        const mapped = await this.mapToDetailDto(claim);
+        const mapped = await this.mapToDetailDto(claim, client, actor);
         return { claim: mapped, alreadyApproved: true };
       }
 
@@ -812,7 +797,7 @@ export class ClaimsService {
           client,
         );
 
-        const mapped = await this.mapToDetailDto(updatedClaim, client);
+        const mapped = await this.mapToDetailDto(updatedClaim, client, actor);
         return { claim: mapped, alreadyApproved: false };
       } else if (dto.decision === 'REJECTED') {
         const updatedRes = await client.query<ClaimRecord>(
@@ -848,7 +833,7 @@ export class ClaimsService {
           client,
         );
 
-        const mapped = await this.mapToDetailDto(updatedClaim, client);
+        const mapped = await this.mapToDetailDto(updatedClaim, client, actor);
         return { claim: mapped, alreadyApproved: false };
       } else if (dto.decision === 'CORRECTION_REQUESTED') {
         const updatedRes = await client.query<ClaimRecord>(
@@ -880,7 +865,7 @@ export class ClaimsService {
           client,
         );
 
-        const mapped = await this.mapToDetailDto(updatedClaim, client);
+        const mapped = await this.mapToDetailDto(updatedClaim, client, actor);
         return { claim: mapped, alreadyApproved: false };
       } else {
         throw new BadRequestException('Invalid Tier 2 decision');
@@ -1316,8 +1301,10 @@ export class ClaimsService {
 
     // Phone and evidence redaction if viewer is not claimant and not reviewer
     let canViewEvidence = true;
-    if (viewer && !viewer.roles?.includes(Role.SUPER_ADMIN) && viewer.id !== claim.claimant_user_id) {
-      const isReviewer = this.hasBranchAuthority(viewer, person?.branch_id);
+    if (viewer && viewer.id !== claim.claimant_user_id) {
+      const isReviewer = await canReviewEvidenceContext(this.db, {kind: 'CLAIM',
+        target_person_id: claim.target_person_id, requester_user_id: claim.claimant_user_id,
+        branch_id: person?.branch_id || null}, viewer);
       if (!isReviewer) {
         claimantPhone = claimantPhone.substring(0, 4) + '****' + claimantPhone.slice(-2);
         canViewEvidence = false;
@@ -1325,10 +1312,11 @@ export class ClaimsService {
     }
 
     const rawEvidence = canViewEvidence ? await this.claimRepo.findEvidenceByClaimId(claim.id, client) : [];
-    const evidenceAttachments = rawEvidence.filter(e => !e.dispute_id || viewer?.roles?.includes(Role.SUPER_ADMIN)).map((e) => ({
+    const evidenceAttachments = rawEvidence.filter(e => !e.dispute_id ||
+      (viewer?.roles?.includes(Role.SUPER_ADMIN) && viewer.id !== claim.claimant_user_id)).map((e) => ({
       id: e.id,
       mediaAssetId: e.media_asset_id,
-      mediaUrl: this.generatePresignedUrl(e.media_asset_id, claim.claimant_user_id),
+      mediaUrl: this.generatePresignedUrl(e.media_asset_id, viewer?.id || claim.claimant_user_id),
       documentType: e.document_type,
       description: e.description || undefined,
       disputeId: e.dispute_id || undefined,

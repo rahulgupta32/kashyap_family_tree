@@ -1,3 +1,9 @@
+# Immediate execution — 13 November 2026
+
+Original Android failures are closed on13d426 (Main43386538289/iOS43386538170/offline43386538223 SUCCESS; all mandatory real API/PostgreSQL emulator journeys passed). Next verify the follow-on private evidence route batch on its exact source, especially the five HTTP/PostgreSQL tests; fix any demonstrated failure before claiming closure. Do not credit previous-source green checks to changed code.
+
+Then complete existing-person relationship target selection and remaining correction/evidence/reviewer graph-impact workflows from the queue below, in integrated batches. Hosted staging remains blocked by Jyphra team authorization403 plus approved full-stack runtime, secrets/signing/provider inputs within$20/month. No connected APK or physical-device verification is claimed. All independent release gates remain open.
+
 # Current execution — 13 November 2026
 
 Parent creation/correction and proposal privacy/evidence batch is locally verified:401 Flutter/709 backend units, clean mobile/API analysis, frozen validators. Inspect final-source real-PG parent no-write/independent-approval and four security HTTP/concurrency cases, plus browser/native/restore evidence. Preceding native-only24ce624 CI is separate. Finish Android failures on actual final source before claiming completion; all remaining queue items below and all external gates remain mandatory. New parent UI is biological only; incompatible legacy shapes remain read-only until correctly supported, not silently mapped.

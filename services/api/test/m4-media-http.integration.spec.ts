@@ -28,6 +28,9 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
   let owner: { id: string; token: string };
   let stranger: { id: string; token: string };
   let reviewer: { id: string; token: string };
+  let central: { id: string; token: string };
+  let global: { id: string; token: string };
+  let personId: string, claimId: string;
   const oldStorage = process.env.STORAGE_PATH;
   let tempStorage: string;
 
@@ -58,7 +61,10 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
     owner = await identity('+9779847100001', Role.REGISTERED_USER);
     stranger = await identity('+9779847100002', Role.REGISTERED_USER);
     reviewer = await identity('+9779847100003', Role.BRANCH_ADMIN);
+    central = await identity('+9779847100004', Role.CENTRAL_ADMIN);
+    global = await identity('+9779847100005', Role.SUPER_ADMIN);
     const person = (await db.query("INSERT INTO persons (gender, living_status, generation, branch_id, birth_year_bs) VALUES ('MALE', 'LIVING', 3, $1, 2040) RETURNING id", [branchId])).rows[0];
+    personId = person.id;
     const upload = await profile.uploadPhoto(owner.id, 'image/png',
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==');
     assetId = upload.assetId;
@@ -68,6 +74,7 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
       evidenceAttachments: [{ mediaAssetId: assetId, documentType: 'family_photo' }],
     });
     signedEvidence = claim.evidenceAttachments[0].mediaUrl!.replace('/api/v1', '');
+    claimId = claim.id;
   });
 
   afterAll(async () => {
@@ -76,6 +83,86 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
     if (tempStorage) fs.rmSync(tempStorage, { recursive: true, force: true });
     if (oldStorage === undefined) delete process.env.STORAGE_PATH;
     else process.env.STORAGE_PATH = oldStorage;
+  });
+
+  it('rejects central authority on alternate evidence routes, including valid signed and processing URLs', async () => {
+    const signed = profile.generateSignedMediaUrl(assetId, central.id).replace('/api/v1', '');
+    for (const url of [`/claims/evidence/${assetId}`, `/profile/media/${assetId}`,
+      `/me/media/${assetId}`, `/profile/media/${assetId}?variant=display`, signed,
+      `/profile/media/${assetId}/processing`]) {
+      await request(app.getHttpServer()).get(url).set('Authorization', `Bearer ${central.token}`).expect(403);
+    }
+    await request(app.getHttpServer()).post(`/profile/media/${assetId}/retry`)
+      .set('Authorization', `Bearer ${central.token}`).send({}).expect(403);
+    await request(app.getHttpServer()).get(`/profile/media/${assetId}`)
+      .set('Authorization', `Bearer ${global.token}`).expect(200);
+  });
+
+  it('uses current family recusal on evidence bytes and descriptors without removing uploader access', async () => {
+    const relative = (await db.query("INSERT INTO persons(gender,living_status,generation,branch_id) VALUES('OTHER','LIVING',2,$1) RETURNING id", [branchId])).rows[0].id;
+    await db.query("INSERT INTO parent_links(parent_id,child_id,parent_type,confidence,created_by) VALUES($1,$2,'BIOLOGICAL','VERIFIED',$3)", [relative, personId, global.id]);
+    for (const actor of [reviewer, global]) {
+      await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2', [relative, actor.id]);
+      try {
+        for (const url of [`/claims/evidence/${assetId}`, `/profile/media/${assetId}`, `/me/media/${assetId}`,
+          `/profile/media/${assetId}?variant=thumbnail`]) {
+          await request(app.getHttpServer()).get(url).set('Authorization', `Bearer ${actor.token}`).expect(403);
+        }
+        const detail = (await request(app.getHttpServer()).get(`/claims/${claimId}`)
+          .set('Authorization', `Bearer ${actor.token}`).expect(200)).body;
+        expect(detail.evidenceAttachments).toEqual([]);
+        expect(detail.claimantPhoneNumber).not.toBe('+9779847100001');
+      } finally { await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1', [actor.id]); }
+    }
+    await request(app.getHttpServer()).get(`/claims/evidence/${assetId}`)
+      .set('Authorization', `Bearer ${owner.token}`).expect(200);
+  });
+
+  it('binds reviewer evidence URLs to the actual authorized viewer rather than the claimant', async () => {
+    const detail = (await request(app.getHttpServer()).get(`/claims/${claimId}`)
+      .set('Authorization', `Bearer ${reviewer.token}`).expect(200)).body;
+    const action = (await request(app.getHttpServer()).post(`/claims/${claimId}/correction-request`)
+      .set('Authorization', `Bearer ${reviewer.token}`)
+      .send({notes: 'Please clarify this synthetic relationship'}).expect(201)).body;
+    const actionUrl = action.evidenceAttachments[0].mediaUrl.replace('/api/v1', '');
+    expect(new URL(actionUrl, 'https://synthetic.invalid').searchParams.get('u')).toBe(reviewer.id);
+    await request(app.getHttpServer()).get(actionUrl).set('Authorization', `Bearer ${reviewer.token}`).expect(200);
+    const signed = detail.evidenceAttachments[0].mediaUrl.replace('/api/v1', '');
+    expect(new URL(signed, 'https://synthetic.invalid').searchParams.get('u')).toBe(reviewer.id);
+    await request(app.getHttpServer()).get(signed).set('Authorization', `Bearer ${reviewer.token}`).expect(200);
+    await request(app.getHttpServer()).get(signed).set('Authorization', `Bearer ${owner.token}`).expect(403);
+  });
+
+  it('applies purpose restrictions to proposal-only evidence without widening the claim download route', async () => {
+    const uploaded = await profile.uploadClaimEvidence(owner.id, {mimeType: 'image/png',
+      dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==',
+      documentType: 'family_photo', evidenceNoticeAccepted: true});
+    const id = uploaded.mediaAssetId;
+    await request(app.getHttpServer()).post('/change-requests').set('Authorization', `Bearer ${owner.token}`)
+      .send({targetPersonId: personId, type: 'EDIT_PERSON', proposedChanges: {birthPlace: 'Synthetic place'},
+        reason: 'Fictional evidence authorization regression', evidenceAssetIds: [id]}).expect(201);
+    await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${central.token}`).expect(403);
+    await request(app.getHttpServer()).get(`/claims/evidence/${id}`).set('Authorization', `Bearer ${reviewer.token}`).expect(403);
+    await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${owner.token}`).expect(200);
+    await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${global.token}`).expect(200);
+    await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2', [personId, global.id]);
+    try {
+      await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${global.token}`).expect(403);
+      await request(app.getHttpServer()).get(`/claims/evidence/${id}`).set('Authorization', `Bearer ${global.token}`).expect(403);
+    } finally { await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1', [global.id]); }
+  });
+
+  it('keeps fresh unsubmitted evidence private to its uploader rather than treating it as an avatar', async () => {
+    const upload = await profile.uploadClaimEvidence(owner.id, {mimeType: 'image/png',
+      dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==',
+      documentType: 'family_photo', evidenceNoticeAccepted: true});
+    for (const actor of [central, global]) {
+      for (const url of [`/claims/evidence/${upload.mediaAssetId}`, `/profile/media/${upload.mediaAssetId}`, `/me/media/${upload.mediaAssetId}`]) {
+        await request(app.getHttpServer()).get(url).set('Authorization', `Bearer ${actor.token}`).expect(403);
+      }
+    }
+    await request(app.getHttpServer()).get(`/profile/media/${upload.mediaAssetId}`)
+      .set('Authorization', `Bearer ${owner.token}`).expect(200);
   });
 
   it.each(['profile', 'claims'])('%s route requires a session even with a valid owner signature', async (kind) => {

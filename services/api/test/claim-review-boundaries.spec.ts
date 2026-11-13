@@ -7,7 +7,8 @@ describe('Claim review scope and dispute input boundaries',()=>{
  const actor=(branchId:string|null='branch-a')=>({id:'reviewer',roles:[Role.BRANCH_VERIFIER],roleAssignments:[{role:Role.BRANCH_VERIFIER,branchId}]} as any);
  beforeEach(()=>{
   client={query:jest.fn().mockResolvedValue({rows:[{id:'claim',claimant_user_id:'owner',status:ClaimStatus.APPROVED}]})};
-  db={transaction:jest.fn((operation:any)=>operation(client))};
+  // Independent reviewer reads now consult the current account/person binding.
+  db={query:jest.fn().mockResolvedValue({rows:[{person_id:null}]}),transaction:jest.fn((operation:any)=>operation(client))};
   claims={listAll:jest.fn().mockResolvedValue([]),findById:jest.fn().mockResolvedValue({id:'claim',claimant_user_id:'owner',target_person_id:'person'}),findEvidenceByClaimId:jest.fn().mockResolvedValue([{media_asset_id:'asset'}])};
   persons={findById:jest.fn().mockResolvedValue({id:'person',branch_id:'branch-a'}),findNamesByPersonId:jest.fn().mockResolvedValue([])};
   users={findById:jest.fn().mockResolvedValue({phone_number:'+9779800000000'})};
@@ -46,6 +47,14 @@ describe('Claim review scope and dispute input boundaries',()=>{
   for(const user of [actor(),{id:'owner',roles:[Role.REGISTERED_USER]},{id:'super',roles:[Role.SUPER_ADMIN]}]){
    expect((await service.getClaimById('claim',user as any)).evidenceAttachments).toHaveLength(1);
   }
+ });
+ it.each(['branch','global'])('minimizes evidence and phone descriptors for a recused %s reviewer',async kind=>{
+  db.query.mockResolvedValue({rows:[{person_id:'person'}]});
+  const viewer=kind==='branch'?actor():{id:'super',roles:[Role.SUPER_ADMIN]};
+  const result=await service.getClaimById('claim',viewer as any);
+  expect(result.evidenceAttachments).toEqual([]);
+  expect(result.claimantPhoneNumber).not.toBe('+9779800000000');
+  expect(claims.findEvidenceByClaimId).not.toHaveBeenCalled();
  });
  it.each([null,{}, {decision:'invalid',notes:'reason'}, {decision:'RESOLVED',notes:''},
   {decision:'DISMISSED',notes:' '},{decision:'RESOLVED',notes:123},{decision:'RESOLVED',notes:'x'.repeat(4001)},
