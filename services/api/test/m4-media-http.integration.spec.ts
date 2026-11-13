@@ -125,10 +125,10 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
       .set('Authorization', `Bearer ${reviewer.token}`)
       .send({notes: 'Please clarify this synthetic relationship'}).expect(201)).body;
     const actionUrl = action.evidenceAttachments[0].mediaUrl.replace('/api/v1', '');
-    expect(new URL(actionUrl, 'https://synthetic.invalid').searchParams.get('u')).toBe(reviewer.id);
+    expect(new URL(actionUrl, 'https://synthetic.invalid').searchParams.get('user')).toBe(reviewer.id);
     await request(app.getHttpServer()).get(actionUrl).set('Authorization', `Bearer ${reviewer.token}`).expect(200);
     const signed = detail.evidenceAttachments[0].mediaUrl.replace('/api/v1', '');
-    expect(new URL(signed, 'https://synthetic.invalid').searchParams.get('u')).toBe(reviewer.id);
+    expect(new URL(signed, 'https://synthetic.invalid').searchParams.get('user')).toBe(reviewer.id);
     await request(app.getHttpServer()).get(signed).set('Authorization', `Bearer ${reviewer.token}`).expect(200);
     await request(app.getHttpServer()).get(signed).set('Authorization', `Bearer ${owner.token}`).expect(403);
   });

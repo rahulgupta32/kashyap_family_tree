@@ -1,3 +1,9 @@
+# Next exact-source verification — 13 November 2026
+
+Verify combined existing-person relationship selection and claim-URL contract correction on its final source. Require full Flutter analysis/widgets (including9 new cases), two new real-PG existing-person lifecycle cases, all five privacy HTTP cases and mandatory Android/iOS workflows. The prior1e57b98 platform failed a fixture query-key assertion; do not relabel it green or weaken identity/download denial checks.
+
+After source-bound closure, continue request evidence attachment wiring and reviewer graph-impact workflow (CHG-FR-007/008), then existing frozen community/messaging/calendar/privacy/localization/operations gaps. Existing-person parent/spouse selection is implemented in this batch; no signed requirement acceptance is closed. External staging access/runtime/signing/providers, real-device testing and all260 final acceptances/RG01..12 remain required.
+
 # Immediate execution — 13 November 2026
 
 Original Android failures are closed on13d426 (Main43386538289/iOS43386538170/offline43386538223 SUCCESS; all mandatory real API/PostgreSQL emulator journeys passed). Next verify the follow-on private evidence route batch on its exact source, especially the five HTTP/PostgreSQL tests; fix any demonstrated failure before claiming closure. Do not credit previous-source green checks to changed code.
