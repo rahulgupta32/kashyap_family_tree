@@ -41,6 +41,8 @@ Future<void> search(WidgetTester tester, String relation, String query) async {
   final field = find.byKey(ValueKey('$relation-person-query'));
   await tester.ensureVisible(field);
   await tester.enterText(field, query);
+  // Render the new query revision before interacting with its search control.
+  await tester.pump();
   final button = find.byKey(ValueKey('$relation-person-search'));
   await tester.ensureVisible(button);
   await tester.tap(button);
@@ -124,6 +126,7 @@ void main() {
     await select(tester, 'parent', 'found');
     await tester.enterText(find.byKey(const ValueKey('parent-person-query')),
         'A different person');
+    await tester.pump();
     expect(find.byKey(const ValueKey('parent-person-selected')), findsNothing);
     await submit(tester);
     expect(writes, 0);
@@ -286,6 +289,25 @@ void main() {
     callback();
     await tester.pumpAndSettle();
     expect(writes, 1);
+  });
+
+  testWidgets('search callback from the previous query cannot start a request', (tester) async {
+    var reads = 0;
+    final api = GenealogyApiService(client: MockClient((r) async {
+      reads++;
+      return jsonResponse({'items': []});
+    }))..setAuthToken('synthetic-session');
+    addTearDown(api.dispose);
+    await form(tester, api);
+    final oldSearch = tester.widget<TextButton>(find.byKey(const ValueKey('parent-person-search'))).onPressed!;
+    await tester.enterText(find.byKey(const ValueKey('parent-person-query')), 'A new query');
+    await tester.pump();
+    oldSearch();
+    await tester.pumpAndSettle();
+    expect(reads, 0);
+    await search(tester, 'parent', 'A new query');
+    expect(reads, 1);
+    expect(find.textContaining('No matching person'), findsOneWidget);
   });
 
   testWidgets('empty search, error, empty results and retry stay explicit',
