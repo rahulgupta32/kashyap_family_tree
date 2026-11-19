@@ -819,6 +819,7 @@ class GenealogyApiService {
     required String type,
     required Map<String, dynamic> proposedChanges,
     required String reason,
+    List<String> evidenceAssetIds = const [],
   }) async {
     final uri = Uri.parse('$baseUrl/change-requests');
     final body = json.encode({
@@ -826,6 +827,7 @@ class GenealogyApiService {
       'type': type,
       'proposedChanges': proposedChanges,
       'reason': reason,
+      if (evidenceAssetIds.isNotEmpty) 'evidenceAssetIds': evidenceAssetIds,
     });
     final response = await _send('POST', uri, body: body);
     if (response.statusCode == 201 || response.statusCode == 200) {

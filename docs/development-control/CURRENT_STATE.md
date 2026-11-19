@@ -1,3 +1,11 @@
+# Android change-request evidence — 19 November 2026
+
+Recovered clean GitHub source `7e094a8e8d4585e86f78158fcc7d060887f616c1`. Main 43434047689 passed, including Android against NestJS/PostgreSQL, private S3 and the scanner. iOS 43434047410 passed on attempt 2. Offline preview 43434047500 passed and its APK artifact 14043466102 is available. The signed internal-preview job was skipped.
+
+The Android change-request form now collects optional limited family evidence through the existing private scanned upload, requires notice acknowledgement, accepts only server-confirmed CLEAN IDs, and submits at most five distinct asset IDs. Picker/upload results are fenced to the original service, person and session. The added mocked HTTP/widget regression covers rejected quarantine status and submission of a confirmed ID. Frozen requirements, assessment, workbook, staging shell syntax, seven preview script tests and whitespace passed. Local Flutter bootstrap was stopped by automatic review after an unexpected instance-metadata request. Read exact-source GitHub CI for Flutter, widget and native outcomes.
+
+PR #4 is open and ready for review against `develop`; PR #5 is draft and targets `feat/m4-governed-workflows`. Jyphra Vercel `GET /v10/projects` returned 403 for `jyphra-2457s-projects`. Signed preview, live OTP, physical-device acceptance and production gates remain open.
+
 # Picker test synchronization correction — 13 November 2026
 
 Sourcefb45c52 Flutter analysis passed and401 prior tests passed;9 new tests failed before search HTTP because test enterText incremented the revision without pumping the rebuilt button. Fixture now renders the changed query before tapping, and an additional regression requires retained old-search callback zeroHTTP then current-button oneHTTP. Production revision/session guards and all original payload/privacy assertions remain. The previous missing-braces lint is fixed. Latest focused widget total10; new exact-source execution remains required. Sourcefb45c52 real-PG stage (including all five evidence HTTP and two existing-person lifecycle cases) and restore completed successfully; final native/browser conclusions resolve from CI, not assumed. No production gate closure.

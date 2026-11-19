@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../localization/claim_labels.dart';
 
 import '../services/genealogy_api_service.dart';
 import '../models/person.dart';
@@ -46,6 +50,29 @@ class _RelativeSelectionDraft {
 class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   String _changeType = 'EDIT_PERSON';
   late final int _session;
+  late final GenealogyApiService _api;
+  late final String _targetPersonId;
+  static const _picker = MethodChannel('kashyap/chat_attachments');
+  static const _evidenceTypes = {
+    'family_photo': 'पारिवारिक फोटो (Family photo)',
+    'event_invitation': 'कार्यक्रम निमन्त्रणा (Event invitation)',
+    'clan_record': 'पारिवारिक अभिलेख (Family record)',
+  };
+  final _evidence = <String, String>{};
+  String _evidenceType = 'family_photo';
+  String? _evidenceError;
+  bool _evidenceNotice = false;
+  bool _uploadingEvidence = false;
+
+  bool get _current =>
+      mounted &&
+      !_expired &&
+      identical(widget.apiService, _api) &&
+      widget.personId == _targetPersonId &&
+      _api.pushSessionGeneration == _session;
+
+  bool get _canEditEvidence =>
+      _current && !_submitting && !_isSuccess && !_uploadingEvidence;
   bool _expired = false;
   final _nepaliName = TextEditingController(),
       _englishName = TextEditingController(),
@@ -76,14 +103,25 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   @override
   void initState() {
     super.initState();
-    _session = widget.apiService.pushSessionGeneration;
-    widget.apiService.sessionChanges.addListener(_sessionChanged);
+    _api = widget.apiService;
+    _targetPersonId = widget.personId;
+    _session = _api.pushSessionGeneration;
+    _api.sessionChanges.addListener(_sessionChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChangeRequestScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sessionChanged();
   }
 
   void _sessionChanged() {
-    if (mounted && widget.apiService.pushSessionGeneration != _session) {
+    if (mounted && !_expired && !_current) {
       setState(() {
         _expired = true;
+        _evidence.clear();
+        _evidenceNotice = false;
+        _evidenceError = null;
         for (final c in [
           _birthPlaceController,
           _occupationController,
@@ -119,7 +157,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
 
   @override
   void dispose() {
-    widget.apiService.sessionChanges.removeListener(_sessionChanged);
+    _api.sessionChanges.removeListener(_sessionChanged);
     for (final c in [
       _nepaliName,
       _englishName,
@@ -141,10 +179,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
   }
 
   Future<void> _submitChangeRequest() async {
-    if (_expired ||
-        _submitting ||
-        _isSuccess ||
-        widget.apiService.pushSessionGeneration != _session) {
+    if (!_current || _submitting || _isSuccess || _uploadingEvidence) {
       return;
     }
     if (_reasonController.text.trim().isEmpty) {
@@ -236,6 +271,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
         type: _changeType,
         proposedChanges: proposedChanges,
         reason: _reasonController.text.trim(),
+        evidenceAssetIds: _evidence.keys.toList(),
       );
 
       if (!mounted ||
@@ -245,8 +281,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
       }
       setState(() {
         _isSuccess = true;
-        _message =
-            'वंशवृक्ष संशोधन अनुरोध सफलतापूर्वक दर्ता भयो। शाखा प्रशासकले परीक्षण गर्नेछन्।';
+        _message = 'वंशवृक्ष संशोधन अनुरोध सफलतापूर्वक दर्ता भयो। शाखा प्रशासकले परीक्षण गर्नेछन्।';
       });
     } catch (e) {
       if (!mounted ||
@@ -266,6 +301,117 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
       }
     }
   }
+
+  Future<void> _chooseEvidence() async {
+    if (!_canEditEvidence || !_evidenceNotice || _evidence.length >= 5) {
+      return;
+    }
+    final category = _evidenceType;
+    setState(() {
+      _uploadingEvidence = true;
+      _evidenceError = null;
+    });
+    try {
+      final file = await _picker.invokeMapMethod<String, dynamic>(
+        'pickProfile',
+      );
+      if (!_current || file == null) return;
+      final mimeType = file['mimeType'];
+      final data = file['dataBase64'];
+      if (!const {'image/jpeg', 'image/png', 'image/webp'}.contains(mimeType) ||
+          data is! String ||
+          data.isEmpty ||
+          data.length > 13981016) {
+        throw const FormatException('Invalid evidence image');
+      }
+      final result = await _api.requestJson(
+        '/me/claim-evidence',
+        method: 'POST',
+        data: {
+          'mimeType': mimeType,
+          'dataBase64': data,
+          'documentType': category,
+          'evidenceNoticeAccepted': true,
+        },
+      );
+      if (!_current) return;
+      if (result is! Map ||
+          result['quarantineStatus'] != 'CLEAN' ||
+          result['mediaAssetId'] is! String ||
+          (result['mediaAssetId'] as String).isEmpty) {
+        throw const FormatException('Evidence upload was not confirmed');
+      }
+      setState(() => _evidence[result['mediaAssetId'] as String] = category);
+    } catch (_) {
+      if (_current)
+        setState(() => _evidenceError = claimLabels['uploadFailed']);
+    } finally {
+      if (_current) setState(() => _uploadingEvidence = false);
+    }
+  }
+
+  List<Widget> _evidenceFields() => [
+    const SizedBox(height: 16),
+    Text(claimLabels['notice']!),
+    CheckboxListTile(
+      key: const ValueKey('proposal-evidence-notice'),
+      value: _evidenceNotice,
+      onChanged: _canEditEvidence
+          ? (value) {
+              if (!_canEditEvidence) return;
+              setState(() {
+                _evidenceNotice = value ?? false;
+                if (!_evidenceNotice) _evidence.clear();
+              });
+            }
+          : null,
+      title: Text(claimLabels['noticeCheck']!),
+    ),
+    DropdownButtonFormField<String>(
+      isExpanded: true,
+      initialValue: _evidenceType,
+      decoration: InputDecoration(labelText: claimLabels['evidenceCategory']),
+      items: [
+        for (final entry in _evidenceTypes.entries)
+          DropdownMenuItem(
+            value: entry.key,
+            child: Text(entry.value, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: _canEditEvidence
+          ? (value) {
+              if (_canEditEvidence && value != null) {
+                setState(() => _evidenceType = value);
+              }
+            }
+          : null,
+    ),
+    OutlinedButton(
+      key: const ValueKey('proposal-evidence-upload'),
+      onPressed: _canEditEvidence && _evidenceNotice && _evidence.length < 5
+          ? _chooseEvidence
+          : null,
+      child: Text(claimLabels['upload']!),
+    ),
+    if (_uploadingEvidence) const LinearProgressIndicator(),
+    if (_evidenceError != null)
+      Semantics(liveRegion: true, child: Text(_evidenceError!)),
+    for (final entry in _evidence.entries)
+      ListTile(
+        title: Text(_evidenceTypes[entry.value]!),
+        trailing: IconButton(
+          tooltip: claimLabels['remove'],
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed: _canEditEvidence
+              ? () {
+                  if (_canEditEvidence) {
+                    setState(() => _evidence.remove(entry.key));
+                  }
+                }
+              : null,
+        ),
+      ),
+  ];
 
   bool _canUseSelection(_RelativeSelectionDraft draft, int revision) =>
       mounted &&
@@ -765,7 +911,7 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                     height: 48,
                     child: ElevatedButton(
                       key: const ValueKey('new-proposal-submit'),
-                      onPressed: _submitting || _isSuccess
+                      onPressed: _submitting || _isSuccess || _uploadingEvidence
                           ? null
                           : _submitChangeRequest,
                       style: ElevatedButton.styleFrom(
@@ -786,6 +932,14 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                             ),
                     ),
                   ),
+                  if (!kIsWeb &&
+                      defaultTargetPlatform == TargetPlatform.android)
+                    ExpansionTile(
+                      title: Text(
+                        'निजी प्रमाण (Private evidence) · ${_evidence.length}/5',
+                      ),
+                      children: _evidenceFields(),
+                    ),
                 ],
               ),
             ),

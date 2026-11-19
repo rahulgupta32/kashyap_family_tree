@@ -1,3 +1,9 @@
+# Next release work — 19 November 2026
+
+Verify exact-source Flutter analysis and proposal widgets for Android private evidence intake. Continue reviewer evidence inspection and relationship-impact preview together: the proposal DTO and admin review modal currently omit an evidence viewer, and the existing diff has only partial relationship coverage. Reuse current proposal scope, family recusal and media read policy. Verify independent approval/rejection, member-visible outcomes and durable genealogy/audit state with fictional records and real services.
+
+For connected staging, verify access to an isolated Jyphra runtime and the total cost within USD 20 per month. Existing scripts describe PostgreSQL, Redis, MinIO, ClamAV, HTTPS, and API workers. The Vercel admin project, staging signing environment, approved SMS/email providers, and physical Android device are separate dependencies. Existing phone and email OTP code is present. No Google sign-in implementation was found in current mobile/API code; confirm its release scope against current product approval.
+
 # Next exact-source verification — 13 November 2026
 
 Verify combined existing-person relationship selection and claim-URL contract correction on its final source. Require full Flutter analysis/widgets (including9 new cases), two new real-PG existing-person lifecycle cases, all five privacy HTTP cases and mandatory Android/iOS workflows. The prior1e57b98 platform failed a fixture query-key assertion; do not relabel it green or weaken identity/download denial checks.

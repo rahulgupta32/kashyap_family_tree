@@ -1,3 +1,7 @@
+# Release status — 19 November 2026
+
+Production remains NO-GO. Exact baseline `7e094a8` has successful Main, iOS and offline-preview workflows. Android proposal evidence intake advances CHG-FR-007. Reviewer evidence inspection and graph-impact preview, connected staging, independent acceptance, production operations and release approvals remain open. No real data, cultural activation, paid provisioning or production release has occurred in this batch.
+
 # Current release candidate — 2 November 2026
 
 See `RELEASE_CANDIDATE.md` for current engineering evidence, APK limitations, canonical blockers and approved-preview preparation. RG-01 through RG-12 remain OPEN. No deployed staging, signed internal preview, complete dispute acceptance or production readiness is claimed. Historical results below apply only to their recorded sources.
