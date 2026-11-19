@@ -70,6 +70,36 @@ describe('Change request disclosure and private evidence boundary', () => {
     expect((await h.service.listRequests(reviewer))[0].currentSnapshot).toBeUndefined();
   });
 
+  it('shows the proposed edge only to an independent reviewer', async () => {
+    const h = harness();
+    h.record().request_type = ChangeRequestType.ADD_PARENT_LINK;
+    h.record().proposed_changes = {isChild: true, childPersonId: 'existing-child'};
+    const preview = (await h.service.getRequestById('request', reviewer)).visualDiff?.graphImpact;
+    expect(preview?.proposedRelationship).toEqual({
+      action: 'ADD',
+      relationship: 'CHILD',
+      relative: {personId: 'existing-child'},
+    });
+    expect((await h.service.getRequestById('request', owner)).visualDiff?.graphImpact).toBeUndefined();
+
+    const recused = harness(undefined, true);
+    recused.record().request_type = ChangeRequestType.ADD_PARENT_LINK;
+    recused.record().proposed_changes = h.record().proposed_changes;
+    expect((await recused.service.getRequestById('request', reviewer)).visualDiff?.graphImpact).toBeUndefined();
+  });
+
+  it('distinguishes an existing spouse removal from a new named parent', () => {
+    const diff = new DiffService();
+    expect(diff.computeVisualDiff(null, {spouseId: 'existing-spouse'}, ChangeRequestType.REMOVE_SPOUSE_LINK)
+      .graphImpact?.proposedRelationship).toEqual({
+      action: 'REMOVE', relationship: 'SPOUSE', relative: {personId: 'existing-spouse'},
+    });
+    expect(diff.computeVisualDiff(null, {primaryNameNepali: 'परीक्षण'}, ChangeRequestType.ADD_PARENT)
+      .graphImpact?.proposedRelationship).toEqual({
+      action: 'ADD', relationship: 'PARENT', relative: {proposedName: 'परीक्षण'},
+    });
+  });
+
   it.each(['get', 'list'])('%s requires an explicit actor', async operation => {
     const h = harness();
     await expect(operation === 'get' ? h.service.getRequestById('request') : h.service.listRequests()).rejects.toThrow('Authentication required');

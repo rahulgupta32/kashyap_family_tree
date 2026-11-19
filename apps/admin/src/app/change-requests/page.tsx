@@ -3,7 +3,14 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
-import { ChangeRequestDetailDto, ChangeRequestStatus } from '@kashyap/contracts';
+import { ChangeRequestDetailDto } from '@kashyap/contracts';
+import { ReviewEvidence } from './review-evidence';
+
+const relationshipLabels = {
+  PARENT: 'अभिभावक (Parent)',
+  CHILD: 'सन्तान (Child)',
+  SPOUSE: 'जीवनसाथी (Spouse)',
+};
 
 export default function ChangeRequestsAdminPage() {
   const { accessToken,user } = useAuth();
@@ -63,6 +70,8 @@ export default function ChangeRequestsAdminPage() {
       if(identityRef.current===identity)setActionLoading(false);
     }
   }
+
+  const proposedRelationship = activeRequest?.visualDiff?.graphImpact?.proposedRelationship;
 
   return (
     <div className="space-y-6">
@@ -202,6 +211,27 @@ export default function ChangeRequestsAdminPage() {
                 </div>
               )}
             </div>
+
+            {accessToken && activeRequest.requesterUserId !== user?.id && (
+              <ReviewEvidence key={JSON.stringify([scope, activeRequest.id])}
+                requestId={activeRequest.id} token={accessToken} />
+            )}
+
+            {proposedRelationship && (
+              <section aria-label="प्रस्तावित सम्बन्ध (Proposed relationship)" className="rounded-xl border border-slate-200 p-4 text-sm">
+                <h4 className="font-semibold">सम्बन्धमा प्रस्तावित परिवर्तन (Proposed relationship change)</h4>
+                <dl className="mt-2 space-y-1">
+                  <div><dt className="inline font-medium">कार्य (Action) · </dt><dd className="inline">{proposedRelationship.action === 'ADD' ? 'सम्बन्ध थप्ने (Add link)' : 'सम्बन्ध हटाउने (Remove link)'}</dd></div>
+                  <div><dt className="inline font-medium">लक्ष्य (Target) · </dt><dd className="inline">{activeRequest.currentSnapshot?.primaryNameNepali || activeRequest.currentSnapshot?.primaryNameEnglish || activeRequest.targetPersonId}</dd></div>
+                  <div><dt className="inline font-medium">{relationshipLabels[proposedRelationship.relationship]} · </dt><dd className="inline break-all">
+                    {'personId' in proposedRelationship.relative
+                      ? proposedRelationship.relative.personId
+                      : `नयाँ व्यक्ति (New person)${proposedRelationship.relative.proposedName ? ` · ${proposedRelationship.relative.proposedName}` : ''}`}
+                  </dd></div>
+                </dl>
+                <p className="mt-2 text-xs text-slate-600">यो प्रस्तावित सम्बन्ध हो। (This preview shows the requested link.)</p>
+              </section>
+            )}
 
             {/* Conflict Warning if detected */}
             {activeRequest.status === 'CONFLICT_DETECTED' && (

@@ -528,6 +528,18 @@ export class ApiClient {
     }
   }
 
+  static async changeRequestEvidence(token: string, requestId: string, signal: AbortSignal, assetId?: string) {
+    const path = `/change-requests/${encodeURIComponent(requestId)}/evidence`;
+    const response = await fetch(`${API_BASE}${path}${assetId ? `/${encodeURIComponent(assetId)}` : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+      cache: 'no-store',
+      signal,
+    });
+    if (!response.ok) throw new Error('Evidence is not accessible');
+    return response;
+  }
+
   static async downloadClaimEvidence(token: string, assetId: string): Promise<Blob> {
     // The current authenticated reviewer is authorized by the API. Do not reuse
     // claimant-bound signatures or navigate to a URL without the bearer token.

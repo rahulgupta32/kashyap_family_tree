@@ -1,3 +1,11 @@
+# Reviewer evidence and relationship preview — 19 November 2026
+
+Follow-up `8ea5498893abff1933df680c8f23b81b400fff44` fixes the single evidence-handler lint reported by Flutter job 135475517908 on `342f7c6`. Corrected-source Flutter job 135477275049 passed analysis and widgets, including the new evidence intake case.
+
+This reviewer batch adds proposal-scoped authorized attachment listing and download. The read rechecks current role, branch and family recusal and requires an owned, private, clean, active attachment linked to the selected proposal. Download responses use private/no-store and the admin cancels pending operations on review-context change. The reviewer panel summarizes the requested parent, child or spouse edge and distinguishes an existing person from a proposed new record. The preview describes the requested change; live graph validation and approval remain server-owned.
+
+Shared contracts build, API/admin typechecks, 38 focused unit cases and whitespace passed. Playwright collected the updated real browser approval case with attachment download. Actual PostgreSQL, browser and native execution require exact-source CI. No connected staging or release-gate closure.
+
 # Android change-request evidence — 19 November 2026
 
 Recovered clean GitHub source `7e094a8e8d4585e86f78158fcc7d060887f616c1`. Main 43434047689 passed, including Android against NestJS/PostgreSQL, private S3 and the scanner. iOS 43434047410 passed on attempt 2. Offline preview 43434047500 passed and its APK artifact 14043466102 is available. The signed internal-preview job was skipped.

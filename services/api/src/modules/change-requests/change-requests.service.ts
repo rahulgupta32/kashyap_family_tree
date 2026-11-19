@@ -28,6 +28,7 @@ import { DuplicateService } from '../genealogy/duplicate.service';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { DiffService } from './diff.service';
+import { canReviewEvidenceContext } from '../../media/evidence-access.policy';
 
 export interface ChangeRequestRecord {
   id: string;
@@ -1025,6 +1026,26 @@ export class ChangeRequestsService {
     return this.mapToDetailDto(req, undefined, await this.canReadReviewSnapshot(req, actor));
   }
 
+  async reviewEvidence(requestId: string, actor: AuthenticatedUser, assetId?: string) {
+    if (!isUUID(requestId) || (assetId !== undefined && !isUUID(assetId))) {
+      throw new BadRequestException('Invalid request or evidence ID');
+    }
+    const context = (await this.db.query<{
+      target_person_id: string | null; requester_user_id: string; branch_id: string | null;
+    }>(`SELECT r.target_person_id, r.requester_user_id, p.branch_id
+       FROM genealogy_change_requests r LEFT JOIN persons p ON p.id = r.target_person_id
+       WHERE r.id = $1`, [requestId])).rows[0];
+    if (!context || !await canReviewEvidenceContext(this.db, { ...context, kind: 'CHANGE' }, actor)) {
+      throw new NotFoundException('Request evidence is unavailable');
+    }
+    return (await this.db.query(`SELECT a.*
+      FROM change_request_evidence_attachments e JOIN media_assets a ON a.id = e.media_asset_id
+      WHERE e.change_request_id = $1 AND ($2::uuid IS NULL OR a.id = $2)
+        AND a.uploader_user_id = $3 AND a.bucket = 'private-profiles' AND a.is_private = TRUE
+        AND a.quarantine_status = 'CLEAN' AND a.retention_status = 'ACTIVE'
+      ORDER BY a.id`, [requestId, assetId ?? null, context.requester_user_id])).rows;
+  }
+
   async listRequests(
     actor?: AuthenticatedUser,
     options?: { status?: ChangeRequestStatus; branchId?: string; requesterUserId?: string },
@@ -1128,11 +1149,16 @@ export class ChangeRequestsService {
     }
 
     const snapshot = includeReviewSnapshot ? req.current_snapshot : undefined;
-    const visualDiff = this.diffService.computeVisualDiff(snapshot, req.proposed_changes || {});
+    const type = req.request_type || req.type;
+    const visualDiff = this.diffService.computeVisualDiff(
+      snapshot,
+      req.proposed_changes || {},
+      includeReviewSnapshot ? type : undefined,
+    );
 
     return {
       id: req.id,
-      type: req.request_type || req.type,
+      type,
       status: req.status,
       targetPersonId: req.target_person_id || undefined,
       branchId: resolvedBranchId,

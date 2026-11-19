@@ -1,3 +1,9 @@
+# Reviewer batch verification — 19 November 2026
+
+Follow exact-source Main, iOS and offline CI for reviewer evidence and relationship preview. In Main, inspect the real PostgreSQL HTTP checks for correct attachment binding, branch reviewer download and current family recusal, and the browser approval fixture with private PNG download. Keep live physical Android upload/reviewer decision/member status/audit acceptance open until it is exercised on connected staging.
+
+Follow with live before/after relationship graph and the remaining mandatory workflows. Track independent acceptance against the frozen matrix. PR #4 is open for review into develop. Retarget PR #5 after the base prerequisites are integrated and approved.
+
 # Next release work — 19 November 2026
 
 Verify exact-source Flutter analysis and proposal widgets for Android private evidence intake. Continue reviewer evidence inspection and relationship-impact preview together: the proposal DTO and admin review modal currently omit an evidence viewer, and the existing diff has only partial relationship coverage. Reuse current proposal scope, family recusal and media read policy. Verify independent approval/rejection, member-visible outcomes and durable genealogy/audit state with fictional records and real services.

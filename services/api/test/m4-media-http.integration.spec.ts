@@ -138,15 +138,24 @@ describe('Private media HTTP authorization (real sessions/PostgreSQL; test scann
       dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==',
       documentType: 'family_photo', evidenceNoticeAccepted: true});
     const id = uploaded.mediaAssetId;
-    await request(app.getHttpServer()).post('/change-requests').set('Authorization', `Bearer ${owner.token}`)
+    const proposal = (await request(app.getHttpServer()).post('/change-requests').set('Authorization', `Bearer ${owner.token}`)
       .send({targetPersonId: personId, type: 'EDIT_PERSON', proposedChanges: {birthPlace: 'Synthetic place'},
-        reason: 'Fictional evidence authorization regression', evidenceAssetIds: [id]}).expect(201);
+        reason: 'Fictional evidence authorization regression', evidenceAssetIds: [id]}).expect(201)).body;
+    const route = `/change-requests/${proposal.id}/evidence`;
+    await request(app.getHttpServer()).get(route).set('Authorization', `Bearer ${reviewer.token}`)
+      .expect('Cache-Control', 'private, no-store').expect(200, [{id, mimeType: 'image/png'}]);
+    await request(app.getHttpServer()).get(`${route}/${id}`).set('Authorization', `Bearer ${reviewer.token}`)
+      .expect('Cache-Control', 'private, no-store').expect('Content-Type', /image\/png/).expect(200);
+    await request(app.getHttpServer()).get(`${route}/${assetId}`).set('Authorization', `Bearer ${reviewer.token}`).expect(404);
+    await request(app.getHttpServer()).get(route).set('Authorization', `Bearer ${stranger.token}`).expect(403);
     await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${central.token}`).expect(403);
     await request(app.getHttpServer()).get(`/claims/evidence/${id}`).set('Authorization', `Bearer ${reviewer.token}`).expect(403);
     await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${owner.token}`).expect(200);
     await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${global.token}`).expect(200);
     await db.query('UPDATE user_accounts SET person_id=$1 WHERE id=$2', [personId, global.id]);
     try {
+      await request(app.getHttpServer()).get(route).set('Authorization', `Bearer ${global.token}`).expect(404);
+      await request(app.getHttpServer()).get(`${route}/${id}`).set('Authorization', `Bearer ${global.token}`).expect(404);
       await request(app.getHttpServer()).get(`/profile/media/${id}`).set('Authorization', `Bearer ${global.token}`).expect(403);
       await request(app.getHttpServer()).get(`/claims/evidence/${id}`).set('Authorization', `Bearer ${global.token}`).expect(403);
     } finally { await db.query('UPDATE user_accounts SET person_id=NULL WHERE id=$1', [global.id]); }

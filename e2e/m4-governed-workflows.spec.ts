@@ -121,16 +121,26 @@ test.describe('Milestone 4: real API/browser governed workflow acceptance', () =
       const adminToken = await browserToken(page);
       const member = await memberSession(api);
       const person = await createFictionalPerson(api, adminToken);
+      const evidence = await checkedJson(await api.post(`${API_BASE}/me/claim-evidence`, {
+        headers: auth(member.accessToken), data: {
+          mimeType: 'image/png',
+          dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6SAAAAABJRU5ErkJggg==',
+          documentType: 'family_photo', evidenceNoticeAccepted: true,
+        },
+      }));
       const occupation = `Verified occupation ${randomUUID()}`;
       const request = await checkedJson(await api.post(`${API_BASE}/change-requests`, {
         headers: auth(member.accessToken), data: { targetPersonId: person.id, type: 'EDIT_PERSON',
-          proposedChanges: { occupation, birthPlace: 'Updated fictional birthplace' }, reason: `Fictional correction ${person.id}` },
+          proposedChanges: { occupation, birthPlace: 'Updated fictional birthplace' }, reason: `Fictional correction ${person.id}`, evidenceAssetIds: [evidence.mediaAssetId] },
       }));
       expect(request.status).toBe('PENDING');
       await page.goto('/change-requests');
       await page.getByRole('row').filter({ hasText: person.primaryNameEnglish }).getByRole('button', { name: /Visual Diff/ }).click();
       await expect(page.getByText(JSON.stringify(occupation), { exact: true })).toBeVisible();
       await expect(page.getByText(JSON.stringify('Original fictional occupation'), { exact: true })).toBeVisible();
+      const evidenceDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: /Download evidence/ }).click();
+      expect((await evidenceDownload).suggestedFilename()).toBe(`request-evidence-${evidence.mediaAssetId}.png`);
       await page.locator('textarea').fill('Reviewed both changed fields against fictional acceptance fixture.');
       let entered!:()=>void;const staleList=new Promise<void>(resolve=>{entered=resolve;});let held=false;
       await page.route(listRoute,async route=>{
