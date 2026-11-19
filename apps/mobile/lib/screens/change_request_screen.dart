@@ -343,8 +343,9 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
       }
       setState(() => _evidence[result['mediaAssetId'] as String] = category);
     } catch (_) {
-      if (_current)
+      if (_current) {
         setState(() => _evidenceError = claimLabels['uploadFailed']);
+      }
     } finally {
       if (_current) setState(() => _uploadingEvidence = false);
     }
