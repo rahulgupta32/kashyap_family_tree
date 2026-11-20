@@ -2,9 +2,11 @@
 
 Android’s evidence flow now shares its picker contract with an iOS Files picker for JPEG, PNG and WebP up to 10 MiB. The admin detail view reads the current direct parent, child, or spouse link and projects its state if approved. The preview is read-only, reviewer-scoped, respects branch access and family recusal, and is withheld for stale versions. This is the impact on the proposed link, without projecting unrelated branches or approval outcomes.
 
+The first CI attempt found three newly published Next.js advisories affecting the existing 15.5.28 pin. The follow-up pins 15.5.29 and keeps the production audit enabled. The same attempt identified a widget fixture that left the platform override set at Flutter's invariant check. The test uses Flutter's platform variant to restore it before the invariant check.
+
 Local API/admin type checks, 24 focused unit tests, four signing preflight tests and shell syntax checks passed. New PostgreSQL/HTTP cases cover parent, child, spouse and removal previews and assert no persisted relationship mutation. Exact-source CI supplies native iOS, Flutter and PostgreSQL evidence.
 
-Vercel project discovery on the exact Jyphra team scope returned 403 for GET /v10/projects. Provider requires a signed-in team member to grant team access. Railway workspace access, measured all-in cost within USD 20/month, dedicated signing secrets and live OTP configuration remain pending. No connected staging APK or physical handset acceptance yet.
+Vercel project discovery on the exact Jyphra team scope returned 403 for GET /v10/projects. Provider requires a signed-in team member to grant team access. Railway workspace access, measured all-in cost within USD 20/month, dedicated signing secrets and live OTP configuration remain pending. No connected staging APK or physical handset acceptance yet. Railway documents HTTPS and persistent WebSockets. Its managed buckets lack object versioning, so include a compatible versioned private store in the scoped cost assessment.
 
 # Reviewer evidence and relationship preview — 19 November 2026
 
