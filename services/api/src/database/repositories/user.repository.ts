@@ -4,7 +4,7 @@ import { Role } from '@kashyap/contracts';
 
 export interface UserAccountRecord {
   id: string;
-  phone_number: string;
+  phone_number: string | null;
   is_phone_verified: boolean;
   is_active: boolean;
   is_suspended: boolean;

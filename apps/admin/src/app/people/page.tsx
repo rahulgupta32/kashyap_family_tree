@@ -273,7 +273,7 @@ export default function PeoplePage() {
         <div>
           <h2 className="text-2xl font-bold text-slate-800">वंशावली सूची (People Directory)</h2>
           <p className="text-sm text-slate-500">
-            कश्यप अधिकारी कुलका सदस्यहरूको द्वैभाषिक खोजी, दर्ता तथा विवरण व्यवस्थापन
+            वंशावलीका सदस्यहरूको द्वैभाषिक खोजी, दर्ता तथा विवरण व्यवस्थापन
           </p>
         </div>
         <div className="flex items-center gap-3">

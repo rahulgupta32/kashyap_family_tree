@@ -1,12 +1,51 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '../../context/auth-context';
 import { ApiClient } from '../../lib/api-client';
-import { ChangeRequestDetailDto, ChangeRequestStatus } from '@kashyap/contracts';
+import { ChangeRequestDetailDto } from '@kashyap/contracts';
+import { ReviewEvidence } from './review-evidence';
+
+const relationshipLabels = {
+  PARENT: 'अभिभावक (Parent)',
+  CHILD: 'सन्तान (Child)',
+  SPOUSE: 'जीवनसाथी (Spouse)',
+};
+
+function RelationshipPreview({ token, id, version }: { token: string; id: string; version: number }) {
+  const [preview, setPreview] = useState<{ before: boolean; after: boolean } | null>();
+  useEffect(() => {
+    const controller = new AbortController();
+    ApiClient.getChangeRequest(token, id, controller.signal).then(detail => {
+      if (!controller.signal.aborted) {
+        setPreview(detail.version === version ? detail.visualDiff?.graphImpact?.relationshipPreview ?? null : null);
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setPreview(null);
+    });
+    return () => controller.abort();
+  }, [id, token, version]);
+
+  const label = (linked: boolean) => linked ? 'जोडिएको (Linked)' : 'नजोडिएको (Unlinked)';
+  return preview ? (
+    <dl className="mt-2 grid grid-cols-2 gap-2" aria-label="सम्बन्ध पूर्वावलोकन (Relationship preview)">
+      <div><dt>हालको सम्बन्ध (Current link)</dt><dd className="font-semibold">{label(preview.before)}</dd></div>
+      <div><dt>स्वीकृत भएमा (If approved)</dt><dd className="font-semibold">{label(preview.after)}</dd></div>
+    </dl>
+  ) : (
+    <p role="status" className="mt-2 text-xs text-slate-600">
+      {preview === null ? 'पूर्वावलोकन उपलब्ध छैन (Preview unavailable)' : 'सम्बन्ध जाँच हुँदैछ (Checking current link)'}
+    </p>
+  );
+}
 
 export default function ChangeRequestsAdminPage() {
-  const { accessToken } = useAuth();
+  const { accessToken,user } = useAuth();
+  const identity=JSON.stringify([user?.id,user?.roles?.slice().sort()]);
+  const scope=JSON.stringify([identity,accessToken]);
+  const identityRef=useRef(identity);identityRef.current=identity;
+  const scopeRef=useRef(scope);scopeRef.current=scope;
+  const listSequence=useRef(0);
   const [requests, setRequests] = useState<ChangeRequestDetailDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState<string>('PENDING');
@@ -15,23 +54,28 @@ export default function ChangeRequestsAdminPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  useLayoutEffect(()=>{setRequests([]);setActiveRequest(null);setReviewNotes('');setMessage(null);setActionLoading(false);},[identity]);
+
   useEffect(() => {
     loadRequests();
-  }, [accessToken, selectedStatus]);
+  }, [accessToken, selectedStatus,identity]);
 
   async function loadRequests() {
     if (!accessToken) return;
+    const sequence=++listSequence.current;
     setLoading(true);
     try {
       const data = await ApiClient.listChangeRequests(
         accessToken,
         selectedStatus === 'ALL' ? undefined : { status: selectedStatus },
       );
+      if(scopeRef.current!==scope||listSequence.current!==sequence)return;
       setRequests(data);
     } catch (err: any) {
+      if(scopeRef.current!==scope||listSequence.current!==sequence)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setLoading(false);
+      if(scopeRef.current===scope&&listSequence.current===sequence)setLoading(false);
     }
   }
 
@@ -41,16 +85,20 @@ export default function ChangeRequestsAdminPage() {
     setMessage(null);
     try {
       await ApiClient.reviewChangeRequest(accessToken, activeRequest.id, { status, reviewNotes });
+      if(identityRef.current!==identity)return;
       setMessage({ type: 'success', text: `Change request ${status.toLowerCase()} successfully` });
       setActiveRequest(null);
       setReviewNotes('');
       await loadRequests();
     } catch (err: any) {
+      if(identityRef.current!==identity)return;
       setMessage({ type: 'error', text: err.message });
     } finally {
-      setActionLoading(false);
+      if(identityRef.current===identity)setActionLoading(false);
     }
   }
+
+  const proposedRelationship = activeRequest?.visualDiff?.graphImpact?.proposedRelationship;
 
   return (
     <div className="space-y-6">
@@ -190,6 +238,29 @@ export default function ChangeRequestsAdminPage() {
                 </div>
               )}
             </div>
+
+            {accessToken && activeRequest.requesterUserId !== user?.id && (
+              <ReviewEvidence key={JSON.stringify([scope, activeRequest.id])}
+                requestId={activeRequest.id} token={accessToken} />
+            )}
+
+            {proposedRelationship && (
+              <section aria-label="प्रस्तावित सम्बन्ध (Proposed relationship)" className="rounded-xl border border-slate-200 p-4 text-sm">
+                <h4 className="font-semibold">सम्बन्धमा प्रस्तावित परिवर्तन (Proposed relationship change)</h4>
+                <dl className="mt-2 space-y-1">
+                  <div><dt className="inline font-medium">कार्य (Action) · </dt><dd className="inline">{proposedRelationship.action === 'ADD' ? 'सम्बन्ध थप्ने (Add link)' : 'सम्बन्ध हटाउने (Remove link)'}</dd></div>
+                  <div><dt className="inline font-medium">लक्ष्य (Target) · </dt><dd className="inline">{activeRequest.currentSnapshot?.primaryNameNepali || activeRequest.currentSnapshot?.primaryNameEnglish || activeRequest.targetPersonId}</dd></div>
+                  <div><dt className="inline font-medium">{relationshipLabels[proposedRelationship.relationship]} · </dt><dd className="inline break-all">
+                    {'personId' in proposedRelationship.relative
+                      ? proposedRelationship.relative.personId
+                      : `नयाँ व्यक्ति (New person)${proposedRelationship.relative.proposedName ? ` · ${proposedRelationship.relative.proposedName}` : ''}`}
+                  </dd></div>
+                </dl>
+                {accessToken && <RelationshipPreview
+                  key={JSON.stringify([scope, activeRequest.id, activeRequest.version])}
+                  token={accessToken} id={activeRequest.id} version={activeRequest.version} />}
+              </section>
+            )}
 
             {/* Conflict Warning if detected */}
             {activeRequest.status === 'CONFLICT_DETECTED' && (

@@ -1,0 +1,55 @@
+name: Approved internal Android preview
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/feat/application-completion' || (github.event.pull_request.head.ref == 'feat/application-completion' && github.event.pull_request.head.repo.full_name == github.repository)
+    environment: internal-preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KASHYAP_PREVIEW_APPROVED: ${{ vars.KASHYAP_PREVIEW_APPROVED }}
+      KASHYAP_STAGING_API_URL: ${{ vars.KASHYAP_STAGING_API_URL }}
+      KASHYAP_ANDROID_APPLICATION_ID: ${{ vars.KASHYAP_ANDROID_APPLICATION_ID }}
+      KASHYAP_PREVIEW_CERT_SHA256: ${{ vars.KASHYAP_PREVIEW_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.5'
+          cache: true
+      - name: Build approved signed preview
+        env:
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.PREVIEW_KEYSTORE_BASE64 }}
+          KASHYAP_ANDROID_STORE_PASSWORD: ${{ secrets.PREVIEW_STORE_PASSWORD }}
+          KASHYAP_ANDROID_KEY_ALIAS: ${{ secrets.PREVIEW_KEY_ALIAS }}
+          KASHYAP_ANDROID_KEY_PASSWORD: ${{ secrets.PREVIEW_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          signing_dir=$(mktemp -d)
+          trap 'rm -rf "$signing_dir"' EXIT
+          export KASHYAP_ANDROID_STORE_FILE="$signing_dir/preview.jks"
+          printf '%s' "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > "$KASHYAP_ANDROID_STORE_FILE"
+          unset PREVIEW_KEYSTORE_BASE64
+          python3 scripts/build_internal_preview.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: internal-preview-${{ github.event.pull_request.head.sha || github.sha }}
+          path: test-results/internal-preview/
+          if-no-files-found: error
+          retention-days: 14

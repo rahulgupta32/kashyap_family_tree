@@ -22,6 +22,12 @@ export interface VisualDiffFieldDto {
   changeType: 'MODIFIED' | 'ADDED' | 'REMOVED';
 }
 
+export interface ProposedRelationshipDto {
+  action: 'ADD' | 'REMOVE';
+  relationship: 'PARENT' | 'CHILD' | 'SPOUSE';
+  relative: { personId: string } | { proposedName?: string };
+}
+
 export interface VisualDiffDto {
   fields: VisualDiffFieldDto[];
   graphImpact?: {
@@ -29,6 +35,8 @@ export interface VisualDiffDto {
     affectedSpouses?: string[];
     affectedChildren?: string[];
     generationShift?: number;
+    proposedRelationship?: ProposedRelationshipDto;
+    relationshipPreview?: { before: boolean; after: boolean };
   };
 }
 
