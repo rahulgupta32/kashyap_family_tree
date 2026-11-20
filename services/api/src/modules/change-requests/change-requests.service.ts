@@ -1023,7 +1023,59 @@ export class ChangeRequestsService {
       }
     }
 
-    return this.mapToDetailDto(req, undefined, await this.canReadReviewSnapshot(req, actor));
+    const detail = await this.mapToDetailDto(req, undefined, await this.canReadReviewSnapshot(req, actor));
+    const impact = detail.visualDiff?.graphImpact;
+    if (impact?.proposedRelationship) {
+      impact.relationshipPreview = await this.readRelationshipPreview(detail, actor);
+    }
+    return detail;
+  }
+
+  private async readRelationshipPreview(detail: ChangeRequestDetailDto, actor: AuthenticatedUser) {
+    const proposal = detail.visualDiff?.graphImpact?.proposedRelationship;
+    if (!proposal || !detail.targetPersonId || ![
+      ChangeRequestStatus.PENDING, ChangeRequestStatus.RESUBMITTED, ChangeRequestStatus.ESCALATED,
+    ].includes(detail.status)) return undefined;
+
+    const relativeId = 'personId' in proposal.relative ? proposal.relative.personId : null;
+    if (relativeId !== null && (!isUUID(relativeId) || relativeId === detail.targetPersonId)) return undefined;
+    const reviewBranches = (actor.roleAssignments ?? [])
+      .filter(({ role }) => (role === Role.BRANCH_ADMIN || role === Role.BRANCH_VERIFIER) && actor.roles.includes(role))
+      .map(({ branchId }) => branchId);
+    const adminBranches = (actor.roleAssignments ?? [])
+      .filter(({ role }) => role === Role.BRANCH_ADMIN && actor.roles.includes(role))
+      .map(({ branchId }) => branchId);
+    const global = actor.roles.includes(Role.SUPER_ADMIN);
+    const spouse = proposal.relationship === 'SPOUSE';
+    const reverse = proposal.relationship === 'PARENT';
+    const crossBranch = spouse && proposal.action === 'ADD' ? adminBranches : reviewBranches;
+    const result = await this.db.query<{ linked: boolean }>(`
+      SELECT CASE WHEN $2::uuid IS NULL THEN FALSE
+        WHEN $3::boolean THEN EXISTS (
+          SELECT 1 FROM spouse_links
+          WHERE (person_id = target.id AND spouse_id = relative.id)
+             OR (person_id = relative.id AND spouse_id = target.id)
+        )
+        ELSE EXISTS (
+          SELECT 1 FROM parent_links
+          WHERE parent_id = CASE WHEN $4::boolean THEN relative.id ELSE target.id END
+            AND child_id = CASE WHEN $4::boolean THEN target.id ELSE relative.id END
+        ) END AS linked
+      FROM persons target
+      LEFT JOIN persons relative ON relative.id = $2
+      JOIN genealogy_change_requests req ON req.id = $8 AND req.target_person_id = target.id
+      WHERE target.id = $1 AND req.version = $9 AND req.status = $10
+        AND target.version = req.base_version
+        AND ($2::uuid IS NULL OR relative.id IS NOT NULL)
+        AND ($5::boolean OR (
+          target.branch_id = ANY($6::uuid[])
+          AND ($2::uuid IS NULL OR relative.branch_id = target.branch_id
+            OR (target.branch_id = ANY($7::uuid[]) AND relative.branch_id = ANY($7::uuid[])))
+        ))
+    `, [detail.targetPersonId, relativeId, spouse, reverse, global, reviewBranches, crossBranch,
+      detail.id, detail.version, detail.status]);
+    const edge = result.rows[0];
+    return edge ? { before: edge.linked, after: proposal.action === 'ADD' } : undefined;
   }
 
   async reviewEvidence(requestId: string, actor: AuthenticatedUser, assetId?: string) {

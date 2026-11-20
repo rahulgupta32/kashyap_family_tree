@@ -12,6 +12,33 @@ const relationshipLabels = {
   SPOUSE: 'जीवनसाथी (Spouse)',
 };
 
+function RelationshipPreview({ token, id, version }: { token: string; id: string; version: number }) {
+  const [preview, setPreview] = useState<{ before: boolean; after: boolean } | null>();
+  useEffect(() => {
+    const controller = new AbortController();
+    ApiClient.getChangeRequest(token, id, controller.signal).then(detail => {
+      if (!controller.signal.aborted) {
+        setPreview(detail.version === version ? detail.visualDiff?.graphImpact?.relationshipPreview ?? null : null);
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) setPreview(null);
+    });
+    return () => controller.abort();
+  }, [id, token, version]);
+
+  const label = (linked: boolean) => linked ? 'जोडिएको (Linked)' : 'नजोडिएको (Unlinked)';
+  return preview ? (
+    <dl className="mt-2 grid grid-cols-2 gap-2" aria-label="सम्बन्ध पूर्वावलोकन (Relationship preview)">
+      <div><dt>हालको सम्बन्ध (Current link)</dt><dd className="font-semibold">{label(preview.before)}</dd></div>
+      <div><dt>स्वीकृत भएमा (If approved)</dt><dd className="font-semibold">{label(preview.after)}</dd></div>
+    </dl>
+  ) : (
+    <p role="status" className="mt-2 text-xs text-slate-600">
+      {preview === null ? 'पूर्वावलोकन उपलब्ध छैन (Preview unavailable)' : 'सम्बन्ध जाँच हुँदैछ (Checking current link)'}
+    </p>
+  );
+}
+
 export default function ChangeRequestsAdminPage() {
   const { accessToken,user } = useAuth();
   const identity=JSON.stringify([user?.id,user?.roles?.slice().sort()]);
@@ -229,7 +256,9 @@ export default function ChangeRequestsAdminPage() {
                       : `नयाँ व्यक्ति (New person)${proposedRelationship.relative.proposedName ? ` · ${proposedRelationship.relative.proposedName}` : ''}`}
                   </dd></div>
                 </dl>
-                <p className="mt-2 text-xs text-slate-600">यो प्रस्तावित सम्बन्ध हो। (This preview shows the requested link.)</p>
+                {accessToken && <RelationshipPreview
+                  key={JSON.stringify([scope, activeRequest.id, activeRequest.version])}
+                  token={accessToken} id={activeRequest.id} version={activeRequest.version} />}
               </section>
             )}
 

@@ -934,7 +934,8 @@ class _ChangeRequestScreenState extends State<ChangeRequestScreen> {
                     ),
                   ),
                   if (!kIsWeb &&
-                      defaultTargetPlatform == TargetPlatform.android)
+                      (defaultTargetPlatform == TargetPlatform.android ||
+                          defaultTargetPlatform == TargetPlatform.iOS))
                     ExpansionTile(
                       title: Text(
                         'निजी प्रमाण (Private evidence) · ${_evidence.length}/5',

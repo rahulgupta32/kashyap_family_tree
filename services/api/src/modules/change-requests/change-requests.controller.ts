@@ -51,6 +51,7 @@ export class ChangeRequestsController {
   }
 
   @Get(':id')
+  @Header('Cache-Control', 'private, no-store')
   async getRequest(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

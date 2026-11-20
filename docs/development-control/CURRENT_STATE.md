@@ -1,3 +1,11 @@
+# 20 November 2026 · iOS evidence picker and relationship preview
+
+Android’s evidence flow now shares its picker contract with an iOS Files picker for JPEG, PNG and WebP up to 10 MiB. The admin detail view reads the current direct parent, child, or spouse link and projects its state if approved. The preview is read-only, reviewer-scoped, respects branch access and family recusal, and is withheld for stale versions. This is the impact on the proposed link, without projecting unrelated branches or approval outcomes.
+
+Local API/admin type checks, 24 focused unit tests, four signing preflight tests and shell syntax checks passed. New PostgreSQL/HTTP cases cover parent, child, spouse and removal previews and assert no persisted relationship mutation. Exact-source CI supplies native iOS, Flutter and PostgreSQL evidence.
+
+Vercel project discovery on the exact Jyphra team scope returned 403 for GET /v10/projects. Provider requires a signed-in team member to grant team access. Railway workspace access, measured all-in cost within USD 20/month, dedicated signing secrets and live OTP configuration remain pending. No connected staging APK or physical handset acceptance yet.
+
 # Reviewer evidence and relationship preview — 19 November 2026
 
 Follow-up `8ea5498893abff1933df680c8f23b81b400fff44` fixes the single evidence-handler lint reported by Flutter job 135475517908 on `342f7c6`. Corrected-source Flutter job 135477275049 passed analysis and widgets, including the new evidence intake case.

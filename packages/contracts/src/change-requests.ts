@@ -36,6 +36,7 @@ export interface VisualDiffDto {
     affectedChildren?: string[];
     generationShift?: number;
     proposedRelationship?: ProposedRelationshipDto;
+    relationshipPreview?: { before: boolean; after: boolean };
   };
 }
 

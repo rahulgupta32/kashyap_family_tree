@@ -54,6 +54,45 @@ describe('Change request privacy projection and private attachment admission (Po
   }, 60000);
   afterAll(async () => { if (app) await app.close(); if (iso) await iso.drop(); });
 
+  it.each([
+    [ChangeRequestType.ADD_PARENT, 'parentPersonId'],
+    [ChangeRequestType.ADD_CHILD, 'childPersonId'],
+    [ChangeRequestType.ADD_SPOUSE, 'spousePersonId'],
+  ])('projects %s from current data without modifying either person or the graph', async (type, field) => {
+    const relative = (await db.query(
+      "INSERT INTO persons(gender,living_status,generation) VALUES('OTHER','LIVING',3) RETURNING id",
+    )).rows[0].id;
+    const unchanged = async () => (await db.query(`
+      SELECT p.version, (SELECT count(*) FROM parent_links WHERE parent_id = p.id OR child_id = p.id) AS parent_count,
+        (SELECT count(*) FROM spouse_links WHERE person_id = p.id OR spouse_id = p.id) AS spouse_count
+      FROM persons p WHERE p.id IN ($1, $2) ORDER BY p.id
+    `, [person, relative])).rows;
+    const original = await unchanged();
+    const created = (await request(app.getHttpServer()).post('/change-requests').set(auth(owner))
+      .send({...body(), type, proposedChanges: {[field]: relative}}).expect(201)).body;
+    const endpoint = `/change-requests/${created.id}`;
+    const review = (await request(app.getHttpServer()).get(endpoint).set(auth(reviewer))
+      .expect('Cache-Control', 'private, no-store').expect(200)).body;
+    expect(review.visualDiff.graphImpact.relationshipPreview).toEqual({before: false, after: true});
+    const own = (await request(app.getHttpServer()).get(endpoint).set(auth(owner)).expect(200)).body;
+    expect(own.visualDiff.graphImpact?.relationshipPreview).toBeUndefined();
+    expect(await unchanged()).toEqual(original);
+  });
+
+  it('shows an existing directed parent link before a proposed removal', async () => {
+    const relative = (await db.query(
+      "INSERT INTO persons(gender,living_status,generation) VALUES('OTHER','LIVING',2) RETURNING id",
+    )).rows[0].id;
+    await db.query("INSERT INTO parent_links(parent_id,child_id,parent_type,confidence) VALUES($1,$2,'BIOLOGICAL','VERIFIED')", [relative, person]);
+    const created = (await request(app.getHttpServer()).post('/change-requests').set(auth(owner))
+      .send({...body(), type: ChangeRequestType.REMOVE_PARENT_LINK,
+        proposedChanges: {parentPersonId: relative}}).expect(201)).body;
+    const review = (await request(app.getHttpServer()).get(`/change-requests/${created.id}`)
+      .set(auth(reviewer)).expect(200)).body;
+    expect(review.visualDiff.graphImpact.relationshipPreview).toEqual({before: true, after: false});
+    expect((await db.query('SELECT 1 FROM parent_links WHERE parent_id=$1 AND child_id=$2', [relative, person])).rowCount).toBe(1);
+  });
+
   it('keeps internal review snapshots while minimizing requester submit/get/list/resubmit responses', async () => {
     await request(app.getHttpServer()).get(`/genealogy/people/${person}`).set(auth(owner)).expect(403);
     claim = (await request(app.getHttpServer()).post('/change-requests').set(auth(owner)).send({...body(), evidenceAssetIds: [clean]}).expect(201)).body;

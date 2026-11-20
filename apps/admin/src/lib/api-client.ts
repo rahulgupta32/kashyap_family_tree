@@ -477,6 +477,17 @@ export class ApiClient {
   }
 
   // --- Milestone 4: Change Requests ---
+  static async getChangeRequest(token: string, id: string, signal: AbortSignal): Promise<ChangeRequestDetailDto> {
+    const response = await fetch(`${API_BASE}/change-requests/${encodeURIComponent(id)}`, {
+      headers: this.getHeaders(token),
+      credentials: 'include',
+      cache: 'no-store',
+      signal,
+    });
+    if (!response.ok) throw new Error('Relationship preview unavailable');
+    return response.json();
+  }
+
   static async listChangeRequests(token: string, options?: { status?: string; branchId?: string }): Promise<ChangeRequestDetailDto[]> {
     const params = new URLSearchParams();
     if (options?.status) params.append('status', options.status);
