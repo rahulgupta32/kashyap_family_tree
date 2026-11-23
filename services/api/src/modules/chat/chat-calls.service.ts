@@ -1,3 +1,4 @@
+import { ChatMediaService } from './chat-media.service';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService } from '../../database/database.service';
@@ -7,7 +8,8 @@ import { ChatService } from './chat.service';
 
 @Injectable()
 export class ChatCallsService {
-  constructor(private readonly db: DatabaseService, private readonly chat: ChatService) {}
+  constructor(private readonly db: DatabaseService, private readonly chat: ChatService,
+    private readonly media: ChatMediaService = new ChatMediaService()) {}
 
   private async reconcile(client: PoolClient, id: string) {
     await client.query(`
@@ -34,7 +36,7 @@ export class ChatCallsService {
     if (process.env.CHAT_CALLS_ENABLED !== 'true') throw new NotFoundException('Calls unavailable');
     const action = body === undefined ? 'VIEW' : body?.action;
     if (body !== undefined) allowedFields(body, ['action', 'media', 'callId']);
-    if (!['VIEW', 'START', 'JOIN', 'DECLINE', 'LEAVE'].includes(action) ||
+    if (!['VIEW', 'START', 'JOIN', 'DECLINE', 'LEAVE', 'MEDIA'].includes(action) ||
         (body !== undefined && action === 'VIEW')) throw new BadRequestException('Invalid call action');
     const limit = Number(process.env.CHAT_CALL_PARTICIPANT_LIMIT ?? '6');
     if (!Number.isInteger(limit) || limit < 2 || limit > 50) throw new ConflictException('Invalid call participant configuration');
@@ -63,9 +65,18 @@ export class ChatCallsService {
         await this.join(client, call.id, user.id);
       } else if (action !== 'VIEW') {
         if (!open || call.id !== uuid(body.callId, 'call')) throw new ConflictException('Call is no longer open');
+        if (action === 'MEDIA') {
+          // Recheck after acquiring the conversation lock to see a concurrent membership commit.
+          await this.chat.access(conversationId, user, client);
+          if (call.state !== 'ACTIVE' || !(await client.query(
+            'SELECT 1 FROM chat_call_participants WHERE call_id=$1 AND user_id=$2', [call.id,user.id],
+          )).rows.length) throw new ForbiddenException('Join the active call before connecting media');
+          return this.media.credential(call.id, user.id, call.media);
+        }
         if (action === 'JOIN') {
           const participants = (await client.query('SELECT user_id FROM chat_call_participants WHERE call_id=$1', [call.id])).rows;
           if (!participants.some(p => p.user_id === user.id)) {
+            await this.chat.access(conversationId, user, client);
             if (participants.length >= (direct ? 2 : limit)) throw new ConflictException('Call is full');
             if ((await client.query(`SELECT 1 FROM chat_blocks b JOIN chat_call_participants p ON p.call_id=$1
               WHERE (b.blocker_id=$2 AND b.blocked_id=p.user_id)
@@ -84,6 +95,7 @@ export class ChatCallsService {
           await client.query('UPDATE chat_calls SET state=$2 WHERE id=$1', [call.id, call.state]);
           await client.query('DELETE FROM chat_call_participants WHERE call_id=$1', [call.id]);
         } else {
+          await this.media.revoke(client, conversationId, direct ? undefined : user.id);
           const left = await client.query('DELETE FROM chat_call_participants WHERE call_id=$1 AND user_id=$2', [call.id,user.id]);
           if (left.rowCount && (direct || !(await client.query('SELECT 1 FROM chat_call_participants WHERE call_id=$1 LIMIT 1',[call.id])).rows.length)) {
             call.state = 'ENDED';

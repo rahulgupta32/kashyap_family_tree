@@ -1,7 +1,7 @@
 import { ChatCallsService } from './chat-calls.service';
 import { Response } from 'express';
 import { ChatAttachmentsService } from './chat-attachments.service';
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -11,7 +11,7 @@ import { allowedFields } from '../community/community-policy';
 export class ChatController {
  constructor(private readonly chat:ChatService,private readonly attachments:ChatAttachmentsService,private readonly calls:ChatCallsService){}
  @Get('conversations/:id/call') currentCall(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser){return this.calls.manage(id,user);}
- @Post('conversations/:id/call') updateCall(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:unknown){return this.calls.manage(id,user,body);}
+ @Post('conversations/:id/call') @Header('Cache-Control','no-store') updateCall(@Param('id') id:string,@CurrentUser() user:AuthenticatedUser,@Body() body:unknown){return this.calls.manage(id,user,body);}
  @Post('conversations/:id/attachments') attachment(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.attachments.send(id,u,b);}
  @Get('conversations/:id/messages/:messageId/attachment') async download(@Param('id') id:string,@Param('messageId') msg:string,@CurrentUser() u:AuthenticatedUser,@Query('variant') variant:string,@Res() res:Response){const file=await this.attachments.download(id,msg,u,variant);res.setHeader('Content-Type',file.mimeType);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename="${file.fileName}"`);res.send(file.buffer);}
  @Get('reports/:reportId/attachment') async reportedFile(@Param('reportId') id:string,@CurrentUser() u:AuthenticatedUser,@Query('variant') variant:string,@Res() res:Response){const file=await this.attachments.downloadReported(id,u,variant);res.setHeader('Content-Type',file.mimeType);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Disposition',`attachment; filename="${file.fileName}"`);res.send(file.buffer);}

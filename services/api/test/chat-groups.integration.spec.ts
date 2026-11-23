@@ -45,26 +45,37 @@ describe('Governed private/branch group roles and membership boundaries (Postgre
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
 
  it('shares a capped group call and revokes the removed member immediately',async()=>{
-  const oldFlag=process.env.CHAT_CALLS_ENABLED,oldLimit=process.env.CHAT_CALL_PARTICIPANT_LIMIT;
-  process.env.CHAT_CALLS_ENABLED='true';
-  process.env.CHAT_CALL_PARTICIPANT_LIMIT='2';
+  const previous=process.env;
+  process.env={...previous,CHAT_CALLS_ENABLED:'true',CHAT_CALL_PARTICIPANT_LIMIT:'2',
+   CHAT_MEDIA_ENABLED:'true',CHAT_LIVEKIT_URL:'wss://fixture.livekit.cloud',
+   CHAT_LIVEKIT_API_KEY:'fixture',CHAT_LIVEKIT_API_SECRET:'fixture-only-secret-fixture-only-secret'};
+  const provider=jest.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response(null,{status:200}));
   try {
    const g=await group(), route=`/chat/conversations/${g.id}/call`, server=app.getHttpServer();
    const start=(await request(server).post(route).set(auth(owner)).send({action:'START',media:'VIDEO'}).expect(201)).body.call;
    const action=(u:any, operation:string)=>request(server).post(route).set(auth(u)).send({action:operation,callId:start.id});
    expect(start).toMatchObject({state:'ACTIVE',participantCount:1,joined:true});
    await action(outsider,'JOIN').expect(404);
+   await action(b,'MEDIA').expect(403);
    await action(b,'JOIN').expect(201);
+   await action(b,'MEDIA').expect('Cache-Control','no-store').expect(201);
    await action(c,'JOIN').expect(409);
    await action(b,'LEAVE').expect(201);
    await action(b,'JOIN').expect(201);
-   await chat.removeMember(g.id,b.id,owner,{version:(await info(g.id)).version});
+   provider.mockClear();
+   provider.mockResolvedValueOnce(new Response(null,{status:503}));
+   const remove=()=>chat.removeMember(g.id,b.id,owner,{version:1});
+   await expect(remove()).rejects.toThrow('Could not revoke');
+   await action(b,'MEDIA').expect(201);
+   await remove();
+   expect(JSON.parse(String(provider.mock.calls[1][1].body))).toMatchObject({room:start.id,identity:b.id});
+   await action(b,'MEDIA').expect(404);
    expect((await db.query('SELECT 1 FROM chat_call_participants WHERE call_id=$1 AND user_id=$2',[start.id,b.id])).rowCount).toBe(0);
    await action(b,'JOIN').expect(404);
    expect((await action(c,'JOIN').expect(201)).body.call).toMatchObject({state:'ACTIVE',participantCount:2});
   } finally {
-   if(oldFlag===undefined) delete process.env.CHAT_CALLS_ENABLED; else process.env.CHAT_CALLS_ENABLED=oldFlag;
-   if(oldLimit===undefined) delete process.env.CHAT_CALL_PARTICIPANT_LIMIT; else process.env.CHAT_CALL_PARTICIPANT_LIMIT=oldLimit;
+   provider.mockRestore();
+   process.env=previous;
   }
  });
  it('creates selected members and exactly one owner atomically, without caller-supplied roles',async()=>{

@@ -1,3 +1,4 @@
+import { ChatMediaService } from './chat-media.service';
 import { ChatCallsService } from './chat-calls.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { ProfileModule } from '../profile/profile.module';
@@ -10,7 +11,7 @@ import { ChatController } from './chat.controller';
 @Module({
   imports: [GenealogyModule, ProfileModule],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, ChatAttachmentsService, ChatCallsService],
+  providers: [ChatService, ChatGateway, ChatAttachmentsService, ChatCallsService, ChatMediaService],
   exports: [ChatService],
 })
 export class ChatModule {}

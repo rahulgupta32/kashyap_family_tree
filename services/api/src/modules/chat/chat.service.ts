@@ -1,3 +1,4 @@
+import { ChatMediaService } from './chat-media.service';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
@@ -10,7 +11,8 @@ import { directParticipantsEligible, eligibleDirectConversationIds } from './dir
 
 @Injectable()
 export class ChatService {
- constructor(private readonly db:DatabaseService,private readonly audit:AuditOutboxRepository,private readonly genealogy:GenealogyService,private readonly privacy:PrivacyEngineService) {}
+ constructor(private readonly db:DatabaseService,private readonly audit:AuditOutboxRepository,private readonly genealogy:GenealogyService,private readonly privacy:PrivacyEngineService,
+  private readonly media: ChatMediaService = new ChatMediaService()) {}
 
  async access(id:string,user:AuthenticatedUser,client?:PoolClient) {
   member(user);uuid(id);
@@ -172,6 +174,7 @@ export class ChatService {
    const row=await this.access(id,user,client);
    const p=(await client.query('SELECT group_role FROM chat_participants WHERE conversation_id=$1 AND user_id=$2',[id,user.id])).rows[0];
    if(row.is_group&&p.group_role==='OWNER')throw new ConflictException('Transfer ownership before leaving the group');
+   await this.media.revoke(client,id,row.is_group ? user.id : undefined);
    await client.query("UPDATE chat_participants SET left_at=NOW(),group_role='MEMBER' WHERE conversation_id=$1 AND user_id=$2",[id,user.id]);
    if(row.is_group)await this.groupChange(row,user,'CHAT_MEMBER_LEFT',{memberUserId:user.id},client);
    return {success:true};
@@ -180,6 +183,7 @@ export class ChatService {
  async block(id:string,user:AuthenticatedUser){
   return this.db.transaction(async client=>{
    const conv=await this.access(id,user,client);if(conv.conversation_type!=='DIRECT')throw new BadRequestException('Only direct conversations can be blocked');
+   await this.media.revoke(client,id);
    await client.query('INSERT INTO chat_blocks(blocker_id,blocked_id) SELECT $2,user_id FROM chat_participants WHERE conversation_id=$1 AND user_id<>$2 ON CONFLICT DO NOTHING',[id,user.id]);return {success:true};
   });
  }
@@ -287,6 +291,7 @@ export class ChatService {
    const target=(await client.query('SELECT * FROM chat_participants WHERE conversation_id=$1 AND user_id=$2 AND left_at IS NULL',[id,targetId])).rows[0];
    if(!target)throw new NotFoundException('Current group member not found');
    if(targetId===user.id||target.group_role==='OWNER'||row.actor_group_role==='ADMIN'&&target.group_role!=='MEMBER')throw new ForbiddenException('Cannot remove this member; transfer ownership or leave instead');
+   await this.media.revoke(client,id,targetId);
    await client.query("UPDATE chat_participants SET left_at=NOW(),removed_at=NOW(),group_role='MEMBER' WHERE conversation_id=$1 AND user_id=$2",[id,targetId]);
    return this.groupChange(row,user,'CHAT_GROUP_MEMBER_REMOVED',{memberUserId:targetId},client);
   });
