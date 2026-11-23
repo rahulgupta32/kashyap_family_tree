@@ -107,14 +107,94 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
   int _attempt=0,_epoch=0,_lastTyping=0;
   String get _path=>'/chat/conversations/${widget.conversation['id']}';
   @override
-  void initState(){super.initState();WidgetsBinding.instance.addObserver(this);_outboxSubscription=widget.api.chatOutbox.changes.listen((_)=>unawaited(_loadPending()));unawaited(_loadPending());widget.api.chatOutbox.start();_connect();}
+  void initState(){super.initState();WidgetsBinding.instance.addObserver(this);_outboxSubscription=widget.api.chatOutbox.changes.listen((_)=>unawaited(_loadPending()));unawaited(_loadPending());widget.api.chatOutbox.start();_connect();_startCallPolling();}
+  static const _callsEnabled = bool.fromEnvironment('ENABLE_CHAT_CALL_SIGNALING');
+  Timer? _callPoll;
+  Map? _call;
+  bool _callBusy = false;
+  String? _callError;
+
+  void _startCallPolling() {
+    if (!_callsEnabled) return;
+    _callPoll?.cancel();
+    unawaited(_refreshCall());
+    _callPoll = Timer.periodic(const Duration(seconds: 4), (_) => unawaited(_refreshCall()));
+  }
+
+  Future<void> _refreshCall([String? action, String? media]) async {
+    if (!_active || _callBusy) return;
+    final owner = widget.api.chatAccountId;
+    final session = widget.api.pushSessionGeneration;
+    if (owner == null) return;
+    setState(() => _callBusy = true);
+    try {
+      final response = await widget.api.requestJson(
+        '$_path/call',
+        method: action == null ? 'GET' : 'POST',
+        boundAccountId: owner,
+        data: action == null ? null : {
+          'action': action,
+          if (media != null) 'media': media,
+          if (action != 'START') 'callId': _call?['id'],
+        },
+      );
+      if (mounted && _active && session == widget.api.pushSessionGeneration) {
+        setState(() { _call = response['call'] as Map?; _callError = null; });
+      }
+    } catch (_) {
+      if (mounted && _active && session == widget.api.pushSessionGeneration) {
+        setState(() {
+          if (action == null) _call = null;
+          _callError = 'Call signaling unavailable';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _callBusy = false);
+    }
+  }
+
+  Widget _callStatus() {
+    final call = _call;
+    if (call == null) return _callError == null ? const SizedBox.shrink() : Text(_callError!);
+    final state = call['state'];
+    final ringing = state == 'RINGING';
+    final open = ringing || state == 'ACTIVE';
+    final joined = call['joined'] == true;
+    final media = call['media'] == 'VIDEO' ? 'Video' : 'Voice';
+    final label = switch (state) {
+      'RINGING' => call['startedByMe'] == true ? 'Ringing' : 'Incoming call',
+      'ACTIVE' => '${call['participantCount']} joined',
+      'DECLINED' => 'Declined',
+      'MISSED' => 'Missed',
+      _ => 'Ended',
+    };
+    return Column(children: [
+      Text('$media · $label · Signaling test'),
+      if (_callError != null) Text(_callError!),
+      if (open) Wrap(children: [
+        if (!joined) TextButton(
+          onPressed: _callBusy ? null : () => _refreshCall('JOIN'),
+          child: Text(ringing ? 'Accept call' : 'Join call'),
+        ),
+        if (ringing && !joined) TextButton(
+          onPressed: _callBusy ? null : () => _refreshCall('DECLINE'),
+          child: const Text('Decline call'),
+        ),
+        if (joined) TextButton(
+          onPressed: _callBusy ? null : () => _refreshCall('LEAVE'),
+          child: Text(widget.conversation['type'] == 'DIRECT' ? 'End call' : 'Leave call'),
+        ),
+      ]),
+    ]);
+  }
+
   Future<void> _stop() async {_epoch++;_reconnect?.cancel();await _subscription?.cancel();await _connection?.close();_connection=null;}
   @override
-  void dispose(){_active=false;widget.api.chatOutbox.stop();unawaited(_outboxSubscription?.cancel());WidgetsBinding.instance.removeObserver(this);unawaited(_stop());_text.dispose();super.dispose();}
+  void dispose(){_callPoll?.cancel();_active=false;widget.api.chatOutbox.stop();unawaited(_outboxSubscription?.cancel());WidgetsBinding.instance.removeObserver(this);unawaited(_stop());_text.dispose();super.dispose();}
   @override
   void didChangeAppLifecycleState(AppLifecycleState state){
     _active=state==AppLifecycleState.resumed;
-    if(_active){widget.api.chatOutbox.start();unawaited(_loadPending());_connect();}else{widget.api.chatOutbox.stop();unawaited(_stop());}
+    if(_active){widget.api.chatOutbox.start();unawaited(_loadPending());_connect();_startCallPolling();}else{_callPoll?.cancel();widget.api.chatOutbox.stop();unawaited(_stop());}
   }
   void _retry(){if(!mounted||!_active){return;}_reconnect?.cancel();_reconnect=Timer(Duration(seconds:min(30,1<<min(5,_attempt++))),_connect);}
   Future<void> _connect() async {
@@ -199,8 +279,14 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   @override
-  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String),actions:[PopupMenuButton<String>(onSelected:_action,itemBuilder:(_)=>[if(widget.conversation['type']!='DIRECT')PopupMenuItem(value:'Info',child:Text(chatGroupLabels['info']!)),const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
+  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String),actions:[
+    if (_callsEnabled) ...[
+      IconButton(tooltip:'Start voice call',onPressed:_callBusy?null:()=>_refreshCall('START','VOICE'),icon:const Icon(Icons.call)),
+      IconButton(tooltip:'Start video call',onPressed:_callBusy?null:()=>_refreshCall('START','VIDEO'),icon:const Icon(Icons.videocam)),
+    ],
+    PopupMenuButton<String>(onSelected:_action,itemBuilder:(_)=>[if(widget.conversation['type']!='DIRECT')PopupMenuItem(value:'Info',child:Text(chatGroupLabels['info']!)),const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
     body:Column(children:[
+      if (_callsEnabled) _callStatus(),
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
       Expanded(child:ListView(padding:const EdgeInsets.all(16),children:[
         if(_messages.length>=100)TextButton(onPressed:_older,child:const Text('Load earlier messages')),

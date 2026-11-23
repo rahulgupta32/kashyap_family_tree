@@ -1,3 +1,9 @@
+# 24 November 2026 · Chat call signaling and connected staging
+
+The calling increment adds migration 070, default-off authenticated voice and video signaling, and foreground Flutter status and controls in existing chat screens. Direct calls support ring, accept, decline, miss and end. Group calls support capped join, leave and rejoin. Chat membership removal deletes the participant from open signaling state inside the membership transaction. Live media, provider-side credential revocation and background ringing still require integration and physical-device evidence. Keep the API flag `CHAT_CALLS_ENABLED` and Flutter define `ENABLE_CHAT_CALL_SIGNALING` off for the connected staging APK.
+
+Prior verified source `e594151f40a5fd44fe7eb6ab81411956b9971ac0` passed Main CI 45183145973, iOS 45183145938 and offline APK 45183145932. The Jyphra Vercel connection returned zero projects matching `kashyap-staging-admin`. The Railway environment, billing, versioned storage, OTP settings and signing configuration are pending. Apply migrations 069 and 070 on the reviewed source when staging is available. Verify HTTPS readiness, scanner, worker and private storage before enabling staging-only reels. Signed APK delivery and handset acceptance remain open.
+
 # 23 November 2026 · Family reels staging batch
 
 Baseline PR #5 source `402cafd735552a621f4efac7fda9da611c8aaa50`. This batch adds a default-off Community reel feed, private scanned MP4 upload, server limit of 300 seconds and 20 MiB, and pending Community moderation. The mobile draft retries with its original upload ID while the editor stays open. Playback uses authenticated downloads and native muted players. Tests locally exercised 1, 300 and 301 seconds and the playback authorization gate. The PostgreSQL HTTP scenario and native builds require exact-source CI. Live staging and physical handset checks remain open.

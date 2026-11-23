@@ -44,6 +44,29 @@ describe('Governed private/branch group roles and membership boundaries (Postgre
  },60000);
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
 
+ it('shares a capped group call and revokes the removed member immediately',async()=>{
+  const oldFlag=process.env.CHAT_CALLS_ENABLED,oldLimit=process.env.CHAT_CALL_PARTICIPANT_LIMIT;
+  process.env.CHAT_CALLS_ENABLED='true';
+  process.env.CHAT_CALL_PARTICIPANT_LIMIT='2';
+  try {
+   const g=await group(), route=`/chat/conversations/${g.id}/call`, server=app.getHttpServer();
+   const start=(await request(server).post(route).set(auth(owner)).send({action:'START',media:'VIDEO'}).expect(201)).body.call;
+   const action=(u:any, operation:string)=>request(server).post(route).set(auth(u)).send({action:operation,callId:start.id});
+   expect(start).toMatchObject({state:'ACTIVE',participantCount:1,joined:true});
+   await action(outsider,'JOIN').expect(404);
+   await action(b,'JOIN').expect(201);
+   await action(c,'JOIN').expect(409);
+   await action(b,'LEAVE').expect(201);
+   await action(b,'JOIN').expect(201);
+   await chat.removeMember(g.id,b.id,owner,{version:(await info(g.id)).version});
+   expect((await db.query('SELECT 1 FROM chat_call_participants WHERE call_id=$1 AND user_id=$2',[start.id,b.id])).rowCount).toBe(0);
+   await action(b,'JOIN').expect(404);
+   expect((await action(c,'JOIN').expect(201)).body.call).toMatchObject({state:'ACTIVE',participantCount:2});
+  } finally {
+   if(oldFlag===undefined) delete process.env.CHAT_CALLS_ENABLED; else process.env.CHAT_CALLS_ENABLED=oldFlag;
+   if(oldLimit===undefined) delete process.env.CHAT_CALL_PARTICIPANT_LIMIT; else process.env.CHAT_CALL_PARTICIPANT_LIMIT=oldLimit;
+  }
+ });
  it('creates selected members and exactly one owner atomically, without caller-supplied roles',async()=>{
   await request(app.getHttpServer()).post('/chat/conversations').send({type:'GROUP'}).expect(401);
   await request(app.getHttpServer()).post('/chat/conversations').set(auth(owner)).send({type:'GROUP',title:'Invalid',memberPersonIds:[b.personId],roles:['OWNER']}).expect(400);

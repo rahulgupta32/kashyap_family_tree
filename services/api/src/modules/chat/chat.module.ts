@@ -1,3 +1,4 @@
+import { ChatCallsService } from './chat-calls.service';
 import { ChatAttachmentsService } from './chat-attachments.service';
 import { ProfileModule } from '../profile/profile.module';
 import { Module } from '@nestjs/common';
@@ -9,7 +10,7 @@ import { ChatController } from './chat.controller';
 @Module({
   imports: [GenealogyModule, ProfileModule],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, ChatAttachmentsService],
+  providers: [ChatService, ChatGateway, ChatAttachmentsService, ChatCallsService],
   exports: [ChatService],
 })
 export class ChatModule {}
