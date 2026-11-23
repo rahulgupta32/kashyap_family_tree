@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('preview', Path(__file__).with_name('build_internal_preview.py'))
 preview = importlib.util.module_from_spec(spec)
@@ -43,6 +44,28 @@ class PreviewAdmissionTests(unittest.TestCase):
             debug.write_bytes(b'synthetic')
             with self.assertRaises(ValueError):
                 preview.validate({**env, 'KASHYAP_ANDROID_STORE_FILE': str(debug)})
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_requires_direct_https_postgres_and_storage_readiness(self):
+        good = b'{"status":"ok","database":"up","mediaStorage":"up","databaseType":"real-postgresql"}'
+        cases = [(200, good), (302, good), (503, good), (200, b'{}'),
+                 (200, good.replace(b'real-postgresql', b'in-memory-pg-mem')),
+                 (200, good.replace(b'"mediaStorage":"up"', b'"mediaStorage":"down"')),
+                 (200, b'x' * 16385), (200, b'broken')]
+        for status, payload in cases:
+            with self.subTest(status=status, length=len(payload)), patch.object(preview, 'HTTPSConnection') as connect:
+                http = connect.return_value
+                http.getresponse.return_value.status = status
+                http.getresponse.return_value.read.return_value = payload
+                if status == 200 and payload == good:
+                    self.assertEqual(preview.verify_readiness('https://staging.jyphra.com')['status'], 'ok')
+                else:
+                    with self.assertRaises(ValueError):
+                        preview.verify_readiness('https://staging.jyphra.com')
+                connect.assert_called_once_with('staging.jyphra.com', timeout=10)
+                http.request.assert_called_once_with('GET', '/health/ready', headers={'Accept': 'application/json'})
+                http.close.assert_called_once()
 
 
 class SignerOutputTests(unittest.TestCase):

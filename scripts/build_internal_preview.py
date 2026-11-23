@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build an explicitly approved, signed internal preview; never provisions infrastructure."""
 from android_signing import verified_certificate_digests
+from http.client import HTTPSConnection, HTTPException
 import hashlib
 import ipaddress
 import json
@@ -51,6 +52,28 @@ def validate(env):
     return endpoint.rstrip('/'), identity
 
 
+def verify_readiness(endpoint):
+    connection = HTTPSConnection(urlsplit(endpoint).hostname, timeout=10)
+    expected = {'status': 'ok', 'database': 'up', 'mediaStorage': 'up',
+                'databaseType': 'real-postgresql'}
+    try:
+        connection.request('GET', '/health/ready', headers={'Accept': 'application/json'})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError('Staging readiness must return HTTP 200 directly')
+        raw = response.read(16385)
+        if len(raw) > 16384:
+            raise ValueError('Staging readiness response exceeded its size limit')
+        checks = json.loads(raw)
+        if not isinstance(checks, dict) or any(checks.get(key) != value for key, value in expected.items()):
+            raise ValueError('Staging readiness did not confirm PostgreSQL and private media storage')
+        return expected
+    except (OSError, HTTPException, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError('Unable to verify staging HTTPS readiness') from exc
+    finally:
+        connection.close()
+
+
 def main():
     endpoint, identity = validate(os.environ)
     root = Path(__file__).resolve().parents[1]
@@ -61,6 +84,7 @@ def main():
     build = os.environ.get('GITHUB_RUN_NUMBER', '1')
     if not re.fullmatch(r'[1-9][0-9]{0,8}', build):
         raise ValueError('Invalid preview build number')
+    readiness = verify_readiness(endpoint)
     output = root / 'test-results' / 'internal-preview'
     output.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, 'KASHYAP_INTERNAL_PREVIEW': 'true'}
@@ -69,6 +93,7 @@ def main():
         defines = Path(temp) / 'defines.json'
         defines.write_text(json.dumps({
             'API_BASE_URL': endpoint,
+            'ENABLE_CHAT_CALL_SIGNALING': 'false',
             'ENABLE_COMMUNITY_REELS': 'true' if env.get('KASHYAP_PREVIEW_REELS_ENABLED') == 'true' else 'false',
         }))
         subprocess.run(['flutter', 'pub', 'get', '--enforce-lockfile'], cwd=mobile, env=env, check=True)
@@ -98,6 +123,7 @@ def main():
         'version': '1.0.0', 'build': int(build), 'applicationId': identity,
         'apiOrigin': endpoint, 'buildVerified': True, 'installationVerified': False,
         'signingCertificateSha256': certs[0], 'minimumAndroidApi': int(minimum[1]),
+        'ciHttpsReadiness': readiness, 'callingEnabled': False,
         'stagingConnectivityVerified': False, 'productionAcceptance': False,
     }, indent=2) + '\n')
 
