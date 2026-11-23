@@ -1,3 +1,9 @@
+# 23 November 2026 · Family reels staging batch
+
+Baseline PR #5 source `402cafd735552a621f4efac7fda9da611c8aaa50`. This batch adds a default-off Community reel feed, private scanned MP4 upload, server limit of 300 seconds and 20 MiB, and pending Community moderation. The mobile draft retries with its original upload ID while the editor stays open. Playback uses authenticated downloads and native muted players. Tests locally exercised 1, 300 and 301 seconds and the playback authorization gate. The PostgreSQL HTTP scenario and native builds require exact-source CI. Live staging and physical handset checks remain open.
+
+Apply migration 069 to isolated staging, use the API image with ffprobe, and verify the scanner and versioned private storage before setting `COMMUNITY_REELS_ENABLED=true`. Set `KASHYAP_PREVIEW_REELS_ENABLED=true` in GitHub’s `internal-preview` environment only for reel acceptance. Keep paid Railway, storage and OTP activation pending with the Jyphra owner. Verify a scoped moderation and playback journey on both physical platforms. Existing calling work still needs eligibility and membership revocation, call state and signaling, and live media and background ringing. Keep calling out of launch acceptance until that evidence is complete.
+
 # 20 November 2026 · iOS evidence picker and relationship preview
 
 Android’s evidence flow now shares its picker contract with an iOS Files picker for JPEG, PNG and WebP up to 10 MiB. The admin detail view reads the current direct parent, child, or spouse link and projects its state if approved. The preview is read-only, reviewer-scoped, respects branch access and family recusal, and is withheld for stale versions. This is the impact on the proposed link, without projecting unrelated branches or approval outcomes.

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { CommunityMediaService } from '../src/modules/community/community-media.service';
 import { ImageDerivativesService } from '../src/media/image-derivatives.service';
 import { MediaStorageService } from '../src/media/media-storage.service';
@@ -41,6 +42,38 @@ describe('Community persistent HTTP workflows and isolation',()=>{
   moderator=await user('+9779847200003',Role.BRANCH_ADMIN,branch);outsider=await user('+9779847200004',Role.BRANCH_ADMIN,otherBranch);
  });
  afterAll(async()=>{if(app)await app.close();if(iso)await iso.drop();});
+ it('publishes a private five-minute reel only after moderation and revokes playback on removal',async()=>{
+  const previous=process.env.COMMUNITY_REELS_ENABLED;
+  process.env.COMMUNITY_REELS_ENABLED='true';
+  const scanner=jest.spyOn(app.get(MalwareScannerService),'scanFile')
+    .mockResolvedValue({status:ScanResultStatus.CLEAN,evidence:{engine:'fixture'}} as any);
+  try {
+   const server=app.getHttpServer(),id=randomUUID(),endpoint=`/community/reels/${id}/video`;
+   const clip=execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=black:s=16x16:r=1',
+     '-t','300','-an','-c:v','libx264','-movflags','frag_keyframe+empty_moov','-f','mp4','pipe:1']);
+   const upload=()=>request(server).post('/community/reels').set('Authorization',token(author))
+     .field('uploadId',id).field('branchId',branch).field('caption','Fictional family celebration')
+     .field('commentsEnabled','false').attach('video',clip,{filename:'fixture.mp4',contentType:'video/mp4'});
+   const pending=(await upload().expect(201)).body;
+   expect(pending).toMatchObject({id,durationSeconds:300,moderationStatus:'PENDING'});
+   expect((await upload().expect(201)).body.assetId).toBe(pending.assetId);
+   expect(scanner).toHaveBeenCalledTimes(1);
+   await request(server).get(endpoint).set('Authorization',token(reader)).expect(404);
+   await request(server).post(`/community/posts/${id}/moderate`).set('Authorization',token(moderator))
+     .send({decision:'PUBLISHED',version:1,notes:'Fictional reel reviewed'}).expect(201);
+   const feed=(await request(server).get('/community/reels').set('Authorization',token(reader)).expect(200)).body;
+   expect(feed).toEqual(expect.arrayContaining([expect.objectContaining({id,reel:{durationSeconds:300},commentsEnabled:false})]));
+   await request(server).get(endpoint).set('Authorization',token(outsider)).expect(403);
+   await request(server).get(endpoint).set('Authorization',token(reader)).set('Range','bytes=0-31')
+     .expect('Content-Type',/video\/mp4/).expect('Content-Range',`bytes 0-31/${clip.length}`).expect(206);
+   await request(server).delete(`/community/posts/${id}`).set('Authorization',token(moderator)).expect(200);
+   await request(server).get(endpoint).set('Authorization',token(reader)).expect(404);
+  } finally {
+   scanner.mockRestore();
+   if(previous===undefined) delete process.env.COMMUNITY_REELS_ENABLED;
+   else process.env.COMMUNITY_REELS_ENABLED=previous;
+  }
+ });
  it('requires authentication and rejects author impersonation',async()=>{
   await request(app.getHttpServer()).get('/community/posts').expect(401);
   await request(app.getHttpServer()).post('/community/posts').set('Authorization',token(author)).send({title:'Fiction',content:'Fictional message',category:'DISCUSSION',authorUserId:moderator.id}).expect(400);

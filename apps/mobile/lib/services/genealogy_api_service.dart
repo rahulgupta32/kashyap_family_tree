@@ -714,6 +714,53 @@ class GenealogyApiService {
 
   Future<dynamic> removePushRegistration() => _pushRegistration('DELETE');
 
+  Future<void> uploadCommunityReel({
+    required String owner,
+    required int session,
+    required String uploadId,
+    required String caption,
+    required bool commentsEnabled,
+    required Uint8List video,
+    required void Function(double) onProgress,
+  }) async {
+    await getMyProfile();
+    final token = _authToken;
+    if (token == null || chatAccountId != owner || pushSessionGeneration != session) {
+      throw StateError('Sign in again to upload this reel');
+    }
+    final request = _ReelUploadRequest(Uri.parse('$baseUrl/community/reels'), onProgress)
+      ..followRedirects = false
+      ..headers['Authorization'] = 'Bearer $token'
+      ..fields.addAll({
+        'uploadId': uploadId,
+        'caption': caption,
+        'commentsEnabled': commentsEnabled.toString(),
+      })
+      ..files.add(http.MultipartFile.fromBytes('video', video, filename: 'reel.mp4'));
+    final response = await _client.send(request).then(http.Response.fromStream).timeout(const Duration(minutes: 3));
+    if (chatAccountId != owner || pushSessionGeneration != session) {
+      throw StateError('Sign in again to check this upload');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final details = response.headers['content-type']?.contains('application/json') == true
+          ? json.decode(response.body)
+          : null;
+      throw StateError(details is Map && details['message'] is String
+          ? details['message'] as String
+          : 'Reel upload failed (${response.statusCode})');
+    }
+  }
+
+  Future<Uint8List> downloadCommunityReel(String id, String owner) async {
+    final response = await _send(
+      'GET', Uri.parse('$baseUrl/community/reels/$id/video'), boundAccountId: owner,
+    );
+    if (response.statusCode != 200) {
+      throw StateError('Reel unavailable (${response.statusCode})');
+    }
+    return response.bodyBytes;
+  }
+
   Future<dynamic> communityMedia(String path,String owner,{String method='GET',Map<String,dynamic>? data}) async {
     final response=await _send(method,Uri.parse('$baseUrl/community$path'),body:data==null?null:json.encode(data),boundAccountId:owner);
     if(response.statusCode<200||response.statusCode>=300){throw Exception('Community image request failed (${response.statusCode})');}
@@ -935,5 +982,22 @@ class GenealogyApiService {
     } else {
       throw Exception('प्रोफाइल विवरण अद्यावधिक गर्न सकिएन');
     }
+  }
+}
+
+class _ReelUploadRequest extends http.MultipartRequest {
+  _ReelUploadRequest(Uri url, this.onProgress) : super('POST', url);
+
+  final void Function(double) onProgress;
+
+  @override
+  http.ByteStream finalize() {
+    final total = contentLength;
+    var sent = 0;
+    return http.ByteStream(super.finalize().map((chunk) {
+      sent += chunk.length;
+      onProgress(sent / total);
+      return chunk;
+    }));
   }
 }

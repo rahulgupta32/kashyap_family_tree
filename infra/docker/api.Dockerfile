@@ -15,7 +15,9 @@ WORKDIR /app
 COPY --from=build --chown=node:node /runtime/ ./
 COPY --chown=node:node database/migrations/ ./database/migrations/
 COPY --chown=node:node LICENSE NOTICE ./
-RUN mkdir -p storage && chown node:node storage
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p storage && chown node:node storage
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

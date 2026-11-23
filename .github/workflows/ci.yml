@@ -187,6 +187,9 @@ jobs:
       - name: Build Next.js Admin Portal
         run: pnpm --filter @kashyap/admin run build
 
+      - name: Install media inspection tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Run Unit Tests & Nest Startup Regression
         run: pnpm --filter @kashyap/api run test:unit
         env:

@@ -1,6 +1,8 @@
 import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { CommunityReelService, REEL_MAX_BYTES } from './community-reel.service';
 import { CommunityMediaService } from './community-media.service';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res, UseGuards, UseInterceptors, UploadedFile, Headers } from '@nestjs/common';
 import { CommunityService } from './community.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -9,7 +11,37 @@ import { allowedFields } from './community-policy';
 @Controller('community')
 @UseGuards(JwtAuthGuard)
 export class CommunityController {
-  constructor(private readonly service: CommunityService,private readonly media:CommunityMediaService) {}
+  constructor(private readonly service: CommunityService,private readonly media:CommunityMediaService,
+    private readonly reels:CommunityReelService) {}
+  @Get('reels')
+  listReels(@CurrentUser() user:AuthenticatedUser, @Query('page') page?:string) {
+    return this.service.listPosts(user,{ reels:true, page:page === undefined ? 1 : Number(page) });
+  }
+
+  @Post('reels')
+  @UseInterceptors(FileInterceptor('video', { limits:{ files:1, fields:4, parts:5, fieldSize:8192, fileSize:REEL_MAX_BYTES } }))
+  uploadReel(@CurrentUser() user:AuthenticatedUser, @Body() body:unknown, @UploadedFile() file?:{ buffer:Buffer }) {
+    return this.reels.upload(user,body,file);
+  }
+
+  @Get('reels/:id/video')
+  async streamReel(@Param('id') id:string, @CurrentUser() user:AuthenticatedUser, @Headers('range') range:string|undefined, @Res() res:Response) {
+    const buffer = await this.reels.playback(id,user);
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Content-Type','video/mp4');
+    res.setHeader('X-Content-Type-Options','nosniff');
+    res.setHeader('Accept-Ranges','bytes');
+    if (range === undefined) return res.send(buffer);
+    const match = /^bytes=(\d{0,16})-(\d{0,16})$/.exec(range);
+    const suffix = match && !match[1] ? Number(match[2]) : 0;
+    const start = match?.[1] ? Number(match[1]) : Math.max(0, buffer.length - suffix);
+    const end = match?.[1] && match[2] ? Math.min(Number(match[2]), buffer.length - 1) : buffer.length - 1;
+    if (!match || (!match[1] && !suffix) || start > end || start >= buffer.length) {
+      return res.status(416).set('Content-Range',`bytes */${buffer.length}`).end();
+    }
+    return res.status(206).set('Content-Range',`bytes ${start}-${end}/${buffer.length}`)
+      .send(buffer.subarray(start,end + 1));
+  }
   @Put('posts/:id/sharing') sharing(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.service.updateSharing(id,u,b);}
   @Post('posts/:id/media') upload(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.upload(id,u,b);}
   @Delete('posts/:id/media') removeMedia(@Param('id') id:string,@CurrentUser() u:AuthenticatedUser,@Body() b:any){return this.media.remove(id,u,b);}

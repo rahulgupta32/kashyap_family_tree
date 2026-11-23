@@ -48,6 +48,7 @@ export class MediaStorageService implements OnModuleDestroy {
     }
   }
   private key(bucket: string, fileName: string) {
+    if (bucket === 'private-community' && /^community_[a-f0-9-]{36}\.mp4$/.test(fileName)) return `${bucket}/${fileName}`;
     if (!['private-profiles', 'private-chat', 'private-derivatives', 'private-community'].includes(bucket) || !/^(avatar|attachment|derivative|community|evidence)_[a-f0-9-]{36}\.(png|jpg|webp|pdf)$/.test(fileName)) throw new NotFoundException('Invalid media location');
     if (fileName.startsWith('evidence_') && bucket !== 'private-profiles') throw new NotFoundException('Invalid media location');
     return `${bucket}/${fileName}`;

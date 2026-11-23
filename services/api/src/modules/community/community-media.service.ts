@@ -80,7 +80,7 @@ export class CommunityMediaService {
   if(!Number.isSafeInteger(body.version)||body.version<1)throw new BadRequestException('Invalid version');
   return this.db.transaction(async client=>{
    const post=await this.author(id,user,client);if(post.version!==body.version)throw new ConflictException('Post changed; reload before removing');
-   const row=(await client.query('UPDATE community_post_media SET removed_at=NOW() WHERE post_id=$1 AND removed_at IS NULL RETURNING asset_id',[id])).rows[0];
+   const row=(await client.query('UPDATE community_post_media SET removed_at=NOW() WHERE post_id=$1 AND removed_at IS NULL AND reel_duration_seconds IS NULL RETURNING asset_id',[id])).rows[0];
    if(!row)throw new NotFoundException('No current image');
    return {version:await this.changed(post,user,reason,client,'COMMUNITY_MEDIA_REMOVED',row.asset_id)};
   });
@@ -91,7 +91,7 @@ export class CommunityMediaService {
    const post=await this.community.visiblePost(id,user,client),privateHistory=post.author_user_id===user.id||canModerate(user,post.branch_id);
    if(variant==='original'&&!privateHistory)throw new ForbiddenException('Original image requires author or moderator authority');
    const asset=(await client.query(`SELECT a.* FROM community_post_media m JOIN media_assets a ON a.id=m.asset_id
-    WHERE m.post_id=$1 AND m.asset_id=$2 AND ($3 OR m.removed_at IS NULL) AND a.bucket='private-community'
+    WHERE m.post_id=$1 AND m.asset_id=$2 AND m.reel_duration_seconds IS NULL AND ($3 OR m.removed_at IS NULL) AND a.bucket='private-community'
     AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD') FOR SHARE OF a`,[id,assetId,privateHistory])).rows[0];
    if(!asset)throw new NotFoundException('Image unavailable');
    if(variant==='original')return {buffer:await this.storage.read(asset,5*1024*1024),fileName:asset.file_name,mimeType:asset.mime_type};
@@ -100,7 +100,7 @@ export class CommunityMediaService {
  }
  async retry(id:string,assetId:string,user:AuthenticatedUser){
   return this.db.transaction(async client=>{
-   await this.author(id,user,client);const asset=(await client.query('SELECT asset_id FROM community_post_media WHERE post_id=$1 AND asset_id=$2 AND removed_at IS NULL',[id,uuid(assetId)])).rows[0];
+   await this.author(id,user,client);const asset=(await client.query('SELECT asset_id FROM community_post_media WHERE post_id=$1 AND asset_id=$2 AND removed_at IS NULL AND reel_duration_seconds IS NULL',[id,uuid(assetId)])).rows[0];
    if(!asset)throw new NotFoundException('Image unavailable');return this.images.retry(assetId);
   });
  }

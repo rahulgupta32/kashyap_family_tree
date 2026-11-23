@@ -23,8 +23,10 @@ export class CommunityService {
     return row;
   }
 
-  async listPosts(user: AuthenticatedUser, options: { branchId?: string; queue?: boolean; page?: number } = {}) {
+  async listPosts(user: AuthenticatedUser, options: { branchId?: string; queue?: boolean; page?: number; reels?: boolean } = {}) {
     member(user);
+    const reelsEnabled = process.env.COMMUNITY_REELS_ENABLED === 'true';
+    if (options.reels && !reelsEnabled) throw new NotFoundException('Reels unavailable');
     if (options.branchId) branchAccess(user, uuid(options.branchId, 'branch'));
     const page = options.page ?? 1;
     if (!Number.isSafeInteger(page) || page < 1 || page > 10000) throw new BadRequestException('Invalid page');
@@ -42,7 +44,10 @@ export class CommunityService {
          (SELECT a.reason FROM community_post_appeals a WHERE a.post_id=p.id AND a.status='OPEN') AS appeal_reason,
          (SELECT json_build_object('assetId',a.id,'mimeType',a.mime_type,'fileName',a.file_name)
           FROM community_post_media m JOIN media_assets a ON a.id=m.asset_id
-          WHERE m.post_id=p.id AND m.removed_at IS NULL AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD')) AS media,
+          WHERE m.post_id=p.id AND m.removed_at IS NULL AND m.reel_duration_seconds IS NULL AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD')) AS media,
+         (SELECT m.reel_duration_seconds FROM community_post_media m JOIN media_assets a ON a.id=m.asset_id
+          WHERE m.post_id=p.id AND m.removed_at IS NULL AND m.reel_duration_seconds IS NOT NULL
+          AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD')) AS reel_duration_seconds,
          (SELECT count(*)::int FROM community_reactions r WHERE r.post_id = p.id) AS reaction_count,
          EXISTS(SELECT 1 FROM community_reactions r WHERE r.post_id = p.id AND r.user_id = $1) AS is_liked,
          (SELECT count(*)::int FROM community_comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL) AS comment_count,
@@ -53,8 +58,13 @@ export class CommunityService {
          AND ($4::uuid IS NULL OR p.branch_id = $4)
          AND (CASE WHEN $5 THEN p.status = 'PENDING' AND ($6 OR p.branch_id = ANY($7::uuid[]))
               ELSE p.status = 'PUBLISHED' OR p.author_user_id = $1 OR ($6 OR p.branch_id = ANY($7::uuid[])) END)
+         AND (CASE WHEN $9 THEN p.status='PUBLISHED' AND EXISTS (
+           SELECT 1 FROM community_post_media m JOIN media_assets a ON a.id=m.asset_id
+           WHERE m.post_id=p.id AND m.removed_at IS NULL AND m.reel_duration_seconds IS NOT NULL
+             AND a.quarantine_status='CLEAN' AND a.retention_status IN ('ACTIVE','LEGAL_HOLD'))
+           ELSE $10 OR NOT EXISTS (SELECT 1 FROM community_post_media m WHERE m.post_id=p.id AND m.reel_duration_seconds IS NOT NULL) END)
        ORDER BY p.created_at DESC, p.id DESC LIMIT 50 OFFSET $8`,
-      [user.id, globalAdmin(user) || moderatorAll, branches, options.branchId || null, !!options.queue, moderatorAll, modBranches, (page - 1) * 50]);
+      [user.id, globalAdmin(user) || moderatorAll, branches, options.branchId || null, !!options.queue, moderatorAll, modBranches, (page - 1) * 50, !!options.reels, reelsEnabled]);
     return result.rows.map(row => this.dto(row, user));
   }
 
@@ -73,7 +83,9 @@ export class CommunityService {
       sharing:privileged?{localityVisibility:row.locality_visibility,contactVisibility:row.contact_visibility,contactConsent:row.contact_consent}:undefined,
       id: row.id, title: row.title, content: row.content, category: row.category, branchId: row.branch_id,
       authorUserId: row.author_user_id, authorName: 'Community member', moderationStatus: row.status,
-      media:row.media, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+      media:row.media, commentsEnabled: row.comments_enabled !== false,
+      reel: row.reel_duration_seconds == null ? undefined : { durationSeconds: Number(row.reel_duration_seconds) },
+      version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
       likesCount: row.reaction_count || 0, isLiked: !!row.is_liked, commentsCount: row.comment_count || 0,
       reportsCount: canModerate(user, row.branch_id) ? row.report_count || 0 : undefined,
       canViewReports: canModerate(user,row.branch_id) && row.author_user_id!==user.id,
@@ -231,7 +243,7 @@ export class CommunityService {
     const parent = body.parentCommentId ? uuid(body.parentCommentId) : null;
     return this.db.transaction(async client => {
       const post = await this.visiblePost(id, user, client);
-      if (post.status !== 'PUBLISHED') throw new ConflictException('Only published posts accept comments');
+      if (post.status !== 'PUBLISHED' || post.comments_enabled === false) throw new ConflictException('Comments are unavailable for this post');
       if (parent && !(await client.query('SELECT id FROM community_comments WHERE id=$1 AND post_id=$2 AND deleted_at IS NULL', [parent, id])).rows.length) throw new BadRequestException('Reply must belong to this post');
       const row = (await client.query('INSERT INTO community_comments(post_id,author_user_id,parent_comment_id,content) VALUES($1,$2,$3,$4) RETURNING id', [id, user.id, parent, content])).rows[0];
       await this.audit.recordAuditIntent({ action: 'COMMUNITY_COMMENT_CREATED', entityType: 'community_comment', entityId: row.id, actorId: user.id, newValue: { postId: id } }, client);

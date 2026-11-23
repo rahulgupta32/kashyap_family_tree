@@ -15,6 +15,8 @@ class CommunityScreen extends StatefulWidget {
 
 class _CommunityScreenState extends State<CommunityScreen> {
   List<dynamic> _posts = [];
+  bool _reels = false;
+  static const _reelsEnabled = bool.fromEnvironment('ENABLE_COMMUNITY_REELS');
   bool _loading = true, _busy = false, _queue = false;
   String? _error, _notice;
   @override
@@ -22,7 +24,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   Future<void> _load() async {
     try {
-      final rows = await widget.apiService.requestJson('/community/posts?queue=$_queue');
+      final rows = await widget.apiService.requestJson(_reels ? '/community/reels' : '/community/posts?queue=$_queue');
       if (mounted) { setState(() { _posts = rows as List; _error = null; _loading = false; }); }
     } catch (e) {
       if (mounted) { setState(() { _error = e.toString(); _loading = false; }); }
@@ -94,20 +96,54 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
+  void _selectFeed({bool reels = false, bool queue = false}) {
+    setState(() {
+      _reels = reels;
+      _queue = queue;
+      _loading = true;
+      _posts = [];
+    });
+    _load();
+  }
+
+  Future<void> _playReel(String id) async {
+    final api = widget.apiService;
+    final owner = api.chatAccountId;
+    final session = api.pushSessionGeneration;
+    if (owner == null) return;
+    await _action(() async {
+      final bytes = await api.downloadCommunityReel(id, owner);
+      if (mounted && api.chatAccountId == owner && api.pushSessionGeneration == session) {
+        await _reelChannel.invokeMethod<void>('playReel', bytes);
+      }
+    });
+  }
+
+  Future<void> _composeReel() async {
+    final uploaded = await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => _ReelEditor(api: widget.apiService),
+    ));
+    if (mounted && uploaded == true) {
+      setState(() => _notice = 'Reel sent for moderation');
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('समुदाय (Community)'), actions: [
       IconButton(tooltip: 'Refresh', onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
     ]),
-    floatingActionButton: FloatingActionButton(tooltip: 'Create post', onPressed: _busy ? null : _compose,
+    floatingActionButton: FloatingActionButton(tooltip: _reels ? 'Upload reel' : 'Create post', onPressed: _busy ? null : (_reels ? _composeReel : _compose),
       child: const Icon(Icons.add)),
     body: _loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(
       onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
         if (_notice != null) Text(_notice!, style: const TextStyle(color: Colors.green)),
         Wrap(spacing: 8, children: [
-          ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue, onSelected: _busy ? null : (_) { setState(() => _queue = false); _load(); }),
-          ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) { setState(() => _queue = true); _load(); }),
+          ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue && !_reels, onSelected: _busy ? null : (_) => _selectFeed()),
+          if (_reelsEnabled) ChoiceChip(label: const Text('भिडियो (Reels)'), selected: _reels, onSelected: _busy ? null : (_) => _selectFeed(reels: true)),
+          ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) => _selectFeed(queue: true)),
         ]),
         const HeritageHeading('Our community', subtitle:'समाचार, सम्झना र पारिवारिक सम्बन्ध।', icon: Icons.groups_outlined),
         if (_posts.isEmpty) const HeritageEmpty(icon:Icons.forum_outlined,message:'कुनै पोस्ट छैन (No posts yet)'),
@@ -121,6 +157,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
             if (p['contactPhone'] != null) Text("सम्पर्क (Shared contact): ${p['contactPhone']}"),
             if (p['escalated'] == true) const Text('Escalated: awaiting independent central review.'),
             if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
+            if (_reelsEnabled && p['reel'] != null)
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _playReel(p['id'] as String),
+                icon: const Icon(Icons.play_arrow),
+                label: Text('Play reel · ${(p['reel']['durationSeconds'] as num).ceil()} s'),
+              ),
             const Divider(),
             Wrap(spacing: 8, children: [
               if (p['canAppeal'] == true) TextButton(onPressed: _busy ? null : () => _reason(p as Map, appeal: true), child: const Text('अपिल (Appeal)')),
@@ -128,7 +170,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 TextButton(onPressed: _busy ? null : () => _action(() async {
                   await widget.apiService.requestJson('/community/posts/${p['id']}/like', method: 'PUT', data: {'liked': p['isLiked'] != true});
                 }), child: Text('${p['isLiked'] == true ? '♥' : '♡'} ${p['likesCount']} · Like')),
-                TextButton(onPressed: () async {
+                if (p['commentsEnabled'] != false) TextButton(onPressed: () async {
                   await Navigator.push(context, MaterialPageRoute(builder: (_) => _CommentsScreen(api: widget.apiService, post: p as Map)));
                   if (mounted) { await _load(); }
                 }, child: Text('टिप्पणी (${p['commentsCount']})')),
@@ -147,7 +189,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 TextButton(onPressed: _busy ? null : () => _image(p as Map,remove:true), child: const Text('Remove image')),
                 TextButton(onPressed: _busy ? null : () => _image(p as Map,retry:true), child: const Text('Retry image processing')),
               ],
-              if (p['media'] == null && p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _uploadImage(p as Map), child: const Text('तस्बिर थप्नुहोस् (Add image)')),
+              if (p['reel'] == null && p['media'] == null && p['canEdit'] == true) TextButton(onPressed: _busy ? null : () => _uploadImage(p as Map), child: const Text('तस्बिर थप्नुहोस् (Add image)')),
               if (p['canEdit'] == true) TextButton(onPressed:_busy?null:()=>_sharing(p as Map),child:const Text('स्थान / सम्पर्क (Location/contact sharing)')),
               if (p['canDelete'] == true) TextButton(onPressed: _busy ? null : () async {
                 final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -535,4 +577,113 @@ class _ReportEvidenceScreenState extends State<_ReportEvidenceScreen> {
       TextButton(onPressed:()=>_load(),child:const Text('Latest evidence')),
     ],
   ]));
+}
+
+const _reelChannel = MethodChannel('kashyap/chat_attachments');
+
+class _ReelEditor extends StatefulWidget {
+  const _ReelEditor({required this.api});
+  final GenealogyApiService api;
+
+  @override
+  State<_ReelEditor> createState() => _ReelEditorState();
+}
+
+class _ReelEditorState extends State<_ReelEditor> {
+  final _caption = TextEditingController();
+  late final String? _owner;
+  late final int _session;
+  Uint8List? _video;
+  bool _comments = true;
+  bool _busy = false;
+  String? _error;
+  String? _uploadId;
+  double _uploadProgress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Bind the draft before the picker or a request can change the session.
+    final api = widget.api;
+    _owner = api.chatAccountId;
+    _session = api.pushSessionGeneration;
+  }
+
+  @override
+  void dispose() {
+    _caption.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pick() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      final picked = await _reelChannel.invokeMethod<Uint8List>('pickReel');
+      if (mounted && picked != null) setState(() => _video = picked);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _newUploadId() {
+    final random = Random.secure();
+    final bytes = List.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  Future<void> _upload() async {
+    final owner = _owner;
+    final video = _video;
+    final caption = _caption.text.trim();
+    if (owner == null || video == null || caption.isEmpty) {
+      setState(() => _error = 'Sign in, choose a video and add a caption');
+      return;
+    }
+    setState(() { _busy = true; _error = null; _uploadProgress = 0; });
+    try {
+      await widget.api.uploadCommunityReel(
+        owner: owner, session: _session, uploadId: _uploadId ??= _newUploadId(),
+        caption: caption, commentsEnabled: _comments, video: video,
+        onProgress: (value) {
+          if (mounted && _busy) setState(() => _uploadProgress = value);
+        },
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('नयाँ भिडियो (New reel)')),
+    body: ListView(padding: const EdgeInsets.all(16), children: [
+      const Text('Community audience · MP4 · Up to 5 minutes and 20 MiB'),
+      OutlinedButton(
+        onPressed: _busy || _uploadId != null ? null : _pick,
+        child: Text(_video == null ? 'Choose video' : 'Replace selected video'),
+      ),
+      TextField(controller: _caption, enabled: !_busy && _uploadId == null,
+        maxLength: 2000, maxLines: 3, decoration: const InputDecoration(labelText: 'Caption')),
+      SwitchListTile(title: const Text('Allow comments'), value: _comments,
+        onChanged: _busy || _uploadId != null ? null : (value) => setState(() => _comments = value)),
+      if (_busy && _uploadId != null) ...[
+        LinearProgressIndicator(value: _uploadProgress < 1 ? _uploadProgress : null),
+        Text(_uploadProgress < 1 ? 'Uploading video…' : 'Scanning and validating video…'),
+      ],
+      if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      FilledButton(onPressed: _busy ? null : _upload,
+        child: Text(_uploadId == null ? 'Send for moderation' : 'Retry upload')),
+      if (!_busy && _uploadId != null)
+        TextButton(onPressed: () => setState(() => _uploadId = null),
+          child: const Text('Edit draft before sending')),
+    ]),
+  );
 }

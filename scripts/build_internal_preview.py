@@ -67,7 +67,10 @@ def main():
     mobile = root / 'apps' / 'mobile'
     with tempfile.TemporaryDirectory(prefix='nepali-bansawali-preview-') as temp:
         defines = Path(temp) / 'defines.json'
-        defines.write_text(json.dumps({'API_BASE_URL': endpoint}))
+        defines.write_text(json.dumps({
+            'API_BASE_URL': endpoint,
+            'ENABLE_COMMUNITY_REELS': 'true' if env.get('KASHYAP_PREVIEW_REELS_ENABLED') == 'true' else 'false',
+        }))
         subprocess.run(['flutter', 'pub', 'get', '--enforce-lockfile'], cwd=mobile, env=env, check=True)
         subprocess.run(['flutter', 'build', 'apk', '--release', '--build-name=1.0.0',
                         '--build-number=' + build, '--dart-define-from-file=' + str(defines)],
