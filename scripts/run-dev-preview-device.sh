@@ -38,7 +38,7 @@ for f in p.glob('preview-*.png'):
  images[f.name]=hashlib.sha256(b).hexdigest()
 assert len(images)==10
 exact={}
-for name in ('calendar','reel-playing','direct-chat','group-chat-keyboard-large-text'):
+for name in ('home-calendar-header','calendar','reel-playing','direct-chat','group-chat-keyboard-large-text'):
  f=p/f'exact-apk-{name}.png'
  data=f.read_bytes()
  assert data[:8]==b'\x89PNG\r\n\x1a\n' and data[12:16]==b'IHDR'

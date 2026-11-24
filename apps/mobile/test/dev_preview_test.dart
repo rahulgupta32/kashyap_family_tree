@@ -142,14 +142,37 @@ void main() {
     expect(
         find.text('OFFLINE SYNTHETIC PREVIEW · नमूना मात्र'), findsOneWidget);
     expect(find.textContaining('नमूना सदस्य'), findsWidgets);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 740);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+
     final calendar = find.byTooltip('Calendar');
-    expect(calendar, findsOneWidget);
+    final notifications = find.byTooltip('सूचनाहरू (Notifications)');
     expect(find.descendant(of: find.byType(AppBar), matching: calendar),
         findsOneWidget);
+    expect(tester.getCenter(calendar).dx, lessThan(tester.getCenter(notifications).dx));
     expect(find.text('Calendar'), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.tap(calendar);
     await tester.pumpAndSettle();
+    expect(find.text('पारिवारिक पात्रो · Calendar'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(calendar, findsOneWidget);
+
+    final viewAll = find.text('View all');
+    await tester.ensureVisible(viewAll.first);
+    await tester.tap(viewAll.first);
+    await tester.pumpAndSettle();
     expect(find.text('Synthetic family gathering'), findsOneWidget);
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+    tester.platformDispatcher.clearTextScaleFactorTestValue();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('preview-switch-persona')));
     await tester.pumpAndSettle();
     expect(find.text('New / Unclaimed Member'), findsOneWidget);

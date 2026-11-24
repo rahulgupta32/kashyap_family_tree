@@ -60,6 +60,8 @@ def chat_icons():
 
 
 tap('Enter Development Preview', contains=True)
+node('Calendar')
+capture('home-calendar-header')
 tap('Calendar')
 node('पारिवारिक पात्रो · Calendar')
 capture('calendar')
