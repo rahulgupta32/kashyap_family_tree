@@ -92,7 +92,7 @@ void main() {
     final frames = <Map<String, dynamic>>[];
     final subscription = socket.frames.listen(frames.add);
     await Future<void>.delayed(Duration.zero);
-    socket.send({'type': 'subscribe'});
+    socket.send({'type': 'subscribe', 'conversationId': repo.conversation()['id']});
     await api.requestJson(
         '/chat/conversations/${repo.conversation()['id']}/messages',
         method: 'POST',
