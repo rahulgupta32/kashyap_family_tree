@@ -182,7 +182,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   'अहिलेसम्म देखाउन मिल्ने कार्यक्रम छैन। (No accessible events yet.)'),
         if (_events?.isNotEmpty == true)
           SizedBox(
-              height: 155,
+              height: 55 + MediaQuery.textScalerOf(context).scale(100),
               child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _events!.length,
