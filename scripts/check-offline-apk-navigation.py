@@ -12,8 +12,8 @@ def adb(*args):
     return subprocess.check_output(['adb', '-s', 'emulator-5554', *args], timeout=30)
 
 
-def node(label, *, contains=False):
-    deadline = time.monotonic() + 24
+def node(label, *, contains=False, timeout=24, required=True):
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             adb('shell', 'uiautomator', 'dump', '/sdcard/bansawali-review.xml')
@@ -30,6 +30,8 @@ def node(label, *, contains=False):
                 left, top, right, bottom = map(int, re.findall(r"\d+", item.attrib["bounds"]))
                 return item.get("clickable") != "true", (right-left)*(bottom-top)
             return min(matches, key=rank)
+    if not required:
+        return None
     capture('failure')
     (output / 'exact-apk-failure.xml').write_bytes(adb('shell', 'cat', '/sdcard/bansawali-review.xml'))
     raise RuntimeError(f'Unable to locate {label} in the installed review APK')
@@ -73,6 +75,9 @@ while b'Native reel playback started' not in adb('logcat', '-d', '-s', 'Bansawal
 time.sleep(1)
 capture('reel-playing')
 back()
+# Android MediaController can consume Back to hide the overlay first.
+if node('Screens', timeout=5, required=False) is None:
+    back()
 tap('Screens')
 tap('Messaging', contains=True)
 tap('Synthetic conversation', contains=True)
