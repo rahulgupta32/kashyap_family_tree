@@ -174,6 +174,7 @@ class _DevelopmentPreviewAppState extends State<DevelopmentPreviewApp> {
                         if (entered)
                           IconButton(
                               key: const Key('preview-catalog'),
+                              tooltip: 'All preview screens',
                               icon: const Icon(Icons.apps,
                                   semanticLabel: 'All preview screens'),
                               onPressed: () => open(catalog())),
