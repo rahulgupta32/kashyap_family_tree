@@ -1,6 +1,6 @@
 import { DatabaseService } from '../database/database.service';
 import { Injectable, Optional, OnModuleDestroy, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, ListObjectVersionsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, GetBucketVersioningCommand, ListObjectVersionsCommand } from '@aws-sdk/client-s3';
 import { createHash } from 'crypto';
 import { promises as fs, constants } from 'fs';
 import * as path from 'path';
@@ -10,10 +10,24 @@ import * as path from 'path';
 export class MediaStorageService implements OnModuleDestroy {
   onModuleDestroy() { this.s3?.destroy(); }
   async checkHealth(): Promise<'up' | 'down'> {
-    if (!this.s3) return 'up';
-    try { if(this.legacyRoot){if(!(await fs.stat(this.legacyRoot)).isDirectory())return 'down';await fs.access(this.legacyRoot,constants.R_OK|constants.X_OK);}
-      await this.s3.send(new HeadBucketCommand({Bucket:this.bucket}), {abortSignal:AbortSignal.timeout(3000)}); return 'up'; } catch { return 'down'; }
+    if (!this.s3) return this.requireVersioning ? 'down' : 'up';
+    try {
+      if (this.legacyRoot) {
+        if (!(await fs.stat(this.legacyRoot)).isDirectory()) return 'down';
+        await fs.access(this.legacyRoot, constants.R_OK | constants.X_OK);
+      }
+      const options = { abortSignal: AbortSignal.timeout(3000) };
+      if (this.requireVersioning) {
+        const result = await this.s3.send(new GetBucketVersioningCommand({ Bucket: this.bucket }), options);
+        return result.Status === 'Enabled' ? 'up' : 'down';
+      }
+      await this.s3.send(new HeadBucketCommand({ Bucket: this.bucket }), options);
+      return 'up';
+    } catch {
+      return 'down';
+    }
   }
+  private readonly requireVersioning = process.env.MEDIA_REQUIRE_BUCKET_VERSIONING === 'true';
   private readonly root = path.resolve(process.env.STORAGE_PATH || path.resolve(process.cwd(), 'storage/uploads'));
   private readonly legacyRoot?: string;
   private readonly legacyPrefix?: string;

@@ -14,6 +14,24 @@ describe('Private media storage boundaries', () => {
   const record = (name: string, location: string) => ({bucket:'private-profiles',file_name:name,storage_key:name,storage_path:location,byte_size:bytes.length,sha256_checksum:createHash('sha256').update(bytes).digest('hex')});
   beforeEach(async () => { process.env.NODE_ENV='test';process.env.MEDIA_STORAGE_BACKEND='local';directory=await fs.mkdtemp(path.join(os.tmpdir(),'media-storage-test-'));process.env.STORAGE_PATH=directory; });
   afterEach(async () => { jest.restoreAllMocks();process.env={...original};await fs.rm(directory,{recursive:true,force:true}); });
+  it('requires enabled bucket versioning when configured for isolated staging', async () => {
+    process.env.MEDIA_REQUIRE_BUCKET_VERSIONING = 'true';
+    try {
+      expect(await new MediaStorageService().checkHealth()).toBe('down');
+      process.env.MEDIA_STORAGE_BACKEND = 's3';
+      process.env.MEDIA_S3_BUCKET = 'fictional-private';
+      const send = jest.spyOn(S3Client.prototype, 'send') as jest.SpyInstance;
+      send.mockResolvedValueOnce({Status: 'Enabled'}).mockResolvedValueOnce({Status: 'Suspended'})
+        .mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('permission denied'));
+      const storage = new MediaStorageService();
+      await expect(storage.checkHealth()).resolves.toBe('up');
+      for (let i = 0; i < 3; i++) await expect(storage.checkHealth()).resolves.toBe('down');
+      expect(send.mock.calls[0][0].constructor.name).toBe('GetBucketVersioningCommand');
+      storage.onModuleDestroy();
+    } finally {
+      delete process.env.MEDIA_REQUIRE_BUCKET_VERSIONING;
+    }
+  });
   it('requires durable HTTPS storage in production and rejects unknown backends', () => {
     process.env.NODE_ENV='production';expect(()=>new MediaStorageService()).toThrow('require private S3');
     process.env.MEDIA_STORAGE_BACKEND='s3';delete process.env.MEDIA_S3_BUCKET;expect(()=>new MediaStorageService()).toThrow('MEDIA_S3_BUCKET');
