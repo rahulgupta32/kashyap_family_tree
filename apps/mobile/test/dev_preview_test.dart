@@ -23,6 +23,25 @@ void main() {
     await expectLater(api.requestOtp('+9779800000000'), throwsException);
     expect((await api.searchPersons()).length, 3);
   });
+  test('offline reels and isolated direct and group call simulations', () async {
+    final api = PreviewApiService(PreviewRepository(previewPersonas.first));
+    addTearDown(api.dispose);
+    final reels = await api.requestJson('/community/reels') as List;
+    expect(reels.single['reel']['durationSeconds'], 18);
+    final bytes = await api.downloadCommunityReel('preview-reel', api.chatAccountId!);
+    expect(String.fromCharCodes(bytes.sublist(4, 8)), 'ftyp');
+    final chats = await api.requestJson('/chat/conversations') as List;
+    expect(chats.map((chat) => chat['type']), ['DIRECT', 'GROUP']);
+    final direct = "/chat/conversations/${chats.first['id']}/call";
+    final group = "/chat/conversations/${chats.last['id']}/call";
+    final ringing = await api.requestJson(direct, method: 'POST',
+        data: {'action': 'START', 'media': 'VOICE'});
+    expect(ringing['call']['state'], 'RINGING');
+    expect((await api.requestJson(group))['call'], isNull);
+    final answered = await api.requestJson(direct, method: 'POST',
+        data: {'action': 'JOIN', 'callId': ringing['call']['id']});
+    expect(answered['call']['state'], 'ACTIVE');
+  });
   test('calendar mutations and notification settings persist only in memory',
       () async {
     final repo = PreviewRepository(previewPersonas.first);

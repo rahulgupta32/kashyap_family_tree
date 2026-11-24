@@ -1,3 +1,4 @@
+import '../services/review_features.dart';
 import 'dart:async';
 import 'dart:math';
 import 'dart:convert';
@@ -40,7 +41,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       if (c['isParticipant'] != true) { await widget.apiService.requestJson('/chat/conversations/${c['id']}/join', method: 'POST'); }
       if (!mounted) { return; }
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatConversationScreen(api: widget.apiService, conversation: c, userId: _userId)));
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatConversationScreen(api: widget.apiService, conversation: {...c, 'isParticipant': true}, userId: _userId)));
       if (mounted) { await _load(); }
     } catch (e) { if (mounted) { setState(() => _error = e.toString()); } }
     finally { if (mounted) { setState(() => _busy = false); } }
@@ -108,7 +109,9 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
   String get _path=>'/chat/conversations/${widget.conversation['id']}';
   @override
   void initState(){super.initState();WidgetsBinding.instance.addObserver(this);_outboxSubscription=widget.api.chatOutbox.changes.listen((_)=>unawaited(_loadPending()));unawaited(_loadPending());widget.api.chatOutbox.start();_connect();_startCallPolling();}
-  static const _callsEnabled = bool.fromEnvironment('ENABLE_CHAT_CALL_SIGNALING');
+  bool get _callsEnabled => (offlineReview || const bool.fromEnvironment('ENABLE_CHAT_CALL_SIGNALING')) &&
+      widget.conversation['isParticipant'] == true &&
+      const ['DIRECT', 'GROUP', 'FAMILY_BRANCH'].contains(widget.conversation['type']);
   Timer? _callPoll;
   Map? _call;
   bool _callBusy = false;
@@ -169,9 +172,13 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
       _ => 'Ended',
     };
     return Column(children: [
-      Text('$media · $label · Signaling test'),
+      Text('$media · $label · ${offlineReview ? 'Simulated call' : 'Signaling test'}'),
       if (_callError != null) Text(_callError!),
       if (open) Wrap(children: [
+        if (offlineReview && ringing && joined) TextButton(
+          onPressed: _callBusy ? null : () => _refreshCall('JOIN'),
+          child: const Text('Simulate recipient answering'),
+        ),
         if (!joined) TextButton(
           onPressed: _callBusy ? null : () => _refreshCall('JOIN'),
           child: Text(ringing ? 'Accept call' : 'Join call'),
@@ -279,12 +286,12 @@ class _ChatConversationState extends State<ChatConversationScreen> with WidgetsB
     catch(e){if(mounted){setState(()=>_error=e.toString());}}
   }
   @override
-  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String),actions:[
+  Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.conversation['title'] as String,maxLines:1,overflow:TextOverflow.ellipsis),actions:[
     if (_callsEnabled) ...[
       IconButton(tooltip:'Start voice call',onPressed:_callBusy?null:()=>_refreshCall('START','VOICE'),icon:const Icon(Icons.call)),
       IconButton(tooltip:'Start video call',onPressed:_callBusy?null:()=>_refreshCall('START','VIDEO'),icon:const Icon(Icons.videocam)),
     ],
-    PopupMenuButton<String>(onSelected:_action,itemBuilder:(_)=>[if(widget.conversation['type']!='DIRECT')PopupMenuItem(value:'Info',child:Text(chatGroupLabels['info']!)),const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
+    PopupMenuButton<String>(tooltip:'Conversation options',onSelected:_action,itemBuilder:(_)=>[if(widget.conversation['type']!='DIRECT')PopupMenuItem(value:'Info',child:Text(chatGroupLabels['info']!)),const PopupMenuItem(value:'Leave',child:Text('Leave conversation')),if(widget.conversation['type']=='DIRECT')const PopupMenuItem(value:'Block',child:Text('Block messages'))])]),
     body:Column(children:[
       if (_callsEnabled) _callStatus(),
       Text(_live?'Live':'Connecting…'),if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),

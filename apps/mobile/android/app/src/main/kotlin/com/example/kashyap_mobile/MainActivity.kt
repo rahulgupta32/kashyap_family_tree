@@ -42,6 +42,9 @@ class MainActivity : FlutterActivity() {
             player.setOnPreparedListener { media ->
                 media.setVolume(0f, 0f)
                 player.start()
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    android.util.Log.i("BansawaliReel", "Native reel playback started")
+                }
                 controls.show()
             }
             player.setOnErrorListener { _, _, _ -> dialog.dismiss(); true }

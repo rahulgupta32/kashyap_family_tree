@@ -13,6 +13,7 @@ PY
 adb -s emulator-5554 install -r test-results/dev-preview/nepali-bansawali-offline-preview.apk
 adb -s emulator-5554 shell am start -W -n com.example.kashyap_mobile.devpreview/com.example.kashyap_mobile.MainActivity
 adb -s emulator-5554 shell pidof com.example.kashyap_mobile.devpreview > test-results/dev-preview-device/original-apk-pid.txt
+python3 scripts/check-offline-apk-navigation.py
 # Use an instrumentation build for screen-by-screen driving; the original APK
 # above is independently installed/launched and remains the owner deliverable.
 adb -s emulator-5554 uninstall com.example.kashyap_mobile.devpreview
@@ -36,5 +37,11 @@ for f in p.glob('preview-*.png'):
  assert int.from_bytes(b[16:20],'big')>0 and int.from_bytes(b[20:24],'big')>0
  images[f.name]=hashlib.sha256(b).hexdigest()
 assert len(images)==10
-(p/'native-evidence.json').write_text(json.dumps({'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'originalPreviewApkInstalledAndLaunched':True,'instrumentedCatalogDestinations':17,'screenshots':images,'logSha256':hashlib.sha256(log.encode()).hexdigest(),'syntheticOnly':True,'physicalDeviceVerified':False,'backendPersistenceVerified':False,'productionAcceptance':False},indent=2)+'\n')
+exact={}
+for name in ('calendar','reel-playing','direct-chat','group-chat-keyboard-large-text'):
+ f=p/f'exact-apk-{name}.png'
+ data=f.read_bytes()
+ assert data[:8]==b'\x89PNG\r\n\x1a\n' and data[12:16]==b'IHDR'
+ exact[f.name]=hashlib.sha256(data).hexdigest()
+(p/'native-evidence.json').write_text(json.dumps({'sourceCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'originalPreviewApkInstalledAndLaunched':True,'instrumentedCatalogDestinations':17,'screenshots':images,'exactApkScreenshots':exact,'logSha256':hashlib.sha256(log.encode()).hexdigest(),'syntheticOnly':True,'physicalDeviceVerified':False,'backendPersistenceVerified':False,'productionAcceptance':False},indent=2)+'\n')
 PY

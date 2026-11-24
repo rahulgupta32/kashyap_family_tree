@@ -1,3 +1,4 @@
+import '../services/review_features.dart';
 import 'comment_cases_screen.dart';
 import 'dart:convert';
 import 'dart:math';
@@ -8,7 +9,8 @@ import '../services/genealogy_api_service.dart';
 
 class CommunityScreen extends StatefulWidget {
   final GenealogyApiService apiService;
-  const CommunityScreen({super.key, required this.apiService});
+  final bool reelsOnly;
+  const CommunityScreen({super.key, required this.apiService, this.reelsOnly = false});
   @override
   State<CommunityScreen> createState() => _CommunityScreenState();
 }
@@ -16,11 +18,11 @@ class CommunityScreen extends StatefulWidget {
 class _CommunityScreenState extends State<CommunityScreen> {
   List<dynamic> _posts = [];
   bool _reels = false;
-  static const _reelsEnabled = bool.fromEnvironment('ENABLE_COMMUNITY_REELS');
+  static const _reelsEnabled = communityReelsEnabled;
   bool _loading = true, _busy = false, _queue = false;
   String? _error, _notice;
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() { super.initState(); _reels = widget.reelsOnly && _reelsEnabled; _load(); }
 
   Future<void> _load() async {
     try {
@@ -131,7 +133,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('समुदाय (Community)'), actions: [
+    appBar: AppBar(title: Text(widget.reelsOnly ? 'Reels' : 'समुदाय (Community)'), actions: [
       IconButton(tooltip: 'Refresh', onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
     ]),
     floatingActionButton: FloatingActionButton(tooltip: _reels ? 'Upload reel' : 'Create post', onPressed: _busy ? null : (_reels ? _composeReel : _compose),
@@ -140,7 +142,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
       onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
         if (_notice != null) Text(_notice!, style: const TextStyle(color: Colors.green)),
-        Wrap(spacing: 8, children: [
+        if (!widget.reelsOnly) Wrap(spacing: 8, children: [
           ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue && !_reels, onSelected: _busy ? null : (_) => _selectFeed()),
           if (_reelsEnabled) ChoiceChip(label: const Text('भिडियो (Reels)'), selected: _reels, onSelected: _busy ? null : (_) => _selectFeed(reels: true)),
           ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) => _selectFeed(queue: true)),

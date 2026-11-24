@@ -1,3 +1,4 @@
+import '../services/review_features.dart';
 import '../widgets/heritage.dart';
 import 'home_dashboard.dart';
 import 'member_account_screen.dart';
@@ -460,8 +461,21 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
     }
   }
 
+  void _openCalendar() {
+    if (!communityReelsEnabled) {
+      setState(() => _tab = 2);
+      return;
+    }
+    Navigator.push(context, MaterialPageRoute(builder: (_) =>
+        CalendarEventsScreen(apiService: widget.apiService)));
+  }
+
   Widget _tabBody() {
-    if (_tab == 2) return CalendarEventsScreen(apiService: widget.apiService);
+    if (_tab == 2) {
+      return communityReelsEnabled
+          ? CommunityScreen(key: const ValueKey('reels-tab'), apiService: widget.apiService, reelsOnly: true)
+          : CalendarEventsScreen(apiService: widget.apiService);
+    }
     if (_tab == 3) return CommunityScreen(apiService: widget.apiService);
     if (_tab == 4) {
       return MemberAccountScreen(
@@ -477,6 +491,15 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
     return ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         children: [
+          if (_tab == 0 && communityReelsEnabled)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: OutlinedButton.icon(
+                onPressed: _openCalendar,
+                icon: const Icon(Icons.calendar_month_outlined),
+                label: const Text('Calendar'),
+              ),
+            ),
           if (_tab == 1)
             const HeritageHeading('Explore your family tree',
                 subtitle:
@@ -552,7 +575,7 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                 directory: _results,
                 onPerson: _openPerson,
                 onTree: _openTree,
-                onCalendar: () => setState(() => _tab = 2),
+                onCalendar: _openCalendar,
                 onProfile: () => setState(() => _tab = 4),
                 onNotices: () => Navigator.push(
                     context,

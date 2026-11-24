@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+import 'reel_fixture.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
@@ -185,6 +187,45 @@ class PreviewRepository extends http.BaseClient {
         'unreadCount': 1
       };
 
+  static const groupId = '22222222-2222-4222-8222-222222222222';
+  final groupMessages = <Map<String, dynamic>>[];
+  final calls = <String, Map<String, dynamic>>{};
+  Map<String, dynamic> groupConversation() => {
+    'id': groupId,
+    'title': 'Synthetic family group with a long conversation title',
+    'type': 'GROUP',
+    'isParticipant': true,
+    'unreadCount': 0,
+  };
+
+  Map<String, dynamic> simulateCall(String id, Map<String, dynamic> body) {
+    if (id != conversation()['id'] && id != groupId) throw StateError(previewOnly);
+    var call = calls[id];
+    switch (body['action']) {
+      case 'START':
+        call = {
+          'id': 'synthetic-call-${sequence++}',
+          'media': body['media'],
+          'state': id == groupId ? 'ACTIVE' : 'RINGING',
+          'startedByMe': true,
+          'joined': true,
+          'participantCount': 1,
+        };
+        calls[id] = call;
+        break;
+      case 'JOIN':
+        call?.addAll({'state': 'ACTIVE', 'joined': true, 'participantCount': 2});
+        break;
+      case 'DECLINE':
+        call?.addAll({'state': 'DECLINED', 'joined': false});
+        break;
+      case 'LEAVE':
+        call?.addAll({'state': 'ENDED', 'joined': false});
+        break;
+    }
+    return {'call': call == null ? null : Map<String, dynamic>.of(call)};
+  }
+
   dynamic route(String method, Uri uri, Map<String, dynamic> body) {
     final path = uri.path;
     final read = method == 'GET';
@@ -317,6 +358,14 @@ class PreviewRepository extends http.BaseClient {
       }
       return event;
     }
+    if (path == '/community/reels' && read) {
+      return [{
+        'id': 'preview-reel', 'title': 'Fictional family reel',
+        'content': 'Offline sample · Private family audience',
+        'moderationStatus': 'PUBLISHED', 'reel': {'durationSeconds': 18.0},
+        'commentsEnabled': false, 'likesCount': 0,
+      }];
+    }
     if (path == '/community/posts') {
       if (!read) {
         posts.insert(0, {
@@ -383,9 +432,13 @@ class PreviewRepository extends http.BaseClient {
       return {'success': true};
     }
     if (path == '/chat/conversations') {
-      return read ? [conversation()] : conversation();
+      return read ? [conversation(), groupConversation()] : conversation();
+    }
+    if (path.endsWith('/call') && path.startsWith('/chat/conversations/')) {
+      return simulateCall(uri.pathSegments[2], read ? {} : body);
     }
     if (path.endsWith('/messages') && path.startsWith('/chat/')) {
+      final messages = uri.pathSegments[2] == groupId ? groupMessages : this.messages;
       if (!read) {
         final m = {
           ...body,
@@ -468,6 +521,12 @@ class PreviewApiService extends GenealogyApiService {
   @override
   String? get chatAccountId => repository.owner;
   @override
+  Future<Uint8List> downloadCommunityReel(String id, String owner) async {
+    if (id != 'preview-reel' || owner != chatAccountId) throw StateError(previewOnly);
+    return base64Decode(offlineReelMp4);
+  }
+
+  @override
   Future<ChatConnection> openChatConnection() async {
     final connection = PreviewChatConnection(repository);
     repository.connections.add(connection);
@@ -497,12 +556,13 @@ class PreviewChatConnection implements ChatConnection {
               }
             }));
   }
+  String? conversationId;
   void snapshot() {
-    if (!controller.isClosed) {
+    if (!controller.isClosed && conversationId != null) {
       controller.add({
         'type': 'snapshot',
-        'conversationId': repository.conversation()['id'],
-        'messages': jsonDecode(jsonEncode(repository.messages)),
+        'conversationId': conversationId,
+        'messages': jsonDecode(jsonEncode(conversationId == PreviewRepository.groupId ? repository.groupMessages : repository.messages)),
         'typingUserIds': <String>[]
       });
     }
@@ -514,7 +574,10 @@ class PreviewChatConnection implements ChatConnection {
   int? get closeCode => controller.isClosed ? 1000 : null;
   @override
   void send(Map<String, dynamic> frame) {
-    if (frame['type'] == 'subscribe') snapshot();
+    if (frame['type'] == 'subscribe') {
+      conversationId = frame['conversationId'] as String?;
+      snapshot();
+    }
   }
 
   @override
