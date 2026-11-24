@@ -20,10 +20,18 @@ def node(label, *, contains=False):
             tree = ET.fromstring(adb('shell', 'cat', '/sdcard/bansawali-review.xml'))
         except (ET.ParseError, subprocess.SubprocessError):
             continue
+        matches = []
         for item in tree.iter('node'):
             labels = [item.get('text', ''), item.get('content-desc', '')]
             if any(label in value if contains else label == value for value in labels):
-                return item
+                matches.append(item)
+        if matches:
+            def rank(item):
+                left, top, right, bottom = map(int, re.findall(r"\d+", item.attrib["bounds"]))
+                return item.get("clickable") != "true", (right-left)*(bottom-top)
+            return min(matches, key=rank)
+    capture('failure')
+    (output / 'exact-apk-failure.xml').write_bytes(adb('shell', 'cat', '/sdcard/bansawali-review.xml'))
     raise RuntimeError(f'Unable to locate {label} in the installed review APK')
 
 
@@ -55,7 +63,6 @@ node('पारिवारिक पात्रो · Calendar')
 capture('calendar')
 back()
 tap('Reels', contains=True)
-node('Fictional family reel')
 adb('logcat', '-c')
 tap('Play reel', contains=True)
 deadline = time.monotonic() + 15
