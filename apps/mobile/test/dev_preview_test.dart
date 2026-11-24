@@ -142,9 +142,12 @@ void main() {
     expect(
         find.text('OFFLINE SYNTHETIC PREVIEW · नमूना मात्र'), findsOneWidget);
     expect(find.textContaining('नमूना सदस्य'), findsWidgets);
-    await tester.tap(find.byKey(const Key('preview-catalog')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Calendar').last);
+    final calendar = find.byTooltip('Calendar');
+    expect(calendar, findsOneWidget);
+    expect(find.descendant(of: find.byType(AppBar), matching: calendar),
+        findsOneWidget);
+    expect(find.text('Calendar'), findsNothing);
+    await tester.tap(calendar);
     await tester.pumpAndSettle();
     expect(find.text('Synthetic family gathering'), findsOneWidget);
     await tester.tap(find.byKey(const Key('preview-switch-persona')));

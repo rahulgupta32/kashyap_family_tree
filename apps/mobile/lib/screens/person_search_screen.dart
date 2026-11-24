@@ -109,15 +109,25 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Nepali Bansawali',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: AppTheme.editorial
                             .copyWith(color: AppTheme.saffron, fontSize: 19)),
                     const Text('वंशावली · LINEAGE & COMMUNITY',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             fontSize: 8,
                             letterSpacing: .8,
                             color: AppTheme.textMuted)),
                   ]),
               actions: [
+                if (_tab == 0 && communityReelsEnabled)
+                  IconButton(
+                    tooltip: 'Calendar',
+                    icon: const Icon(Icons.calendar_month_outlined),
+                    onPressed: _openCalendar,
+                  ),
                 if (widget.apiService.authToken != null)
                   IconButton(
                       tooltip: 'सूचनाहरू (Notifications)',
@@ -491,15 +501,6 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
     return ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
         children: [
-          if (_tab == 0 && communityReelsEnabled)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: OutlinedButton.icon(
-                onPressed: _openCalendar,
-                icon: const Icon(Icons.calendar_month_outlined),
-                label: const Text('Calendar'),
-              ),
-            ),
           if (_tab == 1)
             const HeritageHeading('Explore your family tree',
                 subtitle:
