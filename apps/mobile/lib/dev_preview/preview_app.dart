@@ -172,12 +172,10 @@ class _DevelopmentPreviewAppState extends State<DevelopmentPreviewApp> {
                                 semanticLabel: 'Exit preview'),
                             onPressed: () => reset(exit: true)),
                         if (entered)
-                          IconButton(
+                          TextButton(
                               key: const Key('preview-catalog'),
-                              tooltip: 'All preview screens',
-                              icon: const Icon(Icons.apps,
-                                  semanticLabel: 'All preview screens'),
-                              onPressed: () => open(catalog())),
+                              onPressed: () => open(catalog()),
+                              child: const Text('Screens')),
                       ]),
                     ])))),
         Expanded(child: child ?? const SizedBox.shrink()),

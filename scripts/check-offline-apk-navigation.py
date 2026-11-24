@@ -73,7 +73,7 @@ while b'Native reel playback started' not in adb('logcat', '-d', '-s', 'Bansawal
 time.sleep(1)
 capture('reel-playing')
 back()
-tap('All preview screens', contains=True)
+tap('Screens')
 tap('Messaging', contains=True)
 tap('Synthetic conversation', contains=True)
 chat_icons()
