@@ -83,8 +83,17 @@ adb('shell', 'am', 'force-stop', package)
 adb('shell', 'am', 'start', '-W', '-n',
     package + '/com.example.kashyap_mobile.MainActivity')
 tap('Enter Development Preview', contains=True)
-tap('Screens')
-tap('Messaging', contains=True)
+tap('Open navigation menu')
+messages = 'सन्देश (Messages)'
+# Drawer entries are lazy. Scroll within the left drawer until Messages is exposed.
+screen = adb('shell', 'wm', 'size').decode()
+width, height = map(int, re.findall(r'(\d+)x(\d+)', screen)[-1])
+x = str(width // 4)
+for _ in range(6):
+    if node(messages, timeout=3, required=False) is not None:
+        break
+    adb('shell', 'input', 'swipe', x, str(3 * height // 4), x, str(height // 3), '350')
+tap(messages)
 tap('Synthetic conversation', contains=True)
 chat_icons()
 capture('direct-chat')
