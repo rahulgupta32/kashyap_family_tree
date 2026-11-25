@@ -12,7 +12,7 @@ def adb(*args):
     return subprocess.check_output(['adb', '-s', 'emulator-5554', *args], timeout=30)
 
 
-def node(label, *, contains=False, timeout=24, required=True):
+def node(label, *, contains=False, timeout=24, required=True, class_name=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -23,7 +23,10 @@ def node(label, *, contains=False, timeout=24, required=True):
         matches = []
         for item in tree.iter('node'):
             labels = [item.get('text', ''), item.get('content-desc', '')]
-            if any(label in value if contains else label == value for value in labels):
+            if class_name is not None:
+                if item.get('class') == class_name and item.get('enabled') == 'true':
+                    matches.append(item)
+            elif any(label in value if contains else label == value for value in labels):
                 matches.append(item)
         if matches:
             def rank(item):
@@ -106,9 +109,12 @@ tap('Synthetic family group with a long conversation title', contains=True)
 original_scale = adb('shell', 'settings', 'get', 'system', 'font_scale').decode().strip()
 try:
     adb('shell', 'settings', 'put', 'system', 'font_scale', '1.30')
-    tap('Your message', contains=True)
-    if b'mInputShown=true' not in adb('shell', 'dumpsys', 'input_method'):
-        raise RuntimeError('Keyboard was not shown for group layout check')
+    tap('group message composer', class_name='android.widget.EditText')
+    deadline = time.monotonic() + 10
+    while b'mInputShown=true' not in adb('shell', 'dumpsys', 'input_method'):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Keyboard was not shown for group layout check')
+        time.sleep(0.2)
     chat_icons()
     capture('group-chat-keyboard-large-text')
 finally:
