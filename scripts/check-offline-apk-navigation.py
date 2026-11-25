@@ -76,10 +76,13 @@ while b'Native reel playback started' not in adb('logcat', '-d', '-s', 'Bansawal
     time.sleep(0.2)
 time.sleep(1)
 capture('reel-playing')
-back()
-# Android MediaController can consume Back to hide the overlay first.
-if node('Screens', timeout=5, required=False) is None:
-    back()
+# Start the chat journey from a fresh Flutter activity. Native video dialogs
+# and media-control windows can retain focus after a simulated Back press.
+package = 'com.example.kashyap_mobile.devpreview'
+adb('shell', 'am', 'force-stop', package)
+adb('shell', 'am', 'start', '-W', '-n',
+    package + '/com.example.kashyap_mobile.MainActivity')
+tap('Enter Development Preview', contains=True)
 tap('Screens')
 tap('Messaging', contains=True)
 tap('Synthetic conversation', contains=True)
