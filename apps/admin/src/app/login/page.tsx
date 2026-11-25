@@ -11,7 +11,8 @@ export default function LoginPage() {
   const { login, user, isAdmin } = useAuth();
 
   const [step, setStep] = useState<'PHONE' | 'OTP' | 'ACCESS_DENIED'>('PHONE');
-  const [emailMethod, setEmailMethod] = useState(false);
+  const emailPilot = process.env.NEXT_PUBLIC_ENABLE_EMAIL_PILOT === 'true';
+  const [emailMethod, setEmailMethod] = useState(emailPilot);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSessionId, setOtpSessionId] = useState('');
@@ -139,11 +140,11 @@ export default function LoginPage() {
 
         {step === 'PHONE' && (
           <form onSubmit={handleRequestOtp} aria-busy={isSubmitting} className="space-y-6">
-            <button type="button" disabled={isSubmitting} onClick={() => {
+            {!emailPilot && <button type="button" disabled={isSubmitting} onClick={() => {
               setEmailMethod(!emailMethod); setPhoneNumber(''); setError(null);
             }} className="text-sm underline">
               {emailMethod ? 'मोबाइलबाट प्रवेश (Continue with mobile)' : 'इमेलबाट प्रवेश (Continue with email)'}
-            </button>
+            </button>}
             <div>
               <label htmlFor="login-phone" className="block text-sm font-semibold text-slate-700 mb-2">
                 {emailMethod ? 'इमेल (Email address)' : 'मोबाइल नम्बर (Mobile Number)'}

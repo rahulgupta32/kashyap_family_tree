@@ -1,8 +1,35 @@
 import { BrevoEmailProvider, CaptureEmailProvider } from '../src/modules/auth/email/email-provider';
-import { normalizeEmail } from '../src/modules/auth/email/email-auth.service';
+import { EmailAuthService, normalizeEmail } from '../src/modules/auth/email/email-auth.service';
 
 describe('Email identity and delivery boundaries', () => {
   afterEach(() => { jest.restoreAllMocks(); delete process.env.EMAIL_API_KEY; delete process.env.EMAIL_SENDER; });
+
+  it('suppresses uninvited delivery and rejects challenges for removed invitees', async () => {
+    const env = process.env;
+    process.env = {...env, AUTH_EMAIL_PILOT_ENABLED: 'true',
+      AUTH_EMAIL_PILOT_ALLOWLIST: ' Member@EXAMPLE.ORG ', EMAIL_OTP_HASH_KEY: 'x'.repeat(32)};
+    try {
+      const redis = {isReady: () => true, eval: jest.fn().mockResolvedValue(1)};
+      const provider = {sendCode: jest.fn()};
+      const audit = {recordAuditIntent: jest.fn()};
+      const db = {transaction: jest.fn()};
+      const auth = new EmailAuthService(redis as any, db as any, {} as any,
+        {} as any, audit as any, {} as any, provider as any);
+      const denied = await auth.request('uninvited@example.org', 'test');
+      expect(denied).toMatchObject({expiresInSeconds: 300, cooldownSeconds: 60});
+      expect(redis.eval).not.toHaveBeenCalled();
+      expect(provider.sendCode).not.toHaveBeenCalled();
+      await auth.request('member@example.org', 'test');
+      expect(provider.sendCode).toHaveBeenCalledWith('member@example.org', expect.stringMatching(/^\d{6}$/), expect.any(String));
+      delete process.env.AUTH_EMAIL_PILOT_ALLOWLIST;
+      redis.eval.mockResolvedValueOnce('member@example.org');
+      await expect(auth.verify({otpSessionId: denied.otpSessionId, code: '123456'} as any, 'test', 'test'))
+        .rejects.toThrow('Invalid or expired verification code');
+      expect(db.transaction).not.toHaveBeenCalled();
+    } finally {
+      process.env = env;
+    }
+  });
 
   it('normalizes case and whitespace, preserving plus and dotted mailbox identity', () => {
     expect(normalizeEmail('  Member.Name+tree@EXAMPLE.ORG ')).toBe('member.name+tree@example.org');

@@ -364,6 +364,18 @@ describe('AuthService (Milestone 2 Comprehensive Unit & Security Tests)', () => 
   });
 
   describe('OTP Generation & Rate Limiting (AUTH-FR-001, AUTH-FR-004, EC-0011, EC-0012)', () => {
+    it('blocks both SMS OTP operations only in email pilot mode', async () => {
+      const previous = process.env.AUTH_EMAIL_PILOT_ENABLED;
+      process.env.AUTH_EMAIL_PILOT_ENABLED = 'true';
+      try {
+        await expect(authService.requestOtp({phoneNumber: '9841234567'})).rejects.toThrow('Use email');
+        await expect(authService.verifyOtp({} as any)).rejects.toThrow('Use email');
+      } finally {
+        if (previous === undefined) delete process.env.AUTH_EMAIL_PILOT_ENABLED;
+        else process.env.AUTH_EMAIL_PILOT_ENABLED = previous;
+      }
+    });
+
     it('should generate OTP challenge and dispatch SMS via adapter', async () => {
       const res = await authService.requestOtp({ phoneNumber: '9841234567' });
       expect(res).toBeDefined();

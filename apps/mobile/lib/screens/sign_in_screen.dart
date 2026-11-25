@@ -34,6 +34,7 @@ class _SignInScreenState extends State<SignInScreen> {
   String? _otpSessionId;
   String? _error;
   bool _busy = false;
+  static const _emailPilot = bool.fromEnvironment('ENABLE_EMAIL_PILOT');
   bool _email = false;
   int _cooldown = 0;
   Timer? _timer;
@@ -41,7 +42,7 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   void initState() {
     super.initState();
-    _email = widget.linkEmail;
+    _email = widget.linkEmail || _emailPilot;
   }
 
   void _startCooldown() {
@@ -196,7 +197,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   label:
                                       const Text('Enter Development Preview'),
                                 )),
-                          if (!widget.linkEmail)
+                          if (!widget.linkEmail && !_emailPilot)
                             Wrap(
                                 alignment: WrapAlignment.center,
                                 spacing: 8,

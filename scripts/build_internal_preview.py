@@ -94,6 +94,7 @@ def main():
         defines.write_text(json.dumps({
             'API_BASE_URL': endpoint,
             'ENABLE_CHAT_CALL_SIGNALING': 'false',
+            'ENABLE_EMAIL_PILOT': 'true' if env.get('KASHYAP_PREVIEW_EMAIL_ONLY') == 'true' else 'false',
             'ENABLE_COMMUNITY_REELS': 'true' if env.get('KASHYAP_PREVIEW_REELS_ENABLED') == 'true' else 'false',
         }))
         subprocess.run(['flutter', 'pub', 'get', '--enforce-lockfile'], cwd=mobile, env=env, check=True)

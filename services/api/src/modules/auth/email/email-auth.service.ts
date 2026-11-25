@@ -1,3 +1,4 @@
+import { pilotEmailInvited } from '../email-pilot';
 import { BadRequestException, ForbiddenException, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHmac, randomInt, randomUUID } from 'crypto';
 import { RedisService } from '../../../redis/redis.service';
@@ -51,6 +52,9 @@ export class EmailAuthService {
     if (owner) await this.freshOwner(owner);
     const email = normalizeEmail(emailInput);
     const id = randomUUID();
+    const response = { otpSessionId: id, expiresInSeconds: 300, cooldownSeconds: 60,
+      message: 'If delivery is available, a verification code will arrive shortly.' };
+    if (!pilotEmailInvited(email)) return response;
     const code = randomInt(0, 1000000).toString().padStart(6, '0');
     const destination = this.digest('destination:' + email);
     const challenge = {
@@ -75,8 +79,6 @@ export class EmailAuthService {
     `, 5, 'email:cooldown:' + destination, 'email:budget:' + destination,
     'email:account-budget:' + (owner?.id || destination),
     'email:active:' + destination, 'email:challenge:' + id, id, JSON.stringify(challenge));
-    const response = { otpSessionId: id, expiresInSeconds: 300, cooldownSeconds: 60,
-      message: 'If delivery is available, a verification code will arrive shortly.' };
     if (Number(accepted) !== 1) return response;
     await this.audit.recordAuditIntent({
       action: 'EMAIL_OTP_REQUESTED', entityType: 'auth_challenge', entityId: id,
@@ -121,7 +123,7 @@ export class EmailAuthService {
       return challenge.email
     `, 1, 'email:challenge:' + dto.otpSessionId, this.digest(dto.otpSessionId + ':' + dto.code),
     owner?.id || '', owner?.sessionId || '');
-    if (typeof result !== 'string' || !result) {
+    if (typeof result !== 'string' || !result || !pilotEmailInvited(result)) {
       await this.audit.recordAuditIntent({ action: 'EMAIL_OTP_REJECTED', entityType: 'auth_challenge',
         entityId: dto.otpSessionId, actorId: owner?.id, ipAddress: ip });
       throw new UnauthorizedException('Invalid or expired verification code');

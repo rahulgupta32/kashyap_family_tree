@@ -1,3 +1,4 @@
+import { emailPilotEnabled } from '../email-pilot';
 import { Injectable, Logger, ServiceUnavailableException, OnModuleInit } from '@nestjs/common';
 import { ISmsProvider, SmsSendResult } from './sms-provider.interface';
 
@@ -6,6 +7,7 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
   private readonly logger = new Logger(SparrowSmsProviderAdapter.name);
 
   async onModuleInit() {
+    if (emailPilotEnabled()) return;
     const isProduction = process.env.NODE_ENV === 'production';
     const isExplicitSparrow = process.env.USE_SPARROW_SMS === 'true';
 
@@ -29,6 +31,7 @@ export class SparrowSmsProviderAdapter implements ISmsProvider, OnModuleInit {
   }
 
   private async sendMessage(phoneNumber: string, messageText: string): Promise<SmsSendResult> {
+    if (emailPilotEnabled()) throw new ServiceUnavailableException('SMS delivery is disabled for the email pilot');
     const token = process.env.SPARROW_SMS_TOKEN;
     const identity = process.env.SPARROW_SMS_IDENTITY || 'Kashyap';
 

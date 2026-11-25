@@ -1,3 +1,4 @@
+import { emailPilotEnabled } from './email-pilot';
 import { privilegedSessionExpired } from './privileged-session.policy';
 import {
   Injectable,
@@ -120,6 +121,7 @@ export class AuthService {
   }
 
   async requestOtp(dto: RequestOtpDto, clientIp = '127.0.0.1'): Promise<RequestOtpResponse> {
+    if (emailPilotEnabled()) throw new ForbiddenException('Use email to sign in to the pilot');
     const operationId = await this.beginOtpAttempt('REQUEST', clientIp);
     let result: RequestOtpResponse;
     try {
@@ -136,6 +138,7 @@ export class AuthService {
   }
 
   async verifyOtp(dto: VerifyOtpDto, clientIp = '127.0.0.1', userAgent = 'unknown'): Promise<AuthSessionDto> {
+    if (emailPilotEnabled()) throw new ForbiddenException('Use email to sign in to the pilot');
     if (!this.db || !this.auditOutboxRepo) {
       throw new ServiceUnavailableException({
         errorCode: ErrorCode.SERVICE_UNAVAILABLE,
