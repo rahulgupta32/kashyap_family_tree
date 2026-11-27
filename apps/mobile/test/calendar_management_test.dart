@@ -95,6 +95,27 @@ void main() {
     expect(queries.last,{'yearBs':'2083'});expect(find.text('Latest fictional event'),findsOneWidget);
   });
 
+  testWidgets('calendar opens the current Nepal month without a second action', (tester) async {
+    final queries = <Map<String,String>>[];
+    final service = GenealogyApiService(client: MockClient((request) async {
+      final q = request.url.queryParameters;
+      queries.add(q);
+      return jsonResponse({
+        'period': {'source': q['source'], 'view': q['view'], 'date': q['date']},
+        'days': [{'date': q['date'], 'count': 0}],
+        'items': [], 'undatedCount': 0, 'nextBefore': null,
+      });
+    }))..setAuthToken('mock-access');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: CalendarPeriodScreen(api: service, loadCurrentMonth: true)));
+    await tester.pumpAndSettle();
+    final nepal = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 45));
+    final today = nepal.toIso8601String().substring(0, 10);
+    expect(queries.single, {'source':'AD','view':'MONTH','date':today});
+    await tester.ensureVisible(find.byKey(ValueKey('calendar-day-$today')));
+    expect(find.text('Today'), findsOneWidget);
+  });
+
   testWidgets('month cells open the source day and agenda retains exact composite cursor', (tester) async {
     final queries=<Map<String,String>>[];
     final service=GenealogyApiService(client:MockClient((request)async{

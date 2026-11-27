@@ -8,7 +8,8 @@ import '../services/calendar_time.dart';
 
 class CalendarPeriodScreen extends StatefulWidget {
  final GenealogyApiService api;
- const CalendarPeriodScreen({super.key,required this.api});
+ final bool loadCurrentMonth;
+ const CalendarPeriodScreen({super.key,required this.api,this.loadCurrentMonth=false});
  @override
  State<CalendarPeriodScreen> createState()=>_CalendarPeriodScreenState();
 }
@@ -23,8 +24,25 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
  bool _busy=false;
  String? _error;
  Map? _page;
+ String get _today {
+  final date=nepalWallClock(DateTime.now());
+  return '${date.year}-${date.month.toString().padLeft(2,'0')}-${date.day.toString().padLeft(2,'0')}';
+ }
  @override
- void initState(){super.initState();final today=nepalWallClock(DateTime.now());_date.text='${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';}
+ void initState(){
+  super.initState();
+  _date.text=_today;
+  if(widget.loadCurrentMonth){
+   WidgetsBinding.instance.addPostFrameCallback((_){
+    if(mounted) _load();
+   });
+  }
+ }
+ Future<void> _showToday() async {
+  if(!checkCalendarSession() || _busy) return;
+  setState(()=>_source='AD');
+  await _load(view:'MONTH',date:_today);
+ }
  @override
  void dispose(){_date.dispose();super.dispose();}
  void _clear(){if(!checkCalendarSession())return;_epoch++;setState((){_page=null;_error=null;});}
@@ -44,10 +62,13 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
    const HeritageHeading('पारिवारिक पात्रो · Family calendar', subtitle: 'Explore family events and shared traditions.', icon: Icons.calendar_month_outlined),
    const Padding(padding: EdgeInsets.only(bottom:16), child: Text('Nepal time · UTC+05:45. AD and BS dates are shown in their original calendar.', style: TextStyle(color:AppTheme.textMuted,fontSize:12))),
    if(_source=='BS') const Text('BS days are numbered; weekday conversion is unavailable.'),
-   DropdownButtonFormField<String>(isExpanded:true,initialValue:_source,decoration:const InputDecoration(labelText:'Date source'),items:['AD','BS'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_source=v!);}),
+   DropdownButtonFormField<String>(isExpanded:true,initialValue:_source,key:ValueKey(_source),decoration:const InputDecoration(labelText:'Date source'),items:['AD','BS'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_source=v!);}),
    DropdownButtonFormField<String>(isExpanded:true,initialValue:_view,key:ValueKey(_view),decoration:const InputDecoration(labelText:'Calendar view'),items:const [DropdownMenuItem(value:'DAY',child:Text('दिन (Day)',overflow:TextOverflow.ellipsis)),DropdownMenuItem(value:'MONTH',child:Text('महिना (Month)',overflow:TextOverflow.ellipsis)),DropdownMenuItem(value:'AGENDA',child:Text('कार्यसूची (Agenda for month)',overflow:TextOverflow.ellipsis))],onChanged:_busy?null:(v){if(!checkCalendarSession())return;_clear();setState(()=>_view=v!);}),
    TextField(controller:_date,enabled:!_busy,decoration:const InputDecoration(labelText:'Source date (YYYY-MM-DD)'),onChanged:(_)=>_clear()),
-   TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Show calendar period')),
+   Wrap(children:[
+    TextButton(onPressed:_busy?null:_showToday,child:const Text('आज (Today)')),
+    TextButton(onPressed:_busy?null:()=>_load(),child:const Text('Show calendar period')),
+   ]),
    if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
    if(_busy)const Center(child:CircularProgressIndicator()),
    if(_page!=null)...[
@@ -67,6 +88,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
  }
  Widget _monthGrid() {
   final days = _page!['days'] as List;
+  final today = _source == 'AD' ? _today : null;
   final first = days.isEmpty ? null : DateTime.tryParse(days.first['date'].toString());
   final offset = _source == 'AD' && first != null ? first.weekday % 7 : 0;
   return Card(child: Padding(padding: const EdgeInsets.all(12), child: LayoutBuilder(builder:(context, constraints) {
@@ -78,7 +100,7 @@ class _CalendarPeriodScreenState extends State<CalendarPeriodScreen> with Calend
      ...days.map((d)=>SizedBox(width:width, child:OutlinedButton(key:ValueKey('calendar-day-${d['date']}'),
       style:OutlinedButton.styleFrom(padding:const EdgeInsets.symmetric(vertical:10,horizontal:1),minimumSize:const Size(0,60),backgroundColor:(d['count'] as num)>0?AppTheme.softPeach:Colors.white),
       onPressed:()=>_load(view:'DAY',date:d['date'] as String),
-      child:Column(children:[Text(d['date'].toString().substring(8),style:const TextStyle(fontSize:14,fontWeight:FontWeight.w600)),Text("${d['count']} events",style:const TextStyle(fontSize:8))])))),
+      child:Column(children:[Text(d['date'].toString().substring(8),style:const TextStyle(fontSize:14,fontWeight:FontWeight.w600)),if(d['date']==today) const Text('Today',style:TextStyle(fontSize:8,fontWeight:FontWeight.bold)),Text("${d['count']} events",style:const TextStyle(fontSize:8))])))),
     ]),
    ]);
   })));

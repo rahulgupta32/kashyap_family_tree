@@ -301,7 +301,7 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
       appBar: AppBar(
         title: const Text('पारिवारिक पात्रो · Calendar'),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(52), child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-          IconButton(tooltip: 'Calendar day month agenda', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarPeriodScreen(api: widget.apiService))); }, icon: const Icon(Icons.calendar_month)),
+          IconButton(tooltip: 'Calendar day month agenda', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarPeriodScreen(api: widget.apiService, loadCurrentMonth: true))); }, icon: const Icon(Icons.calendar_month)),
           IconButton(tooltip: 'Browse all calendar events', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarBrowseScreen(api: widget.apiService))); }, icon: const Icon(Icons.list_alt)),
           IconButton(tooltip: 'वार्षिक सम्झना (Annual reminders)', onPressed: !calendarSessionCurrent ? null : () { if(checkCalendarSession()) Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarRecurrenceScreen(api: widget.apiService))); }, icon: const Icon(Icons.event_repeat)),
           IconButton(tooltip: calendarLabels['resolveCreate'], onPressed: !calendarSessionCurrent || _resolvingCreate || !widget.apiService.hasPendingCalendarCreate ? null : () { _resolvePendingCreate(); }, icon: const Icon(Icons.fact_check)),
