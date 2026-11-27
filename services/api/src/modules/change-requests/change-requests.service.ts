@@ -8,6 +8,7 @@ import {
   BadRequestException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import {
   SubmitChangeRequestDto,
   ChangeRequestDetailDto,
@@ -27,6 +28,7 @@ import { DuplicateService } from '../genealogy/duplicate.service';
 import { BranchRepository } from '../../database/repositories/branch.repository';
 import { AuditOutboxRepository } from '../../database/repositories/audit-outbox.repository';
 import { DiffService } from './diff.service';
+import { canReviewEvidenceContext } from '../../media/evidence-access.policy';
 
 export interface ChangeRequestRecord {
   id: string;
@@ -74,6 +76,7 @@ export class ChangeRequestsService {
     }
 
     return this.db.transaction(async (client) => {
+      await this.validateEvidenceAssets(client, requesterUserId, dto.evidenceAssetIds);
       let baseVersion = 0;
       let snapshot: any = null;
       let branchId = dto.branchId || null;
@@ -169,6 +172,20 @@ export class ChangeRequestsService {
     });
   }
 
+  private assertActiveRequest(status: ChangeRequestStatus): void {
+    const active = [
+      ChangeRequestStatus.SUBMITTED, ChangeRequestStatus.PENDING,
+      ChangeRequestStatus.CORRECTION_REQUESTED, ChangeRequestStatus.RESUBMITTED,
+      ChangeRequestStatus.ESCALATED, ChangeRequestStatus.CONFLICT_DETECTED,
+    ];
+    if (!active.includes(status)) {
+      throw new BadRequestException({
+        errorCode: ErrorCode.CANNOT_MODIFY_PROCESSED_REQUEST,
+        message: 'Cannot modify a terminal change request',
+      });
+    }
+  }
+
   async requestCorrection(
     id: string,
     actor: AuthenticatedUser,
@@ -191,6 +208,7 @@ export class ChangeRequestsService {
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
       await this.validateFamilyRecusal(client, actor, gcr);
+      this.assertActiveRequest(gcr.status);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
@@ -219,7 +237,7 @@ export class ChangeRequestsService {
         client,
       );
 
-      return this.mapToDetailDto(updated);
+      return this.mapToDetailDto(updated, undefined, true);
     });
   }
 
@@ -237,6 +255,14 @@ export class ChangeRequestsService {
 
       if (gcr.requester_user_id !== requesterUserId) {
         throw new ForbiddenException('Only the requester can resubmit this change request');
+      }
+
+      if (![ChangeRequestStatus.CORRECTION_REQUESTED, ChangeRequestStatus.CONFLICT_DETECTED].includes(gcr.status)) {
+        throw new BadRequestException('Only correction-requested or conflicted proposals can be resubmitted');
+      }
+      if (!dto || !dto.proposedChanges || typeof dto.proposedChanges !== 'object' || Array.isArray(dto.proposedChanges) ||
+          (dto.reason !== undefined && (typeof dto.reason !== 'string' || !dto.reason.trim()))) {
+        throw new BadRequestException('A proposed changes object and valid optional reason are required');
       }
 
       let refreshedBaseVersion = gcr.base_version;
@@ -318,6 +344,7 @@ export class ChangeRequestsService {
 
       await this.validateBranchAuthority(client, actor, gcr.target_person_id);
       await this.validateFamilyRecusal(client, actor, gcr);
+      this.assertActiveRequest(gcr.status);
 
       const updatedRes = await client.query<ChangeRequestRecord>(
         `UPDATE genealogy_change_requests 
@@ -346,7 +373,7 @@ export class ChangeRequestsService {
         client,
       );
 
-      return this.mapToDetailDto(updated);
+      return this.mapToDetailDto(updated, undefined, updated.requester_user_id !== actor.id);
     });
   }
 
@@ -963,10 +990,11 @@ export class ChangeRequestsService {
       });
     }
 
-    return this.mapToDetailDto(outcome.gcr);
+    return this.mapToDetailDto(outcome.gcr, undefined, true);
   }
 
   async getRequestById(id: string, actor?: AuthenticatedUser): Promise<ChangeRequestDetailDto> {
+    if (!actor) throw new UnauthorizedException('Authentication required');
     const res = await this.db.query<ChangeRequestRecord>('SELECT * FROM genealogy_change_requests WHERE id = $1', [id]);
     const req = res.rows[0];
     if (!req) {
@@ -995,13 +1023,86 @@ export class ChangeRequestsService {
       }
     }
 
-    return this.mapToDetailDto(req);
+    const detail = await this.mapToDetailDto(req, undefined, await this.canReadReviewSnapshot(req, actor));
+    const impact = detail.visualDiff?.graphImpact;
+    if (impact?.proposedRelationship) {
+      impact.relationshipPreview = await this.readRelationshipPreview(detail, actor);
+    }
+    return detail;
+  }
+
+  private async readRelationshipPreview(detail: ChangeRequestDetailDto, actor: AuthenticatedUser) {
+    const proposal = detail.visualDiff?.graphImpact?.proposedRelationship;
+    if (!proposal || !detail.targetPersonId || ![
+      ChangeRequestStatus.PENDING, ChangeRequestStatus.RESUBMITTED, ChangeRequestStatus.ESCALATED,
+    ].includes(detail.status)) return undefined;
+
+    const relativeId = 'personId' in proposal.relative ? proposal.relative.personId : null;
+    if (relativeId !== null && (!isUUID(relativeId) || relativeId === detail.targetPersonId)) return undefined;
+    const reviewBranches = (actor.roleAssignments ?? [])
+      .filter(({ role }) => (role === Role.BRANCH_ADMIN || role === Role.BRANCH_VERIFIER) && actor.roles.includes(role))
+      .map(({ branchId }) => branchId);
+    const adminBranches = (actor.roleAssignments ?? [])
+      .filter(({ role }) => role === Role.BRANCH_ADMIN && actor.roles.includes(role))
+      .map(({ branchId }) => branchId);
+    const global = actor.roles.includes(Role.SUPER_ADMIN);
+    const spouse = proposal.relationship === 'SPOUSE';
+    const reverse = proposal.relationship === 'PARENT';
+    const crossBranch = spouse && proposal.action === 'ADD' ? adminBranches : reviewBranches;
+    const result = await this.db.query<{ linked: boolean }>(`
+      SELECT CASE WHEN $2::uuid IS NULL THEN FALSE
+        WHEN $3::boolean THEN EXISTS (
+          SELECT 1 FROM spouse_links
+          WHERE (person_id = target.id AND spouse_id = relative.id)
+             OR (person_id = relative.id AND spouse_id = target.id)
+        )
+        ELSE EXISTS (
+          SELECT 1 FROM parent_links
+          WHERE parent_id = CASE WHEN $4::boolean THEN relative.id ELSE target.id END
+            AND child_id = CASE WHEN $4::boolean THEN target.id ELSE relative.id END
+        ) END AS linked
+      FROM persons target
+      LEFT JOIN persons relative ON relative.id = $2
+      JOIN genealogy_change_requests req ON req.id = $8 AND req.target_person_id = target.id
+      WHERE target.id = $1 AND req.version = $9 AND req.status = $10
+        AND target.version = req.base_version
+        AND ($2::uuid IS NULL OR relative.id IS NOT NULL)
+        AND ($5::boolean OR (
+          target.branch_id = ANY($6::uuid[])
+          AND ($2::uuid IS NULL OR relative.branch_id = target.branch_id
+            OR (target.branch_id = ANY($7::uuid[]) AND relative.branch_id = ANY($7::uuid[])))
+        ))
+    `, [detail.targetPersonId, relativeId, spouse, reverse, global, reviewBranches, crossBranch,
+      detail.id, detail.version, detail.status]);
+    const edge = result.rows[0];
+    return edge ? { before: edge.linked, after: proposal.action === 'ADD' } : undefined;
+  }
+
+  async reviewEvidence(requestId: string, actor: AuthenticatedUser, assetId?: string) {
+    if (!isUUID(requestId) || (assetId !== undefined && !isUUID(assetId))) {
+      throw new BadRequestException('Invalid request or evidence ID');
+    }
+    const context = (await this.db.query<{
+      target_person_id: string | null; requester_user_id: string; branch_id: string | null;
+    }>(`SELECT r.target_person_id, r.requester_user_id, p.branch_id
+       FROM genealogy_change_requests r LEFT JOIN persons p ON p.id = r.target_person_id
+       WHERE r.id = $1`, [requestId])).rows[0];
+    if (!context || !await canReviewEvidenceContext(this.db, { ...context, kind: 'CHANGE' }, actor)) {
+      throw new NotFoundException('Request evidence is unavailable');
+    }
+    return (await this.db.query(`SELECT a.*
+      FROM change_request_evidence_attachments e JOIN media_assets a ON a.id = e.media_asset_id
+      WHERE e.change_request_id = $1 AND ($2::uuid IS NULL OR a.id = $2)
+        AND a.uploader_user_id = $3 AND a.bucket = 'private-profiles' AND a.is_private = TRUE
+        AND a.quarantine_status = 'CLEAN' AND a.retention_status = 'ACTIVE'
+      ORDER BY a.id`, [requestId, assetId ?? null, context.requester_user_id])).rows;
   }
 
   async listRequests(
     actor?: AuthenticatedUser,
     options?: { status?: ChangeRequestStatus; branchId?: string; requesterUserId?: string },
   ): Promise<ChangeRequestDetailDto[]> {
+    if (!actor) throw new UnauthorizedException('Authentication required');
     let sql = `
       SELECT r.*, p.branch_id as person_branch_id
       FROM genealogy_change_requests r
@@ -1027,6 +1128,12 @@ export class ChangeRequestsService {
       params.push(options.requesterUserId);
     }
 
+    if (options?.branchId) {
+      if (!isUUID(options.branchId)) throw new BadRequestException('Valid branch ID required');
+      sql += ` AND p.branch_id = $${pIdx++}`;
+      params.push(options.branchId);
+    }
+
     if (options?.status) {
       sql += ` AND r.status = $${pIdx++}`;
       params.push(options.status);
@@ -1045,12 +1152,47 @@ export class ChangeRequestsService {
       rows = rows.filter((r: any) => !r.person_branch_id || authorizedBranches.includes(r.person_branch_id));
     }
 
-    return Promise.all(rows.map((r: any) => this.mapToDetailDto(r, r.person_branch_id)));
+    return Promise.all(rows.map(async (r: any) =>
+      this.mapToDetailDto(r, r.person_branch_id, await this.canReadReviewSnapshot(r, actor))));
+  }
+
+  private async canReadReviewSnapshot(req: ChangeRequestRecord, actor: AuthenticatedUser): Promise<boolean> {
+    // A proposer cannot use their own request as an alternate private-person read endpoint.
+    if (req.requester_user_id === actor.id) return false;
+    const reviewer = actor.roles?.includes(Role.SUPER_ADMIN) || (actor.roleAssignments || []).some(
+      assignment => assignment.role === Role.BRANCH_ADMIN || assignment.role === Role.BRANCH_VERIFIER);
+    if (!reviewer) return false;
+    try {
+      await this.validateBranchAuthority(this.db, actor, req.target_person_id);
+      await this.validateFamilyRecusal(this.db, actor, req);
+      return true;
+    } catch (error) {
+      if (error instanceof ForbiddenException) return false;
+      throw error;
+    }
+  }
+
+  private async validateEvidenceAssets(client: any, requesterUserId: string, ids?: string[]): Promise<void> {
+    if (ids === undefined) return;
+    if (!Array.isArray(ids) || ids.length > 5 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== 'string' || !isUUID(id))) {
+      throw new BadRequestException('Choose up to five distinct valid private evidence assets');
+    }
+    // Retention/quarantine/ownership cannot change while this transaction attaches the assets.
+    for (const id of [...ids].sort()) {
+      const asset = (await client.query(
+        'SELECT id, uploader_user_id, bucket, is_private, quarantine_status, retention_status FROM media_assets WHERE id=$1 FOR SHARE', [id],
+      )).rows[0];
+      if (!asset || asset.uploader_user_id !== requesterUserId || asset.bucket !== 'private-profiles' ||
+          asset.is_private !== true || asset.quarantine_status !== 'CLEAN' || asset.retention_status !== 'ACTIVE') {
+        throw new ForbiddenException('Private evidence unavailable for this request');
+      }
+    }
   }
 
   private async mapToDetailDto(
     req: ChangeRequestRecord,
     branchId?: string | null,
+    includeReviewSnapshot = false,
   ): Promise<ChangeRequestDetailDto> {
     let resolvedBranchId = branchId;
     if (!resolvedBranchId && req.target_person_id) {
@@ -1058,11 +1200,17 @@ export class ChangeRequestsService {
       if (person) resolvedBranchId = person.branch_id || null;
     }
 
-    const visualDiff = this.diffService.computeVisualDiff(req.current_snapshot, req.proposed_changes || {});
+    const snapshot = includeReviewSnapshot ? req.current_snapshot : undefined;
+    const type = req.request_type || req.type;
+    const visualDiff = this.diffService.computeVisualDiff(
+      snapshot,
+      req.proposed_changes || {},
+      includeReviewSnapshot ? type : undefined,
+    );
 
     return {
       id: req.id,
-      type: req.request_type || req.type,
+      type,
       status: req.status,
       targetPersonId: req.target_person_id || undefined,
       branchId: resolvedBranchId,
@@ -1070,7 +1218,7 @@ export class ChangeRequestsService {
       baseVersion: req.base_version || 0,
       version: req.version || 1,
       proposedChanges: req.proposed_changes || {},
-      currentSnapshot: req.current_snapshot || undefined,
+      currentSnapshot: snapshot || undefined,
       visualDiff,
       reason: req.reason,
       correctionNotes: req.correction_notes || undefined,

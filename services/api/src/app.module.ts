@@ -1,3 +1,8 @@
+import { GenealogyImportModule } from './modules/genealogy-import/genealogy-import.module';
+import { ApplicationSettingsModule } from './modules/application-settings/application-settings.module';
+import { BranchAdministrationModule } from './modules/branch-administration/branch-administration.module';
+import { AdminLookupModule } from './modules/admin-lookup/admin-lookup.module';
+import { MediaStorageModule } from './media/media-storage.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -30,6 +35,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
       },
     ]),
     DatabaseModule,
+    MediaStorageModule,
     RedisModule,
     HealthModule,
     AuthModule,
@@ -44,6 +50,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     ProfileModule,
     CalendarModule,
     NotificationsModule,
+    AdminLookupModule,
+    ApplicationSettingsModule,
+    BranchAdministrationModule,
+    GenealogyImportModule,
   ],
 })
 export class AppModule {}

@@ -10,6 +10,41 @@ describe('ChangeRequestsService (Genealogy Change Governance & Workflow)', () =>
   let mockAuditOutboxRepo: any;
   let diffService: DiffService;
 
+  it.each(['PENDING','APPROVED','REJECTED','WITHDRAWN','ESCALATED'])('does not reopen %s through resubmission', async status => {
+    const query=jest.fn().mockResolvedValueOnce({rows:[{id:'request',requester_user_id:'owner',status}]});
+    mockDb.transaction.mockImplementation((cb:any)=>cb({query}));
+    await expect(changeRequestsService.resubmit('request','owner',{proposedChanges:{birthPlace:'Synthetic'}})).rejects.toThrow('Only correction-requested');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(mockAuditOutboxRepo.recordAuditIntent).not.toHaveBeenCalled();
+  });
+
+  describe.each(['requestCorrection', 'escalate'] as const)('%s terminal-state boundary', operation => {
+    it.each(['APPROVED', 'REJECTED', 'WITHDRAWN', 'SUPERSEDED'])('retains %s without transition or audit writes', async status => {
+      const query = jest.fn().mockResolvedValue({rows: [{id: 'request', requester_user_id: 'owner', status}]});
+      mockDb.transaction.mockImplementation((cb: any) => cb({query}));
+      jest.spyOn(changeRequestsService as any, 'validateBranchAuthority').mockResolvedValue(undefined);
+      jest.spyOn(changeRequestsService as any, 'validateFamilyRecusal').mockResolvedValue(undefined);
+      await expect(changeRequestsService[operation]('request', {id: 'reviewer', roles: [Role.SUPER_ADMIN]} as any, 'Synthetic review notes')).rejects.toThrow('Cannot modify a terminal change request');
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(mockAuditOutboxRepo.recordAuditIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each([false, true])('applies requested branch filter while retaining member scope (reviewer=%s)', async reviewer => {
+    mockDb.query.mockResolvedValue({ rows: [] });
+    const actor = reviewer ? {id: 'reviewer', roles: [Role.SUPER_ADMIN], roleAssignments: []} : {id: 'owner', roles: [Role.REGISTERED_USER], roleAssignments: []};
+    await changeRequestsService.listRequests(actor as any, {branchId: '11111111-1111-4111-8111-111111111111', status: ChangeRequestStatus.PENDING});
+    const [sql, params] = mockDb.query.mock.calls[0];
+    expect(sql).toMatch(/AND p\.branch_id = \$\d+/);
+    expect(params).toEqual(reviewer ? ['11111111-1111-4111-8111-111111111111', 'PENDING'] : ['owner', '11111111-1111-4111-8111-111111111111', 'PENDING']);
+    if (!reviewer) expect(sql).toMatch(/AND r\.requester_user_id = \$\d+/);
+  });
+
+  it('rejects malformed branch selections before database access', async () => {
+    await expect(changeRequestsService.listRequests({id: 'owner', roles: [Role.REGISTERED_USER], roleAssignments: []} as any, {branchId: 'not-a-uuid'})).rejects.toThrow('Valid branch ID required');
+    expect(mockDb.query).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     diffService = new DiffService();
 

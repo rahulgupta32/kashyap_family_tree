@@ -10,4 +10,5 @@ export interface SmsSendResult {
 
 export interface ISmsProvider {
   sendOtp(phoneNumber: string, otp: string): Promise<SmsSendResult>;
+  sendNotification(phoneNumber: string, message: string): Promise<SmsSendResult>;
 }

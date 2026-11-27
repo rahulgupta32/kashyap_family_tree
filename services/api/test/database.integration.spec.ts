@@ -236,4 +236,20 @@ describe('Database & Persistence Integration (Real PostgreSQL / WSL)', () => {
       if (origUrl) process.env.DATABASE_URL = origUrl;
     }
   });
+  it('preserves real PostgreSQL constraint behavior without logging rejected private values', async () => {
+    const secret = 'fictional-private-contact-provider-token';
+    const log = jest.spyOn((db as any).logger,'error').mockImplementation(() => undefined);
+    await db.query('CREATE TABLE operational_log_privacy_fixture(value TEXT UNIQUE)');
+    try {
+      await db.query('INSERT INTO operational_log_privacy_fixture(value) VALUES($1)',[secret]);
+      await expect(db.query("INSERT INTO operational_log_privacy_fixture(value) VALUES($1) /* fictional-private-contact-provider-token */",[secret])).rejects.toMatchObject({code:'23505'});
+      expect(log).toHaveBeenCalledWith('DATABASE_QUERY_UNAVAILABLE sqlstate=23505');
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret);
+      expect((await db.query('SELECT COUNT(*)::integer AS n FROM operational_log_privacy_fixture')).rows[0].n).toBe(1);
+      expect(db.isReady()).toBe(true);
+    } finally {
+      log.mockRestore(); await db.query('DROP TABLE operational_log_privacy_fixture');
+    }
+  });
+
 });

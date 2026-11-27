@@ -17,7 +17,7 @@ This register tracks technical interpretations, suspected requirement conflicts,
 | DR-004 | 2026-09-09 | Architecture | Next.js + TypeScript per ADR-002 | Baseline explicitly specifies Next.js for admin portal | Implemented | No |
 | DR-005 | 2026-09-09 | Architecture | PostgreSQL 16+ per ADR-004 | Baseline specifies PostgreSQL; v16 for latest features | Implemented | No |
 | DR-006 | 2026-09-09 | Storage | All heavy storage on D: drive | Mandatory per project policy; C: has insufficient space | Implemented | No |
-| DR-007 | 2026-09-09 | Security | Code kept proprietary (all rights reserved) | No license selected; Jyphra must explicitly choose (HG-001) | Active | Yes - License |
+| DR-007 | 2026-09-09 | Security | Code kept proprietary (all rights reserved) | No license selected; Jyphra must explicitly choose (HG-001) | Superseded by DR-015 | Resolved license selection; publication review remains required |
 | DR-008 | 2026-09-09 | Cultural | Nata/Saino rules implemented as versioned config, disabled by default | Cannot activate without Community/Religious Representative sign-off (HG-002) | Active | Yes - Cultural |
 | DR-009 | 2026-09-09 | Cultural | Jutho rules implemented as versioned config, disabled by default | Cannot activate without Community/Religious Representative sign-off (HG-003) | Active | Yes - Cultural |
 | DR-010 | 2026-09-09 | Cultural | Tithi/calendar rules use adapter pattern with fallback | Provider/source requires religious authority approval (HG-004) | Active | Yes - Cultural |
@@ -25,6 +25,10 @@ This register tracks technical interpretations, suspected requirement conflicts,
 | DR-012 | 2026-09-09 | Git | GitHub `gh` CLI not authenticated; push via HTTPS git credentials | `gh auth login` requires interactive MFA/browser flow (HG-016) | Active | Yes - Credentials |
 | DR-013 | 2026-09-09 | Availability | Baseline BRD says 99.5%; Master Spec §1.5 says 99.9% | Using 99.9% as the higher target from the more detailed spec. Jyphra may clarify. | Noted | No - using stricter |
 | DR-014 | 2026-09-09 | Performance | BRD says p95 ≤ 2s API; Master Spec says p95 ≤ 500ms reads, ≤ 800ms writes | Using Master Spec targets as more granular. BRD was overall summary. | Noted | No - using stricter |
+
+## Owner license decision — 28 October 2026
+
+**DR-015:** Jyphra's owner explicitly approved open-source publication and selected Apache 2.0. `LICENSE`, `NOTICE`, package metadata and README implement that decision. This supersedes DR-007's pending proprietary status; historical reports remain unchanged. It does not activate cultural rules, close production gates or authorize merge/deployment. Applicable source-disclosure review still applies.
 
 ## Conflict Resolution Protocol
 

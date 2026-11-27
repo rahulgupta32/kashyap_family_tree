@@ -155,7 +155,7 @@ export default function DuplicatesPage() {
             दोहोरिएको रेकर्ड व्यवस्थापन (Duplicate Resolution & Merge)
           </h2>
           <p className="text-sm text-slate-500">
-            एउटै व्यक्तिको दोहोरो दर्ता समीक्षा, तुलना तथा कश्यप कुल वंशावली एकीकरण
+            एउटै व्यक्तिको दोहोरो दर्ता समीक्षा, तुलना तथा वंशावली एकीकरण
           </p>
         </div>
 

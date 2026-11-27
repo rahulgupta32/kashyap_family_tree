@@ -55,6 +55,7 @@ build/
 *.mocks.dart
 .pub-cache/
 pubspec.lock
+!apps/mobile/pubspec.lock
 
 # --- Android ---
 **/android/.gradle/

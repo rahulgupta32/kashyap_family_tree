@@ -1,4 +1,5 @@
 'use client';
+import { ProfilePhoto } from '../../components/ProfilePhoto';
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/auth-context';
@@ -145,9 +146,11 @@ export default function ProfileAdminPage() {
         <div>
           <h2 className="text-lg font-bold text-slate-900">{profile?.person?.primaryNameNepali || user?.id || 'प्रयोगकर्ता'}</h2>
           <p className="text-xs text-slate-500">{profile?.phoneNumber || user?.phoneNumber} • भूमिका: {user?.roles?.join(', ') || 'ADMIN'}</p>
-          <p className="text-xs text-emerald-600 font-semibold mt-1">✓ आधिकारिक प्रमाणीकृत सदस्य (Verified Lineage)</p>
+          <p className="text-xs text-emerald-600 font-semibold mt-1">{profile?.personId&&profile?.roles?.includes('VERIFIED_MEMBER')?'✓ प्रमाणित वंश सदस्य / Verified lineage member':'फोन प्रमाणित; वंश दाबी आवश्यक / Phone verified; lineage claim required'}</p>
         </div>
       </div>
+
+      {accessToken&&user?.id&&<ProfilePhoto key={user.id} token={accessToken} owner={user.id} initialAsset={profile?.avatarAssetId}/>}
 
       {/* Profile Details Form Section */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">

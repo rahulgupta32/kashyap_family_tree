@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { AuthSessionDto, Role } from '@kashyap/contracts';
-import { ApiClient } from '../lib/api-client';
+import { purgeBrowserChatOutbox } from '../lib/chat-outbox';
+import { ApiClient, SessionRefreshError } from '../lib/api-client';
 
 interface AuthContextType {
   user: AuthSessionDto['user'] | null;
@@ -22,11 +23,23 @@ const USER_KEY = 'kashyap_admin_user';
 const TOKEN_TIMESTAMP_KEY = 'kashyap_token_refreshed_at';
 const AUTH_CHANNEL_NAME = 'kashyap_auth_channel';
 const REFRESH_LOCK_NAME = 'kashyap_auth_refresh';
+const SIGNED_OUT_KEY = 'kashyap_admin_signed_out';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthSessionDto['user'] | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const controller = new AbortController();
+    const api = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:3000';
+    fetch(`${api}/auth/mfa/status`, { headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'include', cache: 'no-store', signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(status => { if (!controller.signal.aborted && status?.required && !status.verified && window.location.pathname !== '/mfa') window.location.href = '/mfa'; })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [accessToken]);
 
   // In-flight refresh promise ref to coordinate concurrent refresh attempts within the same tab
   const refreshPromiseRef = useRef<Promise<string | null> | null>(null);
@@ -41,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
         broadcastChannelRef.current = channel;
         channel.onmessage = (event) => {
-          if (event.data?.type === 'TOKEN_REFRESHED' && event.data.accessToken) {
+          if (event.data?.type === 'TOKEN_REFRESHED' && event.data.accessToken && !localStorage.getItem(SIGNED_OUT_KEY) && localStorage.getItem(TOKEN_KEY)===event.data.accessToken) {
             setAccessToken(event.data.accessToken);
             if (event.data.user) setUser(event.data.user);
           } else if (event.data?.type === 'SESSION_EXPIRED') {
@@ -83,8 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const executeRefresh = async (): Promise<string | null> => {
       const performNetworkRefresh = async (): Promise<string | null> => {
+        if(localStorage.getItem(SIGNED_OUT_KEY))return null;
+        const generation=localStorage.getItem('kashyap_chat_outbox_generation');
         try {
           const session = await ApiClient.refreshToken();
+          if(localStorage.getItem('kashyap_chat_outbox_generation')!==generation)return null;
           setAccessToken(session.accessToken);
           setUser(session.user);
           try {
@@ -101,14 +117,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
           }
           return session.accessToken;
-        } catch {
+        } catch (error) {
+          if(localStorage.getItem('kashyap_chat_outbox_generation')!==generation)return null;
+          // A transient refresh outage keeps encrypted intent and the saved local
+          // identity. Only the API can authorize actions; revoked sessions purge it.
+          if(!(error instanceof SessionRefreshError)||![401,403].includes(error.status))return null;
           setAccessToken(null);
           setUser(null);
           try {
+            localStorage.setItem(SIGNED_OUT_KEY,'1');
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(USER_KEY);
             localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
           } catch {}
+          await purgeBrowserChatOutbox().catch(()=>{});
           if (broadcastChannelRef.current) {
             broadcastChannelRef.current.postMessage({ type: 'SESSION_EXPIRED' });
           }
@@ -187,6 +209,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(session.accessToken);
     setUser(session.user);
     try {
+      localStorage.removeItem(SIGNED_OUT_KEY);
+      localStorage.setItem('kashyap_chat_outbox_generation',crypto.randomUUID());
       localStorage.setItem(TOKEN_KEY, session.accessToken);
       localStorage.setItem(USER_KEY, JSON.stringify(session.user));
       localStorage.setItem(TOKEN_TIMESTAMP_KEY, Date.now().toString());
@@ -203,11 +227,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const token = accessToken || undefined;
-    await ApiClient.logout(undefined, token);
-
+    // Keep route guards from offering a login form until cleanup/navigation finishes.
+    setIsLoading(true);
     setAccessToken(null);
     setUser(null);
     try {
+      localStorage.setItem(SIGNED_OUT_KEY,'1');
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       localStorage.removeItem(TOKEN_TIMESTAMP_KEY);
@@ -217,7 +242,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       broadcastChannelRef.current.postMessage({ type: 'SESSION_EXPIRED' });
     }
 
-    window.location.href = '/login';
+    try {
+      await purgeBrowserChatOutbox().catch(()=>{});
+      await ApiClient.logout(undefined, token);
+    } finally { window.location.href = '/login'; }
   }, [accessToken]);
 
   const hasRole = useCallback(
@@ -229,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const isAdmin = Boolean(
-    user && (user.roles.includes(Role.SUPER_ADMIN) || user.roles.includes(Role.BRANCH_ADMIN)),
+    user && user.roles.some(role => [Role.SUPER_ADMIN, Role.CENTRAL_ADMIN, Role.BRANCH_ADMIN].includes(role)),
   );
 
   return (

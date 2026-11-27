@@ -1,0 +1,11 @@
+# Native authenticator device acceptance checkpoint
+
+The mobile security action opens the real authenticator route. `/auth/mfa/status` now reports eligibility from current database roles. Explicit setup remains available only for eligible, unenrolled authority accounts; ordinary members receive a status page without enrollment controls. The enrollment transaction still independently checks account, current authority, original authentication age and session validity. No client assertion grants authority.
+
+A second live Android integration test uses fictional accounts in the existing guarded disposable PostgreSQL/API fixture. The production build still requires enrollment automatically for authority accounts. The test environment permits unenrolled fixtures, so the native security action opens voluntary setup without weakening production enforcement.
+
+The test drives actual phone login, key setup, authenticator confirmation, transient backup-code acknowledgement, logout, fresh-login challenge, protected-dashboard denial, authenticator verification, replay refusal, successful recovery, reuse refusal, a separate recovery code and secure-session refresh with preserved proof. It asserts that enrollment material and displayed recovery codes do not appear in encrypted session-storage plaintext. It uses a test-only RFC 6238 helper with the crypto development dependency; keys, OTPs, backup codes and tokens are not printed. Malware, browser, PostgreSQL and other device workflows remain in the full CI suite.
+
+Two widget regressions cover explicit setup eligibility; PostgreSQL assertions check authority/member status eligibility. Local API typecheck and frozen release-assessment validation run before publication. Exact-head Android/Flutter/full CI evidence is pending publication and execution.
+
+This is disposable Android emulator evidence, not iOS, production SMS delivery, real-user acceptance, independent deployed penetration testing, accessibility certification or device/process-kill coverage. Governed emergency recovery, authenticator replacement, recovery-code regeneration, distinct-factor administrative login, key backup/rotation and remaining Release 1 acceptance remain mandatory and open. No signed acceptance, merge or deployment is claimed.

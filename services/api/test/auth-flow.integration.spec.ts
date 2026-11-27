@@ -310,7 +310,8 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
     });
     expect(auditRes.status).toBe(200);
     const auditLogs = await auditRes.json();
-    expect(Array.isArray(auditLogs)).toBe(true);
+    expect(Array.isArray(auditLogs.items)).toBe(true);
+    expect(auditLogs).toHaveProperty('nextCursor');
   });
 
   it('9. POST /auth/logout: should revoke session and invalidate refresh token (AUTH-FR-007)', async () => {
@@ -335,3 +336,4 @@ describe('Auth & Permissions End-to-End HTTP Flow (Real Nest App, PG & Redis / D
     expect(refreshRes.status).toBe(401);
   });
 });
+

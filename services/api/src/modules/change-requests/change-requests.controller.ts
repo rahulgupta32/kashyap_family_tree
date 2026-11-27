@@ -2,6 +2,9 @@ import {
   Controller,
   Post,
   Get,
+  Header,
+  NotFoundException,
+  StreamableFile,
   Body,
   Param,
   Query,
@@ -20,11 +23,15 @@ import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { MediaStorageService } from '../../media/media-storage.service';
 
 @Controller('change-requests')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ChangeRequestsController {
-  constructor(private readonly changeRequestsService: ChangeRequestsService) {}
+  constructor(
+    private readonly changeRequestsService: ChangeRequestsService,
+    private readonly storage: MediaStorageService,
+  ) {}
 
   @Post()
   async submitRequest(
@@ -44,11 +51,37 @@ export class ChangeRequestsController {
   }
 
   @Get(':id')
+  @Header('Cache-Control', 'private, no-store')
   async getRequest(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ChangeRequestDetailDto> {
     return this.changeRequestsService.getRequestById(id, user);
+  }
+
+  @Get(':id/evidence')
+  @Header('Cache-Control', 'private, no-store')
+  @Roles(Role.BRANCH_ADMIN, Role.BRANCH_VERIFIER, Role.SUPER_ADMIN)
+  async listEvidence(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    const assets = await this.changeRequestsService.reviewEvidence(id, actor);
+    return assets.map(asset => ({ id: asset.id, mimeType: asset.mime_type }));
+  }
+
+  @Get(':id/evidence/:assetId')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  @Roles(Role.BRANCH_ADMIN, Role.BRANCH_VERIFIER, Role.SUPER_ADMIN)
+  async downloadEvidence(
+    @Param('id') id: string,
+    @Param('assetId') assetId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const [asset] = await this.changeRequestsService.reviewEvidence(id, actor, assetId);
+    if (!asset) throw new NotFoundException('Request evidence is unavailable');
+    return new StreamableFile(await this.storage.read(asset), {
+      type: asset.mime_type,
+      disposition: 'attachment',
+    });
   }
 
   @Post(':id/correction-request')

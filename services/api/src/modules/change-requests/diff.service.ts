@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { VisualDiffDto, VisualDiffFieldDto } from '@kashyap/contracts';
+import { ChangeRequestType, ProposedRelationshipDto, VisualDiffDto, VisualDiffFieldDto } from '@kashyap/contracts';
 
 const FIELD_METADATA: Record<string, { labelNe: string; labelEn: string }> = {
   primaryNameNepali: { labelNe: 'नेपाली नाम', labelEn: 'Nepali Name' },
@@ -21,7 +21,11 @@ const FIELD_METADATA: Record<string, { labelNe: string; labelEn: string }> = {
 
 @Injectable()
 export class DiffService {
-  computeVisualDiff(currentPerson: any | null, proposedChanges: Record<string, any>): VisualDiffDto {
+  computeVisualDiff(
+    currentPerson: any | null,
+    proposedChanges: Record<string, any>,
+    reviewType?: ChangeRequestType,
+  ): VisualDiffDto {
     const fields: VisualDiffFieldDto[] = [];
 
     for (const [key, newVal] of Object.entries(proposedChanges)) {
@@ -46,7 +50,9 @@ export class DiffService {
       }
     }
 
-    const graphImpact: any = {};
+    const graphImpact: NonNullable<VisualDiffDto['graphImpact']> = {};
+    const relationship = reviewType && this.proposedRelationship(reviewType, proposedChanges);
+    if (relationship) graphImpact.proposedRelationship = relationship;
     if (proposedChanges.parentIds) {
       graphImpact.affectedParents = proposedChanges.parentIds;
     }
@@ -57,6 +63,46 @@ export class DiffService {
     return {
       fields,
       graphImpact: Object.keys(graphImpact).length > 0 ? graphImpact : undefined,
+    };
+  }
+
+  private proposedRelationship(
+    type: ChangeRequestType,
+    changes: Record<string, any>,
+  ): ProposedRelationshipDto | undefined {
+    const action = type === ChangeRequestType.REMOVE_PARENT_LINK ||
+      type === ChangeRequestType.REMOVE_SPOUSE_LINK ? 'REMOVE' : 'ADD';
+
+    let relationship: ProposedRelationshipDto['relationship'];
+    let personId: unknown;
+    if (type === ChangeRequestType.ADD_CHILD ||
+        (type === ChangeRequestType.ADD_PARENT_LINK && changes.isChild)) {
+      relationship = 'CHILD';
+      personId = changes.childPersonId;
+    } else if (type === ChangeRequestType.ADD_PARENT ||
+               type === ChangeRequestType.ADD_PARENT_LINK ||
+               type === ChangeRequestType.REMOVE_PARENT_LINK) {
+      relationship = 'PARENT';
+      personId = changes.parentPersonId || changes.parentId;
+    } else if (type === ChangeRequestType.ADD_SPOUSE ||
+               type === ChangeRequestType.ADD_SPOUSE_LINK ||
+               type === ChangeRequestType.REMOVE_SPOUSE_LINK) {
+      relationship = 'SPOUSE';
+      personId = changes.spousePersonId || changes.spouseId;
+    } else {
+      return undefined;
+    }
+
+    if (typeof personId === 'string' && personId) {
+      return { action, relationship, relative: { personId } };
+    }
+    if (action === 'REMOVE') return undefined;
+    const name = [changes.primaryNameNepali, changes.primaryNameEnglish]
+      .find(value => typeof value === 'string' && value.trim());
+    return {
+      action,
+      relationship,
+      relative: typeof name === 'string' ? { proposedName: name.trim() } : {},
     };
   }
 }

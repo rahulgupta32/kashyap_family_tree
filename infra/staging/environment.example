@@ -1,0 +1,17 @@
+# Copy into the approved host secret location with mode 0600. Never commit values.
+# Use immutable image references of the form registry/name@sha256:<64 hex digits>.
+API_IMAGE=
+POSTGRES_IMAGE=
+REDIS_IMAGE=
+MINIO_IMAGE=
+MINIO_MC_IMAGE=
+CLAMAV_IMAGE=
+STAGING_DATA_ROOT=/srv/kashyap-staging/data
+STAGING_SECRET_ROOT=/srv/kashyap-staging/secrets
+STAGING_ADMIN_URL=
+DB_PASSWORD=
+REDIS_PASSWORD=
+MINIO_ROOT_USER=
+MINIO_ROOT_PASSWORD=
+MEDIA_ACCESS_KEY=
+MEDIA_SECRET_KEY=
