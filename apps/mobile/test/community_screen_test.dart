@@ -10,6 +10,61 @@ import 'package:kashyap_mobile/services/genealogy_api_service.dart';
 import 'native_session_test.dart' show MemorySessionStore;
 
 void main() {
+  testWidgets('Unverified membership hides feed actions and offers retry',
+      (tester) async {
+    var verified = false;
+    final service = GenealogyApiService(
+      sessionStore: MemorySessionStore(),
+      client: MockClient((_) async => verified
+          ? http.Response('[]', 200)
+          : http.Response(
+              '{"message":"Verified community membership is required"}', 403)),
+    );
+    service.setAuthToken('member-session');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(home: CommunityScreen(apiService: service)));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('must verify your membership'), findsOneWidget);
+    expect(find.textContaining('Exception:'), findsNothing);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.text('समीक्षा (Moderation)'), findsNothing);
+
+    verified = true;
+    await tester.tap(find.text('Retry community'));
+    await tester.pumpAndSettle();
+    expect(find.text('कुनै पोस्ट छैन (No posts yet)'), findsOneWidget);
+    expect(find.byTooltip('Create post'), findsOneWidget);
+  });
+
+  testWidgets('Disabled Reels is distinct from an empty admitted feed',
+      (tester) async {
+    var enabled = false;
+    final service = GenealogyApiService(
+      sessionStore: MemorySessionStore(),
+      client: MockClient((request) async {
+        expect(request.url.path, endsWith('/community/reels'));
+        return enabled
+            ? http.Response('[]', 200)
+            : http.Response('{"message":"Reels unavailable"}', 404);
+      }),
+    );
+    service.setAuthToken('reels-session');
+    addTearDown(service.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: CommunityScreen(apiService: service, reelsOnly: true),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('currently turned off'), findsOneWidget);
+    expect(find.text('Our community'), findsNothing);
+    expect(find.byType(FloatingActionButton), findsNothing);
+
+    enabled = true;
+    await tester.tap(find.text('Retry reels'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No family reels to show yet'), findsOneWidget);
+    expect(find.byTooltip('Upload reel'), findsOneWidget);
+  });
+
   testWidgets('Replies carry the selected parent and cancellation restores a top-level comment', (tester) async {
     tester.view.physicalSize = const Size(1200,1800); tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);

@@ -9,6 +9,16 @@ import 'chat_connection.dart';
 import 'chat_outbox.dart';
 import 'api_endpoint_config.dart';
 
+class ApiRequestException implements Exception {
+  const ApiRequestException(this.statusCode, this.message);
+
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
 class GenealogyApiService {
   final String baseUrl;
   String? _authToken;
@@ -395,7 +405,11 @@ class GenealogyApiService {
     if(boundAccountId!=null&&chatAccountId!=boundAccountId){throw StateError('Request session changed');}
     final decoded = response.body.isEmpty ? null : json.decode(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(decoded is Map ? decoded['message'] ?? 'Request failed' : 'Request failed (${response.statusCode})');
+      throw ApiRequestException(
+        response.statusCode,
+        (decoded is Map ? decoded['message'] : null)?.toString() ??
+            'Request failed (${response.statusCode})',
+      );
     }
     return decoded;
   }

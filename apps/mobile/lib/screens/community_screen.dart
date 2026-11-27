@@ -21,17 +21,64 @@ class _CommunityScreenState extends State<CommunityScreen> {
   static const _reelsEnabled = communityReelsEnabled;
   bool _loading = true, _busy = false, _queue = false;
   String? _error, _notice;
+  bool _canCompose = false, _canModerate = true;
+  int _loadRevision = 0;
   @override
   void initState() { super.initState(); _reels = widget.reelsOnly; _load(); }
 
   Future<void> _load() async {
+    final revision = ++_loadRevision;
+    final reels = _reels;
+    final queue = _queue;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final rows = await widget.apiService.requestJson(_reels ? '/community/reels' : '/community/posts?queue=$_queue');
-      if (mounted) { setState(() { _posts = rows as List; _error = null; _loading = false; }); }
-    } catch (e) {
-      if (mounted) { setState(() { _posts = []; _error = _reels && widget.apiService.authToken == null
-          ? 'Sign in to view family reels.'
-          : _reels ? 'Family reels are unavailable. Check your connection or ask your administrator, then retry.' : e.toString(); _loading = false; }); }
+      final rows = await widget.apiService.requestJson(
+        reels ? '/community/reels' : '/community/posts?queue=$queue',
+      ) as List;
+      if (!mounted || revision != _loadRevision) return;
+      setState(() {
+        _posts = rows;
+        _canCompose = !queue;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted || revision != _loadRevision) return;
+      final failure = error is ApiRequestException ? error : null;
+      if (queue && failure?.statusCode == 403) {
+        setState(() {
+          _canModerate = false;
+          _queue = false;
+        });
+        await _load();
+        return;
+      }
+      final membershipRequired = failure?.statusCode == 403 &&
+          failure?.message == 'Verified community membership is required';
+      final signInRequired = failure?.statusCode == 401 ||
+          widget.apiService.authToken == null;
+      final reelsDisabled = reels && failure?.statusCode == 404 &&
+          failure?.message == 'Reels unavailable';
+      setState(() {
+        _posts = [];
+        _canCompose = false;
+        _loading = false;
+        if (signInRequired) {
+          _error = 'हेर्न साइन इन गर्नुहोस्। · Sign in to view this feed.';
+        } else if (membershipRequired) {
+          _error = 'प्रमाणित सदस्यता आवश्यक छ। · A branch administrator '
+              'must verify your membership before you can use this feed.';
+        } else if (reelsDisabled) {
+          _error = 'रिल अहिले उपलब्ध छैन। · Reels are currently turned off. '
+              'Contact your administrator for access.';
+        } else {
+          _error = reels
+              ? 'Family reels could not load. Check your connection and retry.'
+              : 'Community posts could not load. Check your connection and retry.';
+        }
+      });
     }
   }
 
@@ -138,21 +185,36 @@ class _CommunityScreenState extends State<CommunityScreen> {
     appBar: AppBar(title: Text(widget.reelsOnly ? 'Reels' : 'समुदाय (Community)'), actions: [
       IconButton(tooltip: 'Refresh', onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
     ]),
-    floatingActionButton: FloatingActionButton(tooltip: _reels ? 'Upload reel' : 'Create post', onPressed: _busy || (_reels && (_loading || _error != null)) ? null : (_reels ? _composeReel : _compose),
-      child: const Icon(Icons.add)),
+    floatingActionButton: !_canCompose || _loading ? null : FloatingActionButton.extended(
+      tooltip: _reels ? 'Upload reel' : 'Create post',
+      onPressed: _busy ? null : (_reels ? _composeReel : _compose),
+      icon: const Icon(Icons.add),
+      label: Text(_reels ? 'Upload reel' : 'Create post'),
+    ),
     body: _loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(
-      onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
-        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (_reels && _error != null) TextButton(onPressed:_load,child:const Text('Retry reels')),
+      onRefresh: _load, child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
+        if (_error != null) HeritageEmpty(
+          icon: Icons.info_outline,
+          message: _error!,
+          action: TextButton(onPressed: _busy ? null : _load,
+            child: Text(_reels ? 'Retry reels' : 'Retry community')),
+        ),
         if (_notice != null) Text(_notice!, style: const TextStyle(color: Colors.green)),
-        if (!widget.reelsOnly) Wrap(spacing: 8, children: [
+        if (!widget.reelsOnly && (_error == null || _reels)) Wrap(spacing: 8, children: [
           ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue && !_reels, onSelected: _busy ? null : (_) => _selectFeed()),
           if (_reelsEnabled) ChoiceChip(label: const Text('भिडियो (Reels)'), selected: _reels, onSelected: _busy ? null : (_) => _selectFeed(reels: true)),
-          ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) => _selectFeed(queue: true)),
+          if (_canModerate && _error == null)
+            ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) => _selectFeed(queue: true)),
         ]),
-        const HeritageHeading('Our community', subtitle:'समाचार, सम्झना र पारिवारिक सम्बन्ध।', icon: Icons.groups_outlined),
-        if (_posts.isEmpty && _error == null) HeritageEmpty(icon:Icons.forum_outlined,
-          message:_reels ? 'अहिले देखिने रिल छैन · No family reels to show yet' : 'कुनै पोस्ट छैन (No posts yet)'),
+        if (!_reels && _error == null)
+          const HeritageHeading('Our community', subtitle:'समाचार, सम्झना र पारिवारिक सम्बन्ध।', icon: Icons.groups_outlined),
+        if (_posts.isEmpty && _error == null) HeritageEmpty(
+          icon: _reels ? Icons.video_library_outlined : Icons.forum_outlined,
+          message: _reels
+              ? 'अहिले देखिने रिल छैन · No family reels to show yet'
+              : _queue ? 'No posts awaiting review' : 'कुनै पोस्ट छैन (No posts yet)'),
         ..._posts.map((p) => Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p['title'] as String, style: Theme.of(context).textTheme.titleMedium),

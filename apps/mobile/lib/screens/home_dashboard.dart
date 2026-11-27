@@ -159,6 +159,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           'प्रोफाइल अहिले उपलब्ध छैन (Profile unavailable)',
                           style: TextStyle(color: Colors.white, fontSize: 11))),
               ]))),
+      if (authenticated)
+        Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OutlinedButton.icon(
+                onPressed: widget.onMessages,
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: const Text('परिवारसँग सन्देश (Messages)'))),
       if (authenticated) ...[
         HeritageHeading('पारिवारिक पात्रो · Family calendar',
             icon: Icons.calendar_today_outlined,
@@ -354,13 +361,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                       fontSize: 12, color: AppTheme.textMuted)),
                             ])),
                   ]))),
-      if (authenticated)
-        Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton.icon(
-                onPressed: widget.onMessages,
-                icon: const Icon(Icons.chat_bubble_outline),
-                label: const Text('परिवारसँग सन्देश (Messages)'))),
       const SizedBox(height: 24),
     ]);
   }
