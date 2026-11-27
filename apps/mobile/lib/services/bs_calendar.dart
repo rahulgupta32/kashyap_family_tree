@@ -11,7 +11,9 @@ class BsDay {
   DateTime? get ad {
     final months = bsMonths[year];
     if (months == null || month < 1 || month > 12 ||
-        day < 1 || day > months[month - 1]) return null;
+        day < 1 || day > months[month - 1]) {
+      return null;
+    }
     var offset = day - 1;
     for (final entry in bsMonths.entries) {
       if (entry.key == year) break;
