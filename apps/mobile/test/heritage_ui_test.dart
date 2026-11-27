@@ -86,9 +86,12 @@ void main() {
     await capture(tester, 'dashboard');
     expect(find.textContaining('Synthetic member'), findsOneWidget);
     expect(paths.where((p) => p == '/profile/me'), hasLength(1));
-    await tester.tap(find.descendant(of: find.byType(HeritageNavigation), matching: find.text('Calendar')));
+    expect(find.descendant(of: find.byType(HeritageNavigation), matching: find.text('Reels')), findsOneWidget);
+    await tester.tap(find.byTooltip('Calendar'));
     await tester.pumpAndSettle();
     await capture(tester, 'calendar');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     await tester.tap(find.descendant(of: find.byType(HeritageNavigation), matching: find.text('Profile')));
     await tester.pumpAndSettle();
     await capture(tester, 'profile');

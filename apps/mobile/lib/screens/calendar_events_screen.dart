@@ -12,7 +12,8 @@ import '../localization/calendar_labels.dart';
 class CalendarEventsScreen extends StatefulWidget {
   final GenealogyApiService apiService;
 
-  const CalendarEventsScreen({super.key, required this.apiService});
+  final DateTime? preferredAdDate;
+  const CalendarEventsScreen({super.key, required this.apiService, this.preferredAdDate});
 
   @override
   State<CalendarEventsScreen> createState() => _CalendarEventsScreenState();
@@ -148,7 +149,11 @@ class _CalendarEventsScreenState extends State<CalendarEventsScreen> with Calend
           TextButton(onPressed: busy || submitted ? null : () async {
             if (!dialogContext.mounted || !checkCalendarSession() || busy || _activeDialog?.isCurrent != true) return;
             final today = nepalWallClock(DateTime.now());
-            final date = await showDatePicker(context: context, initialDate: DateTime.utc(today.year,today.month,today.day+1),
+            final earliest = DateTime.utc(today.year,today.month,today.day);
+            final preferred = widget.preferredAdDate;
+            final date = await showDatePicker(context: context, initialDate:
+              preferred != null && !preferred.isBefore(earliest) && !preferred.isAfter(DateTime.utc(2100))
+                ? preferred : earliest.add(const Duration(days:1)),
               firstDate: DateTime.utc(today.year,today.month,today.day), lastDate: DateTime.utc(2100));
             if (date == null || !context.mounted || !checkCalendarSession()) return;
             final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 10, minute: 0));

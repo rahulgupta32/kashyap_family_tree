@@ -22,14 +22,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
   bool _loading = true, _busy = false, _queue = false;
   String? _error, _notice;
   @override
-  void initState() { super.initState(); _reels = widget.reelsOnly && _reelsEnabled; _load(); }
+  void initState() { super.initState(); _reels = widget.reelsOnly; _load(); }
 
   Future<void> _load() async {
     try {
       final rows = await widget.apiService.requestJson(_reels ? '/community/reels' : '/community/posts?queue=$_queue');
       if (mounted) { setState(() { _posts = rows as List; _error = null; _loading = false; }); }
     } catch (e) {
-      if (mounted) { setState(() { _error = e.toString(); _loading = false; }); }
+      if (mounted) { setState(() { _posts = []; _error = _reels && widget.apiService.authToken == null
+          ? 'Sign in to view family reels.'
+          : _reels ? 'Family reels are unavailable. Check your connection or ask your administrator, then retry.' : e.toString(); _loading = false; }); }
     }
   }
 
@@ -136,11 +138,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
     appBar: AppBar(title: Text(widget.reelsOnly ? 'Reels' : 'समुदाय (Community)'), actions: [
       IconButton(tooltip: 'Refresh', onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
     ]),
-    floatingActionButton: FloatingActionButton(tooltip: _reels ? 'Upload reel' : 'Create post', onPressed: _busy ? null : (_reels ? _composeReel : _compose),
+    floatingActionButton: FloatingActionButton(tooltip: _reels ? 'Upload reel' : 'Create post', onPressed: _busy || (_reels && (_loading || _error != null)) ? null : (_reels ? _composeReel : _compose),
       child: const Icon(Icons.add)),
     body: _loading ? const Center(child: CircularProgressIndicator()) : RefreshIndicator(
       onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 90), children: [
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+        if (_reels && _error != null) TextButton(onPressed:_load,child:const Text('Retry reels')),
         if (_notice != null) Text(_notice!, style: const TextStyle(color: Colors.green)),
         if (!widget.reelsOnly) Wrap(spacing: 8, children: [
           ChoiceChip(label: const Text('समाचार (Feed)'), selected: !_queue && !_reels, onSelected: _busy ? null : (_) => _selectFeed()),
@@ -148,7 +151,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
           ChoiceChip(label: const Text('समीक्षा (Moderation)'), selected: _queue, onSelected: _busy ? null : (_) => _selectFeed(queue: true)),
         ]),
         const HeritageHeading('Our community', subtitle:'समाचार, सम्झना र पारिवारिक सम्बन्ध।', icon: Icons.groups_outlined),
-        if (_posts.isEmpty) const HeritageEmpty(icon:Icons.forum_outlined,message:'कुनै पोस्ट छैन (No posts yet)'),
+        if (_posts.isEmpty && _error == null) HeritageEmpty(icon:Icons.forum_outlined,
+          message:_reels ? 'अहिले देखिने रिल छैन · No family reels to show yet' : 'कुनै पोस्ट छैन (No posts yet)'),
         ..._posts.map((p) => Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(p['title'] as String, style: Theme.of(context).textTheme.titleMedium),
@@ -159,7 +163,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             if (p['contactPhone'] != null) Text("सम्पर्क (Shared contact): ${p['contactPhone']}"),
             if (p['escalated'] == true) const Text('Escalated: awaiting independent central review.'),
             if (p['appealReason'] != null) Text('Appeal: ${p['appealReason']}'),
-            if (_reelsEnabled && p['reel'] != null)
+            if ((_reelsEnabled || widget.reelsOnly) && p['reel'] != null)
               OutlinedButton.icon(
                 onPressed: _busy ? null : () => _playReel(p['id'] as String),
                 icon: const Icon(Icons.play_arrow),

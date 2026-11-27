@@ -65,11 +65,8 @@ void main() {
           find.byKey(const Key('sign-in-code')), code['otp'] as String);
       await press(tester, find.byKey(const Key('sign-in-submit')));
       await until(tester, find.byType(HeritageNavigation));
-      await press(
-          tester,
-          find.descendant(
-              of: find.byType(HeritageNavigation),
-              matching: find.text('Calendar')));
+      await press(tester, find.byTooltip('Calendar'));
+      await press(tester, find.textContaining('Manage family events'));
       await until(tester, find.byTooltip(calendarLabels['create']!));
       await press(tester, find.byTooltip(calendarLabels['create']!));
       const original = 'Synthetic native calendar integration';

@@ -1,4 +1,4 @@
-import '../services/review_features.dart';
+import 'nepali_calendar_screen.dart';
 import '../widgets/heritage.dart';
 import 'home_dashboard.dart';
 import 'member_account_screen.dart';
@@ -122,11 +122,12 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
                             color: AppTheme.textMuted)),
                   ]),
               actions: [
-                if (_tab == 0 && communityReelsEnabled)
+                if (_tab == 0)
                   IconButton(
                     tooltip: 'Calendar',
                     icon: const Icon(Icons.calendar_month_outlined),
-                    onPressed: _openCalendar,
+                    onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) =>
+                      NepaliCalendarScreen(api:widget.apiService))),
                   ),
                 if (widget.apiService.authToken != null)
                   IconButton(
@@ -472,19 +473,14 @@ class _PersonSearchScreenState extends State<PersonSearchScreen> {
   }
 
   void _openCalendar() {
-    if (!communityReelsEnabled) {
-      setState(() => _tab = 2);
-      return;
-    }
     Navigator.push(context, MaterialPageRoute(builder: (_) =>
         CalendarEventsScreen(apiService: widget.apiService)));
   }
 
   Widget _tabBody() {
     if (_tab == 2) {
-      return communityReelsEnabled
-          ? CommunityScreen(key: const ValueKey('reels-tab'), apiService: widget.apiService, reelsOnly: true)
-          : CalendarEventsScreen(apiService: widget.apiService);
+      return CommunityScreen(key: const ValueKey('reels-tab'),
+          apiService: widget.apiService, reelsOnly: true);
     }
     if (_tab == 3) return CommunityScreen(apiService: widget.apiService);
     if (_tab == 4) {

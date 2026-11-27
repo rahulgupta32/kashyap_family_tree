@@ -1,4 +1,3 @@
-import '../services/review_features.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
@@ -119,10 +118,7 @@ class HeritageNavigation extends StatelessWidget {
                 label: 'Home'),
             NavigationDestination(
                 icon: Icon(Icons.account_tree_outlined), label: 'Tree'),
-            if (communityReelsEnabled)
-              NavigationDestination(icon: Icon(Icons.video_library_outlined), label: 'Reels')
-            else
-              NavigationDestination(icon: Icon(Icons.calendar_month_outlined), label: 'Calendar'),
+            NavigationDestination(icon: Icon(Icons.video_library_outlined), label: 'Reels'),
             NavigationDestination(
                 icon: Icon(Icons.groups_outlined), label: 'Community'),
             NavigationDestination(

@@ -19,3 +19,11 @@ Finish pilot and production acceptance in the existing ledgers. The first physic
 - FAM 02 and LIFE 04 support independent review and activation for distinct Nepali cultural traditions. Approval for one tradition does not activate rules for another.
 - Retain the documented event-day reminder, quiet-hours, same-day and default-family-audience policy. No new timing or audience defaults were selected.
 - PRO 02 uses direct photo crop manipulation. Drag the frame to move it and drag a corner to resize it. The upload retains the existing normalized server crop contract.
+
+## Native calendar and Reels navigation
+
+The offline Flutter table is generated from the existing repository calendar table and epoch in `packages/localization/src/calendar.ts`. Regenerate it with `python3 scripts/generate-bs-calendar.py`. Supported conversion is BS 2000–2090. The AD value represents a civil date in Nepal, distinct from the backend's UTC instant at Nepal midnight. 1 Bhadra 2083 maps to Monday, 17 August 2026 in the backend table and the selected external reference. The existing table differs from the independently inspected upstream calendar in 2062 and 2084–2087. Those differences require review before widening factual accuracy claims. No public Tithi, festival or holiday dataset has been approved for import.
+
+The earlier signed Android artifact from `d36baa0`, Main CI 45551346237, had a blank `KASHYAP_PREVIEW_REELS_ENABLED` value. The builder emitted a false Flutter define and navigation replaced Reels with Calendar. The dedicated tab now remains visible independently of the optional Community filter. Service admission, storage, audience and media validation remain on the existing server paths. An empty feed is distinct from sign-in/service errors, and failed requests offer retry.
+
+Private selected-day agenda loads source-specific BS and AD periods through the existing authorization service and deduplicates by event ID. BS-stored events supply grid indicators. Existing event management receives the selected civil AD date as the picker default when it is eligible. Full BS-source creation, approved observances, exhaustive date validation and the two-alert ceremony journey remain release acceptance work.
