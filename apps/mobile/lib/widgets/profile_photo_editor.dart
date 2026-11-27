@@ -99,18 +99,75 @@ class _ProfilePhotoEditorState extends State<ProfilePhotoEditor> {
     if(_error!=null)Text(_error!,style:const TextStyle(color:Colors.red)),
     TextButton(key:const Key('choose-profile-photo'),onPressed:_busy?null:_choose,child:const Text('फोटो छान्नुहोस् / Choose photo')),
     if(_preview!=null)...[
-      SizedBox(width:240,height:240,child:CustomPaint(painter:_CropPainter(_preview!,_crop))),
-      const Text('काट्ने क्षेत्र प्रतिशतमा / Crop area in percent'),
-      for(final field in ['left','top','width','height'])Column(children:[Text('${{'left':'बायाँ / Left','top':'माथि / Top','width':'चौडाइ / Width','height':'उचाइ / Height'}[field]} ${(_crop[field]!/100).round()}%'),Slider(key:Key('photo-crop-$field'),value:_crop[field]!.toDouble(),min:field=='width'||field=='height'?100:0,max:field=='left'||field=='top'?9900:10000,divisions:99,onChanged:_busy?null:(value){setState((){_crop[field]=value.round();_crop['width']=math.min(_crop['width']!,10000-_crop['left']!);_crop['height']=math.min(_crop['height']!,10000-_crop['top']!);});})]),
+      _cropPreview(_preview!),
+      const Text('फ्रेम सार्नुहोस् वा कुनाहरू तान्नुहोस् / Drag the frame or its corners'),
+      TextButton(onPressed:_busy?null:()=>setState(() {
+        _crop={'left':0,'top':0,'width':10000,'height':10000};
+      }),child:const Text('पूरै फोटो / Reset crop')),
       TextButton(key:const Key('save-profile-photo'),onPressed:_busy?null:_upload,child:const Text('काटेर सुरक्षित गर्नुहोस् / Save cropped photo')),
       TextButton(onPressed:_busy?null:(){final previous=_preview;setState((){_preview=null;_encoded=null;});WidgetsBinding.instance.addPostFrameCallback((_){previous?.dispose();});},child:const Text('रद्द गर्नुहोस् / Cancel')),
     ],
     if(_asset!=null)...[TextButton(onPressed:_busy?null:_remove,child:const Text('फोटो हटाउनुहोस् / Remove photo')),if(_status=='FAILED'||_status=='NOT_SCHEDULED'||_error!=null)TextButton(onPressed:_busy?null:_retry,child:const Text('पुनः प्रयास / Retry processing'))],
   ])));}
+  Widget _cropPreview(ui.Image image) => LayoutBuilder(builder: (context, constraints) {
+    final scale=math.min(math.min(constraints.maxWidth, 300)/image.width, 300/image.height);
+    final width=image.width*scale, height=image.height*scale;
+    final left=_crop['left']!*width/10000, top=_crop['top']!*height/10000;
+    final right=left+_crop['width']!*width/10000;
+    final bottom=top+_crop['height']!*height/10000;
+    return SizedBox(
+      width:width,height:height,child:Stack(clipBehavior:Clip.none,children:[
+        Positioned.fill(child:RawImage(image:image,fit:BoxFit.fill)),
+        Positioned.fill(child:IgnorePointer(child:CustomPaint(
+          painter:_CropShade(Rect.fromLTRB(left,top,right,bottom))))),
+        Positioned.fromRect(rect:Rect.fromLTRB(left,top,right,bottom),
+          child:GestureDetector(key:const Key('photo-crop-frame'),
+            behavior:HitTestBehavior.opaque,onPanUpdate:_busy?null:(event)=>
+              _adjustCrop(event.delta,width,height,0,0),
+            child:DecoratedBox(decoration:BoxDecoration(border:Border.all(color:Colors.white,width:2))))),
+        for(final x in [-1,1])
+          for(final y in [-1,1])
+            Positioned(left:(x<0?left:right).clamp(16,math.max(16,width-16)).toDouble()-16,
+              top:(y<0?top:bottom).clamp(16,math.max(16,height-16)).toDouble()-16,
+              child:GestureDetector(key:ValueKey('photo-crop-corner-$x-$y'),
+                behavior:HitTestBehavior.opaque,onPanUpdate:_busy?null:(event)=>
+                  _adjustCrop(event.delta,width,height,x,y),
+                child:const SizedBox(width:32,height:32,
+                  child:Center(child:Icon(Icons.circle,color:Colors.white,size:15))))),
+      ]),
+    );
+  });
+
+  void _adjustCrop(Offset delta,double width,double height,int x,int y) {
+    final dx=(delta.dx/width*10000).round(), dy=(delta.dy/height*10000).round();
+    var left=_crop['left']!, top=_crop['top']!;
+    var right=left+_crop['width']!, bottom=top+_crop['height']!;
+    if(x==0){
+      final moveX=dx.clamp(-left,10000-right).toInt(), moveY=dy.clamp(-top,10000-bottom).toInt();
+      left+=moveX;right+=moveX;top+=moveY;bottom+=moveY;
+    }else{
+      if(x<0){left=(left+dx).clamp(0,right-100).toInt();}
+      else{right=(right+dx).clamp(left+100,10000).toInt();}
+      if(y<0){top=(top+dy).clamp(0,bottom-100).toInt();}
+      else{bottom=(bottom+dy).clamp(top+100,10000).toInt();}
+    }
+    setState(()=>_crop={'left':left,'top':top,'width':right-left,'height':bottom-top});
+  }
+
 }
-class _CropPainter extends CustomPainter {
- final ui.Image image;final Map<String,int> crop;
- _CropPainter(this.image,Map<String,int> crop):crop=Map.of(crop);
- @override void paint(Canvas canvas,Size size){final source=Rect.fromLTWH(image.width*crop['left']!/10000,image.height*crop['top']!/10000,image.width*crop['width']!/10000,image.height*crop['height']!/10000);final scale=math.min(size.width/source.width,size.height/source.height);final target=Size(source.width*scale,source.height*scale);canvas.drawImageRect(image,source,Rect.fromLTWH((size.width-target.width)/2,(size.height-target.height)/2,target.width,target.height),Paint());}
- @override bool shouldRepaint(_CropPainter old)=>old.image!=image||old.crop.toString()!=crop.toString();
+
+class _CropShade extends CustomPainter {
+  const _CropShade(this.frame);
+  final Rect frame;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shade = Path()..fillType = PathFillType.evenOdd;
+    shade.addRect(Offset.zero & size);
+    shade.addRect(frame);
+    canvas.drawPath(shade, Paint()..color = Colors.black45);
+  }
+
+  @override
+  bool shouldRepaint(_CropShade oldDelegate) => oldDelegate.frame != frame;
 }

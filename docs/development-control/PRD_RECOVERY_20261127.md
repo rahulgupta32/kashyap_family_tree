@@ -11,3 +11,11 @@ The standalone PRD and implementation plan prioritize one ceremony journey acros
 | PRO 01–02, PILOT 01 | Connected profile and photo triage | Use the exact signed artifact, fictional identities and image, staging revision and sanitized request correlation IDs. Verify email OTP, reviewer MFA, workers, scanner and private storage before closing the reported failures. |
 
 Finish pilot and production acceptance in the existing ledgers. The first physical-device journey is verified tree assembly, ceremony publication, announcement and Nepal event-day reminder, RSVP and eligible chat. An outsider must receive neither private event information nor a private notification.
+
+## Owner decisions
+
+- CAL 01 uses [Hamro Patro Bhadra 2083](https://www.hamropatro.com/calendar/2083/5) as the reference for calendar review. Confirm an authorized data feed, its coverage and version before ingesting its content into the production calendar.
+- FAM 01 covers father and child registration in either order. Same-name ambiguity goes to review. A pending match grants no genealogy access.
+- FAM 02 and LIFE 04 support independent review and activation for distinct Nepali cultural traditions. Approval for one tradition does not activate rules for another.
+- Retain the documented event-day reminder, quiet-hours, same-day and default-family-audience policy. No new timing or audience defaults were selected.
+- PRO 02 uses direct photo crop manipulation. Drag the frame to move it and drag a corner to resize it. The upload retains the existing normalized server crop contract.

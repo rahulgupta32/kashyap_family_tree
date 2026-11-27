@@ -27,7 +27,14 @@ void main(){
   });
   await tester.pumpAndSettle();
   expect(find.byKey(const Key('save-profile-photo')),findsOneWidget);
-  final slider=tester.widget<Slider>(find.byKey(const Key('photo-crop-left')));slider.onChanged!(2500);await tester.pump();
+  final frame = find.byKey(const Key('photo-crop-frame'));
+  final size = tester.getSize(frame);
+  final corner = tester.widget<GestureDetector>(
+      find.byKey(const ValueKey('photo-crop-corner--1--1')));
+  corner.onPanUpdate!(DragUpdateDetails(
+      globalPosition: Offset.zero, delta: Offset(size.width / 4, 0)));
+  await tester.pump();
+  expect(find.byType(Slider), findsNothing);
   await tester.ensureVisible(find.byKey(const Key('save-profile-photo')));await tester.tap(find.byKey(const Key('save-profile-photo')));await tester.pumpAndSettle();
   expect(submitted?['dataBase64'],png);expect(submitted?['crop'],{'left':2500,'top':0,'width':7500,'height':10000});
   expect(find.text('फोटो तयार भएन / Processing failed'),findsOneWidget);expect(find.text('पुनः प्रयास / Retry processing'),findsOneWidget);
