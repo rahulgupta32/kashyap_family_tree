@@ -39,6 +39,7 @@ void main() {
     final paths = <String>[];
     final api = GenealogyApiService(client: MockClient((request) async {
       paths.add(request.url.path);
+      if (request.url.path == '/calendar/period') return jsonResponse(periodPage());
       return jsonResponse(request.url.path == '/calendar/browse' ? browsePage() : [event()]);
     }))..setAuthToken('mock-access');
     addTearDown(api.dispose);
@@ -51,7 +52,7 @@ void main() {
     await tester.pageBack(); await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Browse all calendar events')); await tester.pumpAndSettle();
     expect(find.byType(CalendarBrowseScreen), findsOneWidget);
-    expect(paths, ['/calendar/events', '/calendar/browse']);
+    expect(paths, ['/calendar/events', '/calendar/period', '/calendar/browse']);
     expect(find.byType(AlertDialog), findsNothing);
   });
 
